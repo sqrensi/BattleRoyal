@@ -168,8 +168,41 @@ namespace ShooterPrototype.Player
             }
         }
 
+        public void SetHolsteredArmsPresentation(bool holstered)
+        {
+            BuildIfNeeded();
+
+            for (var i = 0; i < sourceRenderers.Count; i++)
+            {
+                var source = sourceRenderers[i];
+                if (source == null)
+                {
+                    continue;
+                }
+
+                source.enabled = false;
+            }
+
+            for (var i = 0; i < firstPersonArmsRenderers.Count; i++)
+            {
+                var arms = firstPersonArmsRenderers[i];
+                if (arms == null)
+                {
+                    continue;
+                }
+
+                arms.enabled = !holstered;
+            }
+        }
+
         private void Awake()
         {
+            if (GetComponent<RemoteThirdPersonPlayerBootstrap>() != null)
+            {
+                enabled = false;
+                return;
+            }
+
             BuildIfNeeded();
         }
 

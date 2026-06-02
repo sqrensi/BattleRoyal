@@ -62,6 +62,7 @@ namespace ShooterPrototype.Network
             public float deathFallDirZ;
             public float animSpeed;
             public bool isAiming;
+            public bool isHolstered;
             public bool isGrounded;
             public int jumpState;
             public float animPhase;
@@ -193,6 +194,7 @@ namespace ShooterPrototype.Network
             public float deathFallDirZ;
             public float animSpeed;
             public bool isAiming;
+            public bool isHolstered;
             public bool isGrounded;
             public int jumpState;
             public float animPhase;
@@ -313,6 +315,7 @@ namespace ShooterPrototype.Network
             int deathSeq = 0,
             Vector3 deathFallDirection = default,
             bool isAiming = false,
+            bool isHolstered = false,
             float animSpeed = 0f,
             bool isGrounded = true,
             int jumpState = 0,
@@ -356,6 +359,7 @@ namespace ShooterPrototype.Network
                 deathFallDirZ = deathFallDirection.z,
                 animSpeed = Mathf.Clamp(animSpeed, 0f, ProceduralLocomotionRig.MaxNetworkAnimSpeed01),
                 isAiming = isAiming,
+                isHolstered = isHolstered,
                 isGrounded = isGrounded,
                 jumpState = Mathf.Clamp(jumpState, 0, 2),
                 animPhase = Mathf.Repeat(animPhase, 1f),

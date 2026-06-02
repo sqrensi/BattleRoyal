@@ -26,6 +26,8 @@ namespace ShooterPrototype.Player
 
         public void ApplyRemoteThirdPersonMode()
         {
+            DisableLocalOnlyComponents();
+
             var thirdPersonBody = transform.Find("ThirdPersonBody");
             if (thirdPersonBody != null)
             {
@@ -33,6 +35,7 @@ namespace ShooterPrototype.Player
             }
 
             EnableThirdPersonAnimator(thirdPersonBody);
+            WireRemoteHolsterAnimation(thirdPersonBody);
             WireRemoteWeapon(thirdPersonBody);
             WireRemoteLookPitchPosture(thirdPersonBody);
             EnsureBoneHitboxes(thirdPersonBody);
@@ -81,11 +84,22 @@ namespace ShooterPrototype.Player
                 animator.applyRootMotion = false;
                 animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
 
+                var holsterPresentation = GetComponent<RemoteAnimatorHolsterPresentation>();
+                if (holsterPresentation == null)
+                {
+                    holsterPresentation = gameObject.AddComponent<RemoteAnimatorHolsterPresentation>();
+                }
+
+                holsterPresentation.Configure(animator);
+
                 if (animator.layerCount > 0)
                 {
                     for (var layer = 0; layer < animator.layerCount; layer++)
                     {
-                        animator.SetLayerWeight(layer, 1f);
+                        if (layer <= RemoteAnimatorHolsterPresentation.TorsoLayerIndex)
+                        {
+                            animator.SetLayerWeight(layer, 1f);
+                        }
                     }
                 }
             }
@@ -142,6 +156,29 @@ namespace ShooterPrototype.Player
             }
         }
 
+        private void WireRemoteHolsterAnimation(Transform thirdPersonBody)
+        {
+            if (thirdPersonBody == null)
+            {
+                return;
+            }
+
+            var syntyVisual = thirdPersonBody.Find("SyntyVisual");
+            var animator = syntyVisual != null ? syntyVisual.GetComponent<Animator>() : null;
+            if (animator == null)
+            {
+                return;
+            }
+
+            var holsterPresentation = GetComponent<RemoteAnimatorHolsterPresentation>();
+            if (holsterPresentation == null)
+            {
+                holsterPresentation = gameObject.AddComponent<RemoteAnimatorHolsterPresentation>();
+            }
+
+            holsterPresentation.Configure(animator);
+        }
+
         private void WireRemoteLookPitchPosture(Transform thirdPersonBody)
         {
             if (thirdPersonBody == null)
@@ -162,6 +199,27 @@ namespace ShooterPrototype.Player
             }
 
             pitchPosture.Configure(thirdPersonBody, locomotionRig);
+        }
+
+        private void DisableLocalOnlyComponents()
+        {
+            var armGate = GetComponent<SyntyFirstPersonArmLocomotionGate>();
+            if (armGate != null)
+            {
+                armGate.enabled = false;
+            }
+
+            var armsPresenter = GetComponent<SyntyFirstPersonArmsPresenter>();
+            if (armsPresenter != null)
+            {
+                armsPresenter.enabled = false;
+            }
+
+            var holster = GetComponent<PlayerWeaponHolsterController>();
+            if (holster != null)
+            {
+                holster.enabled = false;
+            }
         }
     }
 }

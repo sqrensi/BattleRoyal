@@ -60,6 +60,7 @@ namespace ShooterPrototype.Player
         private float lastSnapshotDebugAt;
         private PlayerWeaponMount localWeaponMount;
         private PlayerWeaponController localWeaponController;
+        private PlayerWeaponHolsterController localWeaponHolster;
         private PlayerAudioController localAudioController;
         private FpsCharacterController localFpsController;
         private ProceduralLocomotionRig localLocomotionRig;
@@ -136,6 +137,7 @@ namespace ShooterPrototype.Player
             smoothedClockLastRealtimeSeconds = 0.0;
             localWeaponMount = GetComponent<PlayerWeaponMount>();
             localWeaponController = GetComponent<PlayerWeaponController>();
+            localWeaponHolster = GetComponent<PlayerWeaponHolsterController>();
             localAudioController = GetComponent<PlayerAudioController>();
             localFpsController = GetComponent<FpsCharacterController>();
             localLocomotionRig = GetComponent<ProceduralLocomotionRig>();
@@ -277,11 +279,9 @@ namespace ShooterPrototype.Player
                     Time.deltaTime);
 
             rootTransform.position = new Vector3(horizontalNextX, yNext, horizontalNextZ);
-            var targetRotation = Quaternion.Euler(0f, targetYaw, 0f);
-            rootTransform.rotation = Quaternion.Slerp(
-                rootTransform.rotation,
-                targetRotation,
-                Time.deltaTime * remoteRotationLerpSpeed);
+            var currentYaw = rootTransform.eulerAngles.y;
+            var nextYaw = Mathf.LerpAngle(currentYaw, targetYaw, Time.deltaTime * remoteRotationLerpSpeed);
+            rootTransform.rotation = Quaternion.Euler(0f, nextYaw, 0f);
         }
 
         private void DriveRemoteLocomotion(RemoteAvatar avatar, InterpolatedPose pose)
@@ -502,6 +502,7 @@ namespace ShooterPrototype.Player
                     shotHasEndPoint = true;
                 }
             }
+            var isHolstered = localWeaponHolster != null && localWeaponHolster.IsHolstered;
             var animSpeed = localLocomotionRig != null
                 ? localLocomotionRig.GetNetworkAnimSpeed01()
                 : (localFpsController != null ? Mathf.Clamp01(localFpsController.MoveInputMagnitude) : 0f);
@@ -534,6 +535,7 @@ namespace ShooterPrototype.Player
                 deathSeq,
                 deathFallDirection,
                 false,
+                isHolstered,
                 animSpeed,
                 animGrounded,
                 animJumpState,
@@ -895,6 +897,7 @@ namespace ShooterPrototype.Player
                     var remoteWeapon = avatar.Root.GetComponent<RemoteWeaponPresentation>();
                     remoteWeapon?.SetNetworkLookPitch(p.lookPitch);
                     remoteWeapon?.SetNetworkCrouchState(p.isCrouching);
+                    remoteWeapon?.SetHolstered(p.isHolstered);
 
                     ApplyRemotePresenceEventsForAvatar(avatar, p);
 

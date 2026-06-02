@@ -7,6 +7,34 @@ namespace ShooterPrototype.EditorTools
 {
     internal static class PlayerPrefabOptimization
     {
+        public static void ApplyLocalHolsterDefaults(GameObject root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var holster = root.GetComponent<PlayerWeaponHolsterController>();
+            if (holster == null)
+            {
+                holster = root.AddComponent<PlayerWeaponHolsterController>();
+            }
+
+            var serialized = new SerializedObject(holster);
+            SetSerializedVector3(serialized, "loweredLocalPosition", new Vector3(0.14f, -0.4f, -0.05f));
+            SetSerializedVector3(serialized, "loweredLocalEulerAngles", new Vector3(58f, -18f, 14f));
+            SetSerializedVector3(serialized, "holsterSwingOffset", new Vector3(0.05f, 0.04f, -0.16f));
+            SetSerializedProperty(serialized, "holsterLowerDuration", 0.38f);
+            SetSerializedProperty(serialized, "drawRaiseDuration", 0.32f);
+            SetSerializedProperty(serialized, "holsteredScaleFactor", 0.94f);
+            SetSerializedProperty(serialized, "armsHideHolsterThreshold", 0.68f);
+            SetSerializedProperty(serialized, "armsShowDrawThreshold", 0.22f);
+            SetSerializedProperty(serialized, "scaleLoweredPoseByFieldOfView", true);
+            SetSerializedProperty(serialized, "referenceFieldOfView", 75f);
+            SetSerializedProperty(serialized, "extraLowerPerFovRatio", 0.14f);
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
         public static void StripLocalFirstPersonPrefab(GameObject root)
         {
             if (root == null)
@@ -49,6 +77,7 @@ namespace ShooterPrototype.EditorTools
             DestroyComponent<SyntyWeaponHandBinder>(root);
             DestroyComponent<SyntyFirstPersonArmsPresenter>(root);
             DestroyComponent<SyntyFirstPersonArmLocomotionGate>(root);
+            DestroyComponent<PlayerWeaponHolsterController>(root);
             DestroyComponent<SyntyHandAttachedWeaponMount>(root);
             DestroyComponent<PlayerHeadMaskSelector>(root);
             DestroyComponent<PlayerViewPresentation>(root);
@@ -159,6 +188,17 @@ namespace ShooterPrototype.EditorTools
             {
                 property.boolValue = value;
             }
+        }
+
+        private static void SetSerializedVector3(SerializedObject serialized, string propertyName, Vector3 value)
+        {
+            var property = serialized.FindProperty(propertyName);
+            if (property == null)
+            {
+                return;
+            }
+
+            property.vector3Value = value;
         }
 
         private static void DestroyComponent<T>(GameObject root) where T : Component

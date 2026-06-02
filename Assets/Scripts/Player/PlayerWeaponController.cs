@@ -90,6 +90,7 @@ namespace ShooterPrototype.Player
         private PlayerWeaponMount weaponMount;
         private PlayerAudioController audioController;
         private RealtimeTransportClient realtimeClient;
+        private PlayerWeaponHolsterController weaponHolster;
         private readonly RaycastHit[] hitQueryBuffer = new RaycastHit[32];
         private readonly Dictionary<string, float> headshotRegistrationUntilByTarget = new Dictionary<string, float>();
 
@@ -124,6 +125,7 @@ namespace ShooterPrototype.Player
 
             fpsController = GetComponent<FpsCharacterController>();
             weaponMount = GetComponent<PlayerWeaponMount>();
+            weaponHolster = GetComponent<PlayerWeaponHolsterController>();
             audioController = GetComponent<PlayerAudioController>();
             realtimeClient = FindObjectOfType<RealtimeTransportClient>();
             currentAmmo = Mathf.Max(1, magazineSize);
@@ -135,6 +137,12 @@ namespace ShooterPrototype.Player
             var firePressed = ReadFirePressed();
 
             if (!enabled)
+            {
+                fpsController?.SetAutoRecoilRecoveryActive(false);
+                return;
+            }
+
+            if (weaponHolster != null && !weaponHolster.IsWeaponReady)
             {
                 fpsController?.SetAutoRecoilRecoveryActive(false);
                 return;
@@ -254,6 +262,24 @@ namespace ShooterPrototype.Player
         public void RestoreAfterRespawn()
         {
             currentAmmo = MagazineSize;
+            isReloading = false;
+            if (reloadCoroutine != null)
+            {
+                StopCoroutine(reloadCoroutine);
+                reloadCoroutine = null;
+            }
+
+            weaponMount?.SetLocalReloading(false);
+            weaponHolster?.ForceArmedState();
+        }
+
+        public void CancelActiveReload()
+        {
+            if (!isReloading && reloadCoroutine == null)
+            {
+                return;
+            }
+
             isReloading = false;
             if (reloadCoroutine != null)
             {

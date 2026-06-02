@@ -26,6 +26,30 @@ namespace ShooterPrototype.EditorTools
             "WhiteMaskHead"
         };
 
+        [MenuItem("Shooter Prototype/Setup/Rebuild FP + Remote Player Prefabs (Ch18)")]
+        public static void RebuildFpAndRemotePrefabs()
+        {
+            RebuildFpAndRemotePrefabsInternal();
+        }
+
+        public static void RebuildFpAndRemotePrefabsBatch()
+        {
+            RebuildFpAndRemotePrefabsInternal();
+            if (Application.isBatchMode)
+            {
+                EditorApplication.Exit(0);
+            }
+        }
+
+        private static void RebuildFpAndRemotePrefabsInternal()
+        {
+            SyntyAnimationSetup.RebuildAnimationControllerOnly();
+            SetupPlayerCleanCharacterArms(DefaultCharacterFbxPath);
+            AssetDatabase.SaveAssets();
+            Debug.Log(
+                "[PlayerCleanPrefabCreator] Rebuilt PlayerClean (FP) and PlayerCleanRemote prefabs with animation controllers.");
+        }
+
         [MenuItem("Shooter Prototype/Setup/Setup PlayerClean Character Arms (Ch18)")]
         public static void SetupPlayerCleanCharacterArms()
         {
@@ -91,6 +115,7 @@ namespace ShooterPrototype.EditorTools
                 }
 
                 SyntyAnimationSetup.WireMecanimComponents(instance, FirstPersonArmsCoverage.ArmsWithoutShoulders);
+                PlayerPrefabOptimization.ApplyLocalHolsterDefaults(instance);
                 SyntyPlayerPrefabCreator.RestoreActiveCharacterMeshesForPrefabSave(instance);
                 PlayerPrefabOptimization.StripLocalFirstPersonPrefab(instance);
                 SavePrefab(instance, prefabPath);

@@ -13,6 +13,20 @@ namespace ShooterPrototype.EditorTools
         [MenuItem("Shooter Prototype/Setup/Create PlayerClean Remote Prefab (TP for network)")]
         public static void CreatePlayerCleanRemotePrefab()
         {
+            CreatePlayerCleanRemotePrefabInternal();
+        }
+
+        public static void CreatePlayerCleanRemotePrefabBatch()
+        {
+            CreatePlayerCleanRemotePrefabInternal();
+            if (Application.isBatchMode)
+            {
+                EditorApplication.Exit(0);
+            }
+        }
+
+        private static void CreatePlayerCleanRemotePrefabInternal()
+        {
             var sourcePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(SourcePrefabPath);
             if (sourcePrefab == null)
             {
@@ -66,6 +80,7 @@ namespace ShooterPrototype.EditorTools
             EnsureBoneHitboxRig(root);
             WireRemoteAnimatorController(root);
             RemoveLocalOnlyComponents(root);
+            EnsureBackHolsterTarget(root);
         }
 
         private static void EnsureRemoteShotEffects(GameObject root)
@@ -130,7 +145,10 @@ namespace ShooterPrototype.EditorTools
 
             var thirdPersonBody = FindChild(root.transform, "ThirdPersonBody");
             var syntyVisual = thirdPersonBody != null ? FindChild(thirdPersonBody, "SyntyVisual") : null;
-            var handBone = syntyVisual != null ? FindChild(syntyVisual, "Hand_R") : null;
+            var handBone = syntyVisual != null
+                ? FindChild(syntyVisual, "Hand_R")
+                    ?? FindChild(syntyVisual, "mixamorig:RightHand")
+                : null;
             if (handBone == null)
             {
                 Debug.LogWarning("[PlayerRemotePrefabCreator] Hand_R not found; remote weapon target skipped.");
@@ -164,6 +182,57 @@ namespace ShooterPrototype.EditorTools
             SetSerializedReference(serialized, "weaponPrefab", weaponPrefabAsset);
             SetSerializedReference(serialized, "attachTarget", attachTarget);
             serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void EnsureBackHolsterTarget(GameObject root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var thirdPersonBody = FindChild(root.transform, "ThirdPersonBody");
+            var syntyVisual = thirdPersonBody != null ? FindChild(thirdPersonBody, "SyntyVisual") : null;
+            if (syntyVisual == null)
+            {
+                Debug.LogWarning("[PlayerRemotePrefabCreator] SyntyVisual not found; BackWeaponTarget skipped.");
+                return;
+            }
+
+            var spineBone = FindChild(syntyVisual, "Spine_02")
+                ?? FindChild(syntyVisual, "Spine_01")
+                ?? FindChild(syntyVisual, "mixamorig:Spine2")
+                ?? FindChild(syntyVisual, "mixamorig:Spine1")
+                ?? FindChild(syntyVisual, "Chest");
+            if (spineBone == null)
+            {
+                Debug.LogWarning("[PlayerRemotePrefabCreator] Spine bone not found; BackWeaponTarget skipped.");
+                return;
+            }
+
+            const string targetName = "BackWeaponTarget";
+            var backTarget = spineBone.Find(targetName);
+            if (backTarget == null)
+            {
+                var targetObject = new GameObject(targetName);
+                backTarget = targetObject.transform;
+                backTarget.SetParent(spineBone, false);
+                backTarget.localPosition = new Vector3(0f, 0.02f, -0.18f);
+                backTarget.localRotation = Quaternion.Euler(-82f, 0f, 0f);
+                backTarget.localScale = Vector3.one;
+            }
+
+            var presentation = root.GetComponent<RemoteWeaponPresentation>();
+            if (presentation == null)
+            {
+                return;
+            }
+
+            var serialized = new SerializedObject(presentation);
+            SetSerializedReference(serialized, "backHolsterTarget", backTarget);
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(presentation);
+            EditorUtility.SetDirty(root);
         }
 
         private static void EnsureRemoteLeftHandIkBinder(GameObject root)

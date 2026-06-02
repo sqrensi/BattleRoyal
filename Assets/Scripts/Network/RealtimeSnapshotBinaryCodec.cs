@@ -270,6 +270,7 @@ namespace ShooterPrototype.Network
                     isCrouching = (flags2 & 4) != 0,
                     isSprinting = (flags2 & 8) != 0,
                     isAiming = (flags2 & 16) != 0,
+                    isHolstered = (flags2 & 32) != 0,
                     jumpState = jumpState,
                     sampleTick = sampleTick,
                     history = history

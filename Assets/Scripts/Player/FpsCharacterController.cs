@@ -21,6 +21,7 @@ namespace ShooterPrototype.Player
         [SerializeField] private float sprintMinForwardInput = 0.1f;
         [SerializeField] private float sideSpeedMultiplier = 0.85f;
         [SerializeField] private float backwardSpeedMultiplier = 0.75f;
+        [SerializeField] private float holsteredSpeedMultiplier = 1.12f;
         [SerializeField] private float crouchControllerHeight = 1f;
         [SerializeField] private float crouchDownSmoothTime = 0.18f;
         [SerializeField] private float crouchUpSmoothTime = 0.22f;
@@ -71,6 +72,7 @@ namespace ShooterPrototype.Player
         private float nextFootstepAt;
         private int footstepSequence;
         private PlayerAudioController audioController;
+        private PlayerWeaponHolsterController weaponHolster;
         [Header("Audio")]
         [SerializeField] private float footstepIntervalSlow = 0.8f;
         [SerializeField] private float footstepIntervalFast = 0.42f;
@@ -188,6 +190,7 @@ namespace ShooterPrototype.Player
                 playerCamera = GetComponentInChildren<Camera>();
             }
             audioController = GetComponent<PlayerAudioController>();
+            weaponHolster = GetComponent<PlayerWeaponHolsterController>();
 
             standingHeight = characterController != null ? characterController.height : 1.8f;
             standingCenterY = characterController != null ? characterController.center.y : standingHeight * 0.5f;
@@ -383,6 +386,12 @@ namespace ShooterPrototype.Player
             {
                 speedMultiplier = SprintSpeedMultiplier;
             }
+
+            if (weaponHolster != null && weaponHolster.IsHolstered)
+            {
+                speedMultiplier *= Mathf.Clamp(holsteredSpeedMultiplier, 1f, 1.5f);
+            }
+
             var velocity = moveDirection * (moveSpeed * speedMultiplier);
             velocity.y = verticalVelocity;
             characterController.Move(velocity * Time.deltaTime);

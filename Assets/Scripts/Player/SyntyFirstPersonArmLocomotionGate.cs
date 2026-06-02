@@ -11,6 +11,7 @@ namespace ShooterPrototype.Player
     public sealed class SyntyFirstPersonArmLocomotionGate : MonoBehaviour
     {
         public const int ArmsLocomotionLayerIndex = 1;
+        public const int ArmsIdleLayerIndex = 2;
 
         [SerializeField] private Animator animator;
         [SerializeField] private bool suppressArmLocomotionInFirstPerson = true;
@@ -70,7 +71,7 @@ namespace ShooterPrototype.Player
 
         private void ApplyAnimatorState()
         {
-            if (animator == null)
+            if (animator == null || IsRemoteThirdPersonAvatar())
             {
                 return;
             }
@@ -115,7 +116,7 @@ namespace ShooterPrototype.Player
 
         private bool ShouldFreezeSkeletonForFirstPersonView()
         {
-            if (!suppressArmLocomotionInFirstPerson)
+            if (!suppressArmLocomotionInFirstPerson || IsRemoteThirdPersonAvatar())
             {
                 return false;
             }
@@ -125,7 +126,12 @@ namespace ShooterPrototype.Player
                 viewPresentation = GetComponent<PlayerViewPresentation>();
             }
 
-            if (viewPresentation != null && !viewPresentation.IsLocalPlayerView)
+            if (viewPresentation == null)
+            {
+                return false;
+            }
+
+            if (!viewPresentation.IsLocalPlayerView)
             {
                 return false;
             }
@@ -141,6 +147,11 @@ namespace ShooterPrototype.Player
             }
 
             return armsPresenter == null || armsPresenter.HasFirstPersonArms;
+        }
+
+        private bool IsRemoteThirdPersonAvatar()
+        {
+            return GetComponent<RemoteThirdPersonPlayerBootstrap>() != null;
         }
     }
 }

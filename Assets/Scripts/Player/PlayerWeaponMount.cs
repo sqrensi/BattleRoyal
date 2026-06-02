@@ -151,6 +151,8 @@ namespace ShooterPrototype.Player
         private float crouchBlend;
         private float crouchBlendVelocity;
         private bool localReloading;
+        private bool localHolstered;
+        private bool holsterTransitionActive;
         private float wallAvoidBlend;
         private float wallAvoidBlendVelocity;
         private FpsCharacterController fpsController;
@@ -344,6 +346,21 @@ namespace ShooterPrototype.Player
             localReloading = reloading;
         }
 
+        public void SetLocalHolstered(bool holstered)
+        {
+            localHolstered = holstered;
+            if (holstered)
+            {
+                adsBlend = 0f;
+                adsBlendVelocity = 0f;
+            }
+        }
+
+        public void SetHolsterTransitionActive(bool active)
+        {
+            holsterTransitionActive = active;
+        }
+
         private void OnEnable()
         {
             if (GetComponent<RemoteThirdPersonPlayerBootstrap>() != null)
@@ -369,6 +386,16 @@ namespace ShooterPrototype.Player
             }
 
             if (handAttachedWeaponActive)
+            {
+                if (!useNetworkState)
+                {
+                    UpdateAdsCameraZoom();
+                }
+
+                return;
+            }
+
+            if (holsterTransitionActive)
             {
                 if (!useNetworkState)
                 {
@@ -413,7 +440,7 @@ namespace ShooterPrototype.Player
             if (enableAimDownSights && !useNetworkState)
             {
                 localAimHeld = ReadAimPressed();
-                var targetBlend = (localAimHeld && !localReloading && !localSprinting) ? 1f : 0f;
+                var targetBlend = (localAimHeld && !localReloading && !localHolstered && !localSprinting) ? 1f : 0f;
                 adsBlend = Mathf.SmoothDamp(
                     adsBlend,
                     targetBlend,

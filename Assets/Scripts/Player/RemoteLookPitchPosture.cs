@@ -45,6 +45,12 @@ namespace ShooterPrototype.Player
         private float crouchPitchVelocity;
         private float smoothedSprintPitch;
         private float sprintPitchVelocity;
+        private Quaternion hipsAnimatedBase = Quaternion.identity;
+        private readonly Quaternion[] spineAnimatedBases = new Quaternion[3];
+        private Quaternion clavicleLeftAnimatedBase = Quaternion.identity;
+        private Quaternion clavicleRightAnimatedBase = Quaternion.identity;
+        private Quaternion shoulderLeftAnimatedBase = Quaternion.identity;
+        private Quaternion shoulderRightAnimatedBase = Quaternion.identity;
 
         public float CurrentPostureLeanPitch => smoothedCrouchPitch + smoothedSprintPitch;
 
@@ -108,6 +114,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            CaptureAnimatedBaseRotations();
             ApplySpinePitch(totalPitch);
             ApplyArmPitch(totalPitch);
         }
@@ -162,12 +169,52 @@ namespace ShooterPrototype.Player
             return GetComponent<RemoteThirdPersonPlayerBootstrap>() != null;
         }
 
+        private void CaptureAnimatedBaseRotations()
+        {
+            if (hipsBone != null)
+            {
+                hipsAnimatedBase = hipsBone.localRotation;
+            }
+
+            if (spineBones != null)
+            {
+                for (var i = 0; i < spineBones.Length; i++)
+                {
+                    var bone = spineBones[i];
+                    if (bone != null && i < spineAnimatedBases.Length)
+                    {
+                        spineAnimatedBases[i] = bone.localRotation;
+                    }
+                }
+            }
+
+            if (clavicleLeft != null)
+            {
+                clavicleLeftAnimatedBase = clavicleLeft.localRotation;
+            }
+
+            if (clavicleRight != null)
+            {
+                clavicleRightAnimatedBase = clavicleRight.localRotation;
+            }
+
+            if (shoulderLeft != null)
+            {
+                shoulderLeftAnimatedBase = shoulderLeft.localRotation;
+            }
+
+            if (shoulderRight != null)
+            {
+                shoulderRightAnimatedBase = shoulderRight.localRotation;
+            }
+        }
+
         private void ApplySpinePitch(float totalPitch)
         {
             if (hipsBone != null && hipsPitchShare > 0.0001f)
             {
                 var hipsPitch = totalPitch * hipsPitchShare;
-                hipsBone.localRotation = hipsBone.localRotation * Quaternion.Euler(hipsPitch, 0f, 0f);
+                hipsBone.localRotation = hipsAnimatedBase * Quaternion.Euler(hipsPitch, 0f, 0f);
             }
 
             if (spineBones == null || spineWeights == null)
@@ -191,26 +238,27 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
-                bone.localRotation = bone.localRotation * Quaternion.Euler(pitch, 0f, 0f);
+                var animatedBase = i < spineAnimatedBases.Length ? spineAnimatedBases[i] : bone.localRotation;
+                bone.localRotation = animatedBase * Quaternion.Euler(pitch, 0f, 0f);
             }
         }
 
         private void ApplyArmPitch(float totalPitch)
         {
-            ApplyBonePitch(clavicleLeft, totalPitch * claviclePitchShare);
-            ApplyBonePitch(clavicleRight, totalPitch * claviclePitchShare);
-            ApplyBonePitch(shoulderLeft, totalPitch * leftShoulderPitchShare);
-            ApplyBonePitch(shoulderRight, totalPitch * rightShoulderPitchShare);
+            ApplyBonePitch(clavicleLeft, clavicleLeftAnimatedBase, totalPitch * claviclePitchShare);
+            ApplyBonePitch(clavicleRight, clavicleRightAnimatedBase, totalPitch * claviclePitchShare);
+            ApplyBonePitch(shoulderLeft, shoulderLeftAnimatedBase, totalPitch * leftShoulderPitchShare);
+            ApplyBonePitch(shoulderRight, shoulderRightAnimatedBase, totalPitch * rightShoulderPitchShare);
         }
 
-        private static void ApplyBonePitch(Transform bone, float pitch)
+        private static void ApplyBonePitch(Transform bone, Quaternion animatedBase, float pitch)
         {
             if (bone == null || Mathf.Abs(pitch) <= 0.01f)
             {
                 return;
             }
 
-            bone.localRotation = bone.localRotation * Quaternion.Euler(pitch, 0f, 0f);
+            bone.localRotation = animatedBase * Quaternion.Euler(pitch, 0f, 0f);
         }
 
         private void ResolveBones()

@@ -681,6 +681,7 @@ function handleWsPose(socket, message) {
   const deathFallDirZ = normalizeNumber(message.deathFallDirZ, 0);
   const animSpeed = Math.max(0, Math.min(1.25, normalizeNumber(message.animSpeed, 0)));
   const isAiming = !!message.isAiming;
+  const isHolstered = !!message.isHolstered;
   const isGrounded = !!message.isGrounded;
   const jumpState = Math.max(0, Math.min(2, normalizeInt64(message.jumpState, isGrounded ? 0 : 2)));
   const rawAnimPhase = normalizeNumber(message.animPhase, 0);
@@ -779,6 +780,7 @@ function handleWsPose(socket, message) {
   presence.deathFallDirZ = deathFallDirZ;
   presence.animSpeed = animSpeed;
   presence.isAiming = isAiming;
+  presence.isHolstered = isHolstered;
   presence.isGrounded = isGrounded;
   presence.jumpState = jumpState;
   presence.animPhase = animPhase;
@@ -944,6 +946,7 @@ function createDefaultPresence(sampleTick, sampleTimeMs) {
     velocityZ: 0,
     animSpeed: 0,
     isAiming: false,
+    isHolstered: false,
     isGrounded: true,
     jumpState: 0,
     animPhase: 0,
@@ -1396,6 +1399,7 @@ function encodeSnapshotBinary(payload) {
       if (player.isCrouching) flags2 |= 4;
       if (player.isSprinting) flags2 |= 8;
       if (player.isAiming) flags2 |= 16;
+      if (player.isHolstered) flags2 |= 32;
       body.writeUInt16LE(flags2, 32);
       body.writeUInt8(Math.max(0, Math.min(2, player.jumpState || 0)), 34);
       chunks.push(body);
@@ -1598,6 +1602,7 @@ function collectRealtimePlayersForMatch(matchId, ownerTicketId) {
       deathFallDirZ: Number.isFinite(ticket.presence.deathFallDirZ) ? ticket.presence.deathFallDirZ : 0,
       animSpeed: ticket.presence.animSpeed || 0,
       isAiming: !!ticket.presence.isAiming,
+      isHolstered: !!ticket.presence.isHolstered,
       isGrounded: ticket.presence.isGrounded !== false,
       jumpState: Number.isFinite(ticket.presence.jumpState) ? ticket.presence.jumpState : 0,
       animPhase: Number.isFinite(ticket.presence.animPhase) ? ticket.presence.animPhase : 0,

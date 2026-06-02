@@ -14,11 +14,18 @@ namespace ShooterPrototype.Player
         private PlayerViewPresentation viewPresentation;
         private SyntyCharacterVisualBinder syntyBinder;
         private SyntyFirstPersonArmsPresenter armsPresenter;
+        private bool holsteredFirstPersonPresentation;
 
         public void Configure(GameObject firstPersonView, GameObject thirdPersonBody)
         {
             firstPersonViewRoot = firstPersonView;
             thirdPersonBodyRoot = thirdPersonBody;
+            ApplyViewMode();
+        }
+
+        public void SetHolsteredFirstPersonPresentation(bool holstered)
+        {
+            holsteredFirstPersonPresentation = holstered;
             ApplyViewMode();
         }
 
@@ -59,7 +66,14 @@ namespace ShooterPrototype.Player
             }
 
             ApplyThirdPersonRendererVisibility(isLocal);
-            armsPresenter?.ApplyFirstPersonVisibility(isLocal);
+            if (holsteredFirstPersonPresentation && isLocal)
+            {
+                armsPresenter?.SetHolsteredArmsPresentation(true);
+            }
+            else
+            {
+                armsPresenter?.ApplyFirstPersonVisibility(isLocal);
+            }
         }
 
         private void ApplyThirdPersonRendererVisibility(bool localFirstPerson)

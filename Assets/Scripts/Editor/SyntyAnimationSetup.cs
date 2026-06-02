@@ -13,6 +13,7 @@ namespace ShooterPrototype.EditorTools
     {
         private const string ControllerPath = "Assets/Prefabs/Player/SyntyLocomotion.controller";
         private const string RemoteControllerPath = "Assets/Prefabs/Player/SyntyRemoteLocomotion.controller";
+        private const string HolsteredControllerPath = "Assets/Prefabs/Player/SyntyHolsteredLocomotion.controller";
         private const string LegsOnlyMaskPath = "Assets/Prefabs/Player/SyntyLocomotionLegsOnly.mask";
         private const string TorsoOnlyMaskPath = "Assets/Prefabs/Player/SyntyLocomotionTorsoOnly.mask";
         private const string ArmsOnlyMaskPath = "Assets/Prefabs/Player/SyntyLocomotionArmsOnly.mask";
@@ -236,7 +237,7 @@ namespace ShooterPrototype.EditorTools
             ConfigurePlayerPrefabIfExists(PlayerRemotePrefabPath);
             TryAssignSpawnPrefab();
             AssetDatabase.SaveAssets();
-            Debug.Log("[SyntyAnimationSetup] Local controller rebuilt from Blink; remote controller rebuilt from Opsive (legs locomotion + torso/arms idle).");
+            Debug.Log("[SyntyAnimationSetup] Local controller rebuilt from Blink; remote from Opsive.");
         }
 
         private static void ConfigurePlayerPrefabIfExists(string playerPrefabPath)
@@ -279,7 +280,7 @@ namespace ShooterPrototype.EditorTools
 
             EnsureParameters(controller);
             BuildRemoteLocomotionLayer(controller, clips);
-            ApplyLegsOnlyAvatarMasks(controller, clips);
+            ApplyLegsOnlyAvatarMasks(controller, clips, includeRemoteHolsterArmsLayer: true);
             EditorUtility.SetDirty(controller);
             AssetDatabase.SaveAssets();
         }
@@ -287,6 +288,51 @@ namespace ShooterPrototype.EditorTools
         internal static RuntimeAnimatorController LoadRemoteAnimatorControllerAsset()
         {
             return AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(RemoteControllerPath);
+        }
+
+        internal static RuntimeAnimatorController LoadHolsteredAnimatorControllerAsset()
+        {
+            return AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(HolsteredControllerPath);
+        }
+
+        public static void CreateOrUpdateHolsteredAnimatorController(LocomotionClips clips)
+        {
+            EnsureFolder("Assets/Prefabs/Player");
+
+            var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(HolsteredControllerPath);
+            if (controller == null)
+            {
+                controller = AnimatorController.CreateAnimatorControllerAtPath(HolsteredControllerPath);
+            }
+
+            EnsureParameters(controller);
+            BuildRemoteLocomotionLayer(controller, clips);
+            EnsureRemoteLocomotionAvatarMaskAssets();
+
+            var upperBodyMask = AssetDatabase.LoadAssetAtPath<AvatarMask>(UpperBodyOnlyMaskPath);
+            if (upperBodyMask == null)
+            {
+                Debug.LogWarning("[SyntyAnimationSetup] Upper-body mask missing; holstered controller not updated.");
+                return;
+            }
+
+            var layers = controller.layers;
+            if (layers.Length == 0)
+            {
+                Debug.LogWarning("[SyntyAnimationSetup] Holstered controller has no layers.");
+                return;
+            }
+
+            layers[0].name = "Upper Body Locomotion";
+            layers[0].avatarMask = upperBodyMask;
+            layers[0].defaultWeight = 1f;
+            layers[0].blendingMode = AnimatorLayerBlendingMode.Override;
+            layers[0].syncedLayerIndex = -1;
+            layers[0].iKPass = false;
+            controller.layers = new[] { layers[0] };
+
+            EditorUtility.SetDirty(controller);
+            AssetDatabase.SaveAssets();
         }
 
         private static LocomotionClips FindRemoteLocomotionClips()
@@ -527,6 +573,12 @@ namespace ShooterPrototype.EditorTools
             armGateSerialized.ApplyModifiedPropertiesWithoutUndo();
             armLocomotionGate.SetDisableSkeletonAnimatorInFirstPerson(true);
 
+            var holsterController = playerRoot.GetComponent<PlayerWeaponHolsterController>();
+            if (holsterController == null)
+            {
+                playerRoot.AddComponent<PlayerWeaponHolsterController>();
+            }
+
             var handAttachedWeaponMount = playerRoot.GetComponent<SyntyHandAttachedWeaponMount>();
             if (handAttachedWeaponMount == null)
             {
@@ -565,7 +617,11 @@ namespace ShooterPrototype.EditorTools
             armsPresenterSerialized.FindProperty("armsCoverage").enumValueIndex = (int)armsCoverage;
             armsPresenterSerialized.ApplyModifiedPropertiesWithoutUndo();
 
-            SyntySplitBodyViewSetup.WireSplitBodyView(playerRoot);
+            if (playerRoot.transform.Find("CameraPivot") != null &&
+                playerRoot.transform.Find("ThirdPersonBody") != null)
+            {
+                SyntySplitBodyViewSetup.WireSplitBodyView(playerRoot);
+            }
 
             armsPresenter.ResetForRebuild();
             armsPresenter.Configure(
@@ -1399,7 +1455,10 @@ namespace ShooterPrototype.EditorTools
             }
         }
 
-        private static void ApplyLegsOnlyAvatarMasks(AnimatorController controller, LocomotionClips clips)
+        private static void ApplyLegsOnlyAvatarMasks(
+            AnimatorController controller,
+            LocomotionClips clips,
+            bool includeRemoteHolsterArmsLayer = false)
         {
             EnsureRemoteLocomotionAvatarMaskAssets();
 
@@ -1412,18 +1471,31 @@ namespace ShooterPrototype.EditorTools
                 return;
             }
 
-            EnsureAnimatorLayerCount(controller, 3);
+            var layerCount = includeRemoteHolsterArmsLayer ? 4 : 3;
+            EnsureAnimatorLayerCount(controller, layerCount);
 
             var layers = controller.layers;
             layers[0].name = "Legs Locomotion";
             layers[0].avatarMask = legsMask;
             layers[0].defaultWeight = 1f;
             layers[0].blendingMode = AnimatorLayerBlendingMode.Override;
+            layers[0].syncedLayerIndex = -1;
 
             var torsoClip = clips.Idle ?? clips.Walk ?? clips.Run;
+            var armsIdleMask = AssetDatabase.LoadAssetAtPath<AvatarMask>(RemoteArmsIdleMaskPath) ?? armsMask;
             var armsClip = clips.ArmsIdle ?? LoadArmsIdleClip() ?? torsoClip;
             BuildTorsoOverrideLayer(controller, ref layers, 1, torsoMask, torsoClip, clips.CrouchIdle, "Torso");
-            BuildOverrideIdleLayer(controller, ref layers, 2, armsMask, armsClip, "Arms Idle");
+            BuildOverrideIdleLayer(controller, ref layers, 2, armsIdleMask, armsClip, "Arms Idle");
+
+            if (includeRemoteHolsterArmsLayer && layers.Length > 3)
+            {
+                layers[3].name = "Arms Locomotion";
+                layers[3].avatarMask = armsMask;
+                layers[3].defaultWeight = 0f;
+                layers[3].blendingMode = AnimatorLayerBlendingMode.Override;
+                layers[3].syncedLayerIndex = 0;
+                layers[3].iKPass = false;
+            }
 
             controller.layers = layers;
         }
