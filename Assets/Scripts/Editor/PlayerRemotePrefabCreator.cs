@@ -156,7 +156,6 @@ namespace ShooterPrototype.EditorTools
             }
 
             var attachTarget = RemoteWeaponPresentation.EnsureAttachTargetOnHand(handBone);
-            ClearWeaponModelsUnder(attachTarget);
             PlayerWeaponMount.RemoveStrayWeaponModels(root.transform, attachTarget);
 
             var sourceMount = LoadSourceWeaponMount();
@@ -248,6 +247,9 @@ namespace ShooterPrototype.EditorTools
                 binder = root.AddComponent<RemoteLeftHandIkBinder>();
             }
 
+            var serialized = new SerializedObject(binder);
+            SetSerializedReference(serialized, "leftGripTarget", null);
+            serialized.ApplyModifiedPropertiesWithoutUndo();
             binder.enabled = true;
         }
 
@@ -275,9 +277,15 @@ namespace ShooterPrototype.EditorTools
             }
 
             var serialized = new SerializedObject(hitboxRig);
-            SetSerializedProperty(serialized, "autoBuildOnAwake", true);
+            SetSerializedProperty(serialized, "autoBuildOnAwake", false);
+            SetSerializedProperty(serialized, "preserveBakedHitboxesAtRuntime", true);
             SetSerializedProperty(serialized, "enableArmHitboxes", false);
             SetSerializedReference(serialized, "syntyRoot", syntyVisual);
+            var hitboxLayer = LayerMask.NameToLayer(PlayerHitboxLayers.HitboxLayerName);
+            if (hitboxLayer >= 0)
+            {
+                SetSerializedProperty(serialized, "hitboxLayer", hitboxLayer);
+            }
             SetSerializedProperty(serialized, "headRadius", 0.13f);
             SetSerializedProperty(serialized, "headCenterOffset", 0.045f);
             SetSerializedProperty(serialized, "neckRadius", 0.06f);
@@ -293,7 +301,10 @@ namespace ShooterPrototype.EditorTools
             SetSerializedProperty(serialized, "footRadius", 0.07f);
             SetSerializedProperty(serialized, "footHeight", 0.18f);
             serialized.ApplyModifiedPropertiesWithoutUndo();
-            hitboxRig.BuildOrRefreshHitboxes();
+            hitboxRig.BuildOrRefreshHitboxes(forceRebuild: true);
+            Debug.Log(
+                $"[PlayerRemotePrefabCreator] Baked bone hitboxes on '{root.name}'. " +
+                $"Active={hitboxRig.HasActiveHitboxes()}");
         }
 
         private static void RemoveLocalOnlyComponents(GameObject root)
@@ -354,6 +365,15 @@ namespace ShooterPrototype.EditorTools
             if (property != null)
             {
                 property.floatValue = value;
+            }
+        }
+
+        private static void SetSerializedProperty(SerializedObject serialized, string propertyName, int value)
+        {
+            var property = serialized.FindProperty(propertyName);
+            if (property != null)
+            {
+                property.intValue = value;
             }
         }
 

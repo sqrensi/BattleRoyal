@@ -672,7 +672,7 @@ namespace ShooterPrototype.Player
                 for (var i = 0; i < all.Length; i++)
                 {
                     var current = all[i];
-                    if (current != null && string.Equals(current.name, boneName, System.StringComparison.Ordinal))
+                    if (current != null && IsBoneNameMatch(current.name, boneName))
                     {
                         return current;
                     }
@@ -680,6 +680,46 @@ namespace ShooterPrototype.Player
             }
 
             return null;
+        }
+
+        private static bool IsBoneNameMatch(string actualName, string requestedName)
+        {
+            if (string.IsNullOrWhiteSpace(actualName) || string.IsNullOrWhiteSpace(requestedName))
+            {
+                return false;
+            }
+
+            if (string.Equals(actualName, requestedName, System.StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var actualCore = ExtractBoneCoreName(actualName);
+            var requestedCore = ExtractBoneCoreName(requestedName);
+            if (string.Equals(actualCore, requestedCore, System.StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // Support rigs like "mixamorig1:LeftHand" when code asks for "mixamorig:LeftHand".
+            return actualName.EndsWith(":" + requestedCore, System.StringComparison.OrdinalIgnoreCase) ||
+                   requestedName.EndsWith(":" + actualCore, System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ExtractBoneCoreName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return string.Empty;
+            }
+
+            var separatorIndex = name.LastIndexOf(':');
+            if (separatorIndex >= 0 && separatorIndex < name.Length - 1)
+            {
+                return name.Substring(separatorIndex + 1);
+            }
+
+            return name;
         }
 
         private static void SolveTwoBoneIk(

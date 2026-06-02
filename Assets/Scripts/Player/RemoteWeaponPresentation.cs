@@ -4,8 +4,9 @@ using UnityEngine;
 namespace ShooterPrototype.Player
 {
     /// <summary>
-    /// Third-person weapon for remote players. Keeps prefab-baked WeaponModel on RemoteWeaponTarget.
-    /// Tune RemoteWeaponTarget local pose on the remote prefab to adjust grip.
+    /// Third-person weapon for remote players. Uses WeaponModel already parented to
+    /// RemoteWeaponTarget when present; otherwise spawns from weaponPrefab once.
+    /// Never modifies weapon local transform after mount (except optional grip align + holster).
     /// </summary>
     [DefaultExecutionOrder(450)]
     public sealed class RemoteWeaponPresentation : MonoBehaviour
@@ -16,10 +17,8 @@ namespace ShooterPrototype.Player
         [SerializeField] private string defaultWeaponPrefabPath = "Assets/Prefabs/AK-47/rifle_001.prefab";
         [SerializeField] private string attachTargetName = "RemoteWeaponTarget";
         [SerializeField] private string rightHandBoneName = "Hand_R";
-        [SerializeField] private Vector3 weaponLocalScale = new Vector3(0.35476f, 0.35476f, 0.35476f);
-
         [Header("Grip Alignment")]
-        [SerializeField] private bool alignGripToAttachTarget = true;
+        [SerializeField] private bool alignGripToAttachTarget;
         [SerializeField] private string gripTargetName = "RemoteRightHandTarget";
         [SerializeField] private string gripFallbackName = "RightHandTarget";
         [SerializeField] private string leftHandTargetName = "RemoteLeftHandTarget";
@@ -62,10 +61,10 @@ namespace ShooterPrototype.Player
         private RemoteLookPitchPosture lookPitchPosture;
         private RemoteAnimatorHolsterPresentation holsterAnimation;
         private bool networkHolstered;
-        private bool hasStoredHandPose;
-        private Vector3 storedHandLocalPosition;
-        private Quaternion storedHandLocalRotation;
-        private Vector3 storedHandLocalScale;
+        private bool hasHandPoseSnapshot;
+        private Vector3 handPoseLocalPosition;
+        private Quaternion handPoseLocalRotation;
+        private Vector3 handPoseLocalScale;
 
         public Transform WeaponRoot => weaponRoot;
         public Transform AttachTarget => attachTarget;
@@ -122,11 +121,11 @@ namespace ShooterPrototype.Player
 
         private void OnEnable()
         {
-            EnsureAttached();
-        }
+            if (GetComponent<RemoteThirdPersonPlayerBootstrap>() == null)
+            {
+                return;
+            }
 
-        private void Start()
-        {
             EnsureAttached();
         }
 
@@ -144,6 +143,17 @@ namespace ShooterPrototype.Player
             }
 
             EnsureAttachTarget(body);
+        }
+
+        public void InvalidateAttachTarget()
+        {
+            attachTarget = null;
+            hasBaseAttachPose = false;
+            if (!IsWeaponRootAlive())
+            {
+                weaponRoot = null;
+                hasHandPoseSnapshot = false;
+            }
         }
 
         public void EnsureAttached()
@@ -166,19 +176,42 @@ namespace ShooterPrototype.Player
             if (!IsWeaponRootAlive())
             {
                 weaponRoot = null;
+                hasHandPoseSnapshot = false;
+            }
+
+            if (weaponPrefab == null)
+            {
+                weaponPrefab = LoadDefaultWeaponPrefab();
             }
 
             if (weaponRoot == null)
             {
-                weaponRoot = FindExistingWeaponModel(transform);
+                weaponRoot = FindWeaponModelUnderAttachTarget();
+                if (weaponRoot == null && weaponPrefab != null)
+                {
+                    SpawnWeaponOnTarget();
+                }
+                else if (weaponRoot == null)
+                {
+                    weaponRoot = FindExistingWeaponModel(transform);
+                }
             }
 
             if (weaponRoot != null)
             {
+                if (!hasHandPoseSnapshot)
+                {
+                    SnapshotHandPoseFromWeapon();
+                }
+
                 PreservePrefabWeaponHierarchy();
                 if (networkHolstered)
                 {
                     AttachWeaponToBack();
+                }
+                else if (weaponRoot.parent != attachTarget)
+                {
+                    AttachWeaponToHand();
                 }
                 else
                 {
@@ -190,16 +223,8 @@ namespace ShooterPrototype.Player
 
             if (weaponPrefab == null)
             {
-                weaponPrefab = LoadDefaultWeaponPrefab();
-            }
-
-            if (weaponPrefab == null)
-            {
                 Debug.LogWarning("[RemoteWeaponPresentation] weaponPrefab is not assigned on remote player.");
-                return;
             }
-
-            SpawnWeaponOnTarget();
         }
 
         private void PreservePrefabWeaponHierarchy()
@@ -224,18 +249,13 @@ namespace ShooterPrototype.Player
             var instance = Instantiate(weaponPrefab, attachTarget);
             instance.name = "WeaponModel";
             weaponRoot = instance.transform;
-            weaponRoot.localScale = weaponLocalScale;
 
             if (alignGripToAttachTarget)
             {
                 AlignWeaponGripToTarget();
             }
-            else
-            {
-                weaponRoot.localPosition = Vector3.zero;
-                weaponRoot.localRotation = Quaternion.identity;
-            }
 
+            SnapshotHandPoseFromWeapon();
             EnsureHierarchyActive(weaponRoot);
             SetWeaponRenderersEnabled(true);
             WireRemoteLeftHandIk();
@@ -249,10 +269,18 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            if (backHolsterTarget != null && weaponRoot.parent == backHolsterTarget)
+            {
+                SetWeaponRenderersEnabled(true);
+                var existingBinder = GetComponent<RemoteLeftHandIkBinder>();
+                existingBinder?.SetHandIkEnabled(false);
+                return;
+            }
+
             if (attachTarget != null && weaponRoot.parent == attachTarget)
             {
+                SnapshotHandPoseFromWeapon();
                 ResetAttachTargetBasePose();
-                CacheHandWeaponPose();
             }
 
             if (backHolsterTarget == null)
@@ -264,13 +292,12 @@ namespace ShooterPrototype.Player
             weaponRoot.SetParent(backHolsterTarget, false);
             weaponRoot.localPosition = Vector3.zero;
             weaponRoot.localRotation = Quaternion.identity;
-            weaponRoot.localScale = weaponLocalScale;
             SetWeaponRenderersEnabled(true);
 
             var handBinder = GetComponent<RemoteLeftHandIkBinder>();
             if (handBinder != null)
             {
-                handBinder.enabled = false;
+                handBinder.SetHandIkEnabled(false);
             }
         }
 
@@ -283,26 +310,30 @@ namespace ShooterPrototype.Player
             }
 
             ResetAttachTargetBasePose();
+
+            if (weaponRoot.parent == attachTarget)
+            {
+                FinishHandAttachment();
+                return;
+            }
+
+            var returningFromHolster = backHolsterTarget != null && weaponRoot.parent == backHolsterTarget;
             weaponRoot.SetParent(attachTarget, false);
 
             if (alignGripToAttachTarget)
             {
                 AlignWeaponGripToTarget();
             }
-            else if (hasStoredHandPose)
+            else if (returningFromHolster && hasHandPoseSnapshot)
             {
-                weaponRoot.localPosition = storedHandLocalPosition;
-                weaponRoot.localRotation = storedHandLocalRotation;
-                weaponRoot.localScale = storedHandLocalScale;
-            }
-            else
-            {
-                weaponRoot.localPosition = Vector3.zero;
-                weaponRoot.localRotation = Quaternion.identity;
-                weaponRoot.localScale = weaponLocalScale;
+                RestoreHandPoseSnapshot();
             }
 
-            CacheHandWeaponPose();
+            FinishHandAttachment();
+        }
+
+        private void FinishHandAttachment()
+        {
             SetWeaponRenderersEnabled(true);
             WireRemoteLeftHandIk();
             ApplyAttachTargetLookPitchTilt();
@@ -326,17 +357,49 @@ namespace ShooterPrototype.Player
             SnapAttachPitchSmoothers();
         }
 
-        private void CacheHandWeaponPose()
+        private void SnapshotHandPoseFromWeapon()
         {
-            if (weaponRoot == null || attachTarget == null || weaponRoot.parent != attachTarget)
+            if (weaponRoot == null)
             {
                 return;
             }
 
-            storedHandLocalPosition = weaponRoot.localPosition;
-            storedHandLocalRotation = weaponRoot.localRotation;
-            storedHandLocalScale = weaponRoot.localScale;
-            hasStoredHandPose = true;
+            handPoseLocalPosition = weaponRoot.localPosition;
+            handPoseLocalRotation = weaponRoot.localRotation;
+            handPoseLocalScale = weaponRoot.localScale;
+            hasHandPoseSnapshot = true;
+        }
+
+        private void RestoreHandPoseSnapshot()
+        {
+            if (weaponRoot == null || !hasHandPoseSnapshot)
+            {
+                return;
+            }
+
+            weaponRoot.localPosition = handPoseLocalPosition;
+            weaponRoot.localRotation = handPoseLocalRotation;
+            weaponRoot.localScale = handPoseLocalScale;
+        }
+
+        private Transform FindWeaponModelUnderAttachTarget()
+        {
+            if (attachTarget == null)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < attachTarget.childCount; i++)
+            {
+                var child = attachTarget.GetChild(i);
+                if (child != null &&
+                    string.Equals(child.name, "WeaponModel", StringComparison.Ordinal))
+                {
+                    return child;
+                }
+            }
+
+            return null;
         }
 
         private RemoteAnimatorHolsterPresentation ResolveHolsterAnimation()
@@ -480,8 +543,8 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            baseAttachLocalPosition = defaultAttachLocalPosition;
-            baseAttachLocalRotation = Quaternion.Euler(defaultAttachLocalEuler);
+            baseAttachLocalPosition = attachTarget.localPosition;
+            baseAttachLocalRotation = attachTarget.localRotation;
             hasBaseAttachPose = true;
         }
 
@@ -593,7 +656,12 @@ namespace ShooterPrototype.Player
                 return null;
             }
 
-            var handBone = FindBone(syntyVisual, rightHandBoneName, "mixamorig:RightHand");
+            var handBone = FindBone(
+                syntyVisual,
+                rightHandBoneName,
+                "mixamorig1:RightHand",
+                "mixamorig:RightHand",
+                "RightHand");
             if (handBone == null)
             {
                 return null;
@@ -661,7 +729,7 @@ namespace ShooterPrototype.Player
             }
 
             handBinder.Configure(syntyVisual, leftGrip);
-            handBinder.enabled = true;
+            handBinder.SetHandIkEnabled(!networkHolstered);
         }
 
         private void SetWeaponRenderersEnabled(bool enabled)
@@ -722,7 +790,7 @@ namespace ShooterPrototype.Player
                 {
                     var current = all[i];
                     if (current == null ||
-                        !string.Equals(current.name, targetName, StringComparison.OrdinalIgnoreCase))
+                        !IsBoneNameMatch(current.name, targetName))
                     {
                         continue;
                     }
@@ -736,6 +804,45 @@ namespace ShooterPrototype.Player
             }
 
             return targetWithAttachPoint != null ? targetWithAttachPoint : fallback;
+        }
+
+        private static bool IsBoneNameMatch(string actualName, string requestedName)
+        {
+            if (string.IsNullOrWhiteSpace(actualName) || string.IsNullOrWhiteSpace(requestedName))
+            {
+                return false;
+            }
+
+            if (string.Equals(actualName, requestedName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var actualCore = ExtractBoneCoreName(actualName);
+            var requestedCore = ExtractBoneCoreName(requestedName);
+            if (string.Equals(actualCore, requestedCore, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return actualName.EndsWith(":" + requestedCore, StringComparison.OrdinalIgnoreCase) ||
+                   requestedName.EndsWith(":" + actualCore, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ExtractBoneCoreName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var separator = value.LastIndexOf(':');
+            if (separator >= 0 && separator < value.Length - 1)
+            {
+                return value.Substring(separator + 1);
+            }
+
+            return value;
         }
 
         private static Transform FindChildRecursive(Transform root, string childName)

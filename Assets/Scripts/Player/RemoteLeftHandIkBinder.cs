@@ -7,7 +7,7 @@ namespace ShooterPrototype.Player
     /// <summary>
     /// Left-hand IK for remote third-person players only. Keeps FP hand binding untouched.
     /// </summary>
-    [DefaultExecutionOrder(620)]
+    [DefaultExecutionOrder(920)]
     public sealed class RemoteLeftHandIkBinder : MonoBehaviour
     {
         [Header("Bones")]
@@ -27,21 +27,31 @@ namespace ShooterPrototype.Player
         [SerializeField] private bool rotateShoulder = true;
         [SerializeField] private int positionSolveIterations = 6;
         [SerializeField] private float maxReachRotationWeight = 0.05f;
+        [SerializeField] private bool applyIkBeforeRender = false;
 
         private RemoteWeaponPresentation weaponPresentation;
         private bool hasValidatedArmChain;
         private bool hasBindSegmentLengths;
+        private int lastIkAppliedFrame = -1;
         private readonly List<Transform> ikChain = new List<Transform>(4);
         private readonly float[] segmentLengths = new float[3];
 
         public void Configure(Transform syntyVisualRoot, Transform leftTarget)
         {
             leftGripTarget = leftTarget;
-            enabled = leftTarget != null;
 
             if (syntyVisualRoot != null)
             {
                 ConfigureFromVisualRoot(syntyVisualRoot);
+            }
+        }
+
+        public void SetHandIkEnabled(bool enabled)
+        {
+            this.enabled = enabled;
+            if (!enabled)
+            {
+                leftGripTarget = null;
             }
         }
 
@@ -52,10 +62,10 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            facingRoot = facingRoot != null
-                ? facingRoot
-                : FindBone(syntyRoot, "Hips", "Spine", "mixamorig:Hips") ?? syntyRoot;
-
+            facingRoot = FindBestBone(syntyRoot, "mixamorig1:Hips", "mixamorig:Hips", "Hips", "Spine")
+                ?? syntyRoot;
+            hasValidatedArmChain = false;
+            hasBindSegmentLengths = false;
             ResolveArmChainFromSyntyRoot(syntyRoot);
             RebuildIkChain();
             CacheSegmentLengths(forceRecache: true);
@@ -67,6 +77,20 @@ namespace ShooterPrototype.Player
             weaponPresentation = GetComponent<RemoteWeaponPresentation>();
         }
 
+        private void OnEnable()
+        {
+            Application.onBeforeRender -= HandleBeforeRender;
+            if (applyIkBeforeRender)
+            {
+                Application.onBeforeRender += HandleBeforeRender;
+            }
+        }
+
+        private void OnDisable()
+        {
+            Application.onBeforeRender -= HandleBeforeRender;
+        }
+
         private void LateUpdate()
         {
             if (GetComponent<RemoteThirdPersonPlayerBootstrap>() == null)
@@ -74,12 +98,48 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            ApplyLeftHandIkIfNeeded();
+        }
+
+        private void HandleBeforeRender()
+        {
+            if (!applyIkBeforeRender)
+            {
+                return;
+            }
+
+            ApplyLeftHandIkIfNeeded();
+        }
+
+        private void ApplyLeftHandIkIfNeeded()
+        {
+            if (GetComponent<RemoteThirdPersonPlayerBootstrap>() == null)
+            {
+                return;
+            }
+
+            if (Time.frameCount == lastIkAppliedFrame)
+            {
+                return;
+            }
+
+            lastIkAppliedFrame = Time.frameCount;
             ApplyLeftHandIk();
         }
 
         private void ApplyLeftHandIk()
         {
             if (handIkWeight <= 0.0001f)
+            {
+                return;
+            }
+
+            if (weaponPresentation == null)
+            {
+                weaponPresentation = GetComponent<RemoteWeaponPresentation>();
+            }
+
+            if (weaponPresentation != null && weaponPresentation.IsHolstered)
             {
                 return;
             }
@@ -273,7 +333,7 @@ namespace ShooterPrototype.Player
             var projectedElbow = rootPos + Vector3.ProjectOnPlane(elbowOffset, planeNormal);
             if ((projectedElbow - rootPos).sqrMagnitude > 0.0001f)
             {
-                var desiredOffset = (poleHint - rootPos);
+                var desiredOffset = poleHint - rootPos;
                 desiredOffset = Vector3.ProjectOnPlane(desiredOffset, rootToTarget.normalized);
                 if (desiredOffset.sqrMagnitude > 0.0001f)
                 {
@@ -329,6 +389,7 @@ namespace ShooterPrototype.Player
         {
             if (hasValidatedArmChain &&
                 leftShoulder != null &&
+                AreBonesAlive(leftShoulder, leftUpperArm, leftLowerArm, leftHand) &&
                 IsValidArmChain(leftUpperArm, leftLowerArm, leftHand))
             {
                 return;
@@ -344,6 +405,20 @@ namespace ShooterPrototype.Player
             ResolveArmChainFromSyntyRoot(syntyVisual);
             hasValidatedArmChain = leftShoulder != null &&
                                    IsValidArmChain(leftUpperArm, leftLowerArm, leftHand);
+        }
+
+        private static bool AreBonesAlive(params Transform[] bones)
+        {
+            for (var i = 0; i < bones.Length; i++)
+            {
+                var bone = bones[i];
+                if (bone == null || !bone.gameObject.scene.IsValid())
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private void RebuildIkChain()
@@ -408,21 +483,46 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            if (string.Equals(upper.name, "UpperArm_L", StringComparison.Ordinal) ||
-                string.Equals(upper.name, "LowerArm_L", StringComparison.Ordinal))
+            if (IsBoneNameMatch(upper.name, "UpperArm_L") ||
+                IsBoneNameMatch(upper.name, "LowerArm_L") ||
+                IsBoneNameMatch(upper.name, "LeftArm") ||
+                IsBoneNameMatch(upper.name, "LeftForeArm"))
             {
                 return true;
             }
 
-            return !string.Equals(upper.name, "Shoulder_L", StringComparison.Ordinal) &&
-                   !string.Equals(upper.name, "Clavicle_L", StringComparison.Ordinal);
+            return !IsBoneNameMatch(upper.name, "Shoulder_L") &&
+                   !IsBoneNameMatch(upper.name, "Clavicle_L") &&
+                   !IsBoneNameMatch(upper.name, "LeftShoulder");
         }
 
         private void ResolveArmChainFromSyntyRoot(Transform syntyRoot)
         {
-            var hand = FindBone(syntyRoot, "Hand_L", "mixamorig:LeftHand");
-            var lower = FindBone(syntyRoot, "LowerArm_L", "Elbow_L", "mixamorig:LeftForeArm");
-            var upper = FindBone(syntyRoot, "UpperArm_L", "mixamorig:LeftArm");
+            leftHand = null;
+            leftLowerArm = null;
+            leftUpperArm = null;
+            leftShoulder = null;
+
+            var hand = FindHandBoneFromBodyMesh(syntyRoot)
+                ?? FindBestBone(
+                    syntyRoot,
+                    "mixamorig1:LeftHand",
+                    "mixamorig:LeftHand",
+                    "LeftHand",
+                    "Hand_L");
+            var lower = FindBestBone(
+                syntyRoot,
+                "mixamorig1:LeftForeArm",
+                "mixamorig:LeftForeArm",
+                "LeftForeArm",
+                "LowerArm_L",
+                "Elbow_L");
+            var upper = FindBestBone(
+                syntyRoot,
+                "mixamorig1:LeftArm",
+                "mixamorig:LeftArm",
+                "LeftArm",
+                "UpperArm_L");
 
             if (hand == null)
             {
@@ -439,7 +539,7 @@ namespace ShooterPrototype.Player
                 upper = lower.parent;
             }
 
-            var explicitUpperArm = FindBone(syntyRoot, "UpperArm_L");
+            var explicitUpperArm = FindBestBone(syntyRoot, "UpperArm_L", "mixamorig1:LeftArm", "mixamorig:LeftArm", "LeftArm");
             if (explicitUpperArm != null &&
                 lower != null &&
                 (lower.parent == explicitUpperArm || lower.IsChildOf(explicitUpperArm)))
@@ -458,10 +558,16 @@ namespace ShooterPrototype.Player
             }
 
             if (upper != null &&
-                (string.Equals(upper.name, "Shoulder_L", StringComparison.Ordinal) ||
-                 string.Equals(upper.name, "Clavicle_L", StringComparison.Ordinal)))
+                (IsBoneNameMatch(upper.name, "Shoulder_L") ||
+                 IsBoneNameMatch(upper.name, "Clavicle_L") ||
+                 IsBoneNameMatch(upper.name, "LeftShoulder")))
             {
-                var upperArm = FindBone(syntyRoot, "UpperArm_L");
+                var upperArm = FindBestBone(
+                    syntyRoot,
+                    "UpperArm_L",
+                    "mixamorig1:LeftArm",
+                    "mixamorig:LeftArm",
+                    "LeftArm");
                 if (upperArm != null && lower != null && lower.IsChildOf(upperArm))
                 {
                     upper = upperArm;
@@ -471,7 +577,121 @@ namespace ShooterPrototype.Player
             leftHand = hand;
             leftLowerArm = lower;
             leftUpperArm = upper;
-            leftShoulder = FindBone(syntyRoot, "Shoulder_L") ?? ResolveShoulderBone(upper);
+            leftShoulder = FindBestBone(
+                syntyRoot,
+                "mixamorig1:LeftShoulder",
+                "mixamorig:LeftShoulder",
+                "LeftShoulder",
+                "Shoulder_L")
+                ?? ResolveShoulderBone(upper);
+
+            if (leftShoulder == null && upper != null && upper.parent != null &&
+                IsBoneNameMatch(upper.parent.name, "LeftShoulder"))
+            {
+                leftShoulder = upper.parent;
+            }
+        }
+
+        private static Transform FindHandBoneFromBodyMesh(Transform syntyRoot)
+        {
+            var bodyRenderer = FindPrimaryBodyRenderer(syntyRoot);
+            if (bodyRenderer == null || bodyRenderer.bones == null)
+            {
+                return null;
+            }
+
+            Transform best = null;
+            var bestScore = int.MinValue;
+            for (var i = 0; i < bodyRenderer.bones.Length; i++)
+            {
+                var bone = bodyRenderer.bones[i];
+                if (bone == null || !IsBoneNameMatch(bone.name, "LeftHand"))
+                {
+                    continue;
+                }
+
+                var score = ScoreBone(bone);
+                if (score <= bestScore)
+                {
+                    continue;
+                }
+
+                bestScore = score;
+                best = bone;
+            }
+
+            return best;
+        }
+
+        private static SkinnedMeshRenderer FindPrimaryBodyRenderer(Transform syntyRoot)
+        {
+            if (syntyRoot == null)
+            {
+                return null;
+            }
+
+            var skinnedMeshes = syntyRoot.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            SkinnedMeshRenderer best = null;
+            var bestScore = int.MinValue;
+            for (var i = 0; i < skinnedMeshes.Length; i++)
+            {
+                var candidate = skinnedMeshes[i];
+                if (candidate == null ||
+                    candidate.sharedMesh == null ||
+                    IsFirstPersonArmsName(candidate.gameObject.name))
+                {
+                    continue;
+                }
+
+                var objectName = candidate.gameObject.name;
+                if (objectName.StartsWith("SM_Char_Attach", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var score = candidate.sharedMesh.vertexCount;
+                if (candidate.gameObject.activeInHierarchy)
+                {
+                    score += 1000;
+                }
+
+                if (candidate.enabled)
+                {
+                    score += 500;
+                }
+
+                if (score <= bestScore)
+                {
+                    continue;
+                }
+
+                bestScore = score;
+                best = candidate;
+            }
+
+            return best;
+        }
+
+        private static bool IsFirstPersonArmsName(string objectName)
+        {
+            return !string.IsNullOrWhiteSpace(objectName) &&
+                   objectName.IndexOf("_FirstPersonArms", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static int ScoreBone(Transform bone)
+        {
+            var score = 0;
+            if (bone.gameObject.activeInHierarchy)
+            {
+                score += 1000;
+            }
+
+            if (bone.gameObject.activeSelf)
+            {
+                score += 500;
+            }
+
+            return score;
         }
 
         private static Transform ResolveShoulderBone(Transform upperArm)
@@ -482,12 +702,13 @@ namespace ShooterPrototype.Player
             }
 
             var parent = upperArm.parent;
-            if (string.Equals(parent.name, "Shoulder_L", StringComparison.Ordinal))
+            if (IsBoneNameMatch(parent.name, "Shoulder_L") ||
+                IsBoneNameMatch(parent.name, "LeftShoulder"))
             {
                 return parent;
             }
 
-            if (string.Equals(parent.name, "Clavicle_L", StringComparison.Ordinal))
+            if (IsBoneNameMatch(parent.name, "Clavicle_L"))
             {
                 var shoulder = parent.Find("Shoulder_L");
                 return shoulder != null ? shoulder : parent;
@@ -499,12 +720,6 @@ namespace ShooterPrototype.Player
         private Vector3 ComputeElbowPoleHint(Vector3 gripPosition)
         {
             var root = ikChain.Count > 0 ? ikChain[0].position : leftUpperArm.position;
-            var shoulderToGrip = gripPosition - root;
-            if (shoulderToGrip.sqrMagnitude < 0.0001f)
-            {
-                return root + ResolveCharacterLeft() * 0.35f;
-            }
-
             var characterLeft = ResolveCharacterLeft();
             if (characterLeft.sqrMagnitude > 0.0001f)
             {
@@ -538,11 +753,23 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            ConfigureFromVisualRoot(syntyVisual);
+            facingRoot = FindBestBone(syntyVisual, "mixamorig1:Hips", "mixamorig:Hips", "Hips", "Spine")
+                ?? syntyVisual;
         }
 
         private void ResolveLeftGripTarget()
         {
+            if (weaponPresentation == null)
+            {
+                weaponPresentation = GetComponent<RemoteWeaponPresentation>();
+            }
+
+            if (weaponPresentation != null && weaponPresentation.IsHolstered)
+            {
+                leftGripTarget = null;
+                return;
+            }
+
             var weaponRoot = weaponPresentation != null ? weaponPresentation.WeaponRoot : null;
             if (weaponRoot == null)
             {
@@ -551,15 +778,13 @@ namespace ShooterPrototype.Player
 
             var resolved = PlayerWeaponMount.FindWeaponGripAnchor(weaponRoot, leftHandTargetName)
                 ?? PlayerWeaponMount.FindWeaponGripAnchor(weaponRoot, leftHandTargetFallbackName);
-            if (resolved == null)
+            if (resolved != null)
             {
-                return;
+                leftGripTarget = resolved;
             }
-
-            leftGripTarget = resolved;
         }
 
-        private static Transform FindBone(Transform root, params string[] boneNames)
+        private static Transform FindBestBone(Transform root, params string[] boneNames)
         {
             if (root == null || boneNames == null || boneNames.Length == 0)
             {
@@ -567,6 +792,8 @@ namespace ShooterPrototype.Player
             }
 
             var all = root.GetComponentsInChildren<Transform>(true);
+            Transform best = null;
+            var bestScore = int.MinValue;
             for (var n = 0; n < boneNames.Length; n++)
             {
                 var boneName = boneNames[n];
@@ -578,15 +805,62 @@ namespace ShooterPrototype.Player
                 for (var i = 0; i < all.Length; i++)
                 {
                     var current = all[i];
-                    if (current != null &&
-                        string.Equals(current.name, boneName, StringComparison.Ordinal))
+                    if (current == null || !IsBoneNameMatch(current.name, boneName))
                     {
-                        return current;
+                        continue;
                     }
+
+                    var score = ScoreBone(current);
+                    if (score <= bestScore)
+                    {
+                        continue;
+                    }
+
+                    bestScore = score;
+                    best = current;
                 }
             }
 
-            return null;
+            return best;
+        }
+
+        private static bool IsBoneNameMatch(string actualName, string requestedName)
+        {
+            if (string.IsNullOrWhiteSpace(actualName) || string.IsNullOrWhiteSpace(requestedName))
+            {
+                return false;
+            }
+
+            if (string.Equals(actualName, requestedName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var actualCore = ExtractBoneCoreName(actualName);
+            var requestedCore = ExtractBoneCoreName(requestedName);
+            if (string.Equals(actualCore, requestedCore, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return actualName.EndsWith(":" + requestedCore, StringComparison.OrdinalIgnoreCase) ||
+                   requestedName.EndsWith(":" + actualCore, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ExtractBoneCoreName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var separatorIndex = value.LastIndexOf(':');
+            if (separatorIndex >= 0 && separatorIndex < value.Length - 1)
+            {
+                return value.Substring(separatorIndex + 1);
+            }
+
+            return value;
         }
     }
 }

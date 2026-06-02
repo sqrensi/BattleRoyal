@@ -131,6 +131,7 @@ namespace ShooterPrototype.Player
         private void EnsureBoneHitboxes(Transform thirdPersonBody)
         {
             PlayerHitboxCleanup.RemoveLegacyLineHitboxes(gameObject);
+            PlayerHitboxLayers.ApplyBodyLayerToPlayerRoot(gameObject);
 
             var syntyVisual = thirdPersonBody != null ? thirdPersonBody.Find("SyntyVisual") : null;
             if (syntyVisual == null)
@@ -145,7 +146,7 @@ namespace ShooterPrototype.Player
             }
 
             boneRig.Configure(syntyVisual);
-            boneRig.BuildOrRefreshHitboxes();
+            boneRig.BuildOrRefreshHitboxes(forceRebuild: !boneRig.HasActiveHitboxes());
         }
 
         private void EnsureRemoteShotEffects()

@@ -43,8 +43,201 @@ namespace ShooterPrototype.Player
                 primaryCharacterMeshName = characterMeshName;
             }
 
+            if (TryBuildArmsFresh(minArmBoneWeight))
+            {
+                return;
+            }
+
+            Debug.LogWarning(
+                $"[SyntyFirstPersonArmsPresenter] Failed to build first-person arms for '{primaryCharacterMeshName}'.",
+                this);
+        }
+
+        /// <summary>
+        /// Updates existing prefab/runtime arms after a body mesh swap without destroying the arms container.
+        /// </summary>
+        public bool TryRefreshArmsFromBody(Transform visualRoot, SkinnedMeshRenderer bodyRenderer)
+        {
+            if (bodyRenderer == null)
+            {
+                return false;
+            }
+
+            syntyVisualRoot = visualRoot;
+            primaryCharacterMeshName = bodyRenderer.gameObject.name;
+
+            if (!HasFirstPersonArms)
+            {
+                return false;
+            }
+
+            ActivatePrimaryCharacterByName(primaryCharacterMeshName);
+
+            var thresholds = new[] { minArmBoneWeight, 0.2f, 0.1f };
+            for (var i = 0; i < thresholds.Length; i++)
+            {
+                var armsMesh = SyntyFirstPersonArmsMeshBuilder.ExtractArmsMesh(
+                    bodyRenderer,
+                    thresholds[i],
+                    armsCoverage);
+                if (armsMesh == null)
+                {
+                    continue;
+                }
+
+                ApplyArmsMeshToExistingRenderers(bodyRenderer, armsMesh);
+                return true;
+            }
+
+            SyncArmsBindingsToBody(bodyRenderer);
+            return true;
+        }
+
+        /// <summary>
+        /// Builds arms from scratch. Existing arm objects are removed only after a new mesh is extracted.
+        /// </summary>
+        public bool TryBuildArmsFresh(
+            Transform visualRoot,
+            SkinnedMeshRenderer bodyRenderer,
+            float armBoneWeightThreshold,
+            FirstPersonArmsCoverage coverage)
+        {
+            syntyVisualRoot = visualRoot;
+            minArmBoneWeight = Mathf.Clamp01(armBoneWeightThreshold);
+            armsCoverage = coverage;
+            if (bodyRenderer != null)
+            {
+                primaryCharacterMeshName = bodyRenderer.gameObject.name;
+            }
+
+            return TryBuildArmsFresh(minArmBoneWeight);
+        }
+
+        private bool TryBuildArmsFresh(float armBoneWeightThreshold)
+        {
+            minArmBoneWeight = Mathf.Clamp01(armBoneWeightThreshold);
+
+            if (syntyVisualRoot == null)
+            {
+                return false;
+            }
+
+            var preferredSourceName = ResolvePreferredSourceMeshName();
+            ActivatePrimaryCharacterByName(preferredSourceName);
+
+            var primarySource = FindPrimaryCharacterSource(preferredSourceName);
+            if (primarySource == null)
+            {
+                return false;
+            }
+
+            if (TryAdoptExistingArmsRenderer(primarySource))
+            {
+                built = true;
+                return true;
+            }
+
+            var armsMesh = SyntyFirstPersonArmsMeshBuilder.ExtractArmsMesh(
+                primarySource,
+                minArmBoneWeight,
+                armsCoverage);
+            if (armsMesh == null)
+            {
+                return false;
+            }
+
             ResetForRebuild();
-            BuildIfNeeded();
+            built = false;
+            ApplyNewArmsMesh(primarySource, armsMesh);
+            built = true;
+            return true;
+        }
+
+        private void ApplyNewArmsMesh(SkinnedMeshRenderer primarySource, Mesh armsMesh)
+        {
+            generatedMeshes.Add(armsMesh);
+            sourceRenderers.Add(primarySource);
+
+            var armsRenderer = GetOrCreateArmsRenderer(primarySource.gameObject.name);
+            armsRenderer.sharedMesh = armsMesh;
+            armsRenderer.sharedMaterials = primarySource.sharedMaterials;
+            armsRenderer.bones = primarySource.bones;
+            armsRenderer.rootBone = primarySource.rootBone;
+            armsRenderer.updateWhenOffscreen = true;
+            armsRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            armsRenderer.enabled = false;
+            if (!firstPersonArmsRenderers.Contains(armsRenderer))
+            {
+                firstPersonArmsRenderers.Add(armsRenderer);
+            }
+
+            if (sourceRenderer == null)
+            {
+                sourceRenderer = primarySource;
+            }
+        }
+
+        private void ApplyArmsMeshToExistingRenderers(SkinnedMeshRenderer bodyRenderer, Mesh armsMesh)
+        {
+            ClearGeneratedMeshAssets();
+            generatedMeshes.Add(armsMesh);
+
+            sourceRenderers.Clear();
+            sourceRenderers.Add(bodyRenderer);
+            sourceRenderer = bodyRenderer;
+
+            for (var i = 0; i < firstPersonArmsRenderers.Count; i++)
+            {
+                var arms = firstPersonArmsRenderers[i];
+                if (arms == null)
+                {
+                    continue;
+                }
+
+                arms.sharedMesh = armsMesh;
+                arms.sharedMaterials = bodyRenderer.sharedMaterials;
+                arms.bones = bodyRenderer.bones;
+                arms.rootBone = bodyRenderer.rootBone;
+                arms.updateWhenOffscreen = true;
+                arms.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+
+            built = true;
+        }
+
+        private void SyncArmsBindingsToBody(SkinnedMeshRenderer bodyRenderer)
+        {
+            sourceRenderers.Clear();
+            sourceRenderers.Add(bodyRenderer);
+            sourceRenderer = bodyRenderer;
+
+            for (var i = 0; i < firstPersonArmsRenderers.Count; i++)
+            {
+                var arms = firstPersonArmsRenderers[i];
+                if (arms == null)
+                {
+                    continue;
+                }
+
+                arms.sharedMaterials = bodyRenderer.sharedMaterials;
+                arms.bones = bodyRenderer.bones;
+                arms.rootBone = bodyRenderer.rootBone;
+            }
+
+            built = true;
+        }
+
+        private void ClearGeneratedMeshAssets()
+        {
+            for (var i = 0; i < generatedMeshes.Count; i++)
+            {
+                if (generatedMeshes[i] != null)
+                {
+                    DestroyObject(generatedMeshes[i]);
+                }
+            }
+
+            generatedMeshes.Clear();
         }
 
         public void ResetForRebuild()
@@ -224,7 +417,6 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            built = true;
             firstPersonArmsRenderers.Clear();
             sourceRenderers.Clear();
 
@@ -246,6 +438,7 @@ namespace ShooterPrototype.Player
 
             if (TryAdoptExistingArmsRenderer(primarySource))
             {
+                built = true;
                 return;
             }
 
@@ -255,26 +448,8 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            generatedMeshes.Add(armsMesh);
-            sourceRenderers.Add(primarySource);
-
-            var armsRenderer = GetOrCreateArmsRenderer(primarySource.gameObject.name);
-            armsRenderer.sharedMesh = armsMesh;
-            armsRenderer.sharedMaterials = primarySource.sharedMaterials;
-            armsRenderer.bones = primarySource.bones;
-            armsRenderer.rootBone = primarySource.rootBone;
-            armsRenderer.updateWhenOffscreen = true;
-            armsRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            armsRenderer.enabled = false;
-            if (!firstPersonArmsRenderers.Contains(armsRenderer))
-            {
-                firstPersonArmsRenderers.Add(armsRenderer);
-            }
-
-            if (sourceRenderer == null)
-            {
-                sourceRenderer = primarySource;
-            }
+            ApplyNewArmsMesh(primarySource, armsMesh);
+            built = true;
         }
 
         private SkinnedMeshRenderer FindPrimaryCharacterSource(string preferredSourceName)
@@ -300,8 +475,6 @@ namespace ShooterPrototype.Player
                         return source;
                     }
                 }
-
-                return null;
             }
 
             SkinnedMeshRenderer bestFallback = null;

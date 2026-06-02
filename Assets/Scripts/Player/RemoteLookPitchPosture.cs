@@ -3,7 +3,7 @@ using UnityEngine;
 namespace ShooterPrototype.Player
 {
     /// <summary>
-    /// Applies network look pitch to remote TP spine and arms instead of tilting the weapon attach target.
+    /// Applies network look pitch to remote TP spine and arms. Works with or without a mounted weapon.
     /// </summary>
     [DefaultExecutionOrder(400)]
     public sealed class RemoteLookPitchPosture : MonoBehaviour
@@ -45,6 +45,7 @@ namespace ShooterPrototype.Player
         private float crouchPitchVelocity;
         private float smoothedSprintPitch;
         private float sprintPitchVelocity;
+        private float directNetworkLookPitch;
         private Quaternion hipsAnimatedBase = Quaternion.identity;
         private readonly Quaternion[] spineAnimatedBases = new Quaternion[3];
         private Quaternion clavicleLeftAnimatedBase = Quaternion.identity;
@@ -53,6 +54,11 @@ namespace ShooterPrototype.Player
         private Quaternion shoulderRightAnimatedBase = Quaternion.identity;
 
         public float CurrentPostureLeanPitch => smoothedCrouchPitch + smoothedSprintPitch;
+
+        public void SetNetworkLookPitch(float lookPitch)
+        {
+            directNetworkLookPitch = lookPitch;
+        }
 
         public void Configure(Transform thirdPersonBody, ProceduralLocomotionRig rig)
         {
@@ -80,14 +86,20 @@ namespace ShooterPrototype.Player
 
         private void LateUpdate()
         {
-            if (!ShouldApply() || syntyRoot == null || locomotionRig == null)
+            if (!ShouldApply() || syntyRoot == null)
             {
                 return;
             }
 
+            if (locomotionRig == null)
+            {
+                locomotionRig = GetComponentInChildren<ProceduralLocomotionRig>(true);
+            }
+
+            ResolveSyntyRoot();
             ResolveBones();
 
-            var clampedPitch = Mathf.Clamp(locomotionRig.NetworkLookPitch, -lookPitchMax, lookPitchMax);
+            var clampedPitch = Mathf.Clamp(ResolveNetworkLookPitch(), -lookPitchMax, lookPitchMax);
             smoothedPitch = Mathf.SmoothDamp(
                 smoothedPitch,
                 clampedPitch,
@@ -121,7 +133,9 @@ namespace ShooterPrototype.Player
 
         private float ResolveTargetCrouchPitch()
         {
-            if (!locomotionRig.NetworkCrouching || locomotionRig.CurrentJumpState != 0)
+            if (locomotionRig == null ||
+                !locomotionRig.NetworkCrouching ||
+                locomotionRig.CurrentJumpState != 0)
             {
                 return 0f;
             }
@@ -136,7 +150,8 @@ namespace ShooterPrototype.Player
 
         private float ResolveTargetSprintPitch()
         {
-            if (locomotionRig.CurrentJumpState != 0 ||
+            if (locomotionRig == null ||
+                locomotionRig.CurrentJumpState != 0 ||
                 locomotionRig.NetworkCrouching ||
                 !locomotionRig.NetworkSprinting ||
                 !IsLocomoting())
@@ -149,6 +164,11 @@ namespace ShooterPrototype.Player
 
         private bool IsLocomoting()
         {
+            if (locomotionRig == null)
+            {
+                return false;
+            }
+
             if (locomotionRig.GetNetworkAnimSpeed01() > crouchMoveSpeedThreshold)
             {
                 return true;
@@ -167,6 +187,26 @@ namespace ShooterPrototype.Player
         private bool ShouldApply()
         {
             return GetComponent<RemoteThirdPersonPlayerBootstrap>() != null;
+        }
+
+        private float ResolveNetworkLookPitch()
+        {
+            if (locomotionRig != null)
+            {
+                return locomotionRig.NetworkLookPitch;
+            }
+
+            return directNetworkLookPitch;
+        }
+
+        private void ResolveSyntyRoot()
+        {
+            var thirdPersonBody = transform.Find("ThirdPersonBody");
+            var liveRoot = thirdPersonBody != null ? thirdPersonBody.Find("SyntyVisual") : null;
+            if (liveRoot != null)
+            {
+                syntyRoot = liveRoot;
+            }
         }
 
         private void CaptureAnimatedBaseRotations()
@@ -268,39 +308,36 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            hipsBone = hipsBone != null
-                ? hipsBone
-                : FindBone(syntyRoot, "Hips", "mixamorig:Hips", "pelvis");
+            hipsBone = FindBestBone(syntyRoot, "Hips", "pelvis");
 
-            if (spineBones == null || spineBones.Length == 0)
+            spineBones = new[]
             {
-                spineBones = new[]
-                {
-                    FindBone(syntyRoot, "Spine_01", "mixamorig:Spine", "mixamorig:Spine1"),
-                    FindBone(syntyRoot, "Spine_02", "mixamorig:Spine1", "mixamorig:Spine2"),
-                    FindBone(syntyRoot, "Spine_03", "mixamorig:Spine2", "mixamorig:Spine3")
-                };
-                spineWeights = new[] { 0.22f, 0.52f, 0.26f };
-            }
+                FindBestBone(syntyRoot, "Spine", "Spine_01"),
+                FindBestBone(syntyRoot, "Spine1", "Spine_02"),
+                FindBestBone(syntyRoot, "Spine2", "Spine_03")
+            };
+            spineWeights = new[] { 0.22f, 0.52f, 0.26f };
 
-            clavicleLeft = clavicleLeft != null ? clavicleLeft : FindBone(syntyRoot, "Clavicle_L");
-            clavicleRight = clavicleRight != null ? clavicleRight : FindBone(syntyRoot, "Clavicle_R");
-            shoulderLeft = shoulderLeft != null ? shoulderLeft : FindBone(syntyRoot, "Shoulder_L");
-            shoulderRight = shoulderRight != null ? shoulderRight : FindBone(syntyRoot, "Shoulder_R");
+            clavicleLeft = FindBestBone(syntyRoot, "Clavicle_L", "LeftShoulder");
+            clavicleRight = FindBestBone(syntyRoot, "Clavicle_R", "RightShoulder");
+            shoulderLeft = FindBestBone(syntyRoot, "Shoulder_L", "LeftShoulder");
+            shoulderRight = FindBestBone(syntyRoot, "Shoulder_R", "RightShoulder");
         }
 
-        private static Transform FindBone(Transform root, params string[] names)
+        private static Transform FindBestBone(Transform root, params string[] names)
         {
-            if (root == null || names == null)
+            if (root == null || names == null || names.Length == 0)
             {
                 return null;
             }
 
             var all = root.GetComponentsInChildren<Transform>(true);
+            Transform best = null;
+            var bestScore = int.MinValue;
             for (var n = 0; n < names.Length; n++)
             {
                 var targetName = names[n];
-                if (string.IsNullOrEmpty(targetName))
+                if (string.IsNullOrWhiteSpace(targetName))
                 {
                     continue;
                 }
@@ -308,15 +345,67 @@ namespace ShooterPrototype.Player
                 for (var i = 0; i < all.Length; i++)
                 {
                     var current = all[i];
-                    if (current != null &&
-                        string.Equals(current.name, targetName, System.StringComparison.OrdinalIgnoreCase))
+                    if (current == null || !IsBoneNameMatch(current.name, targetName))
                     {
-                        return current;
+                        continue;
                     }
+
+                    var score = current.gameObject.activeInHierarchy ? 1000 : 0;
+                    if (current.gameObject.activeSelf)
+                    {
+                        score += 500;
+                    }
+
+                    if (score <= bestScore)
+                    {
+                        continue;
+                    }
+
+                    bestScore = score;
+                    best = current;
                 }
             }
 
-            return null;
+            return best;
+        }
+
+        private static bool IsBoneNameMatch(string actualName, string requestedName)
+        {
+            if (string.IsNullOrWhiteSpace(actualName) || string.IsNullOrWhiteSpace(requestedName))
+            {
+                return false;
+            }
+
+            if (string.Equals(actualName, requestedName, System.StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var actualCore = ExtractBoneCoreName(actualName);
+            var requestedCore = ExtractBoneCoreName(requestedName);
+            if (string.Equals(actualCore, requestedCore, System.StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return actualName.EndsWith(":" + requestedCore, System.StringComparison.OrdinalIgnoreCase) ||
+                   requestedName.EndsWith(":" + actualCore, System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ExtractBoneCoreName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var separatorIndex = value.LastIndexOf(':');
+            if (separatorIndex >= 0 && separatorIndex < value.Length - 1)
+            {
+                return value.Substring(separatorIndex + 1);
+            }
+
+            return value;
         }
     }
 }

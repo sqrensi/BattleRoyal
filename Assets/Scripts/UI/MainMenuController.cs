@@ -1,6 +1,7 @@
 using System.Collections;
 using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
+using ShooterPrototype.Player;
 using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -19,6 +20,11 @@ namespace ShooterPrototype.UI
         [SerializeField] private Button startButton;
         [SerializeField] private TMP_Text statusText;
         [SerializeField] private TMP_Text startButtonText;
+        [SerializeField] private Button changeCharacterButton;
+        [SerializeField] private TMP_Text selectedCharacterText;
+
+        [Header("Characters")]
+        [SerializeField] private string charactersResourcesFolder = "Characters";
 
         [Header("Connection State")]
         [SerializeField] private string idleStatusText = "Готов к подключению";
@@ -49,10 +55,15 @@ namespace ShooterPrototype.UI
             {
                 startButton.onClick.AddListener(OnStartPressed);
             }
+            if (changeCharacterButton != null)
+            {
+                changeCharacterButton.onClick.AddListener(OnChangeCharacterPressed);
+            }
 
             localPlayerId = BuildLocalPlayerId();
             SetStatus(idleStatusText);
             SetStartButtonState(isQueueing: false, interactable: true);
+            RefreshSelectedCharacterLabel();
         }
 
         private void OnEnable()
@@ -69,6 +80,7 @@ namespace ShooterPrototype.UI
 
             SetStatus(idleStatusText);
             SetStartButtonState(isQueueing: false, interactable: true);
+            RefreshSelectedCharacterLabel();
         }
 
         private void OnDisable()
@@ -88,6 +100,13 @@ namespace ShooterPrototype.UI
             }
 
             networkLauncher.StatusChanged -= HandleStatusChanged;
+        }
+
+        public void OnChangeCharacterPressed()
+        {
+            var selection = CharacterSelectionService.SelectNextModel(charactersResourcesFolder);
+            var displayName = selection.ModelAsset != null ? selection.DisplayName : "Default";
+            RefreshSelectedCharacterLabel(displayName);
         }
 
         public void OnStartPressed()
@@ -329,6 +348,23 @@ namespace ShooterPrototype.UI
             {
                 startButtonText.text = isQueueing ? "Cancel Queue" : "Start";
             }
+        }
+
+        private void RefreshSelectedCharacterLabel(string selectedName = null)
+        {
+            if (selectedCharacterText == null)
+            {
+                return;
+            }
+
+            var resolvedName = selectedName;
+            if (string.IsNullOrWhiteSpace(resolvedName))
+            {
+                var selected = CharacterSelectionService.ResolveSelectedModel(charactersResourcesFolder);
+                resolvedName = selected.ModelAsset != null ? selected.DisplayName : "Default";
+            }
+
+            selectedCharacterText.text = $"Персонаж: {resolvedName}";
         }
 
         private static string BuildLocalPlayerId()

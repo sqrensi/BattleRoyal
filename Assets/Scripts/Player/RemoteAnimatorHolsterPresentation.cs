@@ -3,15 +3,17 @@ using UnityEngine;
 namespace ShooterPrototype.Player
 {
     /// <summary>
-    /// Remote TP animator layers: holstered = Opsive arm locomotion (synced to legs), armed = ArmsIdle.
+    /// Remote TP animator layers: holstered = Opsive arm locomotion (synced to legs), armed = right-arm idle only.
+    /// Left hand pose comes from weapon IK, not LeftArmIdle.
     /// </summary>
     [DefaultExecutionOrder(350)]
     public sealed class RemoteAnimatorHolsterPresentation : MonoBehaviour
     {
         public const int LegsLayerIndex = 0;
         public const int TorsoLayerIndex = 1;
-        public const int ArmsIdleLayerIndex = 2;
-        public const int ArmsLocomotionLayerIndex = 3;
+        public const int RightArmIdleLayerIndex = 2;
+        public const int LeftArmIdleLayerIndex = 3;
+        public const int ArmsLocomotionLayerIndex = 4;
 
         [SerializeField] private Animator animator;
         [SerializeField] private float layerBlendTime = 0.14f;
@@ -25,7 +27,9 @@ namespace ShooterPrototype.Player
         public void Configure(Animator targetAnimator)
         {
             animator = targetAnimator;
-            ApplyArmedLayerWeightsImmediate();
+            armsIdleWeight = 0f;
+            armsLocomotionWeight = 0f;
+            ApplyLayerWeights();
         }
 
         public void SetHolstered(bool holstered)
@@ -43,7 +47,7 @@ namespace ShooterPrototype.Player
 
         private void LateUpdate()
         {
-            if (!ShouldApply() || animator == null || animator.layerCount <= ArmsIdleLayerIndex)
+            if (!ShouldApply() || animator == null || animator.layerCount <= LeftArmIdleLayerIndex)
             {
                 return;
             }
@@ -62,7 +66,8 @@ namespace ShooterPrototype.Player
 
         private void ApplyLayerWeights()
         {
-            animator.SetLayerWeight(ArmsIdleLayerIndex, armsIdleWeight);
+            animator.SetLayerWeight(RightArmIdleLayerIndex, armsIdleWeight);
+            animator.SetLayerWeight(LeftArmIdleLayerIndex, 0f);
 
             if (animator.layerCount > ArmsLocomotionLayerIndex)
             {

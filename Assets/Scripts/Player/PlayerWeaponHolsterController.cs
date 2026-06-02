@@ -63,6 +63,38 @@ namespace ShooterPrototype.Player
         public bool IsTransitioning => phase == HolsterPhase.Holstering || phase == HolsterPhase.Drawing;
         public bool IsWeaponReady => phase == HolsterPhase.Armed;
 
+        /// <summary>
+        /// FP right-arm idle stays on while the weapon is still visible on the hand during holster/draw.
+        /// </summary>
+        public bool ShouldKeepRightArmIdleAnimation
+        {
+            get
+            {
+                if (phase == HolsterPhase.Armed)
+                {
+                    return true;
+                }
+
+                if (phase == HolsterPhase.Holstered)
+                {
+                    return false;
+                }
+
+                var normalized = GetTransitionNormalized();
+                if (phase == HolsterPhase.Holstering)
+                {
+                    return normalized < armsHideHolsterThreshold;
+                }
+
+                if (phase == HolsterPhase.Drawing)
+                {
+                    return normalized > armsShowDrawThreshold;
+                }
+
+                return false;
+            }
+        }
+
         private void Awake()
         {
             networkIdentity = GetComponent<PlayerNetworkIdentity>();

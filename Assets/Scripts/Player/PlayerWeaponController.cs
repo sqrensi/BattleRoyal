@@ -348,6 +348,13 @@ namespace ShooterPrototype.Player
 
         private void CaptureNetworkShotImpact(Vector3 muzzleOrigin, CameraAimResolution aim)
         {
+            if (TryRaycastIgnoringSelf(new Ray(muzzleOrigin, aim.ShootDirection), maxDistance, out var ballisticHit))
+            {
+                lastShotEndPoint = ballisticHit.point;
+                lastShotHasEndPoint = true;
+                return;
+            }
+
             if (TryResolveNetworkImpactPoint(out var networkImpactPoint))
             {
                 lastShotEndPoint = networkImpactPoint;
@@ -364,6 +371,31 @@ namespace ShooterPrototype.Player
 
             lastShotHasEndPoint = false;
             lastShotEndPoint = muzzleOrigin + aim.ShootDirection * maxDistance;
+        }
+
+        private RaycastHit? ResolveVisualImpactHit(CameraAimResolution aim, RaycastHit? gameplayHit)
+        {
+            if (gameplayHit.HasValue && IsPlayerHit(gameplayHit.Value.collider))
+            {
+                return gameplayHit;
+            }
+
+            if (aim.HasCameraHit && IsPlayerHit(aim.CameraHit.collider))
+            {
+                return aim.CameraHit;
+            }
+
+            if (gameplayHit.HasValue)
+            {
+                return gameplayHit;
+            }
+
+            if (aim.HasCameraHit)
+            {
+                return aim.CameraHit;
+            }
+
+            return null;
         }
 
         private bool TryResolveNetworkImpactPoint(out Vector3 impactPoint)
@@ -387,28 +419,6 @@ namespace ShooterPrototype.Player
 
         private bool TryRaycastCameraCrosshair(Ray ray, float distance, out RaycastHit closestHit)
         {
-            var hitCount = Physics.RaycastNonAlloc(
-                ray,
-                hitQueryBuffer,
-                distance,
-                hitMask,
-                QueryTriggerInteraction.Ignore);
-            if (hitCount > 0)
-            {
-                System.Array.Sort(hitQueryBuffer, 0, hitCount, RaycastHitDistanceComparer.Instance);
-                for (var i = 0; i < hitCount; i++)
-                {
-                    var hit = hitQueryBuffer[i];
-                    if (hit.collider == null || hit.collider.transform.IsChildOf(transform))
-                    {
-                        continue;
-                    }
-
-                    closestHit = hit;
-                    return true;
-                }
-            }
-
             return TryRaycastIgnoringSelf(ray, distance, out closestHit);
         }
 
@@ -537,22 +547,10 @@ namespace ShooterPrototype.Player
                 ProcessGameplayHit(hit, direction, applyRecoil);
             }
 
-            RaycastHit? visualHit = null;
-            Vector3 visualEndPoint;
-            if (aim.HasCameraHit)
-            {
-                visualHit = aim.CameraHit;
-                visualEndPoint = aim.AimPoint;
-            }
-            else if (gameplayHit.HasValue)
-            {
-                visualHit = gameplayHit.Value;
-                visualEndPoint = gameplayHit.Value.point;
-            }
-            else
-            {
-                visualEndPoint = origin + direction * maxDistance;
-            }
+            var visualHit = ResolveVisualImpactHit(aim, gameplayHit);
+            var visualEndPoint = visualHit.HasValue
+                ? visualHit.Value.point
+                : origin + direction * maxDistance;
 
             if (visualHit.HasValue)
             {
@@ -648,51 +646,7 @@ namespace ShooterPrototype.Player
 
         private bool IsPlayerHit(Collider targetCollider)
         {
-            if (targetCollider == null || targetCollider.transform.IsChildOf(transform))
-            {
-                return false;
-            }
-
-            if (targetCollider.GetComponentInParent<FpsCharacterController>() != null)
-            {
-                return true;
-            }
-
-            var identity = targetCollider.GetComponentInParent<PlayerNetworkIdentity>();
-            if (identity == null || identity.IsLocalPlayer)
-            {
-                return false;
-            }
-
-            if (IsRemoteWeaponCollider(targetCollider))
-            {
-                return false;
-            }
-
-            if (targetCollider.GetComponentInParent<PlayerBoneHitbox>(true) != null)
-            {
-                return true;
-            }
-
-            return targetCollider.GetComponent<CharacterController>() != null;
-        }
-
-        private static bool IsRemoteWeaponCollider(Collider targetCollider)
-        {
-            var current = targetCollider != null ? targetCollider.transform : null;
-            while (current != null)
-            {
-                var name = current.name;
-                if (string.Equals(name, "WeaponModel", System.StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(name, "RemoteWeaponTarget", System.StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-
-                current = current.parent;
-            }
-
-            return false;
+            return PlayerWeaponRaycastFilters.IsPlayerBoneHit(targetCollider, transform);
         }
 
         private float ResolveDamage(HitZone hitZone)
@@ -780,13 +734,19 @@ namespace ShooterPrototype.Player
                 : QueryTriggerInteraction.Ignore;
         }
 
+        private int ResolveEffectiveHitMask()
+        {
+            return PlayerHitboxLayers.ResolveWeaponRaycastMask(hitMask);
+        }
+
         private bool TryRaycastIgnoringSelf(Ray ray, float distance, out RaycastHit closestHit)
         {
+            var mask = ResolveEffectiveHitMask();
             var hitCount = Physics.RaycastNonAlloc(
                 ray,
                 hitQueryBuffer,
                 distance,
-                hitMask,
+                mask,
                 ResolveHitQueryTriggerInteraction());
             if (hitCount <= 0)
             {
@@ -795,40 +755,11 @@ namespace ShooterPrototype.Player
             }
 
             System.Array.Sort(hitQueryBuffer, 0, hitCount, RaycastHitDistanceComparer.Instance);
-            RaycastHit? fallbackHit = null;
-            for (var i = 0; i < hitCount; i++)
-            {
-                var hit = hitQueryBuffer[i];
-                if (hit.collider == null)
-                {
-                    continue;
-                }
-
-                if (hit.collider.transform.IsChildOf(transform))
-                {
-                    continue;
-                }
-
-                if (fallbackHit == null)
-                {
-                    fallbackHit = hit;
-                }
-
-                if (hit.collider.GetComponentInParent<PlayerBoneHitbox>(true) != null)
-                {
-                    closestHit = hit;
-                    return true;
-                }
-            }
-
-            if (fallbackHit.HasValue)
-            {
-                closestHit = fallbackHit.Value;
-                return true;
-            }
-
-            closestHit = default;
-            return false;
+            return PlayerWeaponRaycastFilters.TrySelectClosestHit(
+                hitQueryBuffer,
+                hitCount,
+                transform,
+                out closestHit);
         }
 
         private sealed class RaycastHitDistanceComparer : System.Collections.Generic.IComparer<RaycastHit>

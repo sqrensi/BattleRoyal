@@ -27,7 +27,7 @@ namespace ShooterPrototype.Network
 
             var offset = 4;
             var version = ReadU8(data, ref offset);
-            if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5)
+            if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6)
             {
                 return false;
             }
@@ -79,6 +79,23 @@ namespace ShooterPrototype.Network
 
                 var ticketId = Encoding.UTF8.GetString(data, offset, ticketLen);
                 offset += ticketLen;
+                var characterModel = string.Empty;
+                if (version >= 6)
+                {
+                    if (offset >= data.Length)
+                    {
+                        return false;
+                    }
+
+                    var modelLen = ReadU8(data, ref offset);
+                    if (offset + modelLen > data.Length)
+                    {
+                        return false;
+                    }
+
+                    characterModel = Encoding.UTF8.GetString(data, offset, modelLen);
+                    offset += modelLen;
+                }
 
                 if (offset + 35 > data.Length)
                 {
@@ -235,6 +252,7 @@ namespace ShooterPrototype.Network
                 players.Add(new RealtimeTransportClient.RealtimePlayerState
                 {
                     ticketId = ticketId,
+                    characterModel = characterModel,
                     position = new RealtimeTransportClient.PositionDto { x = px, y = py, z = pz },
                     yaw = yaw,
                     velX = velX,

@@ -141,6 +141,15 @@ namespace ShooterPrototype.Player
             impactNormal = -direction.sqrMagnitude > 0.0001f ? -direction.normalized : Vector3.up;
             usePlayerHitVfx = false;
 
+            var rayOrigin = networkOrigin.sqrMagnitude > 0.0025f ? networkOrigin : ResolveEyePosition();
+            if (TryRaycastFromOrigin(rayOrigin, direction, out var ballisticHit))
+            {
+                impactPoint = ballisticHit.point;
+                impactNormal = ballisticHit.normal.sqrMagnitude > 0.0001f ? ballisticHit.normal : impactNormal;
+                usePlayerHitVfx = IsPlayerHitCollider(ballisticHit.collider);
+                return true;
+            }
+
             if (TryGetNetworkImpactPoint(networkOrigin, networkEndPoint, hasNetworkEndPoint, out impactPoint))
             {
                 return true;
@@ -184,45 +193,12 @@ namespace ShooterPrototype.Player
 
         private bool TryRaycastFromOrigin(Vector3 origin, Vector3 direction, out RaycastHit closestHit)
         {
+            var mask = PlayerHitboxLayers.ResolveWeaponRaycastMask(hitMask);
             var hitCount = Physics.RaycastNonAlloc(
                 new Ray(origin, direction),
                 hitQueryBuffer,
                 maxDistance,
-                hitMask,
-                QueryTriggerInteraction.Ignore);
-            if (hitCount <= 0)
-            {
-                return TryRaycastTriggers(origin, direction, out closestHit);
-            }
-
-            System.Array.Sort(hitQueryBuffer, 0, hitCount, RaycastHitDistanceComparer.Instance);
-            for (var i = 0; i < hitCount; i++)
-            {
-                var hit = hitQueryBuffer[i];
-                if (hit.collider == null || hit.collider.transform.IsChildOf(transform))
-                {
-                    continue;
-                }
-
-                if (IsRemoteWeaponCollider(hit.collider))
-                {
-                    continue;
-                }
-
-                closestHit = hit;
-                return true;
-            }
-
-            return TryRaycastTriggers(origin, direction, out closestHit);
-        }
-
-        private bool TryRaycastTriggers(Vector3 origin, Vector3 direction, out RaycastHit closestHit)
-        {
-            var hitCount = Physics.RaycastNonAlloc(
-                new Ray(origin, direction),
-                hitQueryBuffer,
-                maxDistance,
-                hitMask,
+                mask,
                 QueryTriggerInteraction.Collide);
             if (hitCount <= 0)
             {
@@ -231,59 +207,17 @@ namespace ShooterPrototype.Player
             }
 
             System.Array.Sort(hitQueryBuffer, 0, hitCount, RaycastHitDistanceComparer.Instance);
-            for (var i = 0; i < hitCount; i++)
-            {
-                var hit = hitQueryBuffer[i];
-                if (hit.collider == null || hit.collider.transform.IsChildOf(transform))
-                {
-                    continue;
-                }
-
-                if (IsRemoteWeaponCollider(hit.collider))
-                {
-                    continue;
-                }
-
-                closestHit = hit;
-                return true;
-            }
-
-            closestHit = default;
-            return false;
+            return PlayerWeaponRaycastFilters.TrySelectClosestHit(
+                hitQueryBuffer,
+                hitCount,
+                transform,
+                out closestHit);
         }
 
         private static bool IsPlayerHitCollider(Collider targetCollider)
         {
-            if (targetCollider == null)
-            {
-                return false;
-            }
-
-            if (targetCollider.GetComponentInParent<FpsCharacterController>() != null)
-            {
-                return true;
-            }
-
-            return targetCollider.GetComponentInParent<PlayerBoneHitbox>(true) != null ||
-                   targetCollider.GetComponent<CharacterController>() != null;
-        }
-
-        private static bool IsRemoteWeaponCollider(Collider targetCollider)
-        {
-            var current = targetCollider != null ? targetCollider.transform : null;
-            while (current != null)
-            {
-                var name = current.name;
-                if (string.Equals(name, "WeaponModel", System.StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(name, "RemoteWeaponTarget", System.StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-
-                current = current.parent;
-            }
-
-            return false;
+            return targetCollider != null &&
+                   targetCollider.GetComponentInParent<PlayerBoneHitbox>(true) != null;
         }
 
         private void EnsureAudioSources()

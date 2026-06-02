@@ -20,6 +20,10 @@ namespace ShooterPrototype.EditorTools
         private const string BodyNoArmsMaskPath = "Assets/Prefabs/Player/SyntyLocomotionBodyNoArms.mask";
         private const string RemoteArmsIdleMaskPath = "Assets/Prefabs/Player/SyntyRemoteArmsIdle.mask";
         private const string RemoteForearmsOnlyMaskPath = "Assets/Prefabs/Player/SyntyRemoteForearmsOnly.mask";
+        private const string RemoteRightArmsIdleMaskPath = "Assets/Prefabs/Player/SyntyRemoteRightArmsIdle.mask";
+        private const string RemoteLeftArmsIdleMaskPath = "Assets/Prefabs/Player/SyntyRemoteLeftArmsIdle.mask";
+        private const string RemoteRightForearmsOnlyMaskPath = "Assets/Prefabs/Player/SyntyRemoteRightForearmsOnly.mask";
+        private const string RemoteLeftForearmsOnlyMaskPath = "Assets/Prefabs/Player/SyntyRemoteLeftForearmsOnly.mask";
         private const string UpperBodyOnlyMaskPath = "Assets/Prefabs/Player/SyntyLocomotionUpperBodyOnly.mask";
         private const string BlinkAnimationsRoot = "Assets/Blink/Art/Animations";
         private const string BlinkMovementFolder = "Assets/Blink/Art/Animations/Animations_Starter_Pack/Movement";
@@ -263,7 +267,7 @@ namespace ShooterPrototype.EditorTools
 
             EnsureParameters(controller);
             BuildLocomotionLayer(controller, clips);
-            ApplyLegsOnlyAvatarMasks(controller, clips);
+            ApplyLegsOnlyAvatarMasks(controller, clips, useForearmsOnlyArmsIdleMask: true);
             EditorUtility.SetDirty(controller);
             AssetDatabase.SaveAssets();
         }
@@ -339,6 +343,7 @@ namespace ShooterPrototype.EditorTools
         {
             var clips = FindLocomotionClipsFromOpsiveFolder();
             clips.ArmsIdle = LoadArmsIdleClip();
+            clips.LeftArmIdle = LoadLeftArmIdleClip();
             return clips;
         }
 
@@ -654,6 +659,8 @@ namespace ShooterPrototype.EditorTools
             var fromBlink = FindLocomotionClipsFromBlinkFolder();
             if (fromBlink.Idle != null)
             {
+                fromBlink.ArmsIdle = LoadArmsIdleClip();
+                fromBlink.LeftArmIdle = LoadLeftArmIdleClip();
                 return fromBlink;
             }
 
@@ -739,13 +746,19 @@ namespace ShooterPrototype.EditorTools
                 CrouchIdle = LoadClipFromFbx($"{LegacyAnimationsFolder}/CrouchIdle.fbx"),
                 CrouchWalk = LoadClipFromFbx($"{LegacyAnimationsFolder}/CrouchForwardWalking.fbx"),
                 CrouchWalkRight = LoadClipFromFbx($"{LegacyAnimationsFolder}/CrouchRightWalking.fbx"),
-                ArmsIdle = LoadClipFromFbx($"{LegacyAnimationsFolder}/ArmsIdle.fbx")
+                ArmsIdle = LoadClipFromFbx($"{LegacyAnimationsFolder}/ArmsIdle.fbx"),
+                LeftArmIdle = LoadClipFromFbx($"{LegacyAnimationsFolder}/LeftArmIdle.fbx")
             };
         }
 
         private static AnimationClip LoadArmsIdleClip()
         {
             return LoadClipFromFbx($"{LegacyAnimationsFolder}/ArmsIdle.fbx");
+        }
+
+        private static AnimationClip LoadLeftArmIdleClip()
+        {
+            return LoadClipFromFbx($"{LegacyAnimationsFolder}/LeftArmIdle.fbx");
         }
 
         private static string ResolveOpsiveLocomotionFolder()
@@ -981,6 +994,7 @@ namespace ShooterPrototype.EditorTools
                     continue;
                 }
 
+                // Each legacy clip keeps its own humanoid avatar; Unity retargets at playback time.
                 ConfigureBlinkFbxImport(path);
             }
         }
@@ -1458,7 +1472,8 @@ namespace ShooterPrototype.EditorTools
         private static void ApplyLegsOnlyAvatarMasks(
             AnimatorController controller,
             LocomotionClips clips,
-            bool includeRemoteHolsterArmsLayer = false)
+            bool includeRemoteHolsterArmsLayer = false,
+            bool useForearmsOnlyArmsIdleMask = false)
         {
             EnsureRemoteLocomotionAvatarMaskAssets();
 
@@ -1471,7 +1486,7 @@ namespace ShooterPrototype.EditorTools
                 return;
             }
 
-            var layerCount = includeRemoteHolsterArmsLayer ? 4 : 3;
+            var layerCount = includeRemoteHolsterArmsLayer ? 5 : 4;
             EnsureAnimatorLayerCount(controller, layerCount);
 
             var layers = controller.layers;
@@ -1482,19 +1497,27 @@ namespace ShooterPrototype.EditorTools
             layers[0].syncedLayerIndex = -1;
 
             var torsoClip = clips.Idle ?? clips.Walk ?? clips.Run;
-            var armsIdleMask = AssetDatabase.LoadAssetAtPath<AvatarMask>(RemoteArmsIdleMaskPath) ?? armsMask;
-            var armsClip = clips.ArmsIdle ?? LoadArmsIdleClip() ?? torsoClip;
+            var rightArmIdleMask = useForearmsOnlyArmsIdleMask
+                ? AssetDatabase.LoadAssetAtPath<AvatarMask>(RemoteRightForearmsOnlyMaskPath)
+                : AssetDatabase.LoadAssetAtPath<AvatarMask>(RemoteRightArmsIdleMaskPath)
+                  ?? AssetDatabase.LoadAssetAtPath<AvatarMask>(RemoteArmsIdleMaskPath)
+                  ?? armsMask;
+            var rightArmClip = clips.ArmsIdle ?? LoadArmsIdleClip() ?? torsoClip;
             BuildTorsoOverrideLayer(controller, ref layers, 1, torsoMask, torsoClip, clips.CrouchIdle, "Torso");
-            BuildOverrideIdleLayer(controller, ref layers, 2, armsIdleMask, armsClip, "Arms Idle");
+            BuildOverrideIdleLayer(controller, ref layers, 2, rightArmIdleMask, rightArmClip, "Right Arm Idle");
+            layers[2].defaultWeight = 0f;
+            // Left hand + fingers are weapon IK only; keep layer slot for controller layout compatibility.
+            BuildOverrideIdleLayer(controller, ref layers, 3, null, null, "Left Arm Idle");
+            layers[3].defaultWeight = 0f;
 
-            if (includeRemoteHolsterArmsLayer && layers.Length > 3)
+            if (includeRemoteHolsterArmsLayer && layers.Length > 4)
             {
-                layers[3].name = "Arms Locomotion";
-                layers[3].avatarMask = armsMask;
-                layers[3].defaultWeight = 0f;
-                layers[3].blendingMode = AnimatorLayerBlendingMode.Override;
-                layers[3].syncedLayerIndex = 0;
-                layers[3].iKPass = false;
+                layers[4].name = "Arms Locomotion";
+                layers[4].avatarMask = armsMask;
+                layers[4].defaultWeight = 0f;
+                layers[4].blendingMode = AnimatorLayerBlendingMode.Override;
+                layers[4].syncedLayerIndex = 0;
+                layers[4].iKPass = false;
             }
 
             controller.layers = layers;
@@ -1646,8 +1669,12 @@ namespace ShooterPrototype.EditorTools
             EnsureAvatarMaskAsset(ArmsOnlyMaskPath, ApplyArmsOnlyMaskSettings);
             EnsureAvatarMaskAsset(BodyNoArmsMaskPath, ApplyBodyNoArmsMaskSettings);
             EnsureAvatarMaskAsset(RemoteArmsIdleMaskPath, ApplyRemoteArmsIdleMaskSettings);
+            EnsureAvatarMaskAsset(RemoteRightArmsIdleMaskPath, mask => ApplyRemoteSideArmsIdleMaskSettings(mask, leftSide: false));
+            EnsureAvatarMaskAsset(RemoteLeftArmsIdleMaskPath, mask => ApplyRemoteSideArmsIdleMaskSettings(mask, leftSide: true));
             EnsureAvatarMaskAsset(UpperBodyOnlyMaskPath, ApplyUpperBodyOnlyMaskSettings);
             EnsureAvatarMaskAsset(RemoteForearmsOnlyMaskPath, ApplyRemoteForearmsOnlyMaskSettings);
+            EnsureAvatarMaskAsset(RemoteRightForearmsOnlyMaskPath, mask => ApplyRemoteSideForearmsOnlyMaskSettings(mask, leftSide: false));
+            EnsureAvatarMaskAsset(RemoteLeftForearmsOnlyMaskPath, mask => ApplyRemoteSideForearmsOnlyMaskSettings(mask, leftSide: true));
         }
 
         private static void EnsureAvatarMaskAsset(string path, System.Action<AvatarMask> applySettings)
@@ -1739,7 +1766,40 @@ namespace ShooterPrototype.EditorTools
             }
         }
 
-        private static List<string> CollectRemoteShoulderMaskTransformPaths()
+        private static void ApplyRemoteSideArmsIdleMaskSettings(AvatarMask mask, bool leftSide)
+        {
+            mask.transformCount = 0;
+            for (var i = 0; i < (int)AvatarMaskBodyPart.LastBodyPart; i++)
+            {
+                mask.SetHumanoidBodyPartActive((AvatarMaskBodyPart)i, false);
+            }
+
+            if (leftSide)
+            {
+                mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.LeftArm, true);
+                mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.LeftFingers, true);
+            }
+            else
+            {
+                mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.RightArm, true);
+                mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.RightFingers, true);
+            }
+
+            var shoulderPaths = CollectRemoteShoulderMaskTransformPaths(leftSide);
+            if (shoulderPaths.Count == 0)
+            {
+                return;
+            }
+
+            mask.transformCount = shoulderPaths.Count;
+            for (var i = 0; i < shoulderPaths.Count; i++)
+            {
+                mask.SetTransformPath(i, shoulderPaths[i]);
+                mask.SetTransformActive(i, true);
+            }
+        }
+
+        private static List<string> CollectRemoteShoulderMaskTransformPaths(bool leftSide)
         {
             var result = new List<string>();
             var avatarRoot = ResolveReferenceSyntyAvatarRoot(out var instanceRoot);
@@ -1756,13 +1816,9 @@ namespace ShooterPrototype.EditorTools
                     return result;
                 }
 
-                var shoulderBones = new[]
-                {
-                    HumanBodyBones.LeftShoulder,
-                    HumanBodyBones.RightShoulder,
-                    HumanBodyBones.LeftUpperArm,
-                    HumanBodyBones.RightUpperArm
-                };
+                var shoulderBones = leftSide
+                    ? new[] { HumanBodyBones.LeftShoulder, HumanBodyBones.LeftUpperArm }
+                    : new[] { HumanBodyBones.RightShoulder, HumanBodyBones.RightUpperArm };
 
                 for (var i = 0; i < shoulderBones.Length; i++)
                 {
@@ -1785,6 +1841,15 @@ namespace ShooterPrototype.EditorTools
                     Object.DestroyImmediate(instanceRoot);
                 }
             }
+        }
+
+        private static List<string> CollectRemoteShoulderMaskTransformPaths()
+        {
+            var result = new List<string>();
+            result.AddRange(CollectRemoteShoulderMaskTransformPaths(leftSide: true));
+            result.AddRange(CollectRemoteShoulderMaskTransformPaths(leftSide: false));
+            result.Sort(System.StringComparer.Ordinal);
+            return result;
         }
 
         private static readonly string[] RemoteForearmMaskIncludeTokens =
@@ -1837,6 +1902,217 @@ namespace ShooterPrototype.EditorTools
                 mask.SetTransformPath(i, paths[i]);
                 mask.SetTransformActive(i, true);
             }
+        }
+
+        private static void ApplyRemoteSideForearmsOnlyMaskSettings(AvatarMask mask, bool leftSide)
+        {
+            for (var i = 0; i < (int)AvatarMaskBodyPart.LastBodyPart; i++)
+            {
+                mask.SetHumanoidBodyPartActive((AvatarMaskBodyPart)i, false);
+            }
+
+            if (leftSide)
+            {
+                mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.LeftFingers, true);
+            }
+            else
+            {
+                mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.RightFingers, true);
+            }
+
+            var paths = leftSide
+                ? CollectRemoteFingerMaskTransformPaths(leftSide: true)
+                : CollectRemoteForearmMaskTransformPaths(leftSide: false);
+            if (paths.Count == 0)
+            {
+                mask.transformCount = 0;
+                if (leftSide)
+                {
+                    mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.LeftFingers, true);
+                }
+                else
+                {
+                    mask.SetHumanoidBodyPartActive(AvatarMaskBodyPart.RightArm, true);
+                }
+
+                Debug.LogWarning(
+                    "[SyntyAnimationSetup] Forearm avatar mask fell back to humanoid body parts. " +
+                    "Re-run Rebuild Animation Controller after PlayerCleanRemote is available.");
+                return;
+            }
+
+            mask.transformCount = paths.Count;
+            for (var i = 0; i < paths.Count; i++)
+            {
+                mask.SetTransformPath(i, paths[i]);
+                mask.SetTransformActive(i, true);
+            }
+        }
+
+        private static List<string> CollectRemoteFingerMaskTransformPaths(bool leftSide)
+        {
+            var result = new List<string>();
+            var avatarRoot = ResolveReferenceSyntyAvatarRoot(out var instanceRoot);
+            if (avatarRoot == null)
+            {
+                return result;
+            }
+
+            try
+            {
+                var animator = avatarRoot.GetComponent<Animator>();
+                if (animator != null && animator.isHuman)
+                {
+                    var handBone = leftSide ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand;
+                    var hand = animator.GetBoneTransform(handBone);
+                    if (hand != null)
+                    {
+                        AddFingerDescendantPaths(avatarRoot, hand, result);
+                    }
+                }
+
+                if (result.Count == 0)
+                {
+                    CollectNameBasedFingerPaths(avatarRoot, leftSide, result);
+                }
+
+                result.Sort(System.StringComparer.Ordinal);
+                return result;
+            }
+            finally
+            {
+                if (instanceRoot != null)
+                {
+                    Object.DestroyImmediate(instanceRoot);
+                }
+            }
+        }
+
+        private static void AddFingerDescendantPaths(Transform avatarRoot, Transform handRoot, List<string> result)
+        {
+            var children = handRoot.GetComponentsInChildren<Transform>(true);
+            for (var i = 0; i < children.Length; i++)
+            {
+                var child = children[i];
+                if (child == null || child == handRoot)
+                {
+                    continue;
+                }
+
+                if (!ShouldIncludeRemoteFingerMaskBone(child.name))
+                {
+                    continue;
+                }
+
+                AddForearmTransformPath(avatarRoot, child, result);
+            }
+        }
+
+        private static void CollectNameBasedFingerPaths(Transform avatarRoot, bool leftSide, List<string> result)
+        {
+            var allTransforms = avatarRoot.GetComponentsInChildren<Transform>(true);
+            for (var i = 0; i < allTransforms.Length; i++)
+            {
+                var bone = allTransforms[i];
+                if (bone == null || bone == avatarRoot)
+                {
+                    continue;
+                }
+
+                if (!ShouldIncludeRemoteFingerMaskBone(bone.name))
+                {
+                    continue;
+                }
+
+                if (leftSide && !IsLeftSideMaskName(bone.name))
+                {
+                    continue;
+                }
+
+                if (!leftSide && !IsRightSideMaskName(bone.name))
+                {
+                    continue;
+                }
+
+                AddForearmTransformPath(avatarRoot, bone, result);
+            }
+        }
+
+        private static bool ShouldIncludeRemoteFingerMaskBone(string boneName)
+        {
+            if (string.IsNullOrEmpty(boneName))
+            {
+                return false;
+            }
+
+            if (IsHandRootMaskBone(boneName))
+            {
+                return false;
+            }
+
+            for (var i = 0; i < RemoteFingerMaskIncludeTokens.Length; i++)
+            {
+                if (boneName.IndexOf(RemoteFingerMaskIncludeTokens[i], System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsHandRootMaskBone(string boneName)
+        {
+            if (string.IsNullOrEmpty(boneName))
+            {
+                return false;
+            }
+
+            if (boneName.IndexOf("Finger", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                boneName.IndexOf("Thumb", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return false;
+            }
+
+            return boneName.IndexOf("Hand", System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static readonly string[] RemoteFingerMaskIncludeTokens =
+        {
+            "Finger",
+            "Thumb",
+            "Index",
+            "Middle",
+            "Ring",
+            "Pinky",
+            "Little"
+        };
+
+        private static List<string> CollectRemoteForearmMaskTransformPaths(bool leftSide)
+        {
+            var allPaths = CollectRemoteForearmMaskTransformPaths();
+            var filtered = new List<string>();
+            for (var i = 0; i < allPaths.Count; i++)
+            {
+                var path = allPaths[i];
+                if (string.IsNullOrEmpty(path))
+                {
+                    continue;
+                }
+
+                var boneName = path.Substring(path.LastIndexOf('/') + 1);
+                if (leftSide && IsLeftSideMaskName(boneName))
+                {
+                    filtered.Add(path);
+                }
+                else if (!leftSide && IsRightSideMaskName(boneName))
+                {
+                    filtered.Add(path);
+                }
+            }
+
+            filtered.Sort(System.StringComparer.Ordinal);
+            return filtered;
         }
 
         private static List<string> CollectRemoteForearmMaskTransformPaths()
@@ -2028,6 +2304,40 @@ namespace ShooterPrototype.EditorTools
             }
 
             return false;
+        }
+
+        private static bool IsLeftSideMaskName(string boneName)
+        {
+            if (string.IsNullOrEmpty(boneName))
+            {
+                return false;
+            }
+
+            if (IsRightSideMaskName(boneName) &&
+                boneName.IndexOf("Left", System.StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return false;
+            }
+
+            return boneName.IndexOf("Left", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   boneName.EndsWith("_L", System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsRightSideMaskName(string boneName)
+        {
+            if (string.IsNullOrEmpty(boneName))
+            {
+                return false;
+            }
+
+            if (boneName.IndexOf("Left", System.StringComparison.OrdinalIgnoreCase) >= 0 &&
+                boneName.IndexOf("Right", System.StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return false;
+            }
+
+            return boneName.IndexOf("Right", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   boneName.EndsWith("_R", System.StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsTorsoBodyPart(AvatarMaskBodyPart part)
@@ -2696,6 +3006,7 @@ namespace ShooterPrototype.EditorTools
             public AnimationClip CrouchRunBackwardDiagonalLeft;
             public AnimationClip CrouchRunBackwardDiagonalRight;
             public AnimationClip ArmsIdle;
+            public AnimationClip LeftArmIdle;
         }
     }
 }

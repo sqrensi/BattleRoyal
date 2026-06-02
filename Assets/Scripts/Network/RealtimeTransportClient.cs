@@ -45,6 +45,7 @@ namespace ShooterPrototype.Network
         public sealed class RealtimePlayerState
         {
             public string ticketId;
+            public string characterModel;
             public PositionDto position;
             public float yaw;
             public float lookPitch;
@@ -177,6 +178,7 @@ namespace ShooterPrototype.Network
         private sealed class PoseMessage
         {
             public string type;
+            public string characterModel;
             public PositionDto position;
             public float yaw;
             public float lookPitch;
@@ -303,6 +305,7 @@ namespace ShooterPrototype.Network
         public void SendPose(
             Vector3 position,
             float yaw,
+            string characterModel = "",
             float lookPitch = 0f,
             int shotSeq = 0,
             int reloadSeq = 0,
@@ -343,6 +346,7 @@ namespace ShooterPrototype.Network
                     y = position.y,
                     z = position.z
                 },
+                characterModel = string.IsNullOrWhiteSpace(characterModel) ? string.Empty : characterModel,
                 yaw = yaw,
                 lookPitch = lookPitch,
                 shotSeq = Math.Max(0, shotSeq),

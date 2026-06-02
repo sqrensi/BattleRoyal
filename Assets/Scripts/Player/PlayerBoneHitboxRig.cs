@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 namespace ShooterPrototype.Player
@@ -9,6 +10,7 @@ namespace ShooterPrototype.Player
 
         [Header("Build")]
         [SerializeField] private bool autoBuildOnAwake = true;
+        [SerializeField] private bool preserveBakedHitboxesAtRuntime = true;
         [SerializeField] private Transform syntyRoot;
         [SerializeField] private bool setAsTrigger = true;
         [SerializeField] private int hitboxLayer = -1;
@@ -37,7 +39,7 @@ namespace ShooterPrototype.Player
         {
             PlayerHitboxCleanup.RemoveLegacyLineHitboxes(gameObject);
             ResolveSyntyRoot();
-            if (autoBuildOnAwake)
+            if (autoBuildOnAwake && GetComponent<RemoteThirdPersonPlayerBootstrap>() == null)
             {
                 BuildOrRefreshHitboxes();
             }
@@ -46,6 +48,11 @@ namespace ShooterPrototype.Player
         [ContextMenu("Build/Refresh Bone Hitboxes")]
         public void BuildOrRefreshHitboxes()
         {
+            BuildOrRefreshHitboxes(forceRebuild: false);
+        }
+
+        public void BuildOrRefreshHitboxes(bool forceRebuild)
+        {
             ResolveSyntyRoot();
             if (syntyRoot == null)
             {
@@ -53,6 +60,13 @@ namespace ShooterPrototype.Player
             }
 
             RemoveLegacyLineHitboxes();
+            if (!forceRebuild && preserveBakedHitboxesAtRuntime && HasActiveHitboxes())
+            {
+                RefreshExistingHitboxLayers();
+                return;
+            }
+
+            RemoveHitboxes();
             BuildHead();
             BuildNeck();
             BuildTorso();
@@ -64,6 +78,59 @@ namespace ShooterPrototype.Player
             else
             {
                 DisableArmHitboxes();
+            }
+        }
+
+        public bool HasActiveHitboxes()
+        {
+            if (syntyRoot == null)
+            {
+                return false;
+            }
+
+            var markers = syntyRoot.GetComponentsInChildren<PlayerBoneHitbox>(true);
+            for (var i = 0; i < markers.Length; i++)
+            {
+                var marker = markers[i];
+                if (marker == null)
+                {
+                    continue;
+                }
+
+                var collider = marker.GetComponent<Collider>();
+                if (collider != null && collider.enabled)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void RefreshExistingHitboxLayers()
+        {
+            if (syntyRoot == null)
+            {
+                return;
+            }
+
+            var markers = syntyRoot.GetComponentsInChildren<PlayerBoneHitbox>(true);
+            for (var i = 0; i < markers.Length; i++)
+            {
+                var marker = markers[i];
+                if (marker == null)
+                {
+                    continue;
+                }
+
+                var collider = marker.GetComponent<Collider>();
+                if (collider != null)
+                {
+                    collider.isTrigger = setAsTrigger;
+                    collider.enabled = true;
+                }
+
+                ApplyColliderLayer(marker.gameObject);
             }
         }
 
@@ -103,13 +170,12 @@ namespace ShooterPrototype.Player
 
         private void ResolveSyntyRoot()
         {
-            if (syntyRoot != null)
-            {
-                return;
-            }
-
             var thirdPersonBody = transform.Find("ThirdPersonBody");
-            syntyRoot = thirdPersonBody != null ? thirdPersonBody.Find("SyntyVisual") : null;
+            var visual = thirdPersonBody != null ? thirdPersonBody.Find("SyntyVisual") : null;
+            if (visual != null)
+            {
+                syntyRoot = visual;
+            }
         }
 
         private void RemoveLegacyLineHitboxes()
@@ -119,58 +185,58 @@ namespace ShooterPrototype.Player
 
         private void BuildHead()
         {
-            var bone = FindBone("Head", "mixamorig:Head");
+            var bone = FindBone("Head");
             EnsureSphereHitbox(bone, "Head", PlayerBoneHitZone.Head, headRadius, new Vector3(0f, headCenterOffset, 0f));
         }
 
         private void BuildNeck()
         {
-            var bone = FindBone("Neck", "Neck_M", "mixamorig:Neck");
+            var bone = FindBone("Neck", "Neck_M");
             EnsureCapsuleHitbox(bone, "Neck", PlayerBoneHitZone.Neck, neckRadius, neckHeight);
         }
 
         private void BuildTorso()
         {
-            var spine = FindBone("Spine_02", "Spine_01", "Spine_03", "mixamorig:Spine2", "mixamorig:Spine1", "mixamorig:Spine");
+            var spine = FindBone("Spine2", "Spine1", "Spine_02", "Spine_01", "Spine_03", "Spine");
             EnsureCapsuleHitbox(spine, "Torso", PlayerBoneHitZone.Body, torsoRadius, torsoHeight);
 
-            var hips = FindBone("Hips", "mixamorig:Hips", "pelvis");
+            var hips = FindBone("Hips", "pelvis");
             EnsureCapsuleHitbox(hips, "Hips", PlayerBoneHitZone.Body, hipsRadius, hipsHeight);
         }
 
         private void BuildLegs()
         {
-            var leftUpperLeg = FindBone("Thigh_L", "UpperLeg_L", "mixamorig:LeftUpLeg");
+            var leftUpperLeg = FindBone("LeftUpLeg", "Thigh_L", "UpperLeg_L");
             EnsureCapsuleHitbox(leftUpperLeg, "LeftUpperLeg", PlayerBoneHitZone.Leg, upperLegRadius, upperLegHeight);
 
-            var rightUpperLeg = FindBone("Thigh_R", "UpperLeg_R", "mixamorig:RightUpLeg");
+            var rightUpperLeg = FindBone("RightUpLeg", "Thigh_R", "UpperLeg_R");
             EnsureCapsuleHitbox(rightUpperLeg, "RightUpperLeg", PlayerBoneHitZone.Leg, upperLegRadius, upperLegHeight);
 
-            var leftLowerLeg = FindBone("Shin_L", "Knee_L", "LowerLeg_L", "mixamorig:LeftLeg");
+            var leftLowerLeg = FindBone("LeftLeg", "Shin_L", "Knee_L", "LowerLeg_L");
             EnsureCapsuleHitbox(leftLowerLeg, "LeftLowerLeg", PlayerBoneHitZone.Leg, lowerLegRadius, lowerLegHeight);
 
-            var rightLowerLeg = FindBone("Shin_R", "Knee_R", "LowerLeg_R", "mixamorig:RightLeg");
+            var rightLowerLeg = FindBone("RightLeg", "Shin_R", "Knee_R", "LowerLeg_R");
             EnsureCapsuleHitbox(rightLowerLeg, "RightLowerLeg", PlayerBoneHitZone.Leg, lowerLegRadius, lowerLegHeight);
 
-            var leftFoot = FindBone("Foot_L", "Ball_L", "Toes_L", "mixamorig:LeftFoot", "mixamorig:LeftToeBase");
+            var leftFoot = FindBone("LeftFoot", "LeftToeBase", "Foot_L", "Ball_L", "Toes_L");
             EnsureCapsuleHitbox(leftFoot, "LeftFoot", PlayerBoneHitZone.Leg, footRadius, footHeight);
 
-            var rightFoot = FindBone("Foot_R", "Ball_R", "Toes_R", "mixamorig:RightFoot", "mixamorig:RightToeBase");
+            var rightFoot = FindBone("RightFoot", "RightToeBase", "Foot_R", "Ball_R", "Toes_R");
             EnsureCapsuleHitbox(rightFoot, "RightFoot", PlayerBoneHitZone.Leg, footRadius, footHeight);
         }
 
         private void BuildArms()
         {
-            var leftUpperArm = FindBone("Shoulder_L", "UpperArm_L", "mixamorig:LeftArm");
+            var leftUpperArm = FindBone("LeftArm", "UpperArm_L", "Shoulder_L");
             EnsureCapsuleHitbox(leftUpperArm, "LeftUpperArm", PlayerBoneHitZone.Body, armRadius, upperArmHeight);
 
-            var rightUpperArm = FindBone("Shoulder_R", "UpperArm_R", "mixamorig:RightArm");
+            var rightUpperArm = FindBone("RightArm", "UpperArm_R", "Shoulder_R");
             EnsureCapsuleHitbox(rightUpperArm, "RightUpperArm", PlayerBoneHitZone.Body, armRadius, upperArmHeight);
 
-            var leftLowerArm = FindBone("Elbow_L", "LowerArm_L", "mixamorig:LeftForeArm");
+            var leftLowerArm = FindBone("LeftForeArm", "Elbow_L", "LowerArm_L");
             EnsureCapsuleHitbox(leftLowerArm, "LeftLowerArm", PlayerBoneHitZone.Body, armRadius, lowerArmHeight);
 
-            var rightLowerArm = FindBone("Elbow_R", "LowerArm_R", "mixamorig:RightForeArm");
+            var rightLowerArm = FindBone("RightForeArm", "Elbow_R", "LowerArm_R");
             EnsureCapsuleHitbox(rightLowerArm, "RightLowerArm", PlayerBoneHitZone.Body, armRadius, lowerArmHeight);
         }
 
@@ -305,7 +371,10 @@ namespace ShooterPrototype.Player
             if (hitboxLayer >= 0 && hitboxLayer <= 31)
             {
                 hitboxObject.layer = hitboxLayer;
+                return;
             }
+
+            PlayerHitboxLayers.ApplyHitboxLayer(hitboxObject);
         }
 
         private static void EnsureMarker(GameObject hitboxObject, PlayerBoneHitZone zone)
@@ -327,6 +396,8 @@ namespace ShooterPrototype.Player
             }
 
             var all = syntyRoot.GetComponentsInChildren<Transform>(true);
+            Transform best = null;
+            var bestScore = int.MinValue;
             for (var n = 0; n < names.Length; n++)
             {
                 var targetName = names[n];
@@ -338,19 +409,200 @@ namespace ShooterPrototype.Player
                 for (var i = 0; i < all.Length; i++)
                 {
                     var current = all[i];
-                    if (current == null || IsExcludedBoneBranch(current))
+                    if (current == null ||
+                        IsExcludedBoneBranch(current) ||
+                        !IsBoneNameMatch(current.name, targetName))
                     {
                         continue;
                     }
 
-                    if (string.Equals(current.name, targetName, System.StringComparison.OrdinalIgnoreCase))
+                    var score = ScoreBone(current);
+                    if (score <= bestScore)
                     {
-                        return current;
+                        continue;
                     }
+
+                    bestScore = score;
+                    best = current;
                 }
             }
 
-            return null;
+            if (best != null)
+            {
+                return best;
+            }
+
+            return FindBoneFromBodyMesh(names);
+        }
+
+        private Transform FindBoneFromBodyMesh(string[] names)
+        {
+            var bodyRenderer = FindPrimaryBodyRenderer(syntyRoot);
+            if (bodyRenderer == null || bodyRenderer.bones == null || names == null)
+            {
+                return null;
+            }
+
+            Transform best = null;
+            var bestScore = int.MinValue;
+            for (var n = 0; n < names.Length; n++)
+            {
+                var targetName = names[n];
+                if (string.IsNullOrWhiteSpace(targetName))
+                {
+                    continue;
+                }
+
+                var bones = bodyRenderer.bones;
+                for (var i = 0; i < bones.Length; i++)
+                {
+                    var bone = bones[i];
+                    if (bone == null ||
+                        IsExcludedBoneBranch(bone) ||
+                        !IsBoneNameMatch(bone.name, targetName))
+                    {
+                        continue;
+                    }
+
+                    var score = ScoreBone(bone) + 1000;
+                    if (score <= bestScore)
+                    {
+                        continue;
+                    }
+
+                    bestScore = score;
+                    best = bone;
+                }
+            }
+
+            return best;
+        }
+
+        private static int ScoreBone(Transform bone)
+        {
+            if (bone == null)
+            {
+                return int.MinValue;
+            }
+
+            var score = 0;
+            if (bone.gameObject.activeInHierarchy)
+            {
+                score += 10;
+            }
+
+            return score;
+        }
+
+        private static SkinnedMeshRenderer FindPrimaryBodyRenderer(Transform root)
+        {
+            if (root == null)
+            {
+                return null;
+            }
+
+            var skinnedMeshes = root.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            SkinnedMeshRenderer best = null;
+            var bestScore = int.MinValue;
+            for (var i = 0; i < skinnedMeshes.Length; i++)
+            {
+                var candidate = skinnedMeshes[i];
+                if (!IsCharacterBodyRenderer(candidate))
+                {
+                    continue;
+                }
+
+                var score = 0;
+                if (candidate.sharedMesh != null)
+                {
+                    score += candidate.sharedMesh.vertexCount;
+                }
+
+                if (candidate.gameObject.activeInHierarchy)
+                {
+                    score += 1000;
+                }
+
+                if (candidate.enabled)
+                {
+                    score += 500;
+                }
+
+                if (score <= bestScore)
+                {
+                    continue;
+                }
+
+                bestScore = score;
+                best = candidate;
+            }
+
+            return best;
+        }
+
+        private static bool IsCharacterBodyRenderer(SkinnedMeshRenderer source)
+        {
+            if (source == null || source.sharedMesh == null)
+            {
+                return false;
+            }
+
+            var objectName = source.gameObject.name;
+            if (objectName.IndexOf("_FirstPersonArms", StringComparison.Ordinal) >= 0)
+            {
+                return false;
+            }
+
+            if (objectName.StartsWith("SM_Char_Attach", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (objectName.StartsWith("Character_", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return objectName.StartsWith("Ch", StringComparison.Ordinal);
+        }
+
+        private static bool IsBoneNameMatch(string actualName, string requestedName)
+        {
+            if (string.IsNullOrWhiteSpace(actualName) || string.IsNullOrWhiteSpace(requestedName))
+            {
+                return false;
+            }
+
+            if (string.Equals(actualName, requestedName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            var actualCore = ExtractBoneCoreName(actualName);
+            var requestedCore = ExtractBoneCoreName(requestedName);
+            if (string.Equals(actualCore, requestedCore, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return actualName.EndsWith(":" + requestedCore, StringComparison.OrdinalIgnoreCase) ||
+                   requestedName.EndsWith(":" + actualCore, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ExtractBoneCoreName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var separator = value.LastIndexOf(':');
+            if (separator >= 0 && separator < value.Length - 1)
+            {
+                return value.Substring(separator + 1);
+            }
+
+            return value;
         }
 
         private static bool IsExcludedBoneBranch(Transform bone)

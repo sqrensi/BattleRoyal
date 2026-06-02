@@ -126,6 +126,14 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
+                // FP arms can be generated under different roots and names (e.g. *_NoShoulders).
+                // Keep them visible for local first-person regardless of body hide rules.
+                if (IsFirstPersonArmsRendererName(renderer.gameObject.name))
+                {
+                    renderer.enabled = true;
+                    continue;
+                }
+
                 if (syntyBinder != null && syntyBinder.ShouldHideSourceBodyInFirstPerson(renderer))
                 {
                     renderer.enabled = false;
@@ -221,7 +229,7 @@ namespace ShooterPrototype.Player
             {
                 var renderer = renderers[i];
                 if (renderer == null ||
-                    !renderer.gameObject.name.EndsWith("_FirstPersonArms", System.StringComparison.Ordinal))
+                    !IsFirstPersonArmsRendererName(renderer.gameObject.name))
                 {
                     continue;
                 }
@@ -231,6 +239,12 @@ namespace ShooterPrototype.Player
                     renderer.enabled = false;
                 }
             }
+        }
+
+        private static bool IsFirstPersonArmsRendererName(string objectName)
+        {
+            return !string.IsNullOrWhiteSpace(objectName) &&
+                   objectName.IndexOf("_FirstPersonArms", System.StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 }

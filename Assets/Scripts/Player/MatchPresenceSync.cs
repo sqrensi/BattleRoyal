@@ -42,6 +42,7 @@ namespace ShooterPrototype.Player
         [SerializeField] private float remoteStaleSeconds = 8f;
         [SerializeField] private float snapshotSilenceReconnectSeconds = 6f;
         [SerializeField] private bool debugRealtimeLogs = false;
+        [SerializeField] private string charactersResourcesFolder = "Characters";
 
         private RealtimeTransportClient realtimeClient;
         private NetworkLauncher networkLauncher;
@@ -65,6 +66,7 @@ namespace ShooterPrototype.Player
         private FpsCharacterController localFpsController;
         private ProceduralLocomotionRig localLocomotionRig;
         private PlayerHealth localHealth;
+        private string localCharacterModelName = string.Empty;
         private readonly Dictionary<string, RemoteAvatar> remoteAvatars = new Dictionary<string, RemoteAvatar>();
 
         private sealed class RemoteAvatar
@@ -99,6 +101,7 @@ namespace ShooterPrototype.Player
             public int LastAppliedFootstepSeq = -1;
             public bool WasDead;
             public int LastAppliedStateTick = -1;
+            public string AppliedCharacterModelName;
             public readonly List<PresenceSnapshot> Snapshots = new List<PresenceSnapshot>();
         }
 
@@ -146,6 +149,8 @@ namespace ShooterPrototype.Player
             {
                 localLocomotionRig = GetComponentInChildren<ProceduralLocomotionRig>(true);
             }
+
+            localCharacterModelName = CharacterSelectionService.GetSelectedModelName(charactersResourcesFolder);
         }
 
         private void OnEnable()
@@ -351,6 +356,9 @@ namespace ShooterPrototype.Player
             var remoteWeapon = avatar.Root.GetComponent<RemoteWeaponPresentation>();
             remoteWeapon?.SetNetworkLookPitch(avatar.NetworkLookPitch);
             remoteWeapon?.SetNetworkCrouchState(avatar.NetworkCrouching);
+
+            var remotePitchPosture = avatar.Root.GetComponent<RemoteLookPitchPosture>();
+            remotePitchPosture?.SetNetworkLookPitch(avatar.NetworkLookPitch);
         }
 
         private static void ResolveRemoteMoveInput(
@@ -519,10 +527,15 @@ namespace ShooterPrototype.Player
             var moveInputX = inputAuth ? localFpsController.NetworkMoveInputX : 0f;
             var moveInputZ = inputAuth ? localFpsController.NetworkMoveInputZ : 0f;
             var jumpPressed = inputAuth && localFpsController.NetworkJumpPressed;
+            if (string.IsNullOrWhiteSpace(localCharacterModelName))
+            {
+                localCharacterModelName = CharacterSelectionService.GetSelectedModelName(charactersResourcesFolder);
+            }
 
             realtimeClient.SendPose(
                 currentPos,
                 currentYaw,
+                localCharacterModelName,
                 lookPitch,
                 shotSeq,
                 reloadSeq,
@@ -892,12 +905,16 @@ namespace ShooterPrototype.Player
                     avatar.NetworkLookPitch = p.lookPitch;
                     avatar.NetworkMoveInputX = p.moveInputX;
                     avatar.NetworkMoveInputZ = p.moveInputZ;
+                    avatar.LocomotionRig?.SetNetworkLookPitch(p.lookPitch);
                     IngestPlayerStateSamples(avatar, p);
+                    ApplyRemoteCharacterModel(avatar, p.characterModel);
 
                     var remoteWeapon = avatar.Root.GetComponent<RemoteWeaponPresentation>();
                     remoteWeapon?.SetNetworkLookPitch(p.lookPitch);
                     remoteWeapon?.SetNetworkCrouchState(p.isCrouching);
                     remoteWeapon?.SetHolstered(p.isHolstered);
+
+                    avatar.Root.GetComponent<RemoteLookPitchPosture>()?.SetNetworkLookPitch(p.lookPitch);
 
                     ApplyRemotePresenceEventsForAvatar(avatar, p);
 
@@ -950,6 +967,9 @@ namespace ShooterPrototype.Player
                 remoteWeapon.EnsureAttached();
                 EnsureRemoteVisuals(root);
             }
+
+            EnsureAvatarHasFallbackModel(root);
+            RefreshRemoteAvatarHitboxes(root);
 
             var identity = root.GetComponent<PlayerNetworkIdentity>();
             if (identity == null)
@@ -1011,8 +1031,67 @@ namespace ShooterPrototype.Player
                 LastSeenAt = Time.unscaledTime,
                 LastKnownPosition = initialPosition,
                 LastKnownYaw = initialYaw,
-                HasKnownPose = true
+                HasKnownPose = true,
+                AppliedCharacterModelName = string.Empty
             };
+        }
+
+        private void ApplyRemoteCharacterModel(RemoteAvatar avatar, string modelName)
+        {
+            if (avatar?.Root == null || string.IsNullOrWhiteSpace(modelName))
+            {
+                return;
+            }
+
+            if (string.Equals(avatar.AppliedCharacterModelName, modelName, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var modelAsset = CharacterSelectionService.FindModelByName(charactersResourcesFolder, modelName);
+            if (modelAsset == null)
+            {
+                return;
+            }
+
+            if (CharacterModelApplier.TryApplyToPlayer(avatar.Root, modelAsset))
+            {
+                avatar.AppliedCharacterModelName = modelName;
+            }
+        }
+
+        private void EnsureAvatarHasFallbackModel(GameObject avatarRoot)
+        {
+            if (avatarRoot == null || CharacterModelApplier.HasCharacterBody(avatarRoot))
+            {
+                return;
+            }
+
+            var fallbackModel = CharacterSelectionService.ResolveFallbackModel(charactersResourcesFolder);
+            if (fallbackModel == null)
+            {
+                Debug.LogWarning("[MatchPresenceSync] Missing fallback model in Resources/Characters for remote avatar.");
+                return;
+            }
+
+            CharacterModelApplier.TryApplyToPlayer(avatarRoot, fallbackModel);
+        }
+
+        private static void RefreshRemoteAvatarHitboxes(GameObject avatarRoot)
+        {
+            if (avatarRoot == null)
+            {
+                return;
+            }
+
+            var thirdPersonBody = avatarRoot.transform.Find("ThirdPersonBody");
+            var syntyVisual = thirdPersonBody != null ? thirdPersonBody.Find("SyntyVisual") : null;
+            if (syntyVisual == null)
+            {
+                return;
+            }
+
+            CharacterModelApplier.RefreshRemoteHitboxes(avatarRoot, syntyVisual, forceRebuild: false);
         }
 
         private void TryPlayRemoteShots(RemoteAvatar avatar, RealtimeTransportClient.RealtimePlayerState playerState)

@@ -657,6 +657,7 @@ function handleWsPose(socket, message) {
   const position = normalizePosition(message.position);
   const yaw = normalizeNumber(message.yaw, 0);
   const lookPitch = normalizeNumber(message.lookPitch, 0);
+  const characterModel = typeof message.characterModel === "string" ? message.characterModel.trim() : "";
   const shotSeq = Math.max(0, normalizeInt64(message.shotSeq, 0));
   const shotOriginX = normalizeNumber(message.shotOriginX, 0);
   const shotOriginY = normalizeNumber(message.shotOriginY, 0);
@@ -751,6 +752,7 @@ function handleWsPose(socket, message) {
   }
 
   presence.lookPitch = lookPitch;
+  presence.characterModel = characterModel;
   presence.shotSeq = shotSeq;
   if (shotSeq > (prevPresence.shotSeq || 0)) {
     recordShotEvent(ticket, {
@@ -916,6 +918,7 @@ function createDefaultPresence(sampleTick, sampleTimeMs) {
     position: { x: 0, y: 0, z: 0 },
     yaw: 0,
     lookPitch: 0,
+    characterModel: "",
     shotSeq: 0,
     shotOriginX: 0,
     shotOriginY: 0,
@@ -1354,7 +1357,7 @@ function encodeSnapshotBinary(payload) {
     const chunks = [];
     const header = Buffer.alloc(11);
     header.write("RTS1", 0, 4, "ascii");
-    header.writeUInt8(5, 4);
+    header.writeUInt8(6, 4);
     header.writeUInt32LE(payload.serverTick >>> 0, 5);
     header.writeUInt16LE(payload.serverTickRate >>> 0, 9);
     chunks.push(header);
@@ -1382,6 +1385,10 @@ function encodeSnapshotBinary(payload) {
       const ticketBytes = Buffer.from(ticketId, "utf8");
       chunks.push(Buffer.from([Math.min(255, ticketBytes.length)]));
       chunks.push(ticketBytes);
+      const modelName = typeof player.characterModel === "string" ? player.characterModel : "";
+      const modelBytes = Buffer.from(modelName, "utf8");
+      chunks.push(Buffer.from([Math.min(255, modelBytes.length)]));
+      chunks.push(modelBytes);
 
       const pos = player.position || { x: 0, y: 0, z: 0 };
       const body = Buffer.alloc(35);
@@ -1577,6 +1584,7 @@ function collectRealtimePlayersForMatch(matchId, ownerTicketId) {
       position: ticket.presence.position,
       yaw: ticket.presence.yaw,
       lookPitch: ticket.presence.lookPitch || 0,
+      characterModel: ticket.presence.characterModel || "",
       shotSeq: Number.isFinite(ticket.presence.shotSeq) ? ticket.presence.shotSeq : 0,
       shotOriginX: Number.isFinite(ticket.presence.shotOriginX) ? ticket.presence.shotOriginX : 0,
       shotOriginY: Number.isFinite(ticket.presence.shotOriginY) ? ticket.presence.shotOriginY : 0,

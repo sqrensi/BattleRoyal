@@ -73,6 +73,12 @@ namespace ShooterPrototype.Player
             configured = true;
         }
 
+        public void SetVisualRoot(Transform visualRoot)
+        {
+            syntyVisualRoot = visualRoot;
+            ApplyVisualTransform();
+        }
+
         public void ApplyMecanimMode()
         {
             ApplyProceduralVisibility();
@@ -194,7 +200,12 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            return firstPersonArmsPresenter != null && firstPersonArmsPresenter.IsSourceBodyRenderer(renderer);
+            if (firstPersonArmsPresenter == null || !firstPersonArmsPresenter.HasFirstPersonArms)
+            {
+                return false;
+            }
+
+            return firstPersonArmsPresenter.IsSourceBodyRenderer(renderer);
         }
 
         public bool ShouldHideRendererInFirstPerson(string objectName, Transform rendererTransform)

@@ -13,6 +13,7 @@ namespace ShooterPrototype.Player
         [Header("Player")]
         [SerializeField] private GameObject playerPrefab;
         [SerializeField] private GameObject remotePlayerPrefab;
+        [SerializeField] private string charactersResourcesFolder = "Characters";
         [SerializeField] private string localPlayerObjectName = "LocalPlayer";
         [SerializeField] private bool enableMatchPresenceSync = true;
         [SerializeField] private LayerMask groundMask = ~0;
@@ -149,12 +150,19 @@ namespace ShooterPrototype.Player
             var splitBody = instance.GetComponent<SyntySplitBodyPresentation>();
             splitBody?.ApplyViewMode();
 
+            var selectedModel = CharacterSelectionService.ResolveSelectedModel(charactersResourcesFolder);
+            if (selectedModel.ModelAsset != null)
+            {
+                CharacterModelApplier.TryApplyToPlayer(instance, selectedModel.ModelAsset);
+            }
+
             if (enableMatchPresenceSync)
             {
                 AttachPresenceSync(instance);
             }
 
-            Debug.Log($"[PlayerSpawnManager] Spawned local player at {resolvedPosition}.");
+            var selectedModelName = selectedModel.ModelAsset != null ? selectedModel.DisplayName : "Default";
+            Debug.Log($"[PlayerSpawnManager] Spawned player at {resolvedPosition}. Model: {selectedModelName}");
         }
 
         private void AttachPresenceSync(GameObject localPlayer)

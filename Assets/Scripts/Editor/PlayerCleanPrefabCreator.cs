@@ -10,6 +10,7 @@ namespace ShooterPrototype.EditorTools
         public const string SourcePrefabPath = "Assets/Prefabs/Player/PlayerLocal.prefab";
         public const string TargetPrefabPath = "Assets/Prefabs/Player/PlayerClean.prefab";
         public const string DefaultCharacterFbxPath = "Assets/Characters/Ch18_nonPBR.fbx";
+        public const string DefaultResourcesCharacterFolder = "Assets/Resources/Characters";
 
         private static readonly string[] ProceduralLineObjectNames =
         {
@@ -32,6 +33,19 @@ namespace ShooterPrototype.EditorTools
             RebuildFpAndRemotePrefabsInternal();
         }
 
+        [MenuItem("Shooter Prototype/Setup/Rebuild FP + Remote Prefabs (Resources Characters)")]
+        public static void RebuildFpAndRemotePrefabsFromResources()
+        {
+            var characterPath = ResolveCharacterFromResourcesOrDefault();
+            if (string.IsNullOrWhiteSpace(characterPath))
+            {
+                Debug.LogError("[PlayerCleanPrefabCreator] No character model found in Resources/Characters.");
+                return;
+            }
+
+            RebuildFpAndRemotePrefabsInternal(characterPath);
+        }
+
         public static void RebuildFpAndRemotePrefabsBatch()
         {
             RebuildFpAndRemotePrefabsInternal();
@@ -43,8 +57,13 @@ namespace ShooterPrototype.EditorTools
 
         private static void RebuildFpAndRemotePrefabsInternal()
         {
+            RebuildFpAndRemotePrefabsInternal(DefaultCharacterFbxPath);
+        }
+
+        private static void RebuildFpAndRemotePrefabsInternal(string characterFbxPath)
+        {
             SyntyAnimationSetup.RebuildAnimationControllerOnly();
-            SetupPlayerCleanCharacterArms(DefaultCharacterFbxPath);
+            SetupPlayerCleanCharacterArms(characterFbxPath);
             AssetDatabase.SaveAssets();
             Debug.Log(
                 "[PlayerCleanPrefabCreator] Rebuilt PlayerClean (FP) and PlayerCleanRemote prefabs with animation controllers.");
@@ -53,11 +72,17 @@ namespace ShooterPrototype.EditorTools
         [MenuItem("Shooter Prototype/Setup/Setup PlayerClean Character Arms (Ch18)")]
         public static void SetupPlayerCleanCharacterArms()
         {
-            SetupPlayerCleanCharacterArms(DefaultCharacterFbxPath);
+            SetupPlayerCleanCharacterArms(ResolveCharacterFromResourcesOrDefault());
         }
 
         public static void SetupPlayerCleanCharacterArms(string characterFbxPath)
         {
+            if (string.IsNullOrWhiteSpace(characterFbxPath))
+            {
+                Debug.LogError("[PlayerCleanPrefabCreator] Character path is empty.");
+                return;
+            }
+
             if (!System.IO.File.Exists(characterFbxPath))
             {
                 Debug.LogError($"[PlayerCleanPrefabCreator] Character FBX not found: {characterFbxPath}");
@@ -130,6 +155,32 @@ namespace ShooterPrototype.EditorTools
                 "[PlayerCleanPrefabCreator] PlayerClean configured with FP arms without shoulders and weapon hand IK.");
 
             PlayerRemotePrefabCreator.CreatePlayerCleanRemotePrefab();
+        }
+
+        private static string ResolveCharacterFromResourcesOrDefault()
+        {
+            if (System.IO.File.Exists(DefaultCharacterFbxPath))
+            {
+                return DefaultCharacterFbxPath;
+            }
+
+            if (!AssetDatabase.IsValidFolder(DefaultResourcesCharacterFolder))
+            {
+                return string.Empty;
+            }
+
+            var guids = AssetDatabase.FindAssets("t:Model", new[] { DefaultResourcesCharacterFolder });
+            if (guids == null || guids.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            System.Array.Sort(guids, (a, b) =>
+                string.Compare(
+                    AssetDatabase.GUIDToAssetPath(a),
+                    AssetDatabase.GUIDToAssetPath(b),
+                    System.StringComparison.OrdinalIgnoreCase));
+            return AssetDatabase.GUIDToAssetPath(guids[0]);
         }
 
         [MenuItem("Shooter Prototype/Create/Clean Player Prefab (from PlayerLocal)")]
