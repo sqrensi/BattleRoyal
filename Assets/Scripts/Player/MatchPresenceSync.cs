@@ -912,6 +912,7 @@ namespace ShooterPrototype.Player
                     var remoteWeapon = avatar.Root.GetComponent<RemoteWeaponPresentation>();
                     remoteWeapon?.SetNetworkLookPitch(p.lookPitch);
                     remoteWeapon?.SetNetworkCrouchState(p.isCrouching);
+                    remoteWeapon?.SetWeaponEquipped(p.hasWeapon);
                     remoteWeapon?.SetHolstered(p.isHolstered);
 
                     avatar.Root.GetComponent<RemoteLookPitchPosture>()?.SetNetworkLookPitch(p.lookPitch);

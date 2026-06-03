@@ -305,6 +305,10 @@ PrefabInstance:
       value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 3177340306102640231, guid: bc9a6079647017a4c9931c852d09bfac, type: 3}
+      propertyPath: groundedSphereRadius
+      value: 0.02
+      objectReference: {fileID: 0}
+    - target: {fileID: 3177340306102640231, guid: bc9a6079647017a4c9931c852d09bfac, type: 3}
       propertyPath: holsteredSpeedMultiplier
       value: 1.24
       objectReference: {fileID: 0}
@@ -404,6 +408,14 @@ PrefabInstance:
       propertyPath: playerHitVfx
       value: 
       objectReference: {fileID: 166404, guid: 07981d74c1df0de418cf86845f279cf0, type: 3}
+    - target: {fileID: 9095073036274879017, guid: bc9a6079647017a4c9931c852d09bfac, type: 3}
+      propertyPath: adsRecoilMultiplier
+      value: 1.3
+      objectReference: {fileID: 0}
+    - target: {fileID: 9095073036274879017, guid: bc9a6079647017a4c9931c852d09bfac, type: 3}
+      propertyPath: hipFireRecoilMultiplier
+      value: 1.5
+      objectReference: {fileID: 0}
     m_RemovedComponents:
     - {fileID: 845498928001475001, guid: bc9a6079647017a4c9931c852d09bfac, type: 3}
     - {fileID: 1948830218482690036, guid: bc9a6079647017a4c9931c852d09bfac, type: 3}

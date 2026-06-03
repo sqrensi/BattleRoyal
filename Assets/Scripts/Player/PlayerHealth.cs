@@ -62,6 +62,22 @@ namespace ShooterPrototype.Player
         public int DeathSequence => deathSequence;
         public Vector3 DeathFallDirection => deathFallDirection;
 
+        public bool TryHeal(float amount)
+        {
+            if (isDead || amount <= 0f)
+            {
+                return false;
+            }
+
+            if (CurrentHealth >= MaxHealth - 0.001f)
+            {
+                return false;
+            }
+
+            currentHealth = Mathf.Min(MaxHealth, currentHealth + amount);
+            return true;
+        }
+
         private void Awake()
         {
             currentHealth = MaxHealth;

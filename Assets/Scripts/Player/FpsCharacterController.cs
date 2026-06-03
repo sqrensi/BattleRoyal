@@ -35,6 +35,16 @@ namespace ShooterPrototype.Player
         [SerializeField] private bool enableRecoilRecovery = true;
         [SerializeField] private float manualRecoilRecoveryScale = 1f;
 
+        [Header("Shoot Shake")]
+        [SerializeField] private bool enableShootShake = true;
+        [SerializeField] private float shootShakePitch = 0.28f;
+        [SerializeField] private float shootShakeYaw = 0.18f;
+        [SerializeField] private float shootShakeRoll = 0.12f;
+        [SerializeField] private float shootShakePosition = 0.006f;
+        [SerializeField] private float shootShakeMaxAngle = 1.35f;
+        [SerializeField] private float shootShakeMaxPosition = 0.02f;
+        [SerializeField] private float shootShakeDecay = 24f;
+
         [Header("State")]
         [SerializeField] private bool lockCursorOnEnable = true;
         [SerializeField] private bool toggleCursorWithTab = true;
@@ -62,6 +72,10 @@ namespace ShooterPrototype.Player
         private float recoilRecoveryBoostUntil;
         private float recoilRecoveryBoostMultiplier = 1f;
         private bool autoRecoilRecoveryActive = true;
+        private Vector3 shootShakeEuler;
+        private Vector3 shootShakePos;
+        private Vector3 restingCameraLocalPos;
+        private Quaternion restingCameraLocalRot = Quaternion.identity;
         private float standingHeight;
         private float standingCenterY;
         private float standingCameraLocalY;
@@ -113,6 +127,7 @@ namespace ShooterPrototype.Player
         public float NetworkMoveInputZ => networkMoveInputZ;
         public bool NetworkJumpPressed => networkJumpPressed;
         public float CurrentLookPitch => cameraPitch + recoilPitchOffset;
+        public Transform CameraPivot => cameraPivot;
         public float HipMaxLookAngle => Mathf.Clamp(hipMaxLookAngle, 1f, 89f);
         public int LastFootstepSequence => footstepSequence;
 
@@ -174,6 +189,7 @@ namespace ShooterPrototype.Player
             cameraPivot = pivot;
             playerCamera = localCamera;
             lockCursorOnEnable = shouldLockCursor;
+            CacheRestingCameraLocalTransform();
         }
 
         private void Awake()
@@ -197,6 +213,7 @@ namespace ShooterPrototype.Player
             standingCameraLocalY = cameraPivot != null ? cameraPivot.localPosition.y : 1.6f;
             characterBottomOffset = standingCenterY - (standingHeight * 0.5f);
             isGrounded = EvaluateGrounded();
+            CacheRestingCameraLocalTransform();
         }
 
         private void OnEnable()
@@ -236,6 +253,11 @@ namespace ShooterPrototype.Player
 
             TickLook();
             TickMove();
+        }
+
+        private void LateUpdate()
+        {
+            TickCameraShake();
         }
 
         private void HandleCursorToggle()
@@ -342,6 +364,82 @@ namespace ShooterPrototype.Player
                 recoilRecoveryBoostUntil = 0f;
                 recoilRecoveryBoostMultiplier = 1f;
             }
+        }
+
+        public void ApplyShootShake(float intensity = 1f)
+        {
+            if (!enableShootShake || playerCamera == null)
+            {
+                return;
+            }
+
+            intensity = Mathf.Max(0f, intensity);
+            shootShakeEuler.x += Random.Range(-shootShakePitch, shootShakePitch) * intensity;
+            shootShakeEuler.y += Random.Range(-shootShakeYaw, shootShakeYaw) * intensity;
+            shootShakeEuler.z += Random.Range(-shootShakeRoll, shootShakeRoll) * intensity;
+
+            if (shootShakePosition > 0.0001f)
+            {
+                shootShakePos += Random.insideUnitSphere * (shootShakePosition * intensity);
+            }
+
+            shootShakeEuler = Vector3.ClampMagnitude(shootShakeEuler, shootShakeMaxAngle);
+            shootShakePos = Vector3.ClampMagnitude(shootShakePos, shootShakeMaxPosition);
+        }
+
+        public bool TryGetViewShakePivotLocal(out Vector3 localPositionOffset, out Vector3 localEulerOffset)
+        {
+            localPositionOffset = shootShakePos;
+            localEulerOffset = shootShakeEuler;
+            return enableShootShake &&
+                   (shootShakeEuler.sqrMagnitude > 0.000001f || shootShakePos.sqrMagnitude > 0.00000001f);
+        }
+
+        public void ApplyViewShakeToWorldTransform(Transform target)
+        {
+            if (target == null || cameraPivot == null || !TryGetViewShakePivotLocal(out var shakePos, out var shakeEuler))
+            {
+                return;
+            }
+
+            target.position += cameraPivot.rotation * shakePos;
+            var pivotSpaceRotation = Quaternion.Euler(shakeEuler);
+            target.rotation = cameraPivot.rotation * pivotSpaceRotation * Quaternion.Inverse(cameraPivot.rotation) * target.rotation;
+        }
+
+        private void CacheRestingCameraLocalTransform()
+        {
+            if (playerCamera == null)
+            {
+                return;
+            }
+
+            restingCameraLocalPos = playerCamera.transform.localPosition;
+            restingCameraLocalRot = playerCamera.transform.localRotation;
+        }
+
+        private void TickCameraShake()
+        {
+            if (playerCamera == null)
+            {
+                return;
+            }
+
+            if (!enableShootShake)
+            {
+                playerCamera.transform.localPosition = restingCameraLocalPos;
+                playerCamera.transform.localRotation = restingCameraLocalRot;
+                shootShakeEuler = Vector3.zero;
+                shootShakePos = Vector3.zero;
+                return;
+            }
+
+            var decayFactor = 1f - Mathf.Exp(-Mathf.Max(0.01f, shootShakeDecay) * Time.deltaTime);
+            shootShakeEuler = Vector3.Lerp(shootShakeEuler, Vector3.zero, decayFactor);
+            shootShakePos = Vector3.Lerp(shootShakePos, Vector3.zero, decayFactor);
+
+            playerCamera.transform.localRotation = restingCameraLocalRot * Quaternion.Euler(shootShakeEuler);
+            playerCamera.transform.localPosition = restingCameraLocalPos + shootShakePos;
         }
 
         private void TickMove()

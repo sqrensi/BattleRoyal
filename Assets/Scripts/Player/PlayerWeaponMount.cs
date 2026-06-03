@@ -134,6 +134,8 @@ namespace ShooterPrototype.Player
         private float anchorRotZVelocity;
         private float adsBlend;
         private float adsBlendVelocity;
+        private float adsPitchFollowBlend;
+        private float adsPitchFollowBlendVelocity;
         private Transform sightTarget;
         private Transform muzzleTransform;
         private Vector3 sightLocalPositionOnAnchor;
@@ -180,7 +182,23 @@ namespace ShooterPrototype.Player
             EnsureWeaponMounted();
         }
 
+        public bool EquipWeapon(GameObject prefab)
+        {
+            if (prefab == null || useNetworkState || weaponInstance != null)
+            {
+                return false;
+            }
+
+            weaponPrefab = prefab;
+            MountWeaponFromPrefab();
+            handBinder = handBinder != null ? handBinder : GetComponent<SyntyWeaponHandBinder>();
+            handBinder?.SyncFirstPersonRigidHandIkMode();
+            return weaponInstance != null;
+        }
+
         public float AdsBlend => adsBlend;
+        public bool IsAdsFullyOut => adsBlend <= 0.001f;
+        public bool HasMountedWeapon => weaponInstance != null;
         public float AdsFollowPitchDownLimit => adsFollowPitchDownLimit;
         public Transform MountedWeaponRoot => weaponInstance != null ? weaponInstance.transform : null;
         public Transform WeaponAnchorTransform => weaponParent;
@@ -307,6 +325,8 @@ namespace ShooterPrototype.Player
             {
                 adsBlend = 0f;
                 adsBlendVelocity = 0f;
+                adsPitchFollowBlend = 0f;
+                adsPitchFollowBlendVelocity = 0f;
                 networkAdsBlend = 0f;
                 networkCrouchBlend = 0f;
                 networkWallAvoidBlend = 0f;
@@ -353,6 +373,8 @@ namespace ShooterPrototype.Player
             {
                 adsBlend = 0f;
                 adsBlendVelocity = 0f;
+                adsPitchFollowBlend = 0f;
+                adsPitchFollowBlendVelocity = 0f;
             }
         }
 
@@ -462,13 +484,17 @@ namespace ShooterPrototype.Player
                 }
             }
 
-            var adsPitchFollowBlend = Mathf.Clamp01(adsBlend);
-            if (!useNetworkState && (!localAimHeld || localReloading))
+            var adsPitchFollowTarget = 0f;
+            if (!useNetworkState && localAimHeld && !localReloading)
             {
-                // Local: stop ADS pitch-follow immediately on release/reload,
-                // even while visual ADS blend is still fading out.
-                adsPitchFollowBlend = 0f;
+                adsPitchFollowTarget = Mathf.Clamp01(adsBlend);
             }
+
+            adsPitchFollowBlend = Mathf.SmoothDamp(
+                adsPitchFollowBlend,
+                adsPitchFollowTarget,
+                ref adsPitchFollowBlendVelocity,
+                Mathf.Max(0.01f, adsSmoothTime));
 
             UpdateAdsCameraZoom();
 
@@ -574,12 +600,19 @@ namespace ShooterPrototype.Player
                     targetAnchorLocalRotation *= Quaternion.Euler(sprintWeaponLocalEuler * sprintBlend);
                 }
                 ApplyWallAvoidance(ref targetAnchorLocalPosition, ref targetAnchorLocalRotation, wallTargetBlend);
+                ApplyFirstPersonViewShake(parentTransform, ref targetAnchorLocalPosition, ref targetAnchorLocalRotation);
 
-                var rigidAnchorFollow = firstPersonRigidHandIk &&
+                var viewShakeActive = !useNetworkState &&
+                                      fpsController != null &&
+                                      fpsController.TryGetViewShakePivotLocal(out _, out _);
+                var adsTransitionActive = adsBlend > 0.001f || adsPitchFollowBlend > 0.001f;
+                var rigidAnchorFollow = !adsTransitionActive &&
+                                        ((firstPersonRigidHandIk &&
                                         !useNetworkState &&
                                         hipLockToCameraPivot &&
                                         adsBlend < 0.001f &&
-                                        sprintBlend < 0.001f;
+                                        sprintBlend < 0.001f) ||
+                                       viewShakeActive);
 
                 if (rigidAnchorFollow)
                 {
@@ -891,6 +924,16 @@ namespace ShooterPrototype.Player
                     FinalizeWeaponMount(skipAnchorReposition: true);
                 }
 
+                return;
+            }
+
+            MountWeaponFromPrefab();
+        }
+
+        private void MountWeaponFromPrefab()
+        {
+            if (weaponPrefab == null)
+            {
                 return;
             }
 
@@ -1676,6 +1719,35 @@ namespace ShooterPrototype.Player
                 targetFov,
                 ref adsCameraFovVelocity,
                 Mathf.Max(0.01f, adsCameraZoomSmoothTime));
+        }
+
+        private void ApplyFirstPersonViewShake(
+            Transform parentTransform,
+            ref Vector3 anchorLocalPosition,
+            ref Quaternion anchorLocalRotation)
+        {
+            if (useNetworkState || parentTransform == null || cameraPivot == null)
+            {
+                return;
+            }
+
+            if (fpsController == null)
+            {
+                fpsController = GetComponent<FpsCharacterController>();
+            }
+
+            if (fpsController == null || !fpsController.TryGetViewShakePivotLocal(out var shakeLocalPos, out var shakeLocalEuler))
+            {
+                return;
+            }
+
+            var worldPosition = parentTransform.TransformPoint(anchorLocalPosition) + cameraPivot.rotation * shakeLocalPos;
+            var shakeRotation = Quaternion.Euler(shakeLocalEuler);
+            var baseWorldRotation = parentTransform.rotation * anchorLocalRotation;
+            var worldRotation = cameraPivot.rotation * shakeRotation * Quaternion.Inverse(cameraPivot.rotation) * baseWorldRotation;
+
+            anchorLocalPosition = parentTransform.InverseTransformPoint(worldPosition);
+            anchorLocalRotation = Quaternion.Inverse(parentTransform.rotation) * worldRotation;
         }
     }
 }

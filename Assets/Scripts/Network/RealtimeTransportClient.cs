@@ -64,6 +64,8 @@ namespace ShooterPrototype.Network
             public float animSpeed;
             public bool isAiming;
             public bool isHolstered;
+            public bool hasWeapon;
+            public int weaponPickupSeq;
             public bool isGrounded;
             public int jumpState;
             public float animPhase;
@@ -126,6 +128,81 @@ namespace ShooterPrototype.Network
         {
             public string type;
             public string ticketId;
+        }
+
+        [Serializable]
+        public sealed class PickupSpawnRegistration
+        {
+            public string spawnId;
+            public string pickupKind;
+            public string itemId;
+            public string weaponId;
+            public int amount;
+            public float x;
+            public float y;
+            public float z;
+            public float respawnDelaySeconds;
+        }
+
+        [Serializable]
+        public sealed class PickupSpawnState
+        {
+            public string spawnId;
+            public string pickupKind;
+            public string itemId;
+            public string weaponId;
+            public int amount;
+            public bool available;
+        }
+
+        [Serializable]
+        public sealed class PickupStateMessage
+        {
+            public string type;
+            public PickupSpawnState[] spawns;
+        }
+
+        [Serializable]
+        public sealed class PickupEventMessage
+        {
+            public string type;
+            public string spawnId;
+            public string ticketId;
+            public int weaponPickupSeq;
+            public string pickupKind;
+            public string itemId;
+            public string weaponId;
+            public int amount;
+            public bool available;
+        }
+
+        [Serializable]
+        public sealed class PickupResultMessage
+        {
+            public string type;
+            public bool success;
+            public string reason;
+            public string spawnId;
+            public string ticketId;
+            public int weaponPickupSeq;
+            public string pickupKind;
+            public string itemId;
+            public string weaponId;
+            public int amount;
+        }
+
+        [Serializable]
+        private sealed class RegisterPickupsMessage
+        {
+            public string type;
+            public PickupSpawnRegistration[] spawns;
+        }
+
+        [Serializable]
+        private sealed class PickupRequestMessage
+        {
+            public string type;
+            public string spawnId;
         }
 
         [Serializable]
@@ -263,6 +340,9 @@ namespace ShooterPrototype.Network
         public int LatestServerTick { get; private set; }
         public int LatestServerTickRate { get; private set; } = 128;
         public event Action<DamageMessage> DamageReceived;
+        public event Action<PickupStateMessage> PickupStateReceived;
+        public event Action<PickupEventMessage> PickupEventReceived;
+        public event Action<PickupResultMessage> PickupResultReceived;
 
         public void Configure(string wsUrl)
         {
@@ -548,6 +628,34 @@ namespace ShooterPrototype.Network
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 
+        public void SendRegisterPickups(PickupSpawnRegistration[] spawns)
+        {
+            if (!IsReady || spawns == null || spawns.Length == 0)
+            {
+                return;
+            }
+
+            _ = SendJsonAsync(new RegisterPickupsMessage
+            {
+                type = "register_pickups",
+                spawns = spawns
+            }, cts != null ? cts.Token : CancellationToken.None);
+        }
+
+        public void SendPickupRequest(string spawnId)
+        {
+            if (!IsConnected || string.IsNullOrWhiteSpace(spawnId))
+            {
+                return;
+            }
+
+            _ = SendJsonAsync(new PickupRequestMessage
+            {
+                type = "pickup",
+                spawnId = spawnId.Trim()
+            }, cts != null ? cts.Token : CancellationToken.None);
+        }
+
         private async Task ConnectInternalAsync(string ticketId)
         {
             if (isConnecting)
@@ -683,6 +791,57 @@ namespace ShooterPrototype.Network
                 if (damageMessage != null && string.Equals(damageMessage.type, "damage", StringComparison.Ordinal))
                 {
                     DamageReceived?.Invoke(damageMessage);
+                    return;
+                }
+
+                PickupStateMessage pickupStateMessage = null;
+                try
+                {
+                    pickupStateMessage = JsonUtility.FromJson<PickupStateMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (pickupStateMessage != null &&
+                    string.Equals(pickupStateMessage.type, "pickup_state", StringComparison.Ordinal))
+                {
+                    PickupStateReceived?.Invoke(pickupStateMessage);
+                    return;
+                }
+
+                PickupEventMessage pickupEventMessage = null;
+                try
+                {
+                    pickupEventMessage = JsonUtility.FromJson<PickupEventMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (pickupEventMessage != null &&
+                    string.Equals(pickupEventMessage.type, "pickup_event", StringComparison.Ordinal))
+                {
+                    PickupEventReceived?.Invoke(pickupEventMessage);
+                    return;
+                }
+
+                PickupResultMessage pickupResultMessage = null;
+                try
+                {
+                    pickupResultMessage = JsonUtility.FromJson<PickupResultMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (pickupResultMessage != null &&
+                    string.Equals(pickupResultMessage.type, "pickup_result", StringComparison.Ordinal))
+                {
+                    PickupResultReceived?.Invoke(pickupResultMessage);
                     return;
                 }
 

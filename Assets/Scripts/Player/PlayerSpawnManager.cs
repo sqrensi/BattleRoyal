@@ -129,6 +129,11 @@ namespace ShooterPrototype.Player
                 instance.AddComponent<PlayerHealth>();
             }
 
+            if (instance.GetComponent<PlayerPickupController>() == null)
+            {
+                instance.AddComponent<PlayerPickupController>();
+            }
+
             var weaponController = instance.GetComponent<PlayerWeaponController>();
             if (weaponController == null)
             {

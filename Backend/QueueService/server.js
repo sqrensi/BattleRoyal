@@ -54,10 +54,15 @@ const wsMetaBySocket = new Map();
 const lastPoseDebugByTicket = new Map();
 const lastSnapshotDebugByOwner = new Map();
 const lastMatchSnapshotBroadcastAtMs = new Map();
+const matchPickupsByMatchId = new Map();
+const PICKUP_MAX_DISTANCE = Number.isFinite(Number(process.env.PICKUP_MAX_DISTANCE))
+  ? Math.max(1, Number(process.env.PICKUP_MAX_DISTANCE))
+  : 2.75;
 
 setInterval(() => {
   currentServerTick += 1;
   tickAllPlayerMovement();
+  tickPickupRespawns();
   runMaintenanceSweep();
   broadcastRealtimeSnapshots();
 }, Math.max(1, Math.floor(1000 / SERVER_TICK_RATE)));
@@ -312,6 +317,16 @@ wsServer.on("connection", (socket) => {
 
     if (message.type === "hit") {
       handleWsHit(socket, message);
+      return;
+    }
+
+    if (message.type === "register_pickups") {
+      handleWsRegisterPickups(socket, message);
+      return;
+    }
+
+    if (message.type === "pickup") {
+      handleWsPickup(socket, message);
       return;
     }
 
@@ -638,6 +653,9 @@ function handleWsJoin(socket, ticketId) {
       ticketId
     }));
     sendSnapshotToSocket(ticketId, socket);
+    if (ticket.matchId) {
+      sendPickupStateToSocket(socket, ticket.matchId);
+    }
   } catch {
     safeWsClose(socket, 1011, "failed to send join ack");
   }
@@ -953,11 +971,346 @@ function createDefaultPresence(sampleTick, sampleTimeMs) {
     isGrounded: true,
     jumpState: 0,
     animPhase: 0,
+    hasWeapon: false,
+    weaponPickupSeq: 0,
     sampleTick: sampleTick || 0,
     sampleTimeMs: sampleTimeMs || 0,
     serverSampleTimeMs: sampleTimeMs || 0,
     lastSeenMs: sampleTimeMs || 0
   };
+}
+
+function ensureMatchPickups(matchId) {
+  if (!matchId) {
+    return null;
+  }
+
+  if (!matchPickupsByMatchId.has(matchId)) {
+    matchPickupsByMatchId.set(matchId, { spawns: new Map(), version: 0 });
+  }
+
+  return matchPickupsByMatchId.get(matchId);
+}
+
+function normalizePickupKind(value, fallback = "weapon") {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+
+  const kind = value.trim().toLowerCase();
+  if (kind === "weapon" || kind === "ammo" || kind === "grenade" || kind === "medkit") {
+    return kind;
+  }
+
+  return fallback;
+}
+
+function resolvePickupItemId(entry) {
+  if (!entry) {
+    return "";
+  }
+
+  if (typeof entry.itemId === "string" && entry.itemId.trim()) {
+    return entry.itemId.trim();
+  }
+
+  if (typeof entry.weaponId === "string" && entry.weaponId.trim()) {
+    return entry.weaponId.trim();
+  }
+
+  return "";
+}
+
+function handleWsRegisterPickups(socket, message) {
+  const meta = wsMetaBySocket.get(socket);
+  if (!meta || !meta.ticketId) {
+    return;
+  }
+
+  const ticket = ticketsById.get(meta.ticketId);
+  if (!ticket || ticket.status !== "Matched" || !ticket.matchId) {
+    return;
+  }
+
+  const entries = Array.isArray(message.spawns) ? message.spawns : [];
+  const state = ensureMatchPickups(ticket.matchId);
+  if (!state) {
+    return;
+  }
+
+  let added = 0;
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (!entry || typeof entry.spawnId !== "string") {
+      continue;
+    }
+
+    const spawnId = entry.spawnId.trim();
+    if (!spawnId) {
+      continue;
+    }
+
+    if (state.spawns.has(spawnId)) {
+      continue;
+    }
+
+    const itemId = resolvePickupItemId(entry);
+    const pickupKind = normalizePickupKind(entry.pickupKind, "weapon");
+
+    state.spawns.set(spawnId, {
+      spawnId,
+      pickupKind,
+      itemId,
+      weaponId: itemId,
+      amount: Math.max(1, normalizeInt64(entry.amount, 1)),
+      x: normalizeNumber(entry.x, 0),
+      y: normalizeNumber(entry.y, 0),
+      z: normalizeNumber(entry.z, 0),
+      available: true,
+      respawnDelaySeconds: Math.max(0, normalizeNumber(entry.respawnDelaySeconds, 0)),
+      respawnAtMs: 0
+    });
+    added += 1;
+  }
+
+  if (added > 0) {
+    state.version += 1;
+  }
+
+  sendPickupStateToSocket(socket, ticket.matchId);
+  touchMatchSession(ticket.matchId);
+}
+
+function handleWsPickup(socket, message) {
+  const meta = wsMetaBySocket.get(socket);
+  if (!meta || !meta.ticketId) {
+    return;
+  }
+
+  const ticket = ticketsById.get(meta.ticketId);
+  if (!ticket || ticket.status !== "Matched" || !ticket.matchId) {
+    return;
+  }
+
+  const spawnId = typeof message.spawnId === "string" ? message.spawnId.trim() : "";
+  if (!spawnId) {
+    sendPickupResultToSocket(socket, false, "invalid_spawn");
+    return;
+  }
+
+  if (!ticket.presence || !ticket.presence.hasPose || !ticket.presence.position) {
+    sendPickupResultToSocket(socket, false, "no_pose");
+    return;
+  }
+
+  const presence = ticket.presence;
+  if (presence.isDead) {
+    sendPickupResultToSocket(socket, false, "dead");
+    return;
+  }
+
+  const state = ensureMatchPickups(ticket.matchId);
+  const spawn = state && state.spawns.get(spawnId);
+  if (!spawn || !spawn.available) {
+    sendPickupResultToSocket(socket, false, "unavailable");
+    return;
+  }
+
+  const pickupKind = normalizePickupKind(spawn.pickupKind, "weapon");
+  if (pickupKind === "weapon" && presence.hasWeapon) {
+    sendPickupResultToSocket(socket, false, "already_armed");
+    return;
+  }
+
+  const pos = presence.position;
+  const dx = pos.x - spawn.x;
+  const dy = pos.y - spawn.y;
+  const dz = pos.z - spawn.z;
+  const distSq = (dx * dx) + (dy * dy) + (dz * dz);
+  if (distSq > PICKUP_MAX_DISTANCE * PICKUP_MAX_DISTANCE) {
+    sendPickupResultToSocket(socket, false, "too_far");
+    return;
+  }
+
+  let weaponPickupSeq = Math.max(0, normalizeInt64(presence.weaponPickupSeq, 0));
+  if (pickupKind === "weapon") {
+    presence.hasWeapon = true;
+    weaponPickupSeq += 1;
+    presence.weaponPickupSeq = weaponPickupSeq;
+  }
+
+  spawn.available = false;
+  spawn.respawnAtMs = spawn.respawnDelaySeconds > 0.01
+    ? Date.now() + (spawn.respawnDelaySeconds * 1000)
+    : 0;
+
+  const itemId = spawn.itemId || spawn.weaponId || "";
+  const amount = Math.max(1, normalizeInt64(spawn.amount, 1));
+  sendPickupResultToSocket(socket, true, "ok", {
+    spawnId,
+    ticketId: ticket.ticketId,
+    weaponPickupSeq,
+    pickupKind,
+    itemId,
+    weaponId: itemId,
+    amount
+  });
+
+  broadcastPickupEvent(ticket.matchId, {
+    type: "pickup_event",
+    spawnId,
+    ticketId: ticket.ticketId,
+    weaponPickupSeq,
+    pickupKind,
+    itemId,
+    weaponId: itemId,
+    amount,
+    available: false
+  });
+
+  touchMatchSession(ticket.matchId);
+  broadcastMatchSnapshots(ticket.matchId);
+}
+
+function sendPickupResultToSocket(socket, success, reason, details) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  try {
+    socket.send(JSON.stringify({
+      type: "pickup_result",
+      success: !!success,
+      reason: typeof reason === "string" ? reason : "",
+      spawnId: details && typeof details.spawnId === "string" ? details.spawnId : "",
+      ticketId: details && typeof details.ticketId === "string" ? details.ticketId : "",
+      weaponPickupSeq: details && Number.isFinite(details.weaponPickupSeq) ? details.weaponPickupSeq : 0,
+      pickupKind: details && typeof details.pickupKind === "string" ? details.pickupKind : "",
+      itemId: details && typeof details.itemId === "string" ? details.itemId : "",
+      weaponId: details && typeof details.weaponId === "string" ? details.weaponId : "",
+      amount: details && Number.isFinite(details.amount) ? details.amount : 0
+    }));
+  } catch {
+    // ignored
+  }
+}
+
+function buildPickupStatePayload(matchId) {
+  const state = ensureMatchPickups(matchId);
+  const spawns = [];
+  if (state) {
+    for (const spawn of state.spawns.values()) {
+      spawns.push({
+        spawnId: spawn.spawnId,
+        pickupKind: spawn.pickupKind || "weapon",
+        itemId: spawn.itemId || spawn.weaponId || "",
+        weaponId: spawn.itemId || spawn.weaponId || "",
+        amount: Math.max(1, normalizeInt64(spawn.amount, 1)),
+        available: !!spawn.available
+      });
+    }
+  }
+
+  return {
+    type: "pickup_state",
+    spawns
+  };
+}
+
+function sendPickupStateToSocket(socket, matchId) {
+  if (!socket || socket.readyState !== WebSocket.OPEN || !matchId) {
+    return;
+  }
+
+  try {
+    socket.send(JSON.stringify(buildPickupStatePayload(matchId)));
+  } catch {
+    // ignored
+  }
+}
+
+function broadcastPickupState(matchId) {
+  if (!matchId) {
+    return;
+  }
+
+  const payload = JSON.stringify(buildPickupStatePayload(matchId));
+  for (const [ticketId, socket] of wsClientsByTicketId.entries()) {
+    const ticket = ticketsById.get(ticketId);
+    if (!ticket || ticket.status !== "Matched" || ticket.matchId !== matchId) {
+      continue;
+    }
+
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      continue;
+    }
+
+    try {
+      socket.send(payload);
+    } catch {
+      // ignored
+    }
+  }
+}
+
+function broadcastPickupEvent(matchId, event) {
+  if (!matchId || !event) {
+    return;
+  }
+
+  const payload = JSON.stringify(event);
+  for (const [ticketId, socket] of wsClientsByTicketId.entries()) {
+    const ticket = ticketsById.get(ticketId);
+    if (!ticket || ticket.status !== "Matched" || ticket.matchId !== matchId) {
+      continue;
+    }
+
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      continue;
+    }
+
+    try {
+      socket.send(payload);
+    } catch {
+      // ignored
+    }
+  }
+}
+
+function tickPickupRespawns() {
+  const nowMs = Date.now();
+  for (const [matchId, state] of matchPickupsByMatchId.entries()) {
+    if (!state || !state.spawns || state.spawns.size === 0) {
+      continue;
+    }
+
+    let changed = false;
+    for (const spawn of state.spawns.values()) {
+      if (!spawn || spawn.available || spawn.respawnAtMs <= 0 || nowMs < spawn.respawnAtMs) {
+        continue;
+      }
+
+      spawn.available = true;
+      spawn.respawnAtMs = 0;
+      changed = true;
+      broadcastPickupEvent(matchId, {
+        type: "pickup_event",
+        spawnId: spawn.spawnId,
+        ticketId: "",
+        weaponPickupSeq: 0,
+        pickupKind: spawn.pickupKind || "weapon",
+        itemId: spawn.itemId || spawn.weaponId || "",
+        weaponId: spawn.itemId || spawn.weaponId || "",
+        amount: Math.max(1, normalizeInt64(spawn.amount, 1)),
+        available: true
+      });
+    }
+
+    if (changed) {
+      state.version += 1;
+      broadcastPickupState(matchId);
+    }
+  }
 }
 
 function tickAllPlayerMovement() {
@@ -1357,7 +1710,7 @@ function encodeSnapshotBinary(payload) {
     const chunks = [];
     const header = Buffer.alloc(11);
     header.write("RTS1", 0, 4, "ascii");
-    header.writeUInt8(6, 4);
+    header.writeUInt8(7, 4);
     header.writeUInt32LE(payload.serverTick >>> 0, 5);
     header.writeUInt16LE(payload.serverTickRate >>> 0, 9);
     chunks.push(header);
@@ -1407,11 +1760,12 @@ function encodeSnapshotBinary(payload) {
       if (player.isSprinting) flags2 |= 8;
       if (player.isAiming) flags2 |= 16;
       if (player.isHolstered) flags2 |= 32;
+      if (player.hasWeapon) flags2 |= 64;
       body.writeUInt16LE(flags2, 32);
       body.writeUInt8(Math.max(0, Math.min(2, player.jumpState || 0)), 34);
       chunks.push(body);
 
-      const meta = Buffer.alloc(93);
+      const meta = Buffer.alloc(97);
       meta.writeFloatLE(player.lookPitch || 0, 0);
       meta.writeUInt32LE((player.shotSeq || 0) >>> 0, 4);
       meta.writeUInt32LE((player.reloadSeq || 0) >>> 0, 8);
@@ -1436,6 +1790,7 @@ function encodeSnapshotBinary(payload) {
       meta.writeFloatLE(player.shotEndY || 0, 84);
       meta.writeFloatLE(player.shotEndZ || 0, 88);
       meta.writeUInt8(player.shotHasEndPoint ? 1 : 0, 92);
+      meta.writeUInt32LE((player.weaponPickupSeq || 0) >>> 0, 93);
       chunks.push(meta);
 
       const recentShots = Array.isArray(player.recentShots) ? player.recentShots.slice(-8) : [];
@@ -1611,6 +1966,8 @@ function collectRealtimePlayersForMatch(matchId, ownerTicketId) {
       animSpeed: ticket.presence.animSpeed || 0,
       isAiming: !!ticket.presence.isAiming,
       isHolstered: !!ticket.presence.isHolstered,
+      hasWeapon: !!ticket.presence.hasWeapon,
+      weaponPickupSeq: Number.isFinite(ticket.presence.weaponPickupSeq) ? ticket.presence.weaponPickupSeq : 0,
       isGrounded: ticket.presence.isGrounded !== false,
       jumpState: Number.isFinite(ticket.presence.jumpState) ? ticket.presence.jumpState : 0,
       animPhase: Number.isFinite(ticket.presence.animPhase) ? ticket.presence.animPhase : 0,

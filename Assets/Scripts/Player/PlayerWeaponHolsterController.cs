@@ -61,7 +61,10 @@ namespace ShooterPrototype.Player
 
         public bool IsHolstered => phase == HolsterPhase.Holstered;
         public bool IsTransitioning => phase == HolsterPhase.Holstering || phase == HolsterPhase.Drawing;
-        public bool IsWeaponReady => phase == HolsterPhase.Armed;
+        public bool IsWeaponReady =>
+            phase == HolsterPhase.Armed &&
+            weaponMount != null &&
+            weaponMount.HasMountedWeapon;
 
         /// <summary>
         /// FP right-arm idle stays on while the weapon is still visible on the hand during holster/draw.

@@ -61,7 +61,9 @@
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_WaterBob.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteThirdPersonPlayerBootstrap.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_Demo_RotateCamera.cs" />
+    <Compile Include="Assets\Scripts\Player\WorldPickup.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteLeftHandIkBinder.cs" />
+    <Compile Include="Assets\Scripts\Player\PickupSpawnManager.cs" />
     <Compile Include="Assets\Scripts\Network\RealtimeSnapshotBinaryCodec.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark02.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerHeadMaskSelector.cs" />
@@ -73,8 +75,10 @@
     <Compile Include="Assets\Scripts\Player\SyntyLocomotionDriver.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponController.cs" />
     <Compile Include="Assets\Scripts\Player\RemotePlayerEditorPreview.cs" />
+    <Compile Include="Assets\Scripts\Player\MatchPickupSync.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_ExampleScript_01.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMPro_InstructionOverlay.cs" />
+    <Compile Include="Assets\Scripts\Player\PickupItemDefinition.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexShakeB.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\CFX_LightIntensityFade.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteAnimatorHolsterPresentation.cs" />
@@ -134,7 +138,9 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark03.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerViewPresentation.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\Element.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerPickupApplier.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyFirstPersonArmLocomotionGate.cs" />
+    <Compile Include="Assets\Scripts\Player\PickupKind.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyCharacterVisualBinder.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\DropdownSample.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexColorCycler.cs" />
@@ -151,6 +157,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TeleType.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextEventCheck.cs" />
     <Compile Include="Assets\Scripts\UI\GameHudController.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerPickupController.cs" />
     <Compile Include="Assets\Scripts\Bootstrap\LaunchMode.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\CharacterItemEvent.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerAudioController.cs" />

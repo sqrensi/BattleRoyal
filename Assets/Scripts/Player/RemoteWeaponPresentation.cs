@@ -61,6 +61,7 @@ namespace ShooterPrototype.Player
         private RemoteLookPitchPosture lookPitchPosture;
         private RemoteAnimatorHolsterPresentation holsterAnimation;
         private bool networkHolstered;
+        private bool networkHasWeapon;
         private bool hasHandPoseSnapshot;
         private Vector3 handPoseLocalPosition;
         private Quaternion handPoseLocalRotation;
@@ -69,6 +70,28 @@ namespace ShooterPrototype.Player
         public Transform WeaponRoot => weaponRoot;
         public Transform AttachTarget => attachTarget;
         public bool IsHolstered => networkHolstered;
+
+        public void SetWeaponEquipped(bool equipped)
+        {
+            if (networkHasWeapon == equipped)
+            {
+                return;
+            }
+
+            networkHasWeapon = equipped;
+            if (!equipped)
+            {
+                if (weaponRoot != null)
+                {
+                    SetWeaponRenderersEnabled(false);
+                }
+
+                ResolveHolsterAnimation()?.SetHolstered(false);
+                return;
+            }
+
+            EnsureAttached();
+        }
 
         public void SetHolstered(bool holstered)
         {
@@ -167,6 +190,25 @@ namespace ShooterPrototype.Player
             if (attachTarget == null)
             {
                 Debug.LogWarning("[RemoteWeaponPresentation] RemoteWeaponTarget not found on remote player.");
+                return;
+            }
+
+            if (!networkHasWeapon)
+            {
+                if (weaponRoot == null)
+                {
+                    weaponRoot = FindWeaponModelUnderAttachTarget();
+                    if (weaponRoot == null)
+                    {
+                        weaponRoot = FindExistingWeaponModel(transform);
+                    }
+                }
+
+                if (weaponRoot != null)
+                {
+                    SetWeaponRenderersEnabled(false);
+                }
+
                 return;
             }
 

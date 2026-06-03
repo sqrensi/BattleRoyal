@@ -27,7 +27,7 @@ namespace ShooterPrototype.Network
 
             var offset = 4;
             var version = ReadU8(data, ref offset);
-            if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6)
+            if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7)
             {
                 return false;
             }
@@ -113,7 +113,7 @@ namespace ShooterPrototype.Network
                 var flags2 = ReadU16(data, ref offset);
                 var jumpState = ReadU8(data, ref offset);
 
-                if (offset + (version >= 4 ? 93 : version >= 3 ? 80 : version >= 2 ? 72 : 48) > data.Length)
+                if (offset + (version >= 7 ? 97 : version >= 4 ? 93 : version >= 3 ? 80 : version >= 2 ? 72 : 48) > data.Length)
                 {
                     return false;
                 }
@@ -140,6 +140,7 @@ namespace ShooterPrototype.Network
                 var shotEndY = 0f;
                 var shotEndZ = 0f;
                 var shotHasEndPoint = false;
+                var weaponPickupSeq = 0;
                 var moveInputX = 0f;
                 var moveInputZ = 0f;
                 if (version >= 2)
@@ -179,6 +180,16 @@ namespace ShooterPrototype.Network
                     shotEndY = ReadF32(data, ref offset);
                     shotEndZ = ReadF32(data, ref offset);
                     shotHasEndPoint = ReadU8(data, ref offset) != 0;
+                }
+
+                if (version >= 7)
+                {
+                    if (offset + 4 > data.Length)
+                    {
+                        return false;
+                    }
+
+                    weaponPickupSeq = (int)ReadU32(data, ref offset);
                 }
 
                 RealtimeTransportClient.RealtimeShotEvent[] recentShots = null;
@@ -289,6 +300,8 @@ namespace ShooterPrototype.Network
                     isSprinting = (flags2 & 8) != 0,
                     isAiming = (flags2 & 16) != 0,
                     isHolstered = (flags2 & 32) != 0,
+                    hasWeapon = (flags2 & 64) != 0,
+                    weaponPickupSeq = weaponPickupSeq,
                     jumpState = jumpState,
                     sampleTick = sampleTick,
                     history = history

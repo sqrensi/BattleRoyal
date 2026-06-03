@@ -61,6 +61,7 @@
     <Compile Include="Assets\Synty\SyntyPackageHelper\Editor\SyntyPackageHelperConfig.cs" />
     <Compile Include="Assets\Scripts\Editor\RemotePlayerEditorPreviewSetup.cs" />
     <Compile Include="Assets\Scripts\Editor\SyntyAnimationSetup.cs" />
+    <Compile Include="Assets\Scripts\Editor\PickupSpawnSetupMenu.cs" />
     <Compile Include="Assets\Synty\PolygonGeneric\Shaders\InterfaceOverrides\Editor\polygonShader_UI.cs" />
     <Compile Include="Assets\Scripts\Editor\SyntyPlayerPrefabCreator.cs" />
     <Compile Include="Assets\Scripts\Editor\PlayerCleanPrefabCreator.cs" />

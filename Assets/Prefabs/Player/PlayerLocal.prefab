@@ -893,8 +893,16 @@ MonoBehaviour:
   maxLookAngle: 80
   hipMaxLookAngle: 50
   adsMaxLookAngle: 40
-  enableRecoilRecovery: 1
+  enableRecoilRecovery: 0
   manualRecoilRecoveryScale: 1
+  enableShootShake: 1
+  shootShakePitch: 0.28
+  shootShakeYaw: 0.18
+  shootShakeRoll: 0.12
+  shootShakePosition: 0.006
+  shootShakeMaxAngle: 1.35
+  shootShakeMaxPosition: 0.02
+  shootShakeDecay: 24
   lockCursorOnEnable: 1
   toggleCursorWithTab: 1
   pauseControlsWhenCursorUnlocked: 1
@@ -941,7 +949,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3e042be13218e784094f41983e8ad3bf, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ShooterPrototype.Player.PlayerWeaponMount
-  weaponPrefab: {fileID: 6405278687639400286, guid: c0b9a0ada3999914a8bce7552f3d83a3, type: 3}
+  weaponPrefab: {fileID: 0}
   weaponParent: {fileID: 3397699616396150798}
   cameraPivot: {fileID: 6210655964752675740}
   localPosition: {x: 0, y: 0, z: 0}
@@ -1057,35 +1065,36 @@ MonoBehaviour:
   blockFireWhenWeaponCollides: 1
   fireBlockWallAvoidThreshold: 0.3
   blockFireWhenSprinting: 1
+  bulletDropAngleDegrees: 0.25
   sprayResetDelay: 0.24
   spreadStartDegrees: 0.08
   spreadPerShotDegrees: 0.22
   spreadMaxDegrees: 2.3
-  recoilPitchMin: 1.15
-  recoilPitchMax: 1.95
-  recoilYawScale: 0.9
+  recoilPitchMin: 0.38
+  recoilPitchMax: 0.58
+  recoilYawScale: 0.55
   hipFireSpreadMultiplier: 1.75
   adsSpreadMultiplier: 0.65
   crouchSpreadMultiplier: 0.82
   movingSpreadMultiplier: 1.9
   jumpSpreadMultiplier: 2.8
   movingSpreadInputThreshold: 0.08
-  hipFireRecoilMultiplier: 1.25
-  adsRecoilMultiplier: 0.78
-  crouchRecoilMultiplier: 0.75
+  hipFireRecoilMultiplier: 1
+  adsRecoilMultiplier: 0.72
+  crouchRecoilMultiplier: 0.85
   sprayPattern:
-  - {x: 0, y: 1}
-  - {x: 0.12, y: 1.15}
-  - {x: -0.16, y: 1.3}
-  - {x: 0.22, y: 1.55}
-  - {x: -0.28, y: 1.7}
-  - {x: 0.33, y: 1.85}
-  - {x: -0.38, y: 2}
-  - {x: 0.44, y: 2.1}
-  - {x: -0.5, y: 2.2}
-  - {x: 0.58, y: 2.35}
-  - {x: -0.62, y: 2.45}
-  - {x: 0.66, y: 2.55}
+  - {x: 0, y: 0.85}
+  - {x: 0.08, y: 0.95}
+  - {x: -0.1, y: 1.05}
+  - {x: 0.14, y: 1.15}
+  - {x: -0.18, y: 1.22}
+  - {x: 0.22, y: 1.28}
+  - {x: -0.26, y: 1.33}
+  - {x: 0.3, y: 1.37}
+  - {x: -0.34, y: 1.4}
+  - {x: 0.38, y: 1.42}
+  - {x: -0.42, y: 1.44}
+  - {x: 0.46, y: 1.45}
   showTracer: 0
   tracerDuration: 0.05
   tracerWidth: 0.01
