@@ -66,7 +66,10 @@ namespace ShooterPrototype.Player
             }
 
             ApplyThirdPersonRendererVisibility(isLocal);
-            if (holsteredFirstPersonPresentation && isLocal)
+            var holster = GetComponent<PlayerWeaponHolsterController>();
+            var hideArms = holsteredFirstPersonPresentation ||
+                           (holster != null && holster.ShouldHideFirstPersonArms);
+            if (hideArms && isLocal)
             {
                 armsPresenter?.SetHolsteredArmsPresentation(true);
             }

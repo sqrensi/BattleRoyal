@@ -101,7 +101,16 @@ namespace ShooterPrototype.Player
             var syntyBinder = GetComponent<SyntyCharacterVisualBinder>();
             var armsPresenter = GetComponent<SyntyFirstPersonArmsPresenter>();
             var localFirstPersonView = isLocalPlayer;
-            armsPresenter?.ApplyFirstPersonVisibility(localFirstPersonView);
+            var hideArms = ShouldHideFirstPersonArms();
+            if (hideArms)
+            {
+                armsPresenter?.SetHolsteredArmsPresentation(true);
+            }
+            else
+            {
+                armsPresenter?.ApplyFirstPersonVisibility(localFirstPersonView);
+            }
+
             DisableStaleFirstPersonArmsRenderers(armsPresenter);
 
             var renderers = thirdPersonRoot.GetComponentsInChildren<Renderer>(true);
@@ -127,10 +136,9 @@ namespace ShooterPrototype.Player
                 }
 
                 // FP arms can be generated under different roots and names (e.g. *_NoShoulders).
-                // Keep them visible for local first-person regardless of body hide rules.
                 if (IsFirstPersonArmsRendererName(renderer.gameObject.name))
                 {
-                    renderer.enabled = true;
+                    renderer.enabled = localFirstPersonView && !hideArms;
                     continue;
                 }
 
@@ -142,7 +150,7 @@ namespace ShooterPrototype.Player
 
                 if (armsPresenter != null && armsPresenter.IsFirstPersonArmsRenderer(renderer))
                 {
-                    renderer.enabled = true;
+                    renderer.enabled = localFirstPersonView && !hideArms;
                     continue;
                 }
 
@@ -245,6 +253,18 @@ namespace ShooterPrototype.Player
         {
             return !string.IsNullOrWhiteSpace(objectName) &&
                    objectName.IndexOf("_FirstPersonArms", System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private bool ShouldHideFirstPersonArms()
+        {
+            var holster = GetComponent<PlayerWeaponHolsterController>();
+            if (holster != null)
+            {
+                return holster.ShouldHideFirstPersonArms;
+            }
+
+            var weaponMount = GetComponent<PlayerWeaponMount>();
+            return weaponMount == null || !weaponMount.HasMountedWeapon;
         }
     }
 }

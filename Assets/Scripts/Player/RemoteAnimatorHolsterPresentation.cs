@@ -19,7 +19,8 @@ namespace ShooterPrototype.Player
         [SerializeField] private float layerBlendTime = 0.14f;
 
         private bool networkHolstered;
-        private float armsIdleWeight = 1f;
+        private bool networkHasWeapon;
+        private float armsIdleWeight;
         private float armsLocomotionWeight;
 
         public bool NetworkHolstered => networkHolstered;
@@ -27,18 +28,33 @@ namespace ShooterPrototype.Player
         public void Configure(Animator targetAnimator)
         {
             animator = targetAnimator;
+            networkHasWeapon = false;
+            networkHolstered = true;
             armsIdleWeight = 0f;
-            armsLocomotionWeight = 0f;
+            armsLocomotionWeight = animator != null && animator.layerCount > ArmsLocomotionLayerIndex ? 1f : 0f;
             ApplyLayerWeights();
+        }
+
+        public void SetWeaponEquipped(bool hasWeapon)
+        {
+            networkHasWeapon = hasWeapon;
+            if (!hasWeapon)
+            {
+                networkHolstered = true;
+                armsIdleWeight = 0f;
+                armsLocomotionWeight = animator != null && animator.layerCount > ArmsLocomotionLayerIndex ? 1f : 0f;
+                ApplyLayerWeights();
+            }
         }
 
         public void SetHolstered(bool holstered)
         {
-            networkHolstered = holstered;
+            networkHolstered = !networkHasWeapon || holstered;
         }
 
         public void ApplyArmedLayerWeightsImmediate()
         {
+            networkHasWeapon = true;
             networkHolstered = false;
             armsIdleWeight = 1f;
             armsLocomotionWeight = 0f;
@@ -52,9 +68,11 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var targetIdle = networkHolstered ? 0f : 1f;
+            var targetIdle = networkHasWeapon && !networkHolstered ? 1f : 0f;
             var hasArmsLocomotionLayer = animator.layerCount > ArmsLocomotionLayerIndex;
-            var targetLoco = networkHolstered && hasArmsLocomotionLayer ? 1f : 0f;
+            var targetLoco = networkHasWeapon && !networkHolstered || !hasArmsLocomotionLayer
+                ? 0f
+                : 1f;
             var step = layerBlendTime <= 0.0001f
                 ? 1f
                 : Time.deltaTime / layerBlendTime;

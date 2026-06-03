@@ -93,7 +93,8 @@ namespace ShooterPrototype.Player
                 if (handBinder != null && syntyVisual != null)
                 {
                     handBinder.ConfigureFromVisualRoot(syntyVisual);
-                    handBinder.SetHandIkEnabled(remoteWeapon == null || !remoteWeapon.IsHolstered);
+                    handBinder.SetHandIkEnabled(
+                        remoteWeapon != null && remoteWeapon.HasWeapon && !remoteWeapon.IsHolstered);
                 }
             }
 
@@ -166,7 +167,7 @@ namespace ShooterPrototype.Player
 
             if (armsPresenter.TryRefreshArmsFromBody(syntyVisual, bodyRenderer))
             {
-                armsPresenter.ApplyFirstPersonVisibility(true);
+                SyncFirstPersonArmsAfterModelApply(playerRoot, armsPresenter);
                 return;
             }
 
@@ -178,7 +179,7 @@ namespace ShooterPrototype.Player
                         FirstPersonArmBoneWeightThresholds[i],
                         FirstPersonArmsCoverage.ArmsWithoutShoulders))
                 {
-                    armsPresenter.ApplyFirstPersonVisibility(true);
+                    SyncFirstPersonArmsAfterModelApply(playerRoot, armsPresenter);
                     return;
                 }
             }
@@ -186,6 +187,40 @@ namespace ShooterPrototype.Player
             Debug.LogWarning(
                 $"[CharacterModelApplier] Failed to build first-person arms for '{bodyRenderer.gameObject.name}'.",
                 playerRoot);
+        }
+
+        private static void SyncFirstPersonArmsAfterModelApply(
+            GameObject playerRoot,
+            SyntyFirstPersonArmsPresenter armsPresenter)
+        {
+            if (playerRoot == null || armsPresenter == null)
+            {
+                return;
+            }
+
+            var holster = playerRoot.GetComponent<PlayerWeaponHolsterController>();
+            if (holster != null)
+            {
+                holster.SyncFirstPersonArmsPresentation();
+                return;
+            }
+
+            var weaponMount = playerRoot.GetComponent<PlayerWeaponMount>();
+            var showArms = weaponMount != null && weaponMount.HasMountedWeapon;
+            if (showArms)
+            {
+                var viewPresentation = playerRoot.GetComponent<PlayerViewPresentation>();
+                var isLocal = viewPresentation == null || viewPresentation.IsLocalPlayerView;
+                armsPresenter.ApplyFirstPersonVisibility(isLocal);
+                playerRoot.GetComponent<SyntyWeaponHandBinder>()?.SetHandIkEnabled(true);
+            }
+            else
+            {
+                armsPresenter.SetHolsteredArmsPresentation(true);
+                playerRoot.GetComponent<SyntyWeaponHandBinder>()?.SetHandIkEnabled(false);
+            }
+
+            playerRoot.GetComponent<SyntySplitBodyPresentation>()?.SetHolsteredFirstPersonPresentation(!showArms);
         }
 
         private static void RebindSkinnedMeshToInstance(

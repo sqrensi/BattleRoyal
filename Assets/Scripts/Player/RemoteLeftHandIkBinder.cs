@@ -139,7 +139,8 @@ namespace ShooterPrototype.Player
                 weaponPresentation = GetComponent<RemoteWeaponPresentation>();
             }
 
-            if (weaponPresentation != null && weaponPresentation.IsHolstered)
+            if (weaponPresentation != null &&
+                (!weaponPresentation.HasWeapon || weaponPresentation.IsHolstered))
             {
                 return;
             }
@@ -764,7 +765,8 @@ namespace ShooterPrototype.Player
                 weaponPresentation = GetComponent<RemoteWeaponPresentation>();
             }
 
-            if (weaponPresentation != null && weaponPresentation.IsHolstered)
+            if (weaponPresentation != null &&
+                (!weaponPresentation.HasWeapon || weaponPresentation.IsHolstered))
             {
                 leftGripTarget = null;
                 return;

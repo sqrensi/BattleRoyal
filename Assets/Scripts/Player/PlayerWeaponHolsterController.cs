@@ -66,6 +66,29 @@ namespace ShooterPrototype.Player
             weaponMount != null &&
             weaponMount.HasMountedWeapon;
 
+        public bool ShouldHideFirstPersonArms
+        {
+            get
+            {
+                if (weaponMount == null || !weaponMount.HasMountedWeapon)
+                {
+                    return true;
+                }
+
+                switch (phase)
+                {
+                    case HolsterPhase.Holstered:
+                        return true;
+                    case HolsterPhase.Holstering:
+                        return GetTransitionNormalized() >= armsHideHolsterThreshold;
+                    case HolsterPhase.Drawing:
+                        return GetTransitionNormalized() <= armsShowDrawThreshold;
+                    default:
+                        return false;
+                }
+            }
+        }
+
         /// <summary>
         /// FP right-arm idle stays on while the weapon is still visible on the hand during holster/draw.
         /// </summary>
@@ -73,6 +96,11 @@ namespace ShooterPrototype.Player
         {
             get
             {
+                if (weaponMount == null || !weaponMount.HasMountedWeapon)
+                {
+                    return false;
+                }
+
                 if (phase == HolsterPhase.Armed)
                 {
                     return true;
@@ -115,6 +143,25 @@ namespace ShooterPrototype.Player
             armsPresenter = GetComponent<SyntyFirstPersonArmsPresenter>();
             splitBodyPresentation = GetComponent<SyntySplitBodyPresentation>();
             presenceSync = GetComponent<MatchPresenceSync>();
+        }
+
+        private void Start()
+        {
+            SyncFirstPersonArmsPresentation();
+        }
+
+        public void SyncFirstPersonArmsPresentation()
+        {
+            var hideArms = ShouldHideFirstPersonArms;
+            ApplyHolsteredPresentation(hideArms);
+            if (hideArms)
+            {
+                handBinder?.SetHandIkEnabled(false);
+            }
+            else if (phase == HolsterPhase.Armed)
+            {
+                handBinder?.SetHandIkEnabled(true);
+            }
         }
 
         private void Update()

@@ -56,7 +56,7 @@ namespace ShooterPrototype.Player
             }
 
             presentation.Configure(thirdPersonBody);
-            presentation.EnsureAttached();
+            presentation.SetWeaponEquipped(false);
         }
 
         private void EnableThirdPersonAnimator(Transform thirdPersonBody)

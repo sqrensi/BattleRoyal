@@ -965,7 +965,7 @@ namespace ShooterPrototype.Player
                 }
 
                 remoteWeapon.Configure(thirdPersonBody);
-                remoteWeapon.EnsureAttached();
+                remoteWeapon.SetWeaponEquipped(false);
                 EnsureRemoteVisuals(root);
             }
 

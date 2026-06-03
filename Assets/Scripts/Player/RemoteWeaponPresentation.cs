@@ -69,6 +69,7 @@ namespace ShooterPrototype.Player
 
         public Transform WeaponRoot => weaponRoot;
         public Transform AttachTarget => attachTarget;
+        public bool HasWeapon => networkHasWeapon;
         public bool IsHolstered => networkHolstered;
 
         public void SetWeaponEquipped(bool equipped)
@@ -79,14 +80,11 @@ namespace ShooterPrototype.Player
             }
 
             networkHasWeapon = equipped;
+            ResolveHolsterAnimation()?.SetWeaponEquipped(equipped);
+
             if (!equipped)
             {
-                if (weaponRoot != null)
-                {
-                    SetWeaponRenderersEnabled(false);
-                }
-
-                ResolveHolsterAnimation()?.SetHolstered(false);
+                ApplyUnarmedPresentation();
                 return;
             }
 
@@ -95,6 +93,12 @@ namespace ShooterPrototype.Player
 
         public void SetHolstered(bool holstered)
         {
+            if (!networkHasWeapon)
+            {
+                ApplyUnarmedPresentation();
+                return;
+            }
+
             if (networkHolstered == holstered)
             {
                 return;
@@ -149,7 +153,14 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            EnsureAttached();
+            if (networkHasWeapon)
+            {
+                EnsureAttached();
+            }
+            else
+            {
+                ApplyUnarmedPresentation();
+            }
         }
 
         public void Configure(Transform body, GameObject prefab = null)
@@ -771,7 +782,31 @@ namespace ShooterPrototype.Player
             }
 
             handBinder.Configure(syntyVisual, leftGrip);
-            handBinder.SetHandIkEnabled(!networkHolstered);
+            handBinder.SetHandIkEnabled(networkHasWeapon && !networkHolstered);
+        }
+
+        private void ApplyUnarmedPresentation()
+        {
+            networkHolstered = true;
+
+            if (weaponRoot == null)
+            {
+                weaponRoot = FindWeaponModelUnderAttachTarget();
+                if (weaponRoot == null)
+                {
+                    weaponRoot = FindExistingWeaponModel(transform);
+                }
+            }
+
+            if (weaponRoot != null)
+            {
+                SetWeaponRenderersEnabled(false);
+            }
+
+            ResolveHolsterAnimation()?.SetHolstered(true);
+
+            var handBinder = GetComponent<RemoteLeftHandIkBinder>();
+            handBinder?.SetHandIkEnabled(false);
         }
 
         private void SetWeaponRenderersEnabled(bool enabled)

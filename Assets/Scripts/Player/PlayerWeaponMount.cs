@@ -193,6 +193,7 @@ namespace ShooterPrototype.Player
             MountWeaponFromPrefab();
             handBinder = handBinder != null ? handBinder : GetComponent<SyntyWeaponHandBinder>();
             handBinder?.SyncFirstPersonRigidHandIkMode();
+            GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
             return weaponInstance != null;
         }
 
