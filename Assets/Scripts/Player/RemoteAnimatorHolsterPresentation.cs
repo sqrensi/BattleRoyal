@@ -20,6 +20,7 @@ namespace ShooterPrototype.Player
 
         private bool networkHolstered;
         private bool networkHasWeapon;
+        private bool networkUsingMedkit;
         private float armsIdleWeight;
         private float armsLocomotionWeight;
 
@@ -52,6 +53,17 @@ namespace ShooterPrototype.Player
             networkHolstered = !networkHasWeapon || holstered;
         }
 
+        public void SetMedkitUsing(bool usingMedkit)
+        {
+            networkUsingMedkit = usingMedkit;
+            if (usingMedkit)
+            {
+                armsIdleWeight = 0f;
+                armsLocomotionWeight = 0f;
+                ApplyLayerWeights();
+            }
+        }
+
         public void ApplyArmedLayerWeightsImmediate()
         {
             networkHasWeapon = true;
@@ -65,6 +77,14 @@ namespace ShooterPrototype.Player
         {
             if (!ShouldApply() || animator == null || animator.layerCount <= LeftArmIdleLayerIndex)
             {
+                return;
+            }
+
+            if (networkUsingMedkit)
+            {
+                armsIdleWeight = 0f;
+                armsLocomotionWeight = 0f;
+                ApplyLayerWeights();
                 return;
             }
 

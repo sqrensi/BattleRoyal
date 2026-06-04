@@ -65,6 +65,9 @@ namespace ShooterPrototype.Network
             public bool isAiming;
             public bool isHolstered;
             public bool hasWeapon;
+            public bool isUsingMedkit;
+            public float medkitRemainingSeconds;
+            public int medkitCount;
             public int weaponPickupSeq;
             public bool isGrounded;
             public int jumpState;
@@ -96,6 +99,7 @@ namespace ShooterPrototype.Network
             public string type;
             public int serverTick;
             public int serverTickRate;
+            public int binaryVersion;
             public RealtimePlayerState[] players;
             public SelfAuthoritativePose selfAuthoritative;
         }
@@ -189,6 +193,39 @@ namespace ShooterPrototype.Network
             public string itemId;
             public string weaponId;
             public int amount;
+            public int medkitCount;
+        }
+
+        [Serializable]
+        public sealed class MedkitResultMessage
+        {
+            public string type;
+            public bool success;
+            public string reason;
+            public string ticketId;
+            public int medkitSeq;
+            public float durationSeconds;
+            public int medkitCount;
+        }
+
+        [Serializable]
+        public sealed class HealMessage
+        {
+            public string type;
+            public float amount;
+            public int medkitSeq;
+        }
+
+        [Serializable]
+        private sealed class MedkitUseMessage
+        {
+            public string type;
+        }
+
+        [Serializable]
+        private sealed class MedkitCancelMessage
+        {
+            public string type;
         }
 
         [Serializable]
@@ -343,6 +380,8 @@ namespace ShooterPrototype.Network
         public event Action<PickupStateMessage> PickupStateReceived;
         public event Action<PickupEventMessage> PickupEventReceived;
         public event Action<PickupResultMessage> PickupResultReceived;
+        public event Action<MedkitResultMessage> MedkitResultReceived;
+        public event Action<HealMessage> HealReceived;
 
         public void Configure(string wsUrl)
         {
@@ -644,7 +683,7 @@ namespace ShooterPrototype.Network
 
         public void SendPickupRequest(string spawnId)
         {
-            if (!IsConnected || string.IsNullOrWhiteSpace(spawnId))
+            if (!IsReady || string.IsNullOrWhiteSpace(spawnId))
             {
                 return;
             }
@@ -653,6 +692,32 @@ namespace ShooterPrototype.Network
             {
                 type = "pickup",
                 spawnId = spawnId.Trim()
+            }, cts != null ? cts.Token : CancellationToken.None);
+        }
+
+        public void SendMedkitUse()
+        {
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            _ = SendJsonAsync(new MedkitUseMessage
+            {
+                type = "medkit_use"
+            }, cts != null ? cts.Token : CancellationToken.None);
+        }
+
+        public void SendMedkitCancel()
+        {
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            _ = SendJsonAsync(new MedkitCancelMessage
+            {
+                type = "medkit_cancel"
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 
@@ -842,6 +907,39 @@ namespace ShooterPrototype.Network
                     string.Equals(pickupResultMessage.type, "pickup_result", StringComparison.Ordinal))
                 {
                     PickupResultReceived?.Invoke(pickupResultMessage);
+                    return;
+                }
+
+                MedkitResultMessage medkitResultMessage = null;
+                try
+                {
+                    medkitResultMessage = JsonUtility.FromJson<MedkitResultMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (medkitResultMessage != null &&
+                    string.Equals(medkitResultMessage.type, "medkit_result", StringComparison.Ordinal))
+                {
+                    MedkitResultReceived?.Invoke(medkitResultMessage);
+                    return;
+                }
+
+                HealMessage healMessage = null;
+                try
+                {
+                    healMessage = JsonUtility.FromJson<HealMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (healMessage != null && string.Equals(healMessage.type, "heal", StringComparison.Ordinal))
+                {
+                    HealReceived?.Invoke(healMessage);
                     return;
                 }
 

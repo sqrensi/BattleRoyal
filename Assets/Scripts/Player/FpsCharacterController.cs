@@ -87,6 +87,7 @@ namespace ShooterPrototype.Player
         private int footstepSequence;
         private PlayerAudioController audioController;
         private PlayerWeaponHolsterController weaponHolster;
+        private PlayerMedkitController medkitController;
         [Header("Audio")]
         [SerializeField] private float footstepIntervalSlow = 0.8f;
         [SerializeField] private float footstepIntervalFast = 0.42f;
@@ -101,8 +102,13 @@ namespace ShooterPrototype.Player
         private int lastReconciledServerTick = -1;
         private bool reconciliationSuspended;
         private float reconciliationGraceUntilRealtime;
+        private bool movementLocked;
+        private bool medkitUseMovementMode;
+        private System.Action medkitMovementCancelHandler;
 
         public bool IsGrounded => isGrounded;
+        public bool IsMovementLocked => movementLocked;
+        public bool IsMedkitUseMovementMode => medkitUseMovementMode;
         public bool IsCrouching => isCrouching;
         public bool IsSprinting => isSprinting;
         public float SprintSpeedMultiplier => Mathf.Clamp(sprintSpeedMultiplier, 1f, 3f);
@@ -141,6 +147,38 @@ namespace ShooterPrototype.Player
             reconciliationSuspended = false;
             lastReconciledServerTick = -1;
             reconciliationGraceUntilRealtime = Time.realtimeSinceStartup + Mathf.Max(0.1f, graceSeconds);
+        }
+
+        public void SetMovementLocked(bool locked)
+        {
+            movementLocked = locked;
+            if (!locked)
+            {
+                return;
+            }
+
+            horizontalSpeed = 0f;
+            moveInputMagnitude = 0f;
+            networkMoveInputX = 0f;
+            networkMoveInputZ = 0f;
+            networkJumpPressed = false;
+            isSprinting = false;
+        }
+
+        /// <summary>
+        /// During medkit use: crouch allowed; WASD/jump blocked and trigger cancel callback.
+        /// </summary>
+        public void SetMedkitUseMovementMode(bool enabled, System.Action onMovementCancel = null)
+        {
+            medkitUseMovementMode = enabled;
+            medkitMovementCancelHandler = enabled ? onMovementCancel : null;
+            if (!enabled)
+            {
+                return;
+            }
+
+            isSprinting = false;
+            networkJumpPressed = false;
         }
 
         public void ReconcileToServer(Vector3 authoritativePosition, float authoritativeYaw, int serverTick)
@@ -207,6 +245,7 @@ namespace ShooterPrototype.Player
             }
             audioController = GetComponent<PlayerAudioController>();
             weaponHolster = GetComponent<PlayerWeaponHolsterController>();
+            medkitController = GetComponent<PlayerMedkitController>();
 
             standingHeight = characterController != null ? characterController.height : 1.8f;
             standingCenterY = characterController != null ? characterController.center.y : standingHeight * 0.5f;
@@ -241,18 +280,28 @@ namespace ShooterPrototype.Player
         private void Update()
         {
             HandleCursorToggle();
-            if (ShouldPauseControls())
+            if (!ShouldPauseControls())
+            {
+                TickLook();
+            }
+
+            if (medkitUseMovementMode)
+            {
+                TickMedkitRestrictedMove();
+            }
+            else if (!ShouldBlockMovement())
+            {
+                TickMove();
+            }
+            else if (movementLocked)
             {
                 horizontalSpeed = 0f;
                 moveInputMagnitude = 0f;
                 networkMoveInputX = 0f;
                 networkMoveInputZ = 0f;
                 networkJumpPressed = false;
-                return;
+                isSprinting = false;
             }
-
-            TickLook();
-            TickMove();
         }
 
         private void LateUpdate()
@@ -282,6 +331,11 @@ namespace ShooterPrototype.Player
             return Cursor.lockState != CursorLockMode.Locked;
         }
 
+        private bool ShouldBlockMovement()
+        {
+            return movementLocked || ShouldPauseControls();
+        }
+
         private void TickLook()
         {
             var lookDelta = ReadLookInput();
@@ -292,7 +346,7 @@ namespace ShooterPrototype.Player
 
             cameraPitch -= mouseY;
             ApplyManualRecoilRecovery(mouseY);
-            if (ReadAimPressed())
+            if (ReadAimPressed() && !IsAimBlockedDuringMedkit())
             {
                 var adsCameraLimit = Mathf.Clamp(adsMaxLookAngle, 1f, 89f);
                 cameraPitch = Mathf.Clamp(cameraPitch, -adsCameraLimit, adsCameraLimit);
@@ -440,6 +494,42 @@ namespace ShooterPrototype.Player
 
             playerCamera.transform.localRotation = restingCameraLocalRot * Quaternion.Euler(shootShakeEuler);
             playerCamera.transform.localPosition = restingCameraLocalPos + shootShakePos;
+        }
+
+        private void TickMedkitRestrictedMove()
+        {
+            UpdateCrouchState();
+
+            var moveInput = ReadMoveInput();
+            if (moveInput.sqrMagnitude > 0.04f)
+            {
+                medkitMovementCancelHandler?.Invoke();
+            }
+
+            if (ReadJumpPressed())
+            {
+                medkitMovementCancelHandler?.Invoke();
+            }
+
+            networkMoveInputX = 0f;
+            networkMoveInputZ = 0f;
+            networkJumpPressed = false;
+            moveInputMagnitude = 0f;
+            isSprinting = false;
+
+            isGrounded = EvaluateGrounded();
+            if (isGrounded && verticalVelocity < 0f)
+            {
+                verticalVelocity = -1.5f;
+            }
+
+            verticalVelocity += gravity * Time.deltaTime;
+            var velocity = Vector3.up * verticalVelocity;
+            characterController.Move(velocity * Time.deltaTime);
+            isGrounded = EvaluateGrounded();
+
+            var ccVelocity = characterController.velocity;
+            horizontalSpeed = new Vector2(ccVelocity.x, ccVelocity.z).magnitude;
         }
 
         private void TickMove()
@@ -726,6 +816,16 @@ namespace ShooterPrototype.Player
 #else
             return Input.GetButtonDown("Jump");
 #endif
+        }
+
+        private bool IsAimBlockedDuringMedkit()
+        {
+            if (medkitController != null && medkitController.IsUsingMedkit)
+            {
+                return true;
+            }
+
+            return weaponHolster != null && weaponHolster.IsMedkitWeaponLocked;
         }
 
         private static bool ReadAimPressed()

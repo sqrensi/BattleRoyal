@@ -129,6 +129,16 @@ namespace ShooterPrototype.Player
                 instance.AddComponent<PlayerHealth>();
             }
 
+            if (instance.GetComponent<PlayerInventory>() == null)
+            {
+                instance.AddComponent<PlayerInventory>();
+            }
+
+            if (instance.GetComponent<PlayerMedkitController>() == null)
+            {
+                instance.AddComponent<PlayerMedkitController>();
+            }
+
             if (instance.GetComponent<PlayerPickupController>() == null)
             {
                 instance.AddComponent<PlayerPickupController>();

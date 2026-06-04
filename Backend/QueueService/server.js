@@ -58,10 +58,15 @@ const matchPickupsByMatchId = new Map();
 const PICKUP_MAX_DISTANCE = Number.isFinite(Number(process.env.PICKUP_MAX_DISTANCE))
   ? Math.max(1, Number(process.env.PICKUP_MAX_DISTANCE))
   : 2.75;
+const MEDKIT_USE_DURATION_SECONDS = Math.max(0.5, Number(process.env.MEDKIT_USE_DURATION_SECONDS) || 8);
+const MEDKIT_HEAL_AMOUNT = Math.max(1, Number(process.env.MEDKIT_HEAL_AMOUNT) || 70);
+const MEDKIT_MAX_COUNT = Math.max(1, Math.min(99, Number(process.env.MEDKIT_MAX_COUNT) || 8));
+const MEDKIT_STARTING_COUNT = Math.max(0, Math.min(MEDKIT_MAX_COUNT, Number(process.env.MEDKIT_STARTING_COUNT) || 0));
 
 setInterval(() => {
   currentServerTick += 1;
   tickAllPlayerMovement();
+  tickMedkitUses();
   tickPickupRespawns();
   runMaintenanceSweep();
   broadcastRealtimeSnapshots();
@@ -278,6 +283,16 @@ server.listen(PORT, "0.0.0.0", () => {
 });
 
 const wsServer = new WebSocketServer({ port: REALTIME_WS_PORT });
+wsServer.on("listening", () => {
+  console.log(`[QueueService] realtime websocket listening on ws://127.0.0.1:${REALTIME_WS_PORT}`);
+});
+wsServer.on("error", (err) => {
+  console.error(`[QueueService] websocket server failed on port ${REALTIME_WS_PORT}: ${err && err.message ? err.message : err}`);
+  if (err && err.code === "EADDRINUSE") {
+    console.error("[QueueService] port is busy — stop the old QueueService (tools/stop_local_stack.ps1) before starting again.");
+  }
+  process.exit(1);
+});
 wsServer.on("connection", (socket) => {
   if (DEBUG_REALTIME) {
     console.log("[rt][ws-connection] open");
@@ -299,51 +314,61 @@ wsServer.on("connection", (socket) => {
       return;
     }
 
-    if (message.type === "join") {
-      const ticketId = typeof message.ticketId === "string" ? message.ticketId : "";
-      handleWsJoin(socket, ticketId);
-      return;
-    }
+    try {
+      if (message.type === "join") {
+        const ticketId = typeof message.ticketId === "string" ? message.ticketId : "";
+        handleWsJoin(socket, ticketId);
+        return;
+      }
 
-    if (message.type === "pose") {
-      handleWsPose(socket, message);
-      return;
-    }
+      if (message.type === "pose") {
+        handleWsPose(socket, message);
+        return;
+      }
 
-    if (message.type === "shot") {
-      handleWsShot(socket, message);
-      return;
-    }
+      if (message.type === "shot") {
+        handleWsShot(socket, message);
+        return;
+      }
 
-    if (message.type === "hit") {
-      handleWsHit(socket, message);
-      return;
-    }
+      if (message.type === "hit") {
+        handleWsHit(socket, message);
+        return;
+      }
 
-    if (message.type === "register_pickups") {
-      handleWsRegisterPickups(socket, message);
-      return;
-    }
+      if (message.type === "register_pickups") {
+        handleWsRegisterPickups(socket, message);
+        return;
+      }
 
-    if (message.type === "pickup") {
-      handleWsPickup(socket, message);
-      return;
-    }
+      if (message.type === "pickup") {
+        handleWsPickup(socket, message);
+        return;
+      }
 
-    if (message.type === "ping") {
-      try {
+      if (message.type === "medkit_use") {
+        handleWsMedkitUse(socket, message);
+        return;
+      }
+
+      if (message.type === "medkit_cancel") {
+        handleWsMedkitCancel(socket);
+        return;
+      }
+
+      if (message.type === "ping") {
         socket.send(JSON.stringify({
           type: "pong",
           clientTimeMs: normalizeInt64(message.clientTimeMs, 0)
         }));
-      } catch {
-        // ignored
+        return;
       }
-      return;
-    }
 
-    if (DEBUG_REALTIME) {
-      console.log(`[rt][message-unknown] type=${String(message.type)}`);
+      if (DEBUG_REALTIME) {
+        console.log(`[rt][message-unknown] type=${String(message.type)}`);
+      }
+    } catch (err) {
+      console.error(`[QueueService][ws] handler failed type=${message.type}:`, err);
     }
   });
 
@@ -361,8 +386,6 @@ wsServer.on("connection", (socket) => {
     handleWsDisconnect(socket);
   });
 });
-
-console.log(`[QueueService] realtime websocket listening on ws://127.0.0.1:${REALTIME_WS_PORT}`);
 
 function createQueuedTicket(playerId) {
   cancelExistingQueuedTicketsForPlayer(playerId);
@@ -749,6 +772,8 @@ function handleWsPose(socket, message) {
     presence.velocityY = 0;
     presence.velocityZ = 0;
     presence.verticalVelocity = 0;
+    const maxHealth = Number.isFinite(presence.maxHealth) ? presence.maxHealth : 100;
+    presence.health = maxHealth;
   } else if (isDead) {
     presence.position = { x: position.x, y: position.y, z: position.z };
     presence.velocityX = 0;
@@ -973,6 +998,12 @@ function createDefaultPresence(sampleTick, sampleTimeMs) {
     animPhase: 0,
     hasWeapon: false,
     weaponPickupSeq: 0,
+    medkitCount: MEDKIT_STARTING_COUNT,
+    isUsingMedkit: false,
+    medkitUseEndsAtMs: 0,
+    medkitSeq: 0,
+    health: 100,
+    maxHealth: 100,
     sampleTick: sampleTick || 0,
     sampleTimeMs: sampleTimeMs || 0,
     serverSampleTimeMs: sampleTimeMs || 0,
@@ -1122,21 +1153,33 @@ function handleWsPickup(socket, message) {
     return;
   }
 
+  if (pickupKind === "medkit" && (presence.medkitCount || 0) >= MEDKIT_MAX_COUNT) {
+    sendPickupResultToSocket(socket, false, "medkit_full");
+    return;
+  }
+
   const pos = presence.position;
   const dx = pos.x - spawn.x;
-  const dy = pos.y - spawn.y;
   const dz = pos.z - spawn.z;
-  const distSq = (dx * dx) + (dy * dy) + (dz * dz);
+  const distSq = (dx * dx) + (dz * dz);
   if (distSq > PICKUP_MAX_DISTANCE * PICKUP_MAX_DISTANCE) {
     sendPickupResultToSocket(socket, false, "too_far");
     return;
   }
+
+  const itemId = spawn.itemId || spawn.weaponId || "";
+  const amount = Math.max(1, normalizeInt64(spawn.amount, 1));
 
   let weaponPickupSeq = Math.max(0, normalizeInt64(presence.weaponPickupSeq, 0));
   if (pickupKind === "weapon") {
     presence.hasWeapon = true;
     weaponPickupSeq += 1;
     presence.weaponPickupSeq = weaponPickupSeq;
+  } else if (pickupKind === "medkit") {
+    presence.medkitCount = Math.min(
+      MEDKIT_MAX_COUNT,
+      Math.max(0, normalizeInt64(presence.medkitCount, 0)) + amount
+    );
   }
 
   spawn.available = false;
@@ -1144,8 +1187,6 @@ function handleWsPickup(socket, message) {
     ? Date.now() + (spawn.respawnDelaySeconds * 1000)
     : 0;
 
-  const itemId = spawn.itemId || spawn.weaponId || "";
-  const amount = Math.max(1, normalizeInt64(spawn.amount, 1));
   sendPickupResultToSocket(socket, true, "ok", {
     spawnId,
     ticketId: ticket.ticketId,
@@ -1153,7 +1194,8 @@ function handleWsPickup(socket, message) {
     pickupKind,
     itemId,
     weaponId: itemId,
-    amount
+    amount,
+    medkitCount: Math.max(0, normalizeInt64(presence.medkitCount, 0))
   });
 
   broadcastPickupEvent(ticket.matchId, {
@@ -1188,10 +1230,188 @@ function sendPickupResultToSocket(socket, success, reason, details) {
       pickupKind: details && typeof details.pickupKind === "string" ? details.pickupKind : "",
       itemId: details && typeof details.itemId === "string" ? details.itemId : "",
       weaponId: details && typeof details.weaponId === "string" ? details.weaponId : "",
-      amount: details && Number.isFinite(details.amount) ? details.amount : 0
+      amount: details && Number.isFinite(details.amount) ? details.amount : 0,
+      medkitCount: details && Number.isFinite(details.medkitCount) ? details.medkitCount : 0
     }));
   } catch {
     // ignored
+  }
+}
+
+function getMedkitRemainingSeconds(presence) {
+  if (!presence || !presence.isUsingMedkit || !presence.medkitUseEndsAtMs) {
+    return 0;
+  }
+
+  return Math.max(0, (presence.medkitUseEndsAtMs - Date.now()) / 1000);
+}
+
+function sendMedkitResultToSocket(socket, success, reason, details) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  try {
+    socket.send(JSON.stringify({
+      type: "medkit_result",
+      success: !!success,
+      reason: typeof reason === "string" ? reason : "",
+      ticketId: details && typeof details.ticketId === "string" ? details.ticketId : "",
+      medkitSeq: details && Number.isFinite(details.medkitSeq) ? details.medkitSeq : 0,
+      durationSeconds: details && Number.isFinite(details.durationSeconds) ? details.durationSeconds : MEDKIT_USE_DURATION_SECONDS,
+      medkitCount: details && Number.isFinite(details.medkitCount) ? details.medkitCount : 0
+    }));
+  } catch {
+    // ignored
+  }
+}
+
+function sendHealToSocket(socket, amount, medkitSeq) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  try {
+    socket.send(JSON.stringify({
+      type: "heal",
+      amount: Math.max(0, amount),
+      medkitSeq: Math.max(0, normalizeInt64(medkitSeq, 0))
+    }));
+  } catch {
+    // ignored
+  }
+}
+
+function handleWsMedkitUse(socket) {
+  const meta = wsMetaBySocket.get(socket);
+  if (!meta || !meta.ticketId) {
+    return;
+  }
+
+  const ticket = ticketsById.get(meta.ticketId);
+  if (!ticket || ticket.status !== "Matched") {
+    return;
+  }
+
+  if (!ticket.presence) {
+    ticket.presence = createDefaultPresence(currentServerTick, Date.now());
+  }
+
+  const presence = ticket.presence;
+  const medkitCountNow = Math.max(0, normalizeInt64(presence.medkitCount, 0));
+  if (!presence.hasPose || presence.isDead) {
+    sendMedkitResultToSocket(socket, false, "dead", { medkitCount: medkitCountNow });
+    return;
+  }
+
+  if (presence.isUsingMedkit) {
+    sendMedkitResultToSocket(socket, false, "already_using", { medkitCount: medkitCountNow });
+    return;
+  }
+
+  if (medkitCountNow <= 0) {
+    sendMedkitResultToSocket(socket, false, "no_medkit", { medkitCount: medkitCountNow });
+    return;
+  }
+
+  const currentHealth = Number.isFinite(presence.health) ? presence.health : 100;
+  const maxHealth = Number.isFinite(presence.maxHealth) ? presence.maxHealth : 100;
+  if (currentHealth >= maxHealth - 0.001) {
+    sendMedkitResultToSocket(socket, false, "full_health", { medkitCount: medkitCountNow });
+    return;
+  }
+
+  presence.medkitCount = medkitCountNow - 1;
+  presence.isUsingMedkit = true;
+  presence.medkitSeq = Math.max(0, normalizeInt64(presence.medkitSeq, 0)) + 1;
+  presence.medkitUseEndsAtMs = Date.now() + (MEDKIT_USE_DURATION_SECONDS * 1000);
+
+  sendMedkitResultToSocket(socket, true, "ok", {
+    ticketId: ticket.ticketId,
+    medkitSeq: presence.medkitSeq,
+    durationSeconds: MEDKIT_USE_DURATION_SECONDS,
+    medkitCount: presence.medkitCount
+  });
+
+  touchMatchSession(ticket.matchId);
+  broadcastMatchSnapshots(ticket.matchId);
+}
+
+function handleWsMedkitCancel(socket) {
+  const meta = wsMetaBySocket.get(socket);
+  if (!meta || !meta.ticketId) {
+    return;
+  }
+
+  const ticket = ticketsById.get(meta.ticketId);
+  if (!ticket || ticket.status !== "Matched" || !ticket.presence) {
+    return;
+  }
+
+  const presence = ticket.presence;
+  if (!presence.isUsingMedkit) {
+    sendMedkitResultToSocket(socket, false, "not_using", {
+      medkitCount: Math.max(0, normalizeInt64(presence.medkitCount, 0))
+    });
+    return;
+  }
+
+  presence.isUsingMedkit = false;
+  presence.medkitUseEndsAtMs = 0;
+  presence.medkitCount = Math.min(
+    MEDKIT_MAX_COUNT,
+    Math.max(0, normalizeInt64(presence.medkitCount, 0)) + 1
+  );
+
+  sendMedkitResultToSocket(socket, false, "cancelled", {
+    ticketId: ticket.ticketId,
+    medkitSeq: Math.max(0, normalizeInt64(presence.medkitSeq, 0)),
+    medkitCount: presence.medkitCount
+  });
+
+  if (ticket.matchId) {
+    touchMatchSession(ticket.matchId);
+    broadcastMatchSnapshots(ticket.matchId);
+  }
+}
+
+function completeMedkitUse(ticket) {
+  if (!ticket || !ticket.presence) {
+    return;
+  }
+
+  const presence = ticket.presence;
+  if (!presence.isUsingMedkit) {
+    return;
+  }
+
+  presence.isUsingMedkit = false;
+  presence.medkitUseEndsAtMs = 0;
+  const maxHealth = Number.isFinite(presence.maxHealth) ? presence.maxHealth : 100;
+  const currentHealth = Number.isFinite(presence.health) ? presence.health : maxHealth;
+  presence.health = Math.min(maxHealth, currentHealth + MEDKIT_HEAL_AMOUNT);
+
+  const socket = wsClientsByTicketId.get(ticket.ticketId);
+  sendHealToSocket(socket, MEDKIT_HEAL_AMOUNT, presence.medkitSeq);
+
+  if (ticket.matchId) {
+    touchMatchSession(ticket.matchId);
+    broadcastMatchSnapshots(ticket.matchId);
+  }
+}
+
+function tickMedkitUses() {
+  const nowMs = Date.now();
+  for (const ticket of ticketsById.values()) {
+    if (!ticket || ticket.status !== "Matched" || !ticket.presence || !ticket.presence.isUsingMedkit) {
+      continue;
+    }
+
+    if (!ticket.presence.medkitUseEndsAtMs || nowMs < ticket.presence.medkitUseEndsAtMs) {
+      continue;
+    }
+
+    completeMedkitUse(ticket);
   }
 }
 
@@ -1500,6 +1720,14 @@ function clampPositionToMovement(prevPresence, nextPosition, sampleTick) {
     return nextPosition;
   }
 
+  if (prevPresence.isUsingMedkit) {
+    return {
+      x: prevPresence.position.x,
+      y: nextPosition.y,
+      z: prevPresence.position.z
+    };
+  }
+
   const prevTick = prevPresence.sampleTick || (sampleTick - 1);
   const dtTicks = Math.max(1, sampleTick - prevTick);
   const dtSec = dtTicks / SERVER_TICK_RATE;
@@ -1658,6 +1886,19 @@ function handleWsHit(socket, message) {
     dirZ = 1;
   }
 
+  if (!targetTicket.presence) {
+    targetTicket.presence = createDefaultPresence(currentServerTick, Date.now());
+  }
+
+  const targetPresence = targetTicket.presence;
+  const maxHealth = Number.isFinite(targetPresence.maxHealth) ? targetPresence.maxHealth : 100;
+  const currentHealth = Number.isFinite(targetPresence.health) ? targetPresence.health : maxHealth;
+  targetPresence.health = Math.max(0, currentHealth - damage);
+  if (targetPresence.health <= 0.001) {
+    targetPresence.isDead = true;
+    targetPresence.deathSeq = Math.max(0, normalizeInt64(targetPresence.deathSeq, 0)) + 1;
+  }
+
   const targetSocket = wsClientsByTicketId.get(targetTicket.ticketId);
   if (!targetSocket || targetSocket.readyState !== WebSocket.OPEN) {
     return;
@@ -1710,7 +1951,7 @@ function encodeSnapshotBinary(payload) {
     const chunks = [];
     const header = Buffer.alloc(11);
     header.write("RTS1", 0, 4, "ascii");
-    header.writeUInt8(7, 4);
+    header.writeUInt8(8, 4);
     header.writeUInt32LE(payload.serverTick >>> 0, 5);
     header.writeUInt16LE(payload.serverTickRate >>> 0, 9);
     chunks.push(header);
@@ -1761,11 +2002,12 @@ function encodeSnapshotBinary(payload) {
       if (player.isAiming) flags2 |= 16;
       if (player.isHolstered) flags2 |= 32;
       if (player.hasWeapon) flags2 |= 64;
+      if (player.isUsingMedkit) flags2 |= 128;
       body.writeUInt16LE(flags2, 32);
       body.writeUInt8(Math.max(0, Math.min(2, player.jumpState || 0)), 34);
       chunks.push(body);
 
-      const meta = Buffer.alloc(97);
+      const meta = Buffer.alloc(102);
       meta.writeFloatLE(player.lookPitch || 0, 0);
       meta.writeUInt32LE((player.shotSeq || 0) >>> 0, 4);
       meta.writeUInt32LE((player.reloadSeq || 0) >>> 0, 8);
@@ -1791,6 +2033,8 @@ function encodeSnapshotBinary(payload) {
       meta.writeFloatLE(player.shotEndZ || 0, 88);
       meta.writeUInt8(player.shotHasEndPoint ? 1 : 0, 92);
       meta.writeUInt32LE((player.weaponPickupSeq || 0) >>> 0, 93);
+      meta.writeFloatLE(player.medkitRemainingSeconds || 0, 97);
+      meta.writeUInt8(Math.max(0, Math.min(255, player.medkitCount || 0)), 101);
       chunks.push(meta);
 
       const recentShots = Array.isArray(player.recentShots) ? player.recentShots.slice(-8) : [];
@@ -1963,19 +2207,26 @@ function collectRealtimePlayersForMatch(matchId, ownerTicketId) {
       deathFallDirX: Number.isFinite(ticket.presence.deathFallDirX) ? ticket.presence.deathFallDirX : 0,
       deathFallDirY: Number.isFinite(ticket.presence.deathFallDirY) ? ticket.presence.deathFallDirY : 0,
       deathFallDirZ: Number.isFinite(ticket.presence.deathFallDirZ) ? ticket.presence.deathFallDirZ : 0,
-      animSpeed: ticket.presence.animSpeed || 0,
       isAiming: !!ticket.presence.isAiming,
       isHolstered: !!ticket.presence.isHolstered,
       hasWeapon: !!ticket.presence.hasWeapon,
+      isUsingMedkit: !!ticket.presence.isUsingMedkit,
+      medkitRemainingSeconds: getMedkitRemainingSeconds(ticket.presence),
+      medkitCount: Math.max(0, normalizeInt64(ticket.presence.medkitCount, 0)),
       weaponPickupSeq: Number.isFinite(ticket.presence.weaponPickupSeq) ? ticket.presence.weaponPickupSeq : 0,
       isGrounded: ticket.presence.isGrounded !== false,
       jumpState: Number.isFinite(ticket.presence.jumpState) ? ticket.presence.jumpState : 0,
       animPhase: Number.isFinite(ticket.presence.animPhase) ? ticket.presence.animPhase : 0,
+      animSpeed: ticket.presence.isUsingMedkit ? 0 : (ticket.presence.animSpeed || 0),
       velX: Number.isFinite(ticket.presence.velocityX) ? ticket.presence.velocityX : 0,
       velY: Number.isFinite(ticket.presence.velocityY) ? ticket.presence.velocityY : 0,
       velZ: Number.isFinite(ticket.presence.velocityZ) ? ticket.presence.velocityZ : 0,
-      moveInputX: ticket.inputState?.inputAuth ? normalizeNumber(ticket.inputState.moveInputX, 0) : 0,
-      moveInputZ: ticket.inputState?.inputAuth ? normalizeNumber(ticket.inputState.moveInputZ, 0) : 0,
+      moveInputX: ticket.presence.isUsingMedkit
+        ? 0
+        : (ticket.inputState?.inputAuth ? normalizeNumber(ticket.inputState.moveInputX, 0) : 0),
+      moveInputZ: ticket.presence.isUsingMedkit
+        ? 0
+        : (ticket.inputState?.inputAuth ? normalizeNumber(ticket.inputState.moveInputZ, 0) : 0),
       sampleTick: ticket.presence.sampleTick || currentServerTick,
       sampleTimeMs: ticket.presence.sampleTimeMs || ticket.presence.serverSampleTimeMs || Date.now(),
       history: getBroadcastStateHistory(ticket)

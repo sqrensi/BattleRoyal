@@ -161,6 +161,17 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            var medkit = GetComponent<PlayerMedkitController>();
+            if (medkit != null && medkit.IsUsingMedkit)
+            {
+                return;
+            }
+
+            if (weaponHolster != null && weaponHolster.IsMedkitWeaponLocked)
+            {
+                return;
+            }
+
             if (weaponHolster != null && !weaponHolster.IsWeaponReady)
             {
                 return;

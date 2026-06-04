@@ -2,26 +2,9 @@ using UnityEngine;
 
 namespace ShooterPrototype.Player
 {
-    internal readonly struct PlayerPickupContext
-    {
-        public PlayerPickupContext(
-            PlayerWeaponMount weaponMount,
-            PlayerWeaponController weaponController,
-            PlayerWeaponHolsterController weaponHolster,
-            PlayerHealth health)
-        {
-            WeaponMount = weaponMount;
-            WeaponController = weaponController;
-            WeaponHolster = weaponHolster;
-            Health = health;
-        }
-
-        public PlayerWeaponMount WeaponMount { get; }
-        public PlayerWeaponController WeaponController { get; }
-        public PlayerWeaponHolsterController WeaponHolster { get; }
-        public PlayerHealth Health { get; }
-    }
-
+    /// <summary>
+    /// Applies world pickups by <see cref="PickupKind"/>. Add new kinds here for future items.
+    /// </summary>
     internal static class PlayerPickupApplier
     {
         public static bool CanPickup(in PlayerPickupContext context, in PickupItemDefinition definition)
@@ -31,28 +14,35 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
+            if (context.Health != null && context.Health.IsDead)
+            {
+                return false;
+            }
+
             switch (definition.Kind)
             {
                 case PickupKind.Weapon:
                     return context.WeaponMount != null && !context.WeaponMount.HasMountedWeapon;
                 case PickupKind.Ammo:
-                    return CanPickupAmmo(context, definition);
+                    return context.WeaponMount != null && context.WeaponMount.HasMountedWeapon;
                 case PickupKind.Grenade:
-                    return CanPickupGrenade(context, definition);
+                    return context.Health != null;
                 case PickupKind.Medkit:
-                    return context.Health != null &&
-                           !context.Health.IsDead &&
-                           context.Health.CurrentHealth < context.Health.MaxHealth - 0.001f;
+                    return context.Inventory != null &&
+                           context.Inventory.CanAdd(InventoryItemIds.Medkit, definition.Amount);
                 default:
                     return false;
             }
         }
 
-        public static bool TryApply(in PlayerPickupContext context, in PickupItemDefinition definition)
+        public static PickupApplyResult TryApply(
+            in PlayerPickupContext context,
+            in PickupItemDefinition definition,
+            in PickupApplyServerState serverState)
         {
             if (!CanPickup(context, definition))
             {
-                return false;
+                return new PickupApplyResult(false, "cannot_pickup");
             }
 
             switch (definition.Kind)
@@ -64,30 +54,20 @@ namespace ShooterPrototype.Player
                 case PickupKind.Grenade:
                     return TryApplyGrenade(context, definition);
                 case PickupKind.Medkit:
-                    return TryApplyMedkit(context, definition);
+                    return TryApplyMedkit(context, definition, serverState);
                 default:
-                    return false;
+                    return new PickupApplyResult(false, "unknown_kind");
             }
         }
 
-        private static bool CanPickupAmmo(in PlayerPickupContext context, in PickupItemDefinition definition)
-        {
-            // Placeholder until an inventory/ammo system exists.
-            return context.WeaponMount != null && context.WeaponMount.HasMountedWeapon;
-        }
-
-        private static bool CanPickupGrenade(in PlayerPickupContext context, in PickupItemDefinition definition)
-        {
-            // Placeholder until a grenade inventory exists.
-            return context.Health != null && !context.Health.IsDead;
-        }
-
-        private static bool TryApplyWeapon(in PlayerPickupContext context, in PickupItemDefinition definition)
+        private static PickupApplyResult TryApplyWeapon(
+            in PlayerPickupContext context,
+            in PickupItemDefinition definition)
         {
             if (context.WeaponMount == null ||
                 !context.WeaponMount.EquipWeapon(definition.VisualPrefab))
             {
-                return false;
+                return new PickupApplyResult(false, "equip_failed");
             }
 
             if (context.WeaponController != null)
@@ -100,31 +80,54 @@ namespace ShooterPrototype.Player
                 context.WeaponHolster?.ForceArmedState();
             }
 
-            return true;
+            return PickupApplyResult.Ok;
         }
 
-        private static bool TryApplyAmmo(in PlayerPickupContext context, in PickupItemDefinition definition)
+        private static PickupApplyResult TryApplyAmmo(
+            in PlayerPickupContext context,
+            in PickupItemDefinition definition)
         {
             Debug.Log(
-                $"[PlayerPickup] Ammo pickup reserved for future inventory: item={definition.ResolvedItemId} amount={definition.Amount}");
-            return true;
+                $"[PlayerPickup] Ammo pickup placeholder: item={definition.ResolvedItemId} amount={definition.Amount}");
+            return PickupApplyResult.Ok;
         }
 
-        private static bool TryApplyGrenade(in PlayerPickupContext context, in PickupItemDefinition definition)
+        private static PickupApplyResult TryApplyGrenade(
+            in PlayerPickupContext context,
+            in PickupItemDefinition definition)
         {
-            Debug.Log(
-                $"[PlayerPickup] Grenade pickup reserved for future inventory: item={definition.ResolvedItemId} amount={definition.Amount}");
-            return true;
-        }
-
-        private static bool TryApplyMedkit(in PlayerPickupContext context, in PickupItemDefinition definition)
-        {
-            if (context.Health == null)
+            if (context.Inventory == null)
             {
-                return false;
+                return new PickupApplyResult(false, "no_inventory");
             }
 
-            return context.Health.TryHeal(definition.Amount);
+            var itemId = string.IsNullOrWhiteSpace(definition.ResolvedItemId)
+                ? InventoryItemIds.Grenade
+                : definition.ResolvedItemId;
+            return context.Inventory.TryAdd(itemId, definition.Amount)
+                ? PickupApplyResult.Ok
+                : new PickupApplyResult(false, "inventory_full");
+        }
+
+        private static PickupApplyResult TryApplyMedkit(
+            in PlayerPickupContext context,
+            in PickupItemDefinition definition,
+            in PickupApplyServerState serverState)
+        {
+            if (context.Inventory == null)
+            {
+                return new PickupApplyResult(false, "no_inventory");
+            }
+
+            if (serverState.HasMedkitCount)
+            {
+                context.Inventory.SetCount(InventoryItemIds.Medkit, serverState.MedkitCount);
+                return PickupApplyResult.Ok;
+            }
+
+            return context.Inventory.TryAdd(InventoryItemIds.Medkit, definition.Amount)
+                ? PickupApplyResult.Ok
+                : new PickupApplyResult(false, "medkit_full");
         }
     }
 }

@@ -57,6 +57,7 @@ namespace ShooterPrototype.Player
         private bool hasSmoothedServerClock;
         private float lastSnapshotReceivedAt;
         private int lastAppliedServerTick = -1;
+        private int lastSnapshotBinaryVersion;
         private float lastConnectRequestAt = -10f;
         private float lastSnapshotDebugAt;
         private PlayerWeaponMount localWeaponMount;
@@ -66,6 +67,7 @@ namespace ShooterPrototype.Player
         private FpsCharacterController localFpsController;
         private ProceduralLocomotionRig localLocomotionRig;
         private PlayerHealth localHealth;
+        private PlayerMedkitController localMedkitController;
         private string localCharacterModelName = string.Empty;
         private readonly Dictionary<string, RemoteAvatar> remoteAvatars = new Dictionary<string, RemoteAvatar>();
 
@@ -145,6 +147,7 @@ namespace ShooterPrototype.Player
             localFpsController = GetComponent<FpsCharacterController>();
             localLocomotionRig = GetComponent<ProceduralLocomotionRig>();
             localHealth = GetComponent<PlayerHealth>();
+            localMedkitController = GetComponent<PlayerMedkitController>();
             if (localLocomotionRig == null)
             {
                 localLocomotionRig = GetComponentInChildren<ProceduralLocomotionRig>(true);
@@ -626,7 +629,9 @@ namespace ShooterPrototype.Player
             if (serverTick > 0 && serverTick == lastAppliedServerTick)
             {
                 // Pose can change within the same server tick (e.g. shotSeq). Still play one-shot events.
+                lastSnapshotBinaryVersion = snapshot.binaryVersion;
                 ApplyRemotePresenceEvents(snapshot.players);
+                ApplyLocalMedkitFromSnapshot(snapshot.players);
                 return;
             }
 
@@ -694,8 +699,10 @@ namespace ShooterPrototype.Player
                 ? snapshot.serverTick / latestServerTickRate
                 : Time.realtimeSinceStartupAsDouble;
             latestServerTimeReceiptRealtimeSeconds = Time.realtimeSinceStartupAsDouble;
+            lastSnapshotBinaryVersion = snapshot.binaryVersion;
 
             ApplyRemotePresence(snapshot.players);
+            ApplyLocalMedkitFromSnapshot(snapshot.players);
             ApplySelfAuthoritativePose(snapshot.selfAuthoritative);
             var remoteCount = snapshot.players != null ? snapshot.players.Length : 0;
             networkLauncher?.SetCurrentMatchPlayerCount(remoteCount + 1);
@@ -856,6 +863,31 @@ namespace ShooterPrototype.Player
             }
         }
 
+        private void ApplyLocalMedkitFromSnapshot(RealtimeTransportClient.RealtimePlayerState[] players)
+        {
+            if (localMedkitController == null || string.IsNullOrWhiteSpace(localTicketId) || players == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < players.Length; i++)
+            {
+                var player = players[i];
+                if (player == null || string.IsNullOrWhiteSpace(player.ticketId))
+                {
+                    continue;
+                }
+
+                if (!string.Equals(player.ticketId, localTicketId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                localMedkitController.SyncFromSnapshot(player, lastSnapshotBinaryVersion >= 8);
+                return;
+            }
+        }
+
         private void ApplyRemotePresence(RealtimeTransportClient.RealtimePlayerState[] players)
         {
             var now = Time.unscaledTime;
@@ -912,6 +944,7 @@ namespace ShooterPrototype.Player
                     var remoteWeapon = avatar.Root.GetComponent<RemoteWeaponPresentation>();
                     remoteWeapon?.SetNetworkLookPitch(p.lookPitch);
                     remoteWeapon?.SetNetworkCrouchState(p.isCrouching);
+                    avatar.Root.GetComponent<RemoteMedkitPresentation>()?.SetNetworkMedkitState(p.isUsingMedkit);
                     remoteWeapon?.SetWeaponEquipped(p.hasWeapon);
                     remoteWeapon?.SetHolstered(p.isHolstered);
 

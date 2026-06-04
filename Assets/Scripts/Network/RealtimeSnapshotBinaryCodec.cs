@@ -27,7 +27,7 @@ namespace ShooterPrototype.Network
 
             var offset = 4;
             var version = ReadU8(data, ref offset);
-            if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7)
+            if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8)
             {
                 return false;
             }
@@ -113,7 +113,7 @@ namespace ShooterPrototype.Network
                 var flags2 = ReadU16(data, ref offset);
                 var jumpState = ReadU8(data, ref offset);
 
-                if (offset + (version >= 7 ? 97 : version >= 4 ? 93 : version >= 3 ? 80 : version >= 2 ? 72 : 48) > data.Length)
+                if (offset + (version >= 8 ? 102 : version >= 7 ? 97 : version >= 4 ? 93 : version >= 3 ? 80 : version >= 2 ? 72 : 48) > data.Length)
                 {
                     return false;
                 }
@@ -182,6 +182,8 @@ namespace ShooterPrototype.Network
                     shotHasEndPoint = ReadU8(data, ref offset) != 0;
                 }
 
+                var medkitRemainingSeconds = 0f;
+                var medkitCount = 0;
                 if (version >= 7)
                 {
                     if (offset + 4 > data.Length)
@@ -190,6 +192,17 @@ namespace ShooterPrototype.Network
                     }
 
                     weaponPickupSeq = (int)ReadU32(data, ref offset);
+                }
+
+                if (version >= 8)
+                {
+                    if (offset + 5 > data.Length)
+                    {
+                        return false;
+                    }
+
+                    medkitRemainingSeconds = ReadF32(data, ref offset);
+                    medkitCount = ReadU8(data, ref offset);
                 }
 
                 RealtimeTransportClient.RealtimeShotEvent[] recentShots = null;
@@ -301,6 +314,9 @@ namespace ShooterPrototype.Network
                     isAiming = (flags2 & 16) != 0,
                     isHolstered = (flags2 & 32) != 0,
                     hasWeapon = (flags2 & 64) != 0,
+                    isUsingMedkit = (flags2 & 128) != 0,
+                    medkitRemainingSeconds = medkitRemainingSeconds,
+                    medkitCount = medkitCount,
                     weaponPickupSeq = weaponPickupSeq,
                     jumpState = jumpState,
                     sampleTick = sampleTick,
@@ -313,6 +329,7 @@ namespace ShooterPrototype.Network
                 type = "snapshot",
                 serverTick = (int)serverTick,
                 serverTickRate = serverTickRate,
+                binaryVersion = version,
                 players = players.ToArray(),
                 selfAuthoritative = selfAuth
             };

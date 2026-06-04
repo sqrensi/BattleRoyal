@@ -62,6 +62,7 @@ namespace ShooterPrototype.Player
         private RemoteAnimatorHolsterPresentation holsterAnimation;
         private bool networkHolstered;
         private bool networkHasWeapon;
+        private bool networkMedkitActive;
         private bool hasHandPoseSnapshot;
         private Vector3 handPoseLocalPosition;
         private Quaternion handPoseLocalRotation;
@@ -74,6 +75,11 @@ namespace ShooterPrototype.Player
 
         public void SetWeaponEquipped(bool equipped)
         {
+            if (networkMedkitActive)
+            {
+                return;
+            }
+
             if (networkHasWeapon == equipped)
             {
                 return;
@@ -93,6 +99,11 @@ namespace ShooterPrototype.Player
 
         public void SetHolstered(bool holstered)
         {
+            if (networkMedkitActive)
+            {
+                return;
+            }
+
             if (!networkHasWeapon)
             {
                 ApplyUnarmedPresentation();
@@ -131,9 +142,45 @@ namespace ShooterPrototype.Player
             networkCrouching = crouching;
         }
 
+        public void SetMedkitPresentationActive(bool active)
+        {
+            if (networkMedkitActive == active)
+            {
+                return;
+            }
+
+            networkMedkitActive = active;
+            if (active)
+            {
+                SetWeaponRenderersEnabled(false);
+                return;
+            }
+
+            if (!networkHasWeapon)
+            {
+                ApplyUnarmedPresentation();
+                return;
+            }
+
+            EnsureAttached();
+            if (weaponRoot == null)
+            {
+                return;
+            }
+
+            if (networkHolstered)
+            {
+                AttachWeaponToBack();
+                return;
+            }
+
+            AttachWeaponToHand();
+            SetWeaponRenderersEnabled(true);
+        }
+
         private void LateUpdate()
         {
-            if (networkHolstered)
+            if (networkMedkitActive || networkHolstered)
             {
                 return;
             }

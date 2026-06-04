@@ -47,7 +47,33 @@ function Stop-TrackedProcess {
     Remove-Item -Path $PidFile -Force -ErrorAction SilentlyContinue
 }
 
+function Stop-ListenersOnPort {
+    param(
+        [int]$Port,
+        [string]$Label
+    )
+
+    $pids = @()
+    try {
+        $pids = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop |
+            Select-Object -ExpandProperty OwningProcess -Unique)
+    }
+    catch {
+        return
+    }
+
+    foreach ($pidValue in $pids) {
+        if ($pidValue -le 0) {
+            continue
+        }
+        Write-Host "[stop] Killing $Label listener on port $Port pid=$pidValue"
+        & taskkill /PID $pidValue /T /F | Out-Null
+    }
+}
+
 Stop-TrackedProcess -PidFile $queuePidFile -DisplayName "Queue service"
+Stop-ListenersOnPort -Port 5050 -Label "QueueService HTTP"
+Stop-ListenersOnPort -Port 5051 -Label "QueueService WS"
 Stop-TrackedProcess -PidFile $serverPidFile -DisplayName "Dedicated server"
 
 Write-Host "[stop] Stack stopped."

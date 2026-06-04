@@ -53,18 +53,25 @@ namespace ShooterPrototype.Player
         private PlayerWeaponMount weaponMount;
         private PlayerWeaponController weaponController;
         private PlayerHealth playerHealth;
+        private PlayerMedkitController medkitController;
         private SyntyWeaponHandBinder handBinder;
         private SyntyFirstPersonArmsPresenter armsPresenter;
         private SyntySplitBodyPresentation splitBodyPresentation;
         private MatchPresenceSync presenceSync;
         private PlayerNetworkIdentity networkIdentity;
+        private bool medkitUsePresentationActive;
+        private bool wasHolsteredBeforeMedkit;
 
         public bool IsHolstered => phase == HolsterPhase.Holstered;
         public bool IsTransitioning => phase == HolsterPhase.Holstering || phase == HolsterPhase.Drawing;
+        public bool IsMedkitWeaponLocked =>
+            medkitUsePresentationActive ||
+            (medkitController != null && medkitController.IsUsingMedkit);
         public bool IsWeaponReady =>
-            phase == HolsterPhase.Armed &&
             weaponMount != null &&
-            weaponMount.HasMountedWeapon;
+            weaponMount.HasMountedWeapon &&
+            phase == HolsterPhase.Armed &&
+            !IsMedkitWeaponLocked;
 
         public bool ShouldHideFirstPersonArms
         {
@@ -143,6 +150,112 @@ namespace ShooterPrototype.Player
             armsPresenter = GetComponent<SyntyFirstPersonArmsPresenter>();
             splitBodyPresentation = GetComponent<SyntySplitBodyPresentation>();
             presenceSync = GetComponent<MatchPresenceSync>();
+            medkitController = GetComponent<PlayerMedkitController>();
+        }
+
+        public void SetMedkitUsePresentationActive(bool active)
+        {
+            if (active)
+            {
+                BeginMedkitUsePresentation();
+                return;
+            }
+
+            RestoreAfterMedkitUse();
+        }
+
+        public void BeginMedkitUsePresentation()
+        {
+            medkitUsePresentationActive = true;
+            wasHolsteredBeforeMedkit = phase == HolsterPhase.Holstered && !IsTransitioning;
+            weaponController?.CancelActiveReload();
+            weaponMount?.ForceExitAds();
+
+            if (weaponMount == null || !weaponMount.HasMountedWeapon)
+            {
+                ApplyHolsteredPresentation(true);
+                handBinder?.SetHandIkEnabled(false);
+                GetComponent<PlayerViewPresentation>()?.RefreshViewMode();
+                return;
+            }
+
+            if (wasHolsteredBeforeMedkit)
+            {
+                weaponMount.SetLocalHolstered(true);
+                ApplyHolsteredPresentation(true);
+                handBinder?.SetHandIkEnabled(false);
+            }
+            else if (phase == HolsterPhase.Armed && !IsTransitioning)
+            {
+                BeginHolsterInternal(force: true);
+            }
+            else if (phase == HolsterPhase.Holstering)
+            {
+                weaponMount.SetLocalHolstered(true);
+            }
+
+            GetComponent<PlayerViewPresentation>()?.RefreshViewMode();
+        }
+
+        /// <summary>Ends medkit pose; draws only if the weapon was in hands before medkit use.</summary>
+        public void RestoreAfterMedkitUse()
+        {
+            medkitUsePresentationActive = false;
+
+            if (weaponMount == null || !weaponMount.HasMountedWeapon)
+            {
+                ApplyHolsteredPresentation(false);
+                SyncFirstPersonArmsPresentation();
+                GetComponent<PlayerViewPresentation>()?.RefreshViewMode();
+                return;
+            }
+
+            if (wasHolsteredBeforeMedkit)
+            {
+                EnsureHolsteredAfterMedkit();
+                SyncFirstPersonArmsPresentation();
+                GetComponent<PlayerViewPresentation>()?.RefreshViewMode();
+                return;
+            }
+
+            if (phase == HolsterPhase.Holstering)
+            {
+                CompleteHolsterTransitionImmediate();
+            }
+
+            if (phase == HolsterPhase.Holstered)
+            {
+                BeginDrawInternal(force: true);
+            }
+            else if (phase == HolsterPhase.Armed)
+            {
+                SyncFirstPersonArmsPresentation();
+            }
+
+            GetComponent<PlayerViewPresentation>()?.RefreshViewMode();
+        }
+
+        private void EnsureHolsteredAfterMedkit()
+        {
+            if (phase == HolsterPhase.Holstering)
+            {
+                CompleteHolsterTransitionImmediate();
+            }
+
+            weaponMount.SetLocalHolstered(true);
+            ApplyHolsteredPresentation(true);
+            handBinder?.SetHandIkEnabled(false);
+        }
+
+        private void CompleteHolsterTransitionImmediate()
+        {
+            HideWeaponLocally();
+            weaponMount.SetHolsterTransitionActive(false);
+            ApplyHolsteredPresentation(true);
+            handBinder?.SetHandIkEnabled(false);
+            transitionElapsed = 0f;
+            phase = HolsterPhase.Holstered;
+            NotifyHolsterNetworkState();
         }
 
         private void Start()
@@ -166,6 +279,8 @@ namespace ShooterPrototype.Player
 
         private void Update()
         {
+            AdvanceTransition(Time.deltaTime);
+
             if (!CanAcceptInput())
             {
                 return;
@@ -182,8 +297,6 @@ namespace ShooterPrototype.Player
                     BeginDraw();
                 }
             }
-
-            AdvanceTransition(Time.deltaTime);
         }
 
         private void LateUpdate()
@@ -223,6 +336,11 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
+            if (medkitController != null && medkitController.IsUsingMedkit)
+            {
+                return false;
+            }
+
             var fps = GetComponent<FpsCharacterController>();
             return fps == null || fps.enabled;
         }
@@ -234,7 +352,17 @@ namespace ShooterPrototype.Player
 
         private void BeginHolster()
         {
-            if (!CanToggle() || weaponMount == null)
+            BeginHolsterInternal(force: false);
+        }
+
+        private void BeginHolsterInternal(bool force)
+        {
+            if (weaponMount == null)
+            {
+                return;
+            }
+
+            if (!force && !CanToggle())
             {
                 return;
             }
@@ -257,7 +385,23 @@ namespace ShooterPrototype.Player
 
         private void BeginDraw()
         {
-            if (!CanToggle() || weaponMount == null)
+            BeginDrawInternal(force: false);
+        }
+
+        private void BeginDrawInternal(bool force)
+        {
+            if (weaponMount == null)
+            {
+                return;
+            }
+
+            if (!force && !CanToggle())
+            {
+                return;
+            }
+
+            weaponMount.EnsureMounted();
+            if (weaponMount.MountedWeaponRoot == null || weaponMount.WeaponAnchorTransform == null)
             {
                 return;
             }

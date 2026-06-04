@@ -37,6 +37,7 @@ namespace ShooterPrototype.Player
             EnableThirdPersonAnimator(thirdPersonBody);
             WireRemoteHolsterAnimation(thirdPersonBody);
             WireRemoteWeapon(thirdPersonBody);
+            WireRemoteMedkit(thirdPersonBody);
             WireRemoteLookPitchPosture(thirdPersonBody);
             EnsureBoneHitboxes(thirdPersonBody);
             EnsureRemoteShotEffects();
@@ -57,6 +58,19 @@ namespace ShooterPrototype.Player
 
             presentation.Configure(thirdPersonBody);
             presentation.SetWeaponEquipped(false);
+        }
+
+        private void WireRemoteMedkit(Transform thirdPersonBody)
+        {
+            if (thirdPersonBody == null)
+            {
+                return;
+            }
+
+            if (GetComponent<RemoteMedkitPresentation>() == null)
+            {
+                gameObject.AddComponent<RemoteMedkitPresentation>();
+            }
         }
 
         private void EnableThirdPersonAnimator(Transform thirdPersonBody)

@@ -106,6 +106,7 @@ namespace ShooterPrototype.Player
             }
 
             localPickupController.Configure(transportClient, pickupSpawnManager);
+            localPickupController.RefreshPickupContext();
         }
 
         private void SubscribeToTransport()
@@ -178,7 +179,7 @@ namespace ShooterPrototype.Player
 
             if (!message.success)
             {
-                localPickupController?.HandlePickupRejected(message.spawnId);
+                localPickupController?.HandlePickupRejected(message.spawnId, message.reason);
                 return;
             }
 
@@ -191,12 +192,25 @@ namespace ShooterPrototype.Player
                 kind = pickupSpawnManager.ResolveDefinitionForSpawnId(message.spawnId).Kind;
             }
 
+            var serverState = BuildServerState(message, kind);
             var confirmed = new PickupConfirmedInfo(
                 message.spawnId,
                 kind,
                 itemId,
                 message.amount > 0 ? message.amount : 1);
-            localPickupController?.ApplyConfirmedPickup(confirmed);
+            localPickupController?.ApplyConfirmedPickup(confirmed, serverState);
+        }
+
+        private static PickupApplyServerState BuildServerState(
+            RealtimeTransportClient.PickupResultMessage message,
+            PickupKind kind)
+        {
+            if (kind != PickupKind.Medkit)
+            {
+                return PickupApplyServerState.None;
+            }
+
+            return new PickupApplyServerState(message.medkitCount, true);
         }
     }
 }

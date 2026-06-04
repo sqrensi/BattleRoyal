@@ -171,6 +171,13 @@ namespace ShooterPrototype.Player
         private bool handAttachedWeaponActive;
         private bool firstPersonRigidHandIk;
         private SyntyWeaponHandBinder handBinder;
+        private PlayerMedkitController medkitController;
+        private PlayerWeaponHolsterController holsterController;
+
+        private bool BlocksLocalAimInput =>
+            (medkitController != null && medkitController.IsUsingMedkit) ||
+            (holsterController != null && holsterController.IsMedkitWeaponLocked) ||
+            localHolstered;
 
         private void Awake()
         {
@@ -179,6 +186,8 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            medkitController = GetComponent<PlayerMedkitController>();
+            holsterController = GetComponent<PlayerWeaponHolsterController>();
             EnsureWeaponMounted();
         }
 
@@ -199,6 +208,20 @@ namespace ShooterPrototype.Player
 
         public float AdsBlend => adsBlend;
         public bool IsAdsFullyOut => adsBlend <= 0.001f;
+
+        public void ForceExitAds()
+        {
+            if (useNetworkState)
+            {
+                return;
+            }
+
+            adsBlend = 0f;
+            adsBlendVelocity = 0f;
+            adsPitchFollowBlend = 0f;
+            adsPitchFollowBlendVelocity = 0f;
+            UpdateAdsCameraZoom();
+        }
         public bool HasMountedWeapon => weaponInstance != null;
         public float AdsFollowPitchDownLimit => adsFollowPitchDownLimit;
         public Transform MountedWeaponRoot => weaponInstance != null ? weaponInstance.transform : null;
@@ -462,8 +485,8 @@ namespace ShooterPrototype.Player
 
             if (enableAimDownSights && !useNetworkState)
             {
-                localAimHeld = ReadAimPressed();
-                var targetBlend = (localAimHeld && !localReloading && !localHolstered && !localSprinting) ? 1f : 0f;
+                localAimHeld = !BlocksLocalAimInput && ReadAimPressed();
+                var targetBlend = (localAimHeld && !localReloading && !localSprinting) ? 1f : 0f;
                 adsBlend = Mathf.SmoothDamp(
                     adsBlend,
                     targetBlend,

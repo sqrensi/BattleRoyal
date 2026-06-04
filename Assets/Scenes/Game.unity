@@ -23632,8 +23632,8 @@ MonoBehaviour:
     amountOverride: 1
   - spawnId: PickupSpawn_03
     spawnPoint: {fileID: 135087592}
-    pickupVisualOverride: {fileID: 0}
-    pickupKindOverride: 0
+    pickupVisualOverride: {fileID: 1435410842068634, guid: 9efa848c9a423b04493ee1b7772154b2, type: 3}
+    pickupKindOverride: 3
     itemIdOverride: 
     amountOverride: 1
   defaultPickupKind: 0

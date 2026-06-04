@@ -12,8 +12,8 @@ namespace ShooterPrototype.Player
         [SerializeField] private GameObject visualPrefab;
         [SerializeField] private string itemId;
         [SerializeField] private int amount = 1;
-        [SerializeField] private float pickupRadius = 1.75f;
-        [SerializeField] private float pickupVerticalHalfHeight = 1.1f;
+        [SerializeField] private float pickupRadius = 2.5f;
+        [SerializeField] private float pickupVerticalHalfHeight = 2f;
 
         private PickupSpawnManager owner;
         private Transform spawnPoint;
@@ -92,7 +92,8 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            if (playerForward.sqrMagnitude > 0.0001f)
+            if (PickupApplyRules.RequiresFacingCheck(kind) &&
+                playerForward.sqrMagnitude > 0.0001f)
             {
                 var toPickup = center - playerPosition;
                 toPickup.y = 0f;

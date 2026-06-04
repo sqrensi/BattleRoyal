@@ -58,12 +58,14 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\EnvMapAnimator.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerHitboxCleanup.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextSelector_A.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerMedkitController.cs" />
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_WaterBob.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteThirdPersonPlayerBootstrap.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_Demo_RotateCamera.cs" />
     <Compile Include="Assets\Scripts\Player\WorldPickup.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteLeftHandIkBinder.cs" />
     <Compile Include="Assets\Scripts\Player\PickupSpawnManager.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerPickupContext.cs" />
     <Compile Include="Assets\Scripts\Network\RealtimeSnapshotBinaryCodec.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark02.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerHeadMaskSelector.cs" />
@@ -98,6 +100,8 @@
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo_Wall.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerBoneHitboxRig.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\ShaderPropAnimator.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerInventory.cs" />
+    <Compile Include="Assets\Scripts\Player\InventoryItemIds.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextInfoDebugTool.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponMount.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\CFX_AutoDestructShuriken.cs" />
@@ -105,6 +109,7 @@
     <Compile Include="Assets\Scripts\UI\MainMenuController.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexShakeA.cs" />
     <Compile Include="Assets\Scripts\Player\ProceduralLocomotionRig.cs" />
+    <Compile Include="Assets\Scripts\Player\RemoteMedkitPresentation.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_AutoStopLoopedEffect.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark01_UGUI.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\SimpleScript.cs" />
@@ -140,6 +145,7 @@
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\Element.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerPickupApplier.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyFirstPersonArmLocomotionGate.cs" />
+    <Compile Include="Assets\Scripts\Player\PickupApplyResult.cs" />
     <Compile Include="Assets\Scripts\Player\PickupKind.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyCharacterVisualBinder.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\DropdownSample.cs" />
@@ -163,6 +169,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerAudioController.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TextMeshProFloatingText.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_Demo_RandomDir.cs" />
+    <Compile Include="Assets\Scripts\Player\PickupApplyRules.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyHandAttachedWeaponMount.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Spawn System\CFX_SpawnSystem.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo.cs" />

@@ -9,43 +9,75 @@ namespace ShooterPrototype.Player
     [DisallowMultipleComponent]
     public sealed class PlayerPickupController : MonoBehaviour
     {
-        [SerializeField] private float pickupRadius = 2.2f;
+        [SerializeField] private float pickupRadius = 3f;
         [SerializeField] private float pickupLookDot = 0.1f;
+        [SerializeField] private float pickupSampleHeight = 0.35f;
 
         private PlayerWeaponMount weaponMount;
         private PlayerWeaponController weaponController;
         private PlayerWeaponHolsterController weaponHolster;
         private PlayerHealth health;
+        private PlayerInventory inventory;
+        private PlayerMedkitController medkitController;
         private RealtimeTransportClient transportClient;
         private PickupSpawnManager pickupSpawnManager;
         private Transform pickupOrigin;
         private Camera playerCamera;
         private string pendingSpawnId = string.Empty;
-        private PlayerPickupContext pickupContext;
 
         private void Awake()
         {
-            var bootstrap = GetComponent<RemoteThirdPersonPlayerBootstrap>();
-            var identity = GetComponent<PlayerNetworkIdentity>();
-            if (bootstrap != null || (identity != null && !identity.IsLocalPlayer))
+            if (GetComponent<RemoteThirdPersonPlayerBootstrap>() != null)
             {
                 enabled = false;
                 return;
             }
 
-            weaponMount = GetComponent<PlayerWeaponMount>();
-            weaponController = GetComponent<PlayerWeaponController>();
-            weaponHolster = GetComponent<PlayerWeaponHolsterController>();
-            health = GetComponent<PlayerHealth>();
+            CacheComponents();
             playerCamera = GetComponentInChildren<Camera>(true);
             pickupOrigin = playerCamera != null ? playerCamera.transform : transform;
-            pickupContext = new PlayerPickupContext(weaponMount, weaponController, weaponHolster, health);
         }
 
         public void Configure(RealtimeTransportClient client, PickupSpawnManager spawnManager)
         {
             transportClient = client;
             pickupSpawnManager = spawnManager;
+        }
+
+        public void RefreshPickupContext()
+        {
+            CacheComponents();
+        }
+
+        private void CacheComponents()
+        {
+            weaponMount = GetComponent<PlayerWeaponMount>();
+            weaponController = GetComponent<PlayerWeaponController>();
+            weaponHolster = GetComponent<PlayerWeaponHolsterController>();
+            health = GetComponent<PlayerHealth>();
+            inventory = GetComponent<PlayerInventory>();
+            medkitController = GetComponent<PlayerMedkitController>();
+        }
+
+        private PlayerPickupContext BuildPickupContext()
+        {
+            if (inventory == null)
+            {
+                inventory = GetComponent<PlayerInventory>();
+            }
+
+            if (medkitController == null)
+            {
+                medkitController = GetComponent<PlayerMedkitController>();
+            }
+
+            return new PlayerPickupContext(
+                weaponMount,
+                weaponController,
+                weaponHolster,
+                health,
+                inventory,
+                medkitController);
         }
 
         private void Start()
@@ -55,24 +87,49 @@ namespace ShooterPrototype.Player
                 pickupSpawnManager = FindFirstObjectByType<PickupSpawnManager>();
             }
 
+            if (transportClient == null)
+            {
+                transportClient = FindFirstObjectByType<RealtimeTransportClient>();
+            }
+
+            if (pickupSpawnManager != null && transportClient != null)
+            {
+                Configure(transportClient, pickupSpawnManager);
+            }
+
+            RefreshPickupContext();
             RefreshWeaponAvailability();
         }
 
         private void Update()
         {
+            if (medkitController != null && medkitController.IsUsingMedkit)
+            {
+                return;
+            }
+
             if (!ReadPickupPressed())
             {
                 return;
             }
 
+            TryPickupBestNearby();
+        }
+
+        private void TryPickupBestNearby()
+        {
             var pickup = FindBestPickup();
             if (pickup == null)
             {
                 return;
             }
 
-            if (!PlayerPickupApplier.CanPickup(pickupContext, pickup.Definition))
+            var context = BuildPickupContext();
+            if (!PlayerPickupApplier.CanPickup(context, pickup.Definition))
             {
+                Debug.Log(
+                    $"[PlayerPickup] Cannot pick up {pickup.Kind} ({pickup.SpawnId}). " +
+                    $"medkits={context.Medkit?.MedkitCount.ToString() ?? "n/a"}");
                 return;
             }
 
@@ -125,7 +182,7 @@ namespace ShooterPrototype.Player
             GetComponent<SyntySplitBodyPresentation>()?.SetHolsteredFirstPersonPresentation(!showArms);
         }
 
-        public void HandlePickupRejected(string spawnId)
+        public void HandlePickupRejected(string spawnId, string reason)
         {
             if (string.IsNullOrWhiteSpace(spawnId) ||
                 !string.Equals(pendingSpawnId, spawnId, System.StringComparison.Ordinal))
@@ -134,9 +191,13 @@ namespace ShooterPrototype.Player
             }
 
             pendingSpawnId = string.Empty;
+            if (!string.IsNullOrWhiteSpace(reason))
+            {
+                Debug.LogWarning($"[PlayerPickup] Server rejected pickup: {reason} spawn={spawnId}");
+            }
         }
 
-        public void ApplyConfirmedPickup(PickupConfirmedInfo confirmed)
+        public void ApplyConfirmedPickup(PickupConfirmedInfo confirmed, PickupApplyServerState serverState)
         {
             if (string.IsNullOrWhiteSpace(confirmed.SpawnId))
             {
@@ -151,8 +212,11 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (!PlayerPickupApplier.TryApply(pickupContext, definition))
+            var result = PlayerPickupApplier.TryApply(BuildPickupContext(), definition, serverState);
+            if (!result.Success)
             {
+                Debug.LogWarning(
+                    $"[PlayerPickup] Apply failed: {result.FailureReason} kind={definition.Kind} spawn={confirmed.SpawnId}");
                 pickupSpawnManager?.ApplyServerPickupTaken(confirmed.SpawnId);
                 return;
             }
@@ -188,26 +252,38 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (transportClient != null && transportClient.IsConnected)
+            if (ShouldUseServerPickup())
             {
                 pendingSpawnId = pickup.SpawnId;
                 transportClient.SendPickupRequest(pickup.SpawnId);
                 return;
             }
 
-            TryPickupLocalOnly(pickup);
+            CompleteLocalPickup(pickup, PickupApplyServerState.None);
         }
 
-        private bool TryPickupLocalOnly(WorldPickup pickup)
+        private bool ShouldUseServerPickup()
         {
-            if (pickup == null || !PlayerPickupApplier.TryApply(pickupContext, pickup.Definition))
+            return transportClient != null && transportClient.IsReady;
+        }
+
+        private void CompleteLocalPickup(WorldPickup pickup, PickupApplyServerState serverState)
+        {
+            if (pickup == null)
             {
-                return false;
+                return;
+            }
+
+            var definition = pickup.Definition;
+            var result = PlayerPickupApplier.TryApply(BuildPickupContext(), definition, serverState);
+            if (!result.Success)
+            {
+                Debug.LogWarning($"[PlayerPickup] Local apply failed: {result.FailureReason} kind={definition.Kind}");
+                return;
             }
 
             pickup.Collect(pickupSpawnManager);
             RefreshWeaponAvailability();
-            return true;
         }
 
         private WorldPickup FindPickupBySpawnId(string spawnId)
@@ -226,10 +302,21 @@ namespace ShooterPrototype.Player
             return null;
         }
 
+        private Vector3 GetPickupSamplePosition()
+        {
+            return transform.position + Vector3.up * pickupSampleHeight;
+        }
+
+        private Vector3 GetPickupLookForward()
+        {
+            return pickupOrigin != null ? pickupOrigin.forward : transform.forward;
+        }
+
         private WorldPickup FindBestPickup()
         {
-            var origin = pickupOrigin != null ? pickupOrigin.position : transform.position;
-            var forward = pickupOrigin != null ? pickupOrigin.forward : transform.forward;
+            var origin = GetPickupSamplePosition();
+            var forward = GetPickupLookForward();
+            var context = BuildPickupContext();
             WorldPickup best = null;
             var bestDistanceSqr = float.MaxValue;
 
@@ -252,7 +339,7 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
-                if (!PlayerPickupApplier.CanPickup(pickupContext, pickup.Definition))
+                if (!PlayerPickupApplier.CanPickup(context, pickup.Definition))
                 {
                     continue;
                 }
@@ -277,4 +364,3 @@ namespace ShooterPrototype.Player
         }
     }
 }
-

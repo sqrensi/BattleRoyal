@@ -29,6 +29,8 @@ namespace ShooterPrototype.UI
         private Text fpsText;
         private Text ammoText;
         private Text healthText;
+        private Text medkitText;
+        private Text inventoryText;
         private Button backButton;
         private Button muteButton;
         private Button perfButton;
@@ -201,6 +203,8 @@ namespace ShooterPrototype.UI
                 fpsText != null &&
                 ammoText != null &&
                 healthText != null &&
+                medkitText != null &&
+                inventoryText != null &&
                 backButton != null &&
                 muteButton != null &&
                 muteButtonLabel != null)
@@ -227,7 +231,30 @@ namespace ShooterPrototype.UI
             fpsText = CreateLabel(panelObject.transform, "FpsText", new Vector2(10f, -82f), "FPS: --");
             ammoText = CreateLabel(panelObject.transform, "AmmoText", new Vector2(10f, -106f), "Ammo: --/--");
             healthText = CreateLabel(panelObject.transform, "HealthText", new Vector2(10f, -130f), "HP: --/--");
-            panelRect.sizeDelta = new Vector2(0f, 156f);
+            medkitText = CreateLabel(panelObject.transform, "MedkitText", new Vector2(10f, -154f), "Medkits: -- [8]");
+            panelRect.sizeDelta = new Vector2(0f, 180f);
+
+            var inventoryPanel = new GameObject("InventoryPanel");
+            inventoryPanel.transform.SetParent(rootCanvasObject.transform, false);
+            var inventoryPanelRect = inventoryPanel.AddComponent<RectTransform>();
+            inventoryPanelRect.anchorMin = new Vector2(0f, 0f);
+            inventoryPanelRect.anchorMax = new Vector2(0f, 0f);
+            inventoryPanelRect.pivot = new Vector2(0f, 0f);
+            inventoryPanelRect.sizeDelta = new Vector2(220f, 120f);
+            inventoryPanelRect.anchoredPosition = new Vector2(10f, 10f);
+            var inventoryPanelImage = inventoryPanel.AddComponent<Image>();
+            inventoryPanelImage.color = new Color(0f, 0f, 0f, 0.45f);
+            inventoryText = CreateLabel(inventoryPanel.transform, "InventoryText", new Vector2(8f, -8f), "Inventory:\n  (empty)");
+            var inventoryLabelRect = inventoryText.rectTransform;
+            inventoryLabelRect.anchorMin = new Vector2(0f, 1f);
+            inventoryLabelRect.anchorMax = new Vector2(1f, 1f);
+            inventoryLabelRect.pivot = new Vector2(0f, 1f);
+            inventoryLabelRect.offsetMin = new Vector2(8f, -110f);
+            inventoryLabelRect.offsetMax = new Vector2(-8f, -8f);
+            inventoryText.alignment = TextAnchor.UpperLeft;
+            inventoryText.fontSize = 14;
+            inventoryText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            inventoryText.verticalOverflow = VerticalWrapMode.Overflow;
 
             var buttonObject = new GameObject("BackButton");
             buttonObject.transform.SetParent(panelObject.transform, false);
@@ -513,6 +540,8 @@ namespace ShooterPrototype.UI
             fpsText.text = $"FPS: {Mathf.RoundToInt(fpsSmoothed)}";
             RefreshAmmoText();
             RefreshHealthText();
+            RefreshMedkitText();
+            RefreshInventoryText();
         }
 
         private void RefreshAmmoText()
@@ -551,6 +580,56 @@ namespace ShooterPrototype.UI
 
             var suffix = health.IsDead ? " (dead)" : string.Empty;
             healthText.text = $"HP: {Mathf.CeilToInt(health.CurrentHealth)}/{Mathf.CeilToInt(health.MaxHealth)}{suffix}";
+        }
+
+        private void RefreshMedkitText()
+        {
+            if (medkitText == null)
+            {
+                return;
+            }
+
+            var local = FindObjectOfType<ShooterPrototype.Player.LocalPlayerMarker>();
+            var medkit = local != null ? local.GetComponent<ShooterPrototype.Player.PlayerMedkitController>() : null;
+            if (medkit == null)
+            {
+                medkitText.text = "Medkits: -- [8]";
+                return;
+            }
+
+            if (medkit.IsUsingMedkit)
+            {
+                medkitText.text = $"Healing: {Mathf.CeilToInt(medkit.RemainingUseSeconds)}s";
+                return;
+            }
+
+            medkitText.text = $"Medkits: {medkit.MedkitCount} [8]";
+        }
+
+        private void RefreshInventoryText()
+        {
+            if (inventoryText == null)
+            {
+                return;
+            }
+
+            var local = FindObjectOfType<ShooterPrototype.Player.LocalPlayerMarker>();
+            if (local == null)
+            {
+                inventoryText.text = "Inventory:\n  --";
+                return;
+            }
+
+            var inventory = local.GetComponent<ShooterPrototype.Player.PlayerInventory>();
+            if (inventory == null)
+            {
+                inventoryText.text = "Inventory:\n  --";
+                return;
+            }
+
+            var weaponMount = local.GetComponent<ShooterPrototype.Player.PlayerWeaponMount>();
+            var holster = local.GetComponent<ShooterPrototype.Player.PlayerWeaponHolsterController>();
+            inventoryText.text = inventory.BuildHudSummary(weaponMount, holster);
         }
 
         private void RefreshMuteButtonText()
