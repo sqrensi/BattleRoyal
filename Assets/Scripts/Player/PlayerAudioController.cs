@@ -79,10 +79,12 @@ namespace ShooterPrototype.Player
             PlayClip(nearSource, jumpClip, jumpVolume, isLocal, defaultMaxDistance);
         }
 
-        public void PlayShot(bool isLocal)
+        public void PlayShot(bool isLocal, in WeaponAudioOverrides overrides = default)
         {
-            var volume = shotVolume * (isLocal ? 1f : Mathf.Clamp01(remoteShotVolumeMultiplier));
-            PlayClip(shotSource, shotClip, volume, isLocal, shotMaxDistance);
+            var clip = overrides.HasShotClip ? overrides.ShotClip : shotClip;
+            var volume = overrides.ShotVolume > 0f ? overrides.ShotVolume : shotVolume;
+            volume *= isLocal ? 1f : Mathf.Clamp01(remoteShotVolumeMultiplier);
+            PlayClip(shotSource, clip, volume, isLocal, shotMaxDistance);
         }
 
         public void PlayReload(bool isLocal)
@@ -90,7 +92,10 @@ namespace ShooterPrototype.Player
             PlayReloadSequence(isLocal, 1f);
         }
 
-        public void PlayReloadSequence(bool isLocal, float durationSeconds)
+        public void PlayReloadSequence(
+            bool isLocal,
+            float durationSeconds,
+            in WeaponAudioOverrides overrides = default)
         {
             if (reloadAudioRoutine != null)
             {
@@ -98,7 +103,7 @@ namespace ShooterPrototype.Player
                 reloadAudioRoutine = null;
             }
 
-            reloadAudioRoutine = StartCoroutine(ReloadAudioRoutine(isLocal, durationSeconds));
+            reloadAudioRoutine = StartCoroutine(ReloadAudioRoutine(isLocal, durationSeconds, overrides));
         }
 
         public void PlayHitPlayer(bool isLocal)
@@ -207,26 +212,43 @@ namespace ShooterPrototype.Player
             return clips[idx];
         }
 
-        private System.Collections.IEnumerator ReloadAudioRoutine(bool isLocal, float durationSeconds)
+        private System.Collections.IEnumerator ReloadAudioRoutine(
+            bool isLocal,
+            float durationSeconds,
+            WeaponAudioOverrides overrides)
         {
             var totalDuration = Mathf.Max(0.1f, durationSeconds);
-            var insertAt = totalDuration * Mathf.Clamp01(reloadInsertNormalizedTime);
+            var insertNormalizedTime = overrides.ReloadInsertNormalizedTime > 0f
+                ? overrides.ReloadInsertNormalizedTime
+                : reloadInsertNormalizedTime;
+            var insertAt = totalDuration * Mathf.Clamp01(insertNormalizedTime);
             if (!isLocal)
             {
-                var remoteClip = remoteReloadClip != null ? remoteReloadClip : reloadPullClip;
-                var remoteVolume = reloadPullVolume * Mathf.Clamp01(remoteReloadVolumeMultiplier);
+                var remoteClip = overrides.RemoteReloadClip != null
+                    ? overrides.RemoteReloadClip
+                    : overrides.ReloadPullClip != null
+                        ? overrides.ReloadPullClip
+                        : remoteReloadClip != null
+                            ? remoteReloadClip
+                            : reloadPullClip;
+                var remoteVolume = (overrides.ReloadPullVolume > 0f
+                        ? overrides.ReloadPullVolume
+                        : reloadPullVolume) *
+                    Mathf.Clamp01(remoteReloadVolumeMultiplier);
                 PlayClip(nearSource, remoteClip, remoteVolume, false, defaultMaxDistance);
                 reloadAudioRoutine = null;
                 yield break;
             }
 
-            var pullClip = reloadPullClip;
-            var insertClip = reloadInsertClip;
-            PlayClip(nearSource, pullClip, reloadPullVolume, isLocal, defaultMaxDistance);
+            var pullClip = overrides.ReloadPullClip != null ? overrides.ReloadPullClip : reloadPullClip;
+            var insertClip = overrides.ReloadInsertClip != null ? overrides.ReloadInsertClip : reloadInsertClip;
+            var pullVolume = overrides.ReloadPullVolume > 0f ? overrides.ReloadPullVolume : reloadPullVolume;
+            var insertVolume = overrides.ReloadInsertVolume > 0f ? overrides.ReloadInsertVolume : reloadInsertVolume;
+            PlayClip(nearSource, pullClip, pullVolume, isLocal, defaultMaxDistance);
             if (insertClip != null)
             {
                 yield return new WaitForSeconds(Mathf.Max(0.01f, insertAt));
-                PlayClip(nearSource, insertClip, reloadInsertVolume, isLocal, defaultMaxDistance);
+                PlayClip(nearSource, insertClip, insertVolume, isLocal, defaultMaxDistance);
             }
 
             reloadAudioRoutine = null;

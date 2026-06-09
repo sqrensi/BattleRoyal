@@ -17,6 +17,7 @@ namespace ShooterPrototype.Player
         private PlayerInventory inventory;
         private Coroutine useRoutine;
         private bool cancelRequested;
+        private bool cancelControlsReleased;
         private PlayerHealth health;
         private FpsCharacterController fpsController;
         private PlayerWeaponMount weaponMount;
@@ -56,12 +57,22 @@ namespace ShooterPrototype.Player
         private void OnDisable()
         {
             UnbindTransport();
-            StopActiveUse(applyHeal: false, refundMedkit: false);
+            ForceStopImmediate();
         }
 
         private void Update()
         {
-            if (!ReadUseMedkitPressed() || IsUsingMedkit)
+            if (IsUsingMedkit)
+            {
+                if (ReadMedkitInterruptPressed())
+                {
+                    RequestCancelMedkit(notifyServer: true);
+                }
+
+                return;
+            }
+
+            if (!ReadUseMedkitPressed())
             {
                 return;
             }
@@ -121,6 +132,40 @@ namespace ShooterPrototype.Player
             return true;
         }
 
+        public void RequestCancelMedkit(bool notifyServer)
+        {
+            if (!IsUsingMedkit || cancelRequested)
+            {
+                return;
+            }
+
+            cancelRequested = true;
+            if (notifyServer && useNetworkAuthority && transportClient != null && transportClient.IsConnected)
+            {
+                transportClient.SendMedkitCancel();
+            }
+
+            ApplyCancelImmediateResponse();
+        }
+
+        private void ApplyCancelImmediateResponse()
+        {
+            if (cancelControlsReleased)
+            {
+                return;
+            }
+
+            cancelControlsReleased = true;
+            fpsController?.SetMedkitUseMovementMode(false);
+
+            if (weaponController != null && weaponMount != null && weaponMount.HasMountedWeapon)
+            {
+                weaponController.enabled = true;
+            }
+
+            weaponHolster?.RestoreAfterMedkitUse();
+        }
+
         public void ApplyNetworkMedkitResult(RealtimeTransportClient.MedkitResultMessage message)
         {
             if (message == null)
@@ -137,7 +182,7 @@ namespace ShooterPrototype.Player
 
                 if (string.Equals(message.reason, "cancelled", System.StringComparison.Ordinal))
                 {
-                    StopActiveUse(applyHeal: false, refundMedkit: false);
+                    RequestCancelMedkit(notifyServer: false);
                 }
 
                 if (!string.IsNullOrWhiteSpace(message.reason) &&
@@ -191,97 +236,65 @@ namespace ShooterPrototype.Player
                 SetMedkitCount(state.medkitCount);
             }
 
-            if (!state.isUsingMedkit)
+            if (state.isUsingMedkit)
             {
-                if (IsUsingMedkit && !cancelRequested)
+                if (IsUsingMedkit)
                 {
-                    StopActiveUse(applyHeal: false, refundMedkit: false);
+                    RemainingUseSeconds = Mathf.Max(RemainingUseSeconds, state.medkitRemainingSeconds);
+                    return;
                 }
 
-                return;
+                var duration = state.medkitRemainingSeconds > 0.01f
+                    ? state.medkitRemainingSeconds
+                    : useDurationSeconds;
+                BeginLocalUseRoutine(duration, applyHealLocally: false);
             }
-
-            if (IsUsingMedkit)
-            {
-                RemainingUseSeconds = Mathf.Max(RemainingUseSeconds, state.medkitRemainingSeconds);
-                return;
-            }
-
-            var duration = state.medkitRemainingSeconds > 0.01f
-                ? state.medkitRemainingSeconds
-                : useDurationSeconds;
-            BeginLocalUseRoutine(duration, applyHealLocally: false);
         }
 
         private void BeginLocalUseRoutine(float durationSeconds, bool applyHealLocally)
         {
             cancelRequested = false;
+            cancelControlsReleased = false;
             useRoutine = StartCoroutine(UseMedkitRoutine(durationSeconds, applyHealLocally));
         }
 
         private IEnumerator UseMedkitRoutine(float durationSeconds, bool applyHealLocally)
         {
-            RemainingUseSeconds = Mathf.Max(0.01f, durationSeconds);
-
             weaponController?.CancelActiveReload();
             if (weaponController != null)
             {
                 weaponController.enabled = false;
             }
 
-            fpsController?.SetMedkitUseMovementMode(true, CancelMedkitFromMovement);
+            fpsController?.SetMedkitUseMovementMode(true, () => RequestCancelMedkit(notifyServer: true));
             weaponHolster?.BeginMedkitUsePresentation();
 
-            while (RemainingUseSeconds > 0f)
+            RemainingUseSeconds = Mathf.Max(0.01f, durationSeconds);
+            while (RemainingUseSeconds > 0f && !cancelRequested)
             {
-                if (cancelRequested)
-                {
-                    yield break;
-                }
-
                 RemainingUseSeconds -= Time.deltaTime;
                 yield return null;
             }
 
             RemainingUseSeconds = 0f;
+
             var completed = !cancelRequested;
-            StopActiveUse(applyHeal: completed && applyHealLocally, refundMedkit: false);
+            FinishActiveUse(applyHeal: completed && applyHealLocally, refundMedkit: !completed && !useNetworkAuthority);
         }
 
-        private void CancelMedkitFromMovement()
+        private void FinishActiveUse(bool applyHeal, bool refundMedkit)
         {
-            if (!IsUsingMedkit || cancelRequested)
-            {
-                return;
-            }
-
-            cancelRequested = true;
-
-            if (useNetworkAuthority && transportClient != null && transportClient.IsConnected)
-            {
-                transportClient.SendMedkitCancel();
-            }
-            else
-            {
-                inventory?.TryAdd(InventoryItemIds.Medkit, 1);
-            }
-
-            StopActiveUse(applyHeal: false, refundMedkit: false);
-        }
-
-        private void StopActiveUse(bool applyHeal, bool refundMedkit)
-        {
-            if (useRoutine != null)
-            {
-                StopCoroutine(useRoutine);
-                useRoutine = null;
-            }
-
+            useRoutine = null;
             cancelRequested = false;
+            cancelControlsReleased = false;
             RemainingUseSeconds = 0f;
 
             fpsController?.SetMedkitUseMovementMode(false);
-            weaponHolster?.RestoreAfterMedkitUse();
+
+            if (!cancelControlsReleased)
+            {
+                weaponHolster?.RestoreAfterMedkitUse();
+            }
 
             if (weaponController != null)
             {
@@ -297,6 +310,26 @@ namespace ShooterPrototype.Player
             else if (refundMedkit)
             {
                 inventory?.TryAdd(InventoryItemIds.Medkit, 1);
+            }
+        }
+
+        private void ForceStopImmediate()
+        {
+            if (useRoutine != null)
+            {
+                StopCoroutine(useRoutine);
+                useRoutine = null;
+            }
+
+            cancelRequested = false;
+            cancelControlsReleased = false;
+            RemainingUseSeconds = 0f;
+            fpsController?.SetMedkitUseMovementMode(false);
+            weaponHolster?.RestoreAfterMedkitUse();
+
+            if (weaponController != null)
+            {
+                weaponController.enabled = weaponMount != null && weaponMount.HasMountedWeapon;
             }
         }
 
@@ -352,6 +385,35 @@ namespace ShooterPrototype.Player
                    Keyboard.current.numpad8Key.wasPressedThisFrame;
 #else
             return Input.GetKeyDown(KeyCode.Alpha8);
+#endif
+        }
+
+        private static bool ReadMedkitInterruptPressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (Keyboard.current == null && Mouse.current == null)
+            {
+                return false;
+            }
+
+            var keyboardInterrupt = Keyboard.current != null &&
+                                    (Keyboard.current.xKey.wasPressedThisFrame ||
+                                     Keyboard.current.fKey.wasPressedThisFrame ||
+                                     Keyboard.current.rKey.wasPressedThisFrame ||
+                                     Keyboard.current.spaceKey.wasPressedThisFrame);
+
+            var mouseInterrupt = Mouse.current != null &&
+                                 (Mouse.current.leftButton.wasPressedThisFrame ||
+                                  Mouse.current.rightButton.wasPressedThisFrame);
+
+            return keyboardInterrupt || mouseInterrupt;
+#else
+            return Input.GetKeyDown(KeyCode.X) ||
+                   Input.GetKeyDown(KeyCode.F) ||
+                   Input.GetKeyDown(KeyCode.R) ||
+                   Input.GetKeyDown(KeyCode.Space) ||
+                   Input.GetMouseButtonDown(0) ||
+                   Input.GetMouseButtonDown(1);
 #endif
         }
     }

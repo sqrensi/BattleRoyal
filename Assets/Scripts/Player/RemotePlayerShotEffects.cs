@@ -33,9 +33,48 @@ namespace ShooterPrototype.Player
         private Material tracerMaterial;
         private PlayerAudioController audioController;
         private RemoteWeaponPresentation remoteWeapon;
+        private WeaponAudioOverrides activeAudioOverrides;
+        private float activeReloadDurationSeconds = 1.8f;
         private readonly RaycastHit[] hitQueryBuffer = new RaycastHit[32];
 
-        public float ReloadDurationSeconds => 1.8f;
+        public float ReloadDurationSeconds => activeReloadDurationSeconds;
+
+        public void ApplyFromWeaponProfile(WeaponProfile profile, float reloadDurationSeconds)
+        {
+            activeReloadDurationSeconds = Mathf.Max(0.05f, reloadDurationSeconds);
+            if (profile == null)
+            {
+                return;
+            }
+
+            if (profile.MuzzleFlashVfx != null)
+            {
+                muzzleFlashVfx = profile.MuzzleFlashVfx;
+            }
+
+            activeAudioOverrides = profile.CreateAudioOverrides();
+            muzzle = null;
+        }
+
+        public void ApplyForWeaponKind(WeaponKind kind)
+        {
+            var template = WeaponCatalog.GetProfileTemplate(kind);
+            if (template != null)
+            {
+                ApplyFromWeaponProfile(template, template.ReloadDuration);
+                return;
+            }
+
+            activeAudioOverrides = new WeaponAudioOverrides
+            {
+                ShotClip = WeaponCatalog.LoadShotClip(kind),
+                ReloadPullClip = WeaponCatalog.LoadReloadPullClip(kind),
+                ReloadInsertClip = WeaponCatalog.LoadReloadInsertClip(kind),
+                RemoteReloadClip = WeaponCatalog.LoadReloadPullClip(kind)
+            };
+            muzzleFlashVfx = WeaponCatalog.LoadMuzzleFlash(kind);
+            muzzle = null;
+        }
 
         public void ApplyVisualSettings(
             GameObject muzzleFlash,
@@ -108,7 +147,7 @@ namespace ShooterPrototype.Player
                 StartCoroutine(SpawnTracer(visualOrigin, endPoint));
             }
 
-            audioController?.PlayShot(false);
+            audioController?.PlayShot(false, activeAudioOverrides);
         }
 
         private Vector3 ResolveThirdPersonMuzzlePosition(float lookPitch)
@@ -231,7 +270,7 @@ namespace ShooterPrototype.Player
         public void PlayRemoteReload(float durationSeconds)
         {
             EnsureAudioSources();
-            audioController?.PlayReloadSequence(false, durationSeconds > 0f ? durationSeconds : ReloadDurationSeconds);
+            audioController?.PlayReloadSequence(false, durationSeconds > 0f ? durationSeconds : activeReloadDurationSeconds, activeAudioOverrides);
         }
 
         public void PlayRemoteHitPlayer()

@@ -69,6 +69,7 @@ namespace ShooterPrototype.Network
             public float medkitRemainingSeconds;
             public int medkitCount;
             public int weaponPickupSeq;
+            public int weaponKind;
             public bool isGrounded;
             public int jumpState;
             public float animPhase;
@@ -329,6 +330,7 @@ namespace ShooterPrototype.Network
             public float shotEndY;
             public float shotEndZ;
             public bool shotHasEndPoint;
+            public int weaponKind;
         }
 
         [Serializable]
@@ -449,7 +451,8 @@ namespace ShooterPrototype.Network
             Vector3 shotOrigin = default,
             Vector3 shotDirection = default,
             Vector3 shotEndPoint = default,
-            bool shotHasEndPoint = false)
+            bool shotHasEndPoint = false,
+            int weaponKind = 0)
         {
             if (!IsConnected)
             {
@@ -500,6 +503,7 @@ namespace ShooterPrototype.Network
                 shotEndY = shotEndPoint.y,
                 shotEndZ = shotEndPoint.z,
                 shotHasEndPoint = shotHasEndPoint,
+                weaponKind = Mathf.Clamp(weaponKind, 0, 1),
                 poseSeq = ++nextPoseSeq
             };
             hasPendingPose = true;

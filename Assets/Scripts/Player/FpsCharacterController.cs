@@ -5,6 +5,7 @@ using UnityEngine.InputSystem;
 
 namespace ShooterPrototype.Player
 {
+    [DefaultExecutionOrder(-100)]
     [RequireComponent(typeof(CharacterController))]
     public sealed class FpsCharacterController : MonoBehaviour
     {
@@ -105,6 +106,7 @@ namespace ShooterPrototype.Player
         private bool movementLocked;
         private bool medkitUseMovementMode;
         private System.Action medkitMovementCancelHandler;
+        private float defaultAdsMaxLookAngle;
 
         public bool IsGrounded => isGrounded;
         public bool IsMovementLocked => movementLocked;
@@ -135,6 +137,7 @@ namespace ShooterPrototype.Player
         public float CurrentLookPitch => cameraPitch + recoilPitchOffset;
         public Transform CameraPivot => cameraPivot;
         public float HipMaxLookAngle => Mathf.Clamp(hipMaxLookAngle, 1f, 89f);
+        public float AdsMaxLookAngle => Mathf.Clamp(adsMaxLookAngle, 1f, 89f);
         public int LastFootstepSequence => footstepSequence;
 
         public void SetServerReconciliationSuspended(bool suspended)
@@ -166,7 +169,7 @@ namespace ShooterPrototype.Player
         }
 
         /// <summary>
-        /// During medkit use: crouch allowed; WASD/jump blocked and trigger cancel callback.
+        /// During medkit use: crouch allowed; WASD/jump cancel medkit — jump and move apply same frame after cancel.
         /// </summary>
         public void SetMedkitUseMovementMode(bool enabled, System.Action onMovementCancel = null)
         {
@@ -252,7 +255,18 @@ namespace ShooterPrototype.Player
             standingCameraLocalY = cameraPivot != null ? cameraPivot.localPosition.y : 1.6f;
             characterBottomOffset = standingCenterY - (standingHeight * 0.5f);
             isGrounded = EvaluateGrounded();
+            defaultAdsMaxLookAngle = adsMaxLookAngle;
             CacheRestingCameraLocalTransform();
+        }
+
+        public void ConfigureAdsMaxLookAngle(float value)
+        {
+            adsMaxLookAngle = Mathf.Clamp(value, 1f, 89f);
+        }
+
+        public void RestoreDefaultAdsMaxLookAngle()
+        {
+            adsMaxLookAngle = defaultAdsMaxLookAngle;
         }
 
         private void OnEnable()
@@ -289,11 +303,12 @@ namespace ShooterPrototype.Player
             {
                 TickMedkitRestrictedMove();
             }
-            else if (!ShouldBlockMovement())
+
+            if (!medkitUseMovementMode && !ShouldBlockMovement())
             {
                 TickMove();
             }
-            else if (movementLocked)
+            else if (!medkitUseMovementMode && movementLocked)
             {
                 horizontalSpeed = 0f;
                 moveInputMagnitude = 0f;

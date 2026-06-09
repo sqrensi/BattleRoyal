@@ -3,7 +3,7 @@ using UnityEngine;
 namespace ShooterPrototype.Player
 {
     /// <summary>
-    /// Third-person medkit use driven by network snapshots.
+    /// Remote third-person medkit state (weapon holster / animator). No world prop — hand animation later.
     /// </summary>
     [DefaultExecutionOrder(440)]
     public sealed class RemoteMedkitPresentation : MonoBehaviour
@@ -28,14 +28,9 @@ namespace ShooterPrototype.Player
             holsterPresentation?.SetMedkitUsing(usingMedkit);
         }
 
-        private bool ShouldApply()
-        {
-            return GetComponent<RemoteThirdPersonPlayerBootstrap>() != null;
-        }
-
         private void Awake()
         {
-            if (!ShouldApply())
+            if (GetComponent<RemoteThirdPersonPlayerBootstrap>() == null)
             {
                 enabled = false;
             }

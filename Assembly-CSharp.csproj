@@ -58,6 +58,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\EnvMapAnimator.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerHitboxCleanup.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextSelector_A.cs" />
+    <Compile Include="Assets\Scripts\Player\WeaponAudioOverrides.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerMedkitController.cs" />
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_WaterBob.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteThirdPersonPlayerBootstrap.cs" />
@@ -86,6 +87,7 @@
     <Compile Include="Assets\Scripts\Player\RemoteAnimatorHolsterPresentation.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\MultiAnimationDisplay.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyBoneAnchorSync.cs" />
+    <Compile Include="Assets\Scripts\Player\WeaponKind.cs" />
     <Compile Include="Assets\Scripts\Network\NetworkLauncher.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexJitter.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyFirstPersonArmsMeshBuilder.cs" />
@@ -102,6 +104,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\ShaderPropAnimator.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerInventory.cs" />
     <Compile Include="Assets\Scripts\Player\InventoryItemIds.cs" />
+    <Compile Include="Assets\Scripts\Player\WeaponCatalog.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextInfoDebugTool.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponMount.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\CFX_AutoDestructShuriken.cs" />
@@ -123,6 +126,7 @@
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_SimpleRotate.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\FollowCam.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponHolsterController.cs" />
+    <Compile Include="Assets\Scripts\Player\WeaponScopeOverlay.cs" />
     <Compile Include="Assets\Scripts\Player\MatchPresenceSync.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_DigitValidator.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_FrameRateCounter.cs" />
@@ -145,6 +149,7 @@
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\Element.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerPickupApplier.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyFirstPersonArmLocomotionGate.cs" />
+    <Compile Include="Assets\Scripts\Player\WeaponProfile.cs" />
     <Compile Include="Assets\Scripts\Player\PickupApplyResult.cs" />
     <Compile Include="Assets\Scripts\Player\PickupKind.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyCharacterVisualBinder.cs" />

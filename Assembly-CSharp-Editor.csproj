@@ -65,6 +65,7 @@
     <Compile Include="Assets\Synty\PolygonGeneric\Shaders\InterfaceOverrides\Editor\polygonShader_UI.cs" />
     <Compile Include="Assets\Scripts\Editor\SyntyPlayerPrefabCreator.cs" />
     <Compile Include="Assets\Scripts\Editor\PlayerCleanPrefabCreator.cs" />
+    <Compile Include="Assets\Scripts\Editor\SniperWeaponSetupMenu.cs" />
     <Compile Include="Assets\Scripts\Editor\PendingPrefabRebuild.cs" />
     <Compile Include="Assets\Synty\SyntyPackageHelper\Editor\SyntyPackageHelper.cs" />
     <Compile Include="Assets\Scripts\Editor\SyntySplitBodyViewSetup.cs" />

@@ -197,7 +197,7 @@ namespace ShooterPrototype.Player
             GetComponent<PlayerViewPresentation>()?.RefreshViewMode();
         }
 
-        /// <summary>Ends medkit pose; draws only if the weapon was in hands before medkit use.</summary>
+        /// <summary>Ends medkit use; draws only if the weapon was in hands before medkit use.</summary>
         public void RestoreAfterMedkitUse()
         {
             medkitUsePresentationActive = false;

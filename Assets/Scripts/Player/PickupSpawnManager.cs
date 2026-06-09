@@ -151,8 +151,6 @@ namespace ShooterPrototype.Player
 
         }
 
-
-
         [ContextMenu("Rebuild Spawn Points From Root")]
 
         public void RebuildSpawnPointsFromRoot()

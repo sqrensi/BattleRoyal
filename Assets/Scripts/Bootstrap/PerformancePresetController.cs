@@ -11,6 +11,7 @@ namespace ShooterPrototype.Bootstrap
     public sealed class PerformancePresetController : MonoBehaviour
     {
         private const string PrefKey = "client_max_performance";
+        private const string GameSceneName = "Game";
 
         [Header("Mode")]
         [SerializeField] private bool maxPerformanceEnabled;
@@ -86,13 +87,50 @@ namespace ShooterPrototype.Bootstrap
             projectMaximumLodLevel = QualitySettings.maximumLODLevel;
             CaptureProjectUrpIfNeeded();
 
-            if (PlayerPrefs.HasKey(PrefKey))
+            if (ShouldUseDirectLocalPlayQuality())
+            {
+                maxPerformanceEnabled = false;
+            }
+            else if (PlayerPrefs.HasKey(PrefKey))
             {
                 maxPerformanceEnabled = PlayerPrefs.GetInt(PrefKey, 0) == 1;
             }
 
             CacheVolumeWeightsIfNeeded();
             ApplyCurrentPreset();
+        }
+
+        private static bool ShouldUseDirectLocalPlayQuality()
+        {
+            if (Application.isBatchMode)
+            {
+                return false;
+            }
+
+            if (Object.FindAnyObjectByType<GameBootstrap>() != null)
+            {
+                return false;
+            }
+
+            var scene = SceneManager.GetActiveScene();
+            return scene.IsValid() && scene.isLoaded && scene.name == GameSceneName;
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void EnsureDirectGameSceneQualityPreset()
+        {
+            if (!ShouldUseDirectLocalPlayQuality())
+            {
+                return;
+            }
+
+            if (Object.FindAnyObjectByType<PerformancePresetController>() != null)
+            {
+                return;
+            }
+
+            var host = new GameObject("LocalPlayPerformancePreset");
+            host.AddComponent<PerformancePresetController>();
         }
 
         private void OnEnable()
@@ -137,6 +175,12 @@ namespace ShooterPrototype.Bootstrap
 
             hasCachedVolumeWeights = false;
             CacheVolumeWeightsIfNeeded();
+
+            if (ShouldUseDirectLocalPlayQuality())
+            {
+                maxPerformanceEnabled = false;
+            }
+
             ApplyVolumeAndCameraSettings(maxPerformanceEnabled);
         }
 

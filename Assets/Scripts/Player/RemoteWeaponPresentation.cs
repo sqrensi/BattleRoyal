@@ -15,6 +15,7 @@ namespace ShooterPrototype.Player
         [SerializeField] private GameObject weaponPrefab;
         [SerializeField] private Transform attachTarget;
         [SerializeField] private string defaultWeaponPrefabPath = "Assets/Prefabs/AK-47/rifle_001.prefab";
+        [SerializeField] private string sniperWeaponPrefabPath = "Assets/Prefabs/Sniper/sniper_rifle_001.prefab";
         [SerializeField] private string attachTargetName = "RemoteWeaponTarget";
         [SerializeField] private string rightHandBoneName = "Hand_R";
         [Header("Grip Alignment")]
@@ -63,6 +64,7 @@ namespace ShooterPrototype.Player
         private bool networkHolstered;
         private bool networkHasWeapon;
         private bool networkMedkitActive;
+        private WeaponKind networkWeaponKind = WeaponKind.AssaultRifle;
         private bool hasHandPoseSnapshot;
         private Vector3 handPoseLocalPosition;
         private Quaternion handPoseLocalRotation;
@@ -73,10 +75,39 @@ namespace ShooterPrototype.Player
         public bool HasWeapon => networkHasWeapon;
         public bool IsHolstered => networkHolstered;
 
+        public void SetWeaponKind(WeaponKind kind)
+        {
+            if (networkWeaponKind == kind && weaponPrefab == ResolvePrefabForKind(kind))
+            {
+                return;
+            }
+
+            networkWeaponKind = kind;
+            weaponPrefab = ResolvePrefabForKind(kind);
+            if (weaponRoot != null)
+            {
+                Destroy(weaponRoot.gameObject);
+                weaponRoot = null;
+                hasHandPoseSnapshot = false;
+            }
+
+            if (networkHasWeapon)
+            {
+                EnsureAttached();
+            }
+        }
+
+        public WeaponProfile GetActiveWeaponProfile()
+        {
+            return weaponRoot != null ? weaponRoot.GetComponent<WeaponProfile>() : null;
+        }
+
         public void SetWeaponEquipped(bool equipped)
         {
             if (networkMedkitActive)
             {
+                networkHasWeapon = equipped;
+                ApplyMedkitWeaponHiddenState();
                 return;
             }
 
@@ -101,6 +132,8 @@ namespace ShooterPrototype.Player
         {
             if (networkMedkitActive)
             {
+                networkHolstered = !networkHasWeapon || holstered;
+                ApplyMedkitWeaponHiddenState();
                 return;
             }
 
@@ -152,7 +185,7 @@ namespace ShooterPrototype.Player
             networkMedkitActive = active;
             if (active)
             {
-                SetWeaponRenderersEnabled(false);
+                ApplyMedkitWeaponHiddenState();
                 return;
             }
 
@@ -176,6 +209,28 @@ namespace ShooterPrototype.Player
 
             AttachWeaponToHand();
             SetWeaponRenderersEnabled(true);
+        }
+
+        private void ApplyMedkitWeaponHiddenState()
+        {
+            EnsureAttached();
+            if (weaponRoot == null)
+            {
+                return;
+            }
+
+            if (networkHasWeapon && networkHolstered)
+            {
+                AttachWeaponToBack();
+                SetWeaponRenderersEnabled(true);
+            }
+            else
+            {
+                SetWeaponRenderersEnabled(false);
+            }
+
+            var handBinder = GetComponent<RemoteLeftHandIkBinder>();
+            handBinder?.SetHandIkEnabled(false);
         }
 
         private void LateUpdate()
@@ -556,18 +611,25 @@ namespace ShooterPrototype.Player
 
         private GameObject LoadDefaultWeaponPrefab()
         {
-            if (weaponPrefab != null)
+            return ResolvePrefabForKind(WeaponKind.AssaultRifle);
+        }
+
+        private GameObject ResolvePrefabForKind(WeaponKind kind)
+        {
+            var catalogPrefab = WeaponCatalog.GetWeaponPrefab(kind);
+            if (catalogPrefab != null)
             {
-                return weaponPrefab;
+                return catalogPrefab;
             }
 
+            var path = kind == WeaponKind.SniperRifle ? sniperWeaponPrefabPath : defaultWeaponPrefabPath;
 #if UNITY_EDITOR
-            if (!string.IsNullOrWhiteSpace(defaultWeaponPrefabPath))
+            if (!string.IsNullOrWhiteSpace(path))
             {
-                return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(defaultWeaponPrefabPath);
+                return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
             }
 #endif
-            return null;
+            return weaponPrefab;
         }
 
         private bool IsWeaponRootAlive()

@@ -684,6 +684,14 @@ function handleWsJoin(socket, ticketId) {
   }
 }
 
+function resolveWeaponKindFromItemId(itemId) {
+  const id = typeof itemId === "string" ? itemId.toLowerCase() : "";
+  if (id.includes("sniper")) {
+    return 1;
+  }
+  return 0;
+}
+
 function handleWsPose(socket, message) {
   const meta = wsMetaBySocket.get(socket);
   if (!meta || !meta.ticketId) {
@@ -735,6 +743,7 @@ function handleWsPose(socket, message) {
   const inputAuth = !!message.inputAuth;
   const serverSampleTimeMs = Date.now();
   const prevPresence = ticket.presence || {};
+  const weaponKind = Math.max(0, Math.min(1, normalizeInt64(message.weaponKind, prevPresence.weaponKind || 0)));
   const prevWasDead = !!prevPresence.isDead;
 
   ticket.inputState = {
@@ -826,6 +835,7 @@ function handleWsPose(socket, message) {
   presence.animSpeed = animSpeed;
   presence.isAiming = isAiming;
   presence.isHolstered = isHolstered;
+  presence.weaponKind = weaponKind;
   presence.isGrounded = isGrounded;
   presence.jumpState = jumpState;
   presence.animPhase = animPhase;
@@ -997,6 +1007,7 @@ function createDefaultPresence(sampleTick, sampleTimeMs) {
     jumpState: 0,
     animPhase: 0,
     hasWeapon: false,
+    weaponKind: 0,
     weaponPickupSeq: 0,
     medkitCount: MEDKIT_STARTING_COUNT,
     isUsingMedkit: false,
@@ -1173,6 +1184,7 @@ function handleWsPickup(socket, message) {
   let weaponPickupSeq = Math.max(0, normalizeInt64(presence.weaponPickupSeq, 0));
   if (pickupKind === "weapon") {
     presence.hasWeapon = true;
+    presence.weaponKind = resolveWeaponKindFromItemId(itemId);
     weaponPickupSeq += 1;
     presence.weaponPickupSeq = weaponPickupSeq;
   } else if (pickupKind === "medkit") {
@@ -1323,6 +1335,9 @@ function handleWsMedkitUse(socket) {
 
   presence.medkitCount = medkitCountNow - 1;
   presence.isUsingMedkit = true;
+  if (presence.hasWeapon) {
+    presence.isHolstered = true;
+  }
   presence.medkitSeq = Math.max(0, normalizeInt64(presence.medkitSeq, 0)) + 1;
   presence.medkitUseEndsAtMs = Date.now() + (MEDKIT_USE_DURATION_SECONDS * 1000);
 
@@ -1951,7 +1966,7 @@ function encodeSnapshotBinary(payload) {
     const chunks = [];
     const header = Buffer.alloc(11);
     header.write("RTS1", 0, 4, "ascii");
-    header.writeUInt8(8, 4);
+    header.writeUInt8(9, 4);
     header.writeUInt32LE(payload.serverTick >>> 0, 5);
     header.writeUInt16LE(payload.serverTickRate >>> 0, 9);
     chunks.push(header);
@@ -2007,7 +2022,7 @@ function encodeSnapshotBinary(payload) {
       body.writeUInt8(Math.max(0, Math.min(2, player.jumpState || 0)), 34);
       chunks.push(body);
 
-      const meta = Buffer.alloc(102);
+      const meta = Buffer.alloc(103);
       meta.writeFloatLE(player.lookPitch || 0, 0);
       meta.writeUInt32LE((player.shotSeq || 0) >>> 0, 4);
       meta.writeUInt32LE((player.reloadSeq || 0) >>> 0, 8);
@@ -2035,6 +2050,7 @@ function encodeSnapshotBinary(payload) {
       meta.writeUInt32LE((player.weaponPickupSeq || 0) >>> 0, 93);
       meta.writeFloatLE(player.medkitRemainingSeconds || 0, 97);
       meta.writeUInt8(Math.max(0, Math.min(255, player.medkitCount || 0)), 101);
+      meta.writeUInt8(Math.max(0, Math.min(1, player.weaponKind || 0)), 102);
       chunks.push(meta);
 
       const recentShots = Array.isArray(player.recentShots) ? player.recentShots.slice(-8) : [];
@@ -2210,6 +2226,7 @@ function collectRealtimePlayersForMatch(matchId, ownerTicketId) {
       isAiming: !!ticket.presence.isAiming,
       isHolstered: !!ticket.presence.isHolstered,
       hasWeapon: !!ticket.presence.hasWeapon,
+      weaponKind: Number.isFinite(ticket.presence.weaponKind) ? ticket.presence.weaponKind : 0,
       isUsingMedkit: !!ticket.presence.isUsingMedkit,
       medkitRemainingSeconds: getMedkitRemainingSeconds(ticket.presence),
       medkitCount: Math.max(0, normalizeInt64(ticket.presence.medkitCount, 0)),

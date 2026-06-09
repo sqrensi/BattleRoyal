@@ -8,6 +8,7 @@ using UnityEngine.InputSystem;
 
 namespace ShooterPrototype.Player
 {
+    [DefaultExecutionOrder(-100)]
     public sealed class PlayerWeaponController : MonoBehaviour
     {
         [Header("References")]
@@ -97,6 +98,10 @@ namespace ShooterPrototype.Player
         private PlayerWeaponHolsterController weaponHolster;
         private readonly RaycastHit[] hitQueryBuffer = new RaycastHit[32];
         private readonly Dictionary<string, float> headshotRegistrationUntilByTarget = new Dictionary<string, float>();
+        private WeaponStatDefaults weaponDefaults;
+        private WeaponKind currentWeaponKind = WeaponKind.AssaultRifle;
+
+        public WeaponKind CurrentWeaponKind => currentWeaponKind;
 
         public void Configure(Camera localCamera, Transform weaponMuzzle)
         {
@@ -133,7 +138,141 @@ namespace ShooterPrototype.Player
             audioController = GetComponent<PlayerAudioController>();
             realtimeClient = FindObjectOfType<RealtimeTransportClient>();
             currentAmmo = Mathf.Max(1, magazineSize);
+            weaponDefaults = CaptureWeaponDefaults();
             RefreshWeaponAvailability();
+        }
+
+        public void ApplyWeaponProfile(WeaponProfile profile)
+        {
+            CancelActiveReload();
+            if (profile == null)
+            {
+                RestoreDefaultWeaponProfile();
+            }
+            else
+            {
+                profile.CopyTo(this);
+                currentWeaponKind = profile.Kind;
+            }
+
+            currentAmmo = MagazineSize;
+            burstShotCount = 0;
+            nextFireTime = 0f;
+        }
+
+        public void RestoreDefaultWeaponProfile()
+        {
+            ApplyWeaponDefaults(weaponDefaults);
+            currentWeaponKind = WeaponKind.AssaultRifle;
+            fpsController?.RestoreDefaultAdsMaxLookAngle();
+            weaponMount?.RestoreDefaultAdsCameraFov();
+            weaponMount?.RestoreDefaultAdsCameraPose();
+            weaponMount?.RestoreDefaultHandsScale();
+        }
+
+        internal void SetFromWeaponProfile(
+            bool profileAutomatic,
+            float profileFireRate,
+            int profileMagazineSize,
+            float profileReloadDuration,
+            float profileMaxDistance,
+            float profileBulletDropAngleDegrees,
+            float profileLegDamage,
+            float profileBodyDamage,
+            float profileNeckDamage,
+            float profileHeadDamage,
+            float profileSpreadStartDegrees,
+            float profileSpreadPerShotDegrees,
+            float profileSpreadMaxDegrees,
+            float profileHipFireSpreadMultiplier,
+            float profileAdsSpreadMultiplier,
+            float profileHipFireRecoilMultiplier,
+            float profileAdsRecoilMultiplier)
+        {
+            automatic = profileAutomatic;
+            fireRate = profileFireRate;
+            magazineSize = profileMagazineSize;
+            reloadDuration = profileReloadDuration;
+            maxDistance = profileMaxDistance;
+            bulletDropAngleDegrees = profileBulletDropAngleDegrees;
+            legDamage = profileLegDamage;
+            bodyDamage = profileBodyDamage;
+            neckDamage = profileNeckDamage;
+            headDamage = profileHeadDamage;
+            spreadStartDegrees = profileSpreadStartDegrees;
+            spreadPerShotDegrees = profileSpreadPerShotDegrees;
+            spreadMaxDegrees = profileSpreadMaxDegrees;
+            hipFireSpreadMultiplier = profileHipFireSpreadMultiplier;
+            adsSpreadMultiplier = profileAdsSpreadMultiplier;
+            hipFireRecoilMultiplier = profileHipFireRecoilMultiplier;
+            adsRecoilMultiplier = profileAdsRecoilMultiplier;
+        }
+
+        private WeaponStatDefaults CaptureWeaponDefaults()
+        {
+            return new WeaponStatDefaults
+            {
+                automatic = automatic,
+                fireRate = fireRate,
+                magazineSize = magazineSize,
+                reloadDuration = reloadDuration,
+                maxDistance = maxDistance,
+                bulletDropAngleDegrees = bulletDropAngleDegrees,
+                legDamage = legDamage,
+                bodyDamage = bodyDamage,
+                neckDamage = neckDamage,
+                headDamage = headDamage,
+                spreadStartDegrees = spreadStartDegrees,
+                spreadPerShotDegrees = spreadPerShotDegrees,
+                spreadMaxDegrees = spreadMaxDegrees,
+                hipFireSpreadMultiplier = hipFireSpreadMultiplier,
+                adsSpreadMultiplier = adsSpreadMultiplier,
+                hipFireRecoilMultiplier = hipFireRecoilMultiplier,
+                adsRecoilMultiplier = adsRecoilMultiplier
+            };
+        }
+
+        private void ApplyWeaponDefaults(WeaponStatDefaults defaults)
+        {
+            SetFromWeaponProfile(
+                defaults.automatic,
+                defaults.fireRate,
+                defaults.magazineSize,
+                defaults.reloadDuration,
+                defaults.maxDistance,
+                defaults.bulletDropAngleDegrees,
+                defaults.legDamage,
+                defaults.bodyDamage,
+                defaults.neckDamage,
+                defaults.headDamage,
+                defaults.spreadStartDegrees,
+                defaults.spreadPerShotDegrees,
+                defaults.spreadMaxDegrees,
+                defaults.hipFireSpreadMultiplier,
+                defaults.adsSpreadMultiplier,
+                defaults.hipFireRecoilMultiplier,
+                defaults.adsRecoilMultiplier);
+        }
+
+        private struct WeaponStatDefaults
+        {
+            public bool automatic;
+            public float fireRate;
+            public int magazineSize;
+            public float reloadDuration;
+            public float maxDistance;
+            public float bulletDropAngleDegrees;
+            public float legDamage;
+            public float bodyDamage;
+            public float neckDamage;
+            public float headDamage;
+            public float spreadStartDegrees;
+            public float spreadPerShotDegrees;
+            public float spreadMaxDegrees;
+            public float hipFireSpreadMultiplier;
+            public float adsSpreadMultiplier;
+            public float hipFireRecoilMultiplier;
+            public float adsRecoilMultiplier;
         }
 
         public void RefreshWeaponAvailability()
@@ -251,7 +390,7 @@ namespace ShooterPrototype.Player
             CaptureNetworkShotImpact(shot);
             SendNetworkShotEvent();
             GetComponent<MatchPresenceSync>()?.SendLocalPoseImmediate();
-            audioController?.PlayShot(true);
+            audioController?.PlayShot(true, ResolveWeaponAudioOverrides());
             if (autoReloadWhenEmpty && currentAmmo <= 0)
             {
                 TryStartReload();
@@ -276,7 +415,7 @@ namespace ShooterPrototype.Player
             }
 
             SimulateShotEffects(shot, applyRecoil: false);
-            audioController?.PlayShot(false);
+            audioController?.PlayShot(false, ResolveWeaponAudioOverrides());
         }
 
         public void PlayRemoteReload(float durationSeconds)
@@ -630,7 +769,7 @@ namespace ShooterPrototype.Player
                 ? muzzle.position
                 : shot.Origin;
 
-            SpawnVfx(muzzleFlashVfx, muzzlePosition, Quaternion.LookRotation(shot.Direction, Vector3.up));
+            SpawnVfx(ResolveMuzzleFlashVfx(), muzzlePosition, Quaternion.LookRotation(shot.Direction, Vector3.up));
             if (applyRecoil)
             {
                 ApplyRecoilKick();
@@ -988,7 +1127,7 @@ namespace ShooterPrototype.Player
             nextFireTime = Time.time + reloadTime;
             weaponMount?.SetLocalReloading(true);
             weaponMount?.PlayReloadAnimation(reloadTime);
-            audioController?.PlayReloadSequence(true, reloadTime);
+            audioController?.PlayReloadSequence(true, reloadTime, ResolveWeaponAudioOverrides());
             yield return new WaitForSeconds(reloadTime);
             currentAmmo = MagazineSize;
             isReloading = false;
@@ -1130,6 +1269,23 @@ namespace ShooterPrototype.Player
 
             yield return new WaitForSecondsRealtime(Mathf.Max(0.01f, tracerDuration));
             Destroy(tracerObject);
+        }
+
+        private GameObject ResolveMuzzleFlashVfx()
+        {
+            var profile = weaponMount != null ? weaponMount.ActiveWeaponProfile : null;
+            if (profile != null && profile.MuzzleFlashVfx != null)
+            {
+                return profile.MuzzleFlashVfx;
+            }
+
+            return muzzleFlashVfx;
+        }
+
+        private WeaponAudioOverrides ResolveWeaponAudioOverrides()
+        {
+            var profile = weaponMount != null ? weaponMount.ActiveWeaponProfile : null;
+            return profile != null ? profile.CreateAudioOverrides() : default;
         }
     }
 }

@@ -514,6 +514,10 @@ namespace ShooterPrototype.Player
                 }
             }
             var isHolstered = localWeaponHolster != null && localWeaponHolster.IsHolstered;
+            var hasWeapon = localWeaponMount != null && localWeaponMount.HasMountedWeapon;
+            var weaponKind = hasWeapon && localWeaponController != null
+                ? (int)localWeaponController.CurrentWeaponKind
+                : 0;
             var animSpeed = localLocomotionRig != null
                 ? localLocomotionRig.GetNetworkAnimSpeed01()
                 : (localFpsController != null ? Mathf.Clamp01(localFpsController.MoveInputMagnitude) : 0f);
@@ -563,7 +567,8 @@ namespace ShooterPrototype.Player
                 shotOrigin,
                 shotDirection,
                 shotEndPoint,
-                shotHasEndPoint);
+                shotHasEndPoint,
+                weaponKind);
         }
 
         public void SendLocalPoseImmediate()
@@ -944,9 +949,15 @@ namespace ShooterPrototype.Player
                     var remoteWeapon = avatar.Root.GetComponent<RemoteWeaponPresentation>();
                     remoteWeapon?.SetNetworkLookPitch(p.lookPitch);
                     remoteWeapon?.SetNetworkCrouchState(p.isCrouching);
-                    avatar.Root.GetComponent<RemoteMedkitPresentation>()?.SetNetworkMedkitState(p.isUsingMedkit);
                     remoteWeapon?.SetWeaponEquipped(p.hasWeapon);
+                    if (p.hasWeapon)
+                    {
+                        remoteWeapon?.SetWeaponKind((WeaponKind)Mathf.Clamp(p.weaponKind, 0, 1));
+                    }
+
                     remoteWeapon?.SetHolstered(p.isHolstered);
+                    ApplyRemoteWeaponEffects(avatar.Root, (WeaponKind)Mathf.Clamp(p.weaponKind, 0, 1));
+                    avatar.Root.GetComponent<RemoteMedkitPresentation>()?.SetNetworkMedkitState(p.isUsingMedkit);
 
                     avatar.Root.GetComponent<RemoteLookPitchPosture>()?.SetNetworkLookPitch(p.lookPitch);
 
@@ -1021,10 +1032,11 @@ namespace ShooterPrototype.Player
             if (shotEffects != null && localWeaponController != null)
             {
                 shotEffects.ApplyVisualSettings(
-                    localWeaponController.MuzzleFlashVfx,
+                    null,
                     localWeaponController.WorldHitVfx,
                     localWeaponController.PlayerHitVfx,
                     localWeaponController.ShotMaxDistance);
+                shotEffects.ApplyForWeaponKind(WeaponKind.AssaultRifle);
             }
 
             EnsureRemoteAudio(root);
@@ -1143,11 +1155,7 @@ namespace ShooterPrototype.Player
 
             if (shotEffects != null && localWeaponController != null)
             {
-                shotEffects.ApplyVisualSettings(
-                    localWeaponController.MuzzleFlashVfx,
-                    localWeaponController.WorldHitVfx,
-                    localWeaponController.PlayerHitVfx,
-                    localWeaponController.ShotMaxDistance);
+                ApplyRemoteWeaponEffects(avatar.Root, (WeaponKind)Mathf.Clamp(playerState.weaponKind, 0, 1));
             }
 
             EnsureRemoteAudio(avatar.Root);
@@ -1253,6 +1261,30 @@ namespace ShooterPrototype.Player
             }
 
             remoteAudio.InheritFrom(localAudioController);
+        }
+
+        private static void ApplyRemoteWeaponEffects(GameObject remoteRoot, WeaponKind weaponKind)
+        {
+            if (remoteRoot == null)
+            {
+                return;
+            }
+
+            var remoteWeapon = remoteRoot.GetComponent<RemoteWeaponPresentation>();
+            var shotEffects = remoteRoot.GetComponent<RemotePlayerShotEffects>();
+            if (shotEffects == null)
+            {
+                return;
+            }
+
+            var profile = remoteWeapon != null ? remoteWeapon.GetActiveWeaponProfile() : null;
+            if (profile != null)
+            {
+                shotEffects.ApplyFromWeaponProfile(profile, profile.ReloadDuration);
+                return;
+            }
+
+            shotEffects.ApplyForWeaponKind(weaponKind);
         }
 
         private void TryPlayRemoteReload(RemoteAvatar avatar, RealtimeTransportClient.RealtimePlayerState playerState)

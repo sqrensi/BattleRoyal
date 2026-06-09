@@ -161,6 +161,13 @@ namespace ShooterPrototype.Player
         private Camera localPlayerCamera;
         private float baseCameraFov = -1f;
         private float adsCameraFovVelocity;
+        private float defaultAdsCameraFov;
+        private float activeAdsCameraFov;
+        private Vector3 defaultLocalScale;
+        private Vector3 defaultAdsCameraLocalPosition;
+        private Vector3 defaultAdsCameraLocalEuler;
+        private float activeHandsScaleMultiplier = 1f;
+        private WeaponProfile activeWeaponProfile;
         private Transform leftHandTargetTransform;
         private Transform rightHandTargetTransform;
         private Transform remoteLeftHandTargetTransform;
@@ -188,6 +195,16 @@ namespace ShooterPrototype.Player
 
             medkitController = GetComponent<PlayerMedkitController>();
             holsterController = GetComponent<PlayerWeaponHolsterController>();
+            defaultAdsCameraFov = adsCameraFov;
+            activeAdsCameraFov = adsCameraFov;
+            defaultLocalScale = localScale;
+            defaultAdsCameraLocalPosition = adsCameraLocalPosition;
+            defaultAdsCameraLocalEuler = adsCameraLocalEuler;
+            if (GetComponent<WeaponScopeOverlay>() == null)
+            {
+                gameObject.AddComponent<WeaponScopeOverlay>();
+            }
+
             EnsureWeaponMounted();
         }
 
@@ -208,6 +225,73 @@ namespace ShooterPrototype.Player
 
         public float AdsBlend => adsBlend;
         public bool IsAdsFullyOut => adsBlend <= 0.001f;
+        public bool HasScopedWeapon => activeWeaponProfile != null && activeWeaponProfile.HasScope;
+        public bool IsScopePresentationActive =>
+            HasScopedWeapon &&
+            adsBlend > 0.88f &&
+            !localHolstered &&
+            !localReloading &&
+            !(medkitController != null && medkitController.IsUsingMedkit);
+
+        public void ApplyWeaponProfile(WeaponProfile profile)
+        {
+            if (profile != null)
+            {
+                activeWeaponProfile = profile;
+                profile.CopyMountSettingsTo(this);
+            }
+            else
+            {
+                activeWeaponProfile = null;
+                RestoreDefaultAdsCameraFov();
+                RestoreDefaultAdsCameraPose();
+                RestoreDefaultHandsScale();
+            }
+        }
+
+        public void SetAdsCameraPose(Vector3 localPosition, Vector3 localEuler)
+        {
+            adsCameraLocalPosition = localPosition;
+            adsCameraLocalEuler = localEuler;
+        }
+
+        public void RestoreDefaultAdsCameraPose()
+        {
+            adsCameraLocalPosition = defaultAdsCameraLocalPosition;
+            adsCameraLocalEuler = defaultAdsCameraLocalEuler;
+        }
+
+        public void SetHandsScaleMultiplier(float multiplier)
+        {
+            activeHandsScaleMultiplier = Mathf.Clamp(multiplier, 0.5f, 3f);
+            ApplyHandsScaleToWeaponInstance();
+        }
+
+        public void RestoreDefaultHandsScale()
+        {
+            activeHandsScaleMultiplier = 1f;
+            ApplyHandsScaleToWeaponInstance();
+        }
+
+        private void ApplyHandsScaleToWeaponInstance()
+        {
+            if (weaponInstance == null)
+            {
+                return;
+            }
+
+            weaponInstance.transform.localScale = defaultLocalScale * activeHandsScaleMultiplier;
+        }
+
+        public void SetAdsCameraFov(float fov)
+        {
+            activeAdsCameraFov = Mathf.Clamp(fov, 12f, 179f);
+        }
+
+        public void RestoreDefaultAdsCameraFov()
+        {
+            activeAdsCameraFov = defaultAdsCameraFov;
+        }
 
         public void ForceExitAds()
         {
@@ -223,6 +307,7 @@ namespace ShooterPrototype.Player
             UpdateAdsCameraZoom();
         }
         public bool HasMountedWeapon => weaponInstance != null;
+        public WeaponProfile ActiveWeaponProfile => activeWeaponProfile;
         public float AdsFollowPitchDownLimit => adsFollowPitchDownLimit;
         public Transform MountedWeaponRoot => weaponInstance != null ? weaponInstance.transform : null;
         public Transform WeaponAnchorTransform => weaponParent;
@@ -968,7 +1053,7 @@ namespace ShooterPrototype.Player
             weaponInstance.name = "WeaponModel";
             weaponInstance.transform.localPosition = localPosition;
             weaponInstance.transform.localRotation = Quaternion.Euler(localEulerAngles);
-            weaponInstance.transform.localScale = localScale;
+            ApplyHandsScaleToWeaponInstance();
             baseLocalPosition = weaponInstance.transform.localPosition;
             baseLocalRotation = weaponInstance.transform.localRotation;
 
@@ -1091,6 +1176,40 @@ namespace ShooterPrototype.Player
                 sightLocalRotationOnAnchor = Quaternion.Inverse(weaponParent.rotation) * sightTarget.rotation;
                 hasSightCalibration = true;
             }
+
+            ApplyEquippedWeaponProfile();
+        }
+
+        private void ApplyEquippedWeaponProfile()
+        {
+            if (useNetworkState || weaponInstance == null)
+            {
+                activeWeaponProfile = null;
+                return;
+            }
+
+            if (fpsController == null)
+            {
+                fpsController = GetComponent<FpsCharacterController>();
+            }
+
+            var profile = weaponInstance.GetComponent<WeaponProfile>();
+            if (profile == null &&
+                weaponInstance.name.IndexOf("sniper", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                profile = WeaponProfile.CreateRuntimeSniperDefaults(weaponInstance);
+            }
+
+            var weaponController = GetComponent<PlayerWeaponController>();
+            if (profile != null)
+            {
+                profile.ApplyTo(weaponController, this, fpsController);
+                return;
+            }
+
+            activeWeaponProfile = null;
+            ApplyWeaponProfile(null);
+            weaponController?.ApplyWeaponProfile(null);
         }
 
         private void CacheWeaponHandTargets()
@@ -1736,7 +1855,7 @@ namespace ShooterPrototype.Player
                 baseCameraFov = localPlayerCamera.fieldOfView;
             }
 
-            var targetAdsFov = Mathf.Clamp(adsCameraFov, 20f, 179f);
+            var targetAdsFov = Mathf.Clamp(activeAdsCameraFov, 12f, 179f);
             var targetFov = Mathf.Lerp(baseCameraFov, targetAdsFov, Mathf.Clamp01(adsBlend));
             localPlayerCamera.fieldOfView = Mathf.SmoothDamp(
                 localPlayerCamera.fieldOfView,
