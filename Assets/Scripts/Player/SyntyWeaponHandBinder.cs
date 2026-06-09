@@ -626,11 +626,6 @@ namespace ShooterPrototype.Player
 
         private void ResolveGripTargets()
         {
-            if (leftGripTarget != null && rightGripTarget != null)
-            {
-                return;
-            }
-
             if (weaponMount == null)
             {
                 weaponMount = GetComponent<PlayerWeaponMount>();
@@ -640,6 +635,16 @@ namespace ShooterPrototype.Player
             if (weaponRoot == null)
             {
                 return;
+            }
+
+            if (leftGripTarget != null && !leftGripTarget.IsChildOf(weaponRoot))
+            {
+                leftGripTarget = null;
+            }
+
+            if (rightGripTarget != null && !rightGripTarget.IsChildOf(weaponRoot))
+            {
+                rightGripTarget = null;
             }
 
             if (leftGripTarget == null)

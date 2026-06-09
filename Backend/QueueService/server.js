@@ -17,6 +17,7 @@ const QUEUED_TICKET_TTL_SECONDS = Math.max(5, toInt(process.env.QUEUED_TICKET_TT
 const SERVER_TICK_RATE = Math.max(10, toInt(process.env.SERVER_TICK_RATE, 128));
 const REALTIME_WS_PORT = toInt(process.env.REALTIME_WS_PORT, 5051);
 const DEBUG_REALTIME = (process.env.DEBUG_REALTIME || "1") !== "0";
+const DEBUG_MOVEMENT = (process.env.DEBUG_MOVEMENT || "1") !== "0";
 const POSE_HISTORY_KEEP_MS = Math.max(200, toInt(process.env.POSE_HISTORY_KEEP_MS, 500));
 const SNAPSHOT_HISTORY_SAMPLES = Math.max(4, toInt(process.env.SNAPSHOT_HISTORY_SAMPLES, 16));
 const USE_BINARY_SNAPSHOTS = (process.env.USE_BINARY_SNAPSHOTS || "1") !== "0";
@@ -52,9 +53,14 @@ let currentServerTick = 0;
 const wsClientsByTicketId = new Map();
 const wsMetaBySocket = new Map();
 const lastPoseDebugByTicket = new Map();
+const lastMoveDiagByTicket = new Map();
+const lastClientPosePosByTicket = new Map();
 const lastSnapshotDebugByOwner = new Map();
 const lastMatchSnapshotBroadcastAtMs = new Map();
 const matchPickupsByMatchId = new Map();
+const droppedWeaponSeqByMatchId = new Map();
+const WEAPON_SLOT_EMPTY = 255;
+const WEAPON_MAX_SLOTS = 2;
 const PICKUP_MAX_DISTANCE = Number.isFinite(Number(process.env.PICKUP_MAX_DISTANCE))
   ? Math.max(1, Number(process.env.PICKUP_MAX_DISTANCE))
   : 2.75;
@@ -343,6 +349,11 @@ wsServer.on("connection", (socket) => {
 
       if (message.type === "pickup") {
         handleWsPickup(socket, message);
+        return;
+      }
+
+      if (message.type === "weapon_drop") {
+        handleWsWeaponDrop(socket, message);
         return;
       }
 
@@ -692,6 +703,125 @@ function resolveWeaponKindFromItemId(itemId) {
   return 0;
 }
 
+function isWeaponSlotOccupied(kind) {
+  return kind !== WEAPON_SLOT_EMPTY && kind >= 0 && kind <= 1;
+}
+
+function countOccupiedWeaponSlots(presence) {
+  if (!presence) {
+    return 0;
+  }
+
+  let count = 0;
+  if (isWeaponSlotOccupied(presence.weaponSlot0Kind)) {
+    count += 1;
+  }
+  if (isWeaponSlotOccupied(presence.weaponSlot1Kind)) {
+    count += 1;
+  }
+  return count;
+}
+
+function syncWeaponPresenceFlags(presence) {
+  if (!presence) {
+    return;
+  }
+
+  presence.hasWeapon = countOccupiedWeaponSlots(presence) > 0;
+}
+
+function getWeaponSlotKind(presence, slotIndex) {
+  return slotIndex === 0 ? presence.weaponSlot0Kind : presence.weaponSlot1Kind;
+}
+
+function getWeaponSlotItemId(presence, slotIndex) {
+  return slotIndex === 0 ? (presence.weaponSlot0ItemId || "") : (presence.weaponSlot1ItemId || "");
+}
+
+function setWeaponSlot(presence, slotIndex, itemId, kind) {
+  if (slotIndex === 0) {
+    presence.weaponSlot0Kind = kind;
+    presence.weaponSlot0ItemId = itemId || "";
+  } else {
+    presence.weaponSlot1Kind = kind;
+    presence.weaponSlot1ItemId = itemId || "";
+  }
+}
+
+function clearWeaponSlot(presence, slotIndex) {
+  setWeaponSlot(presence, slotIndex, "", WEAPON_SLOT_EMPTY);
+}
+
+function findFirstEmptyWeaponSlot(presence) {
+  if (!isWeaponSlotOccupied(presence.weaponSlot0Kind)) {
+    return 0;
+  }
+  if (!isWeaponSlotOccupied(presence.weaponSlot1Kind)) {
+    return 1;
+  }
+  return -1;
+}
+
+function resolveDropSlotIndex(presence, requestedSlot) {
+  const slot = normalizeInt64(requestedSlot, -1);
+  if (slot === 0 || slot === 1) {
+    return slot;
+  }
+
+  if (presence.activeWeaponSlot === 0 || presence.activeWeaponSlot === 1) {
+    return presence.activeWeaponSlot;
+  }
+
+  if (isWeaponSlotOccupied(presence.weaponSlot0Kind)) {
+    return 0;
+  }
+  if (isWeaponSlotOccupied(presence.weaponSlot1Kind)) {
+    return 1;
+  }
+  return -1;
+}
+
+function buildWeaponLoadoutPayload(presence) {
+  return {
+    weaponSlot0Kind: Number.isFinite(presence.weaponSlot0Kind) ? presence.weaponSlot0Kind : WEAPON_SLOT_EMPTY,
+    weaponSlot1Kind: Number.isFinite(presence.weaponSlot1Kind) ? presence.weaponSlot1Kind : WEAPON_SLOT_EMPTY,
+    weaponSlot0ItemId: typeof presence.weaponSlot0ItemId === "string" ? presence.weaponSlot0ItemId : "",
+    weaponSlot1ItemId: typeof presence.weaponSlot1ItemId === "string" ? presence.weaponSlot1ItemId : "",
+    activeWeaponSlot: Number.isFinite(presence.activeWeaponSlot) ? presence.activeWeaponSlot : WEAPON_SLOT_EMPTY,
+    bothHolstered: !!presence.isHolstered,
+  };
+}
+
+function createDroppedWeaponSpawn(matchId, ticketId, position, yaw, itemId) {
+  const state = ensureMatchPickups(matchId);
+  if (!state || !position) {
+    return "";
+  }
+
+  const seq = (droppedWeaponSeqByMatchId.get(matchId) || 0) + 1;
+  droppedWeaponSeqByMatchId.set(matchId, seq);
+  const spawnId = `drop_${ticketId}_${seq}`;
+  const rad = (Number.isFinite(yaw) ? yaw : 0) * Math.PI / 180;
+  const offset = 1.2;
+  const x = position.x + Math.sin(rad) * offset;
+  const z = position.z + Math.cos(rad) * offset;
+  state.spawns.set(spawnId, {
+    spawnId,
+    pickupKind: "weapon",
+    itemId: itemId || "",
+    weaponId: itemId || "",
+    amount: 1,
+    x,
+    y: position.y,
+    z,
+    available: true,
+    respawnDelaySeconds: 0,
+    respawnAtMs: 0,
+  });
+  state.version += 1;
+  return spawnId;
+}
+
 function handleWsPose(socket, message) {
   const meta = wsMetaBySocket.get(socket);
   if (!meta || !meta.ticketId) {
@@ -744,6 +874,18 @@ function handleWsPose(socket, message) {
   const serverSampleTimeMs = Date.now();
   const prevPresence = ticket.presence || {};
   const weaponKind = Math.max(0, Math.min(1, normalizeInt64(message.weaponKind, prevPresence.weaponKind || 0)));
+  const weaponSlot0Kind = Math.max(
+    0,
+    Math.min(255, normalizeInt64(message.weaponSlot0Kind, prevPresence.weaponSlot0Kind ?? WEAPON_SLOT_EMPTY))
+  );
+  const weaponSlot1Kind = Math.max(
+    0,
+    Math.min(255, normalizeInt64(message.weaponSlot1Kind, prevPresence.weaponSlot1Kind ?? WEAPON_SLOT_EMPTY))
+  );
+  const activeWeaponSlot = Math.max(
+    0,
+    Math.min(255, normalizeInt64(message.activeWeaponSlot, prevPresence.activeWeaponSlot ?? WEAPON_SLOT_EMPTY))
+  );
   const prevWasDead = !!prevPresence.isDead;
 
   ticket.inputState = {
@@ -767,12 +909,17 @@ function handleWsPose(socket, message) {
   }
 
   const presence = ticket.presence;
+  const prevServerPos = presence.hasPose && presence.position
+    ? { x: presence.position.x, y: presence.position.y, z: presence.position.z }
+    : null;
+  let positionBranch = "unchanged";
   if (!presence.hasPose) {
     presence.position = { x: position.x, y: position.y, z: position.z };
     presence.hasPose = true;
     presence.velocityX = 0;
     presence.velocityY = 0;
     presence.velocityZ = 0;
+    positionBranch = "first_pose";
   }
 
   if (!isDead && prevWasDead) {
@@ -783,16 +930,19 @@ function handleWsPose(socket, message) {
     presence.verticalVelocity = 0;
     const maxHealth = Number.isFinite(presence.maxHealth) ? presence.maxHealth : 100;
     presence.health = maxHealth;
+    positionBranch = "respawn";
   } else if (isDead) {
     presence.position = { x: position.x, y: position.y, z: position.z };
     presence.velocityX = 0;
     presence.velocityY = 0;
     presence.velocityZ = 0;
     presence.verticalVelocity = 0;
+    positionBranch = "dead";
   } else if (!inputAuth) {
     const clamped = clampPositionToMovement(presence, position, currentServerTick);
     presence.position = clamped;
     presence.yaw = yaw;
+    positionBranch = "no_input_auth_clamp";
   } else {
     presence.yaw = yaw;
     const clamped = clampPositionToMovement(presence, position, currentServerTick);
@@ -801,6 +951,7 @@ function handleWsPose(socket, message) {
       y: position.y,
       z: clamped.z
     };
+    positionBranch = "input_auth_clamp_xz";
   }
 
   presence.lookPitch = lookPitch;
@@ -836,6 +987,10 @@ function handleWsPose(socket, message) {
   presence.isAiming = isAiming;
   presence.isHolstered = isHolstered;
   presence.weaponKind = weaponKind;
+  presence.weaponSlot0Kind = weaponSlot0Kind;
+  presence.weaponSlot1Kind = weaponSlot1Kind;
+  presence.activeWeaponSlot = activeWeaponSlot;
+  syncWeaponPresenceFlags(presence);
   presence.isGrounded = isGrounded;
   presence.jumpState = jumpState;
   presence.animPhase = animPhase;
@@ -848,7 +1003,51 @@ function handleWsPose(socket, message) {
     if (serverSampleTimeMs - last >= 1000) {
       lastPoseDebugByTicket.set(ticket.ticketId, serverSampleTimeMs);
       const pos = presence.position;
-      console.log(`[rt][pose] ticket=${ticket.ticketId} match=${ticket.matchId || "none"} pos=(${pos.x.toFixed(2)},${pos.y.toFixed(2)},${pos.z.toFixed(2)}) inputAuth=${inputAuth ? 1 : 0}`);
+      console.log(
+        `[rt][pose] ticket=${ticket.ticketId} match=${ticket.matchId || "none"} ` +
+        `pos=(${pos.x.toFixed(2)},${pos.y.toFixed(2)},${pos.z.toFixed(2)}) ` +
+        `inputAuth=${inputAuth ? 1 : 0} holstered=${isHolstered ? 1 : 0} ` +
+        `slots=${presence.weaponSlot0Kind},${presence.weaponSlot1Kind} active=${presence.activeWeaponSlot} ` +
+        `hasWeapon=${presence.hasWeapon ? 1 : 0} kind=${presence.weaponKind}`
+      );
+    }
+  }
+
+  if (DEBUG_REALTIME && DEBUG_MOVEMENT) {
+    const lastDiag = lastMoveDiagByTicket.get(ticket.ticketId) || 0;
+    if (serverSampleTimeMs - lastDiag >= 1000) {
+      lastMoveDiagByTicket.set(ticket.ticketId, serverSampleTimeMs);
+      const prevClient = lastClientPosePosByTicket.get(ticket.ticketId);
+      const clientDelta = prevClient
+        ? Math.hypot(position.x - prevClient.x, position.z - prevClient.z)
+        : -1;
+      lastClientPosePosByTicket.set(ticket.ticketId, {
+        x: position.x,
+        y: position.y,
+        z: position.z
+      });
+      const serverDelta = prevServerPos
+        ? Math.hypot(
+            presence.position.x - prevServerPos.x,
+            presence.position.z - prevServerPos.z
+          )
+        : -1;
+      const moveMag = Math.hypot(moveInputX, moveInputZ);
+      const clientFrozen = clientDelta >= 0 && clientDelta < 0.001 && moveMag > 0.05 ? 1 : 0;
+      const clientServerGap = Math.hypot(
+        position.x - presence.position.x,
+        position.z - presence.position.z
+      );
+      const serverClamped = clientServerGap > 0.05 ? 1 : 0;
+      console.log(
+        `[MoveDiag][server] ticket=${ticket.ticketId.slice(0, 8)} branch=${positionBranch} ` +
+        `inputAuth=${inputAuth ? 1 : 0} move=(${moveInputX.toFixed(2)},${moveInputZ.toFixed(2)}) mag=${moveMag.toFixed(2)} ` +
+        `client=(${position.x.toFixed(2)},${position.y.toFixed(2)},${position.z.toFixed(2)}) ` +
+        `server=(${presence.position.x.toFixed(2)},${presence.position.y.toFixed(2)},${presence.position.z.toFixed(2)}) ` +
+        `clientDelta=${clientDelta.toFixed(3)} serverDelta=${serverDelta.toFixed(3)} gap=${clientServerGap.toFixed(3)} ` +
+        `CLIENT_FROZEN=${clientFrozen} SERVER_CLAMPED=${serverClamped} medkit=${presence.isUsingMedkit ? 1 : 0} ` +
+        `jump=${jumpPressed ? 1 : 0} grounded=${isGrounded ? 1 : 0} poseSeq=${poseSeq}`
+      );
     }
   }
 
@@ -1008,6 +1207,11 @@ function createDefaultPresence(sampleTick, sampleTimeMs) {
     animPhase: 0,
     hasWeapon: false,
     weaponKind: 0,
+    weaponSlot0Kind: WEAPON_SLOT_EMPTY,
+    weaponSlot1Kind: WEAPON_SLOT_EMPTY,
+    weaponSlot0ItemId: "",
+    weaponSlot1ItemId: "",
+    activeWeaponSlot: WEAPON_SLOT_EMPTY,
     weaponPickupSeq: 0,
     medkitCount: MEDKIT_STARTING_COUNT,
     isUsingMedkit: false,
@@ -1092,12 +1296,26 @@ function handleWsRegisterPickups(socket, message) {
       continue;
     }
 
-    if (state.spawns.has(spawnId)) {
-      continue;
-    }
-
     const itemId = resolvePickupItemId(entry);
     const pickupKind = normalizePickupKind(entry.pickupKind, "weapon");
+    const existingSpawn = state.spawns.get(spawnId);
+    if (existingSpawn) {
+      if (existingSpawn.available && itemId) {
+        existingSpawn.pickupKind = pickupKind;
+        existingSpawn.itemId = itemId;
+        existingSpawn.weaponId = itemId;
+        existingSpawn.amount = Math.max(1, normalizeInt64(entry.amount, 1));
+        existingSpawn.x = normalizeNumber(entry.x, existingSpawn.x);
+        existingSpawn.y = normalizeNumber(entry.y, existingSpawn.y);
+        existingSpawn.z = normalizeNumber(entry.z, existingSpawn.z);
+        existingSpawn.respawnDelaySeconds = Math.max(0, normalizeNumber(
+          entry.respawnDelaySeconds,
+          existingSpawn.respawnDelaySeconds || 0
+        ));
+        added += 1;
+      }
+      continue;
+    }
 
     state.spawns.set(spawnId, {
       spawnId,
@@ -1159,10 +1377,6 @@ function handleWsPickup(socket, message) {
   }
 
   const pickupKind = normalizePickupKind(spawn.pickupKind, "weapon");
-  if (pickupKind === "weapon" && presence.hasWeapon) {
-    sendPickupResultToSocket(socket, false, "already_armed");
-    return;
-  }
 
   if (pickupKind === "medkit" && (presence.medkitCount || 0) >= MEDKIT_MAX_COUNT) {
     sendPickupResultToSocket(socket, false, "medkit_full");
@@ -1182,11 +1396,53 @@ function handleWsPickup(socket, message) {
   const amount = Math.max(1, normalizeInt64(spawn.amount, 1));
 
   let weaponPickupSeq = Math.max(0, normalizeInt64(presence.weaponPickupSeq, 0));
+  let droppedSpawnId = "";
   if (pickupKind === "weapon") {
-    presence.hasWeapon = true;
-    presence.weaponKind = resolveWeaponKindFromItemId(itemId);
+    let targetSlot = findFirstEmptyWeaponSlot(presence);
+    if (targetSlot < 0) {
+      targetSlot = resolveDropSlotIndex(presence, -1);
+      const dropItemId = getWeaponSlotItemId(presence, targetSlot);
+      if (targetSlot >= 0 && dropItemId) {
+        droppedSpawnId = createDroppedWeaponSpawn(
+          ticket.matchId,
+          ticket.ticketId,
+          pos,
+          presence.yaw || 0,
+          dropItemId
+        );
+        if (droppedSpawnId) {
+          const dropSpawn = state.spawns.get(droppedSpawnId);
+          broadcastPickupEvent(ticket.matchId, {
+            type: "pickup_event",
+            spawnId: droppedSpawnId,
+            ticketId: ticket.ticketId,
+            pickupKind: "weapon",
+            itemId: dropItemId,
+            weaponId: dropItemId,
+            amount: 1,
+            available: true,
+            x: dropSpawn ? dropSpawn.x : pos.x,
+            y: dropSpawn ? dropSpawn.y : pos.y,
+            z: dropSpawn ? dropSpawn.z : pos.z,
+          });
+        }
+        clearWeaponSlot(presence, targetSlot);
+      }
+    }
+
+    if (targetSlot < 0) {
+      sendPickupResultToSocket(socket, false, "inventory_full");
+      return;
+    }
+
+    const kind = resolveWeaponKindFromItemId(itemId);
+    setWeaponSlot(presence, targetSlot, itemId, kind);
+    presence.activeWeaponSlot = targetSlot;
+    presence.weaponKind = kind;
+    presence.isHolstered = false;
     weaponPickupSeq += 1;
     presence.weaponPickupSeq = weaponPickupSeq;
+    syncWeaponPresenceFlags(presence);
   } else if (pickupKind === "medkit") {
     presence.medkitCount = Math.min(
       MEDKIT_MAX_COUNT,
@@ -1207,7 +1463,9 @@ function handleWsPickup(socket, message) {
     itemId,
     weaponId: itemId,
     amount,
-    medkitCount: Math.max(0, normalizeInt64(presence.medkitCount, 0))
+    medkitCount: Math.max(0, normalizeInt64(presence.medkitCount, 0)),
+    droppedSpawnId,
+    ...buildWeaponLoadoutPayload(presence),
   });
 
   broadcastPickupEvent(ticket.matchId, {
@@ -1243,11 +1501,134 @@ function sendPickupResultToSocket(socket, success, reason, details) {
       itemId: details && typeof details.itemId === "string" ? details.itemId : "",
       weaponId: details && typeof details.weaponId === "string" ? details.weaponId : "",
       amount: details && Number.isFinite(details.amount) ? details.amount : 0,
-      medkitCount: details && Number.isFinite(details.medkitCount) ? details.medkitCount : 0
+      medkitCount: details && Number.isFinite(details.medkitCount) ? details.medkitCount : 0,
+      droppedSpawnId: details && typeof details.droppedSpawnId === "string" ? details.droppedSpawnId : "",
+      weaponSlot0Kind: details && Number.isFinite(details.weaponSlot0Kind) ? details.weaponSlot0Kind : WEAPON_SLOT_EMPTY,
+      weaponSlot1Kind: details && Number.isFinite(details.weaponSlot1Kind) ? details.weaponSlot1Kind : WEAPON_SLOT_EMPTY,
+      weaponSlot0ItemId: details && typeof details.weaponSlot0ItemId === "string" ? details.weaponSlot0ItemId : "",
+      weaponSlot1ItemId: details && typeof details.weaponSlot1ItemId === "string" ? details.weaponSlot1ItemId : "",
+      activeWeaponSlot: details && Number.isFinite(details.activeWeaponSlot) ? details.activeWeaponSlot : WEAPON_SLOT_EMPTY,
+      bothHolstered: !!(details && details.bothHolstered),
     }));
   } catch {
     // ignored
   }
+}
+
+function sendWeaponDropResultToSocket(socket, success, reason, details) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  try {
+    socket.send(JSON.stringify({
+      type: "weapon_drop_result",
+      success: !!success,
+      reason: typeof reason === "string" ? reason : "",
+      ticketId: details && typeof details.ticketId === "string" ? details.ticketId : "",
+      slotIndex: details && Number.isFinite(details.slotIndex) ? details.slotIndex : -1,
+      droppedSpawnId: details && typeof details.droppedSpawnId === "string" ? details.droppedSpawnId : "",
+      itemId: details && typeof details.itemId === "string" ? details.itemId : "",
+      x: details && Number.isFinite(details.x) ? details.x : 0,
+      y: details && Number.isFinite(details.y) ? details.y : 0,
+      z: details && Number.isFinite(details.z) ? details.z : 0,
+      weaponSlot0Kind: details && Number.isFinite(details.weaponSlot0Kind) ? details.weaponSlot0Kind : WEAPON_SLOT_EMPTY,
+      weaponSlot1Kind: details && Number.isFinite(details.weaponSlot1Kind) ? details.weaponSlot1Kind : WEAPON_SLOT_EMPTY,
+      weaponSlot0ItemId: details && typeof details.weaponSlot0ItemId === "string" ? details.weaponSlot0ItemId : "",
+      weaponSlot1ItemId: details && typeof details.weaponSlot1ItemId === "string" ? details.weaponSlot1ItemId : "",
+      activeWeaponSlot: details && Number.isFinite(details.activeWeaponSlot) ? details.activeWeaponSlot : WEAPON_SLOT_EMPTY,
+      bothHolstered: !!(details && details.bothHolstered),
+    }));
+  } catch {
+    // ignored
+  }
+}
+
+function handleWsWeaponDrop(socket, message) {
+  const meta = wsMetaBySocket.get(socket);
+  if (!meta || !meta.ticketId) {
+    return;
+  }
+
+  const ticket = ticketsById.get(meta.ticketId);
+  if (!ticket || ticket.status !== "Matched" || !ticket.matchId) {
+    return;
+  }
+
+  if (!ticket.presence || !ticket.presence.hasPose || !ticket.presence.position) {
+    sendWeaponDropResultToSocket(socket, false, "no_pose");
+    return;
+  }
+
+  const presence = ticket.presence;
+  if (presence.isDead) {
+    sendWeaponDropResultToSocket(socket, false, "dead");
+    return;
+  }
+
+  const slotIndex = resolveDropSlotIndex(presence, message && message.slotIndex);
+  if (slotIndex < 0 || !isWeaponSlotOccupied(getWeaponSlotKind(presence, slotIndex))) {
+    sendWeaponDropResultToSocket(socket, false, "empty_slot");
+    return;
+  }
+
+  const itemId = getWeaponSlotItemId(presence, slotIndex);
+  const droppedSpawnId = createDroppedWeaponSpawn(
+    ticket.matchId,
+    ticket.ticketId,
+    presence.position,
+    presence.yaw || 0,
+    itemId
+  );
+  if (!droppedSpawnId) {
+    sendWeaponDropResultToSocket(socket, false, "spawn_failed");
+    return;
+  }
+
+  clearWeaponSlot(presence, slotIndex);
+  if (presence.activeWeaponSlot === slotIndex) {
+    presence.activeWeaponSlot = WEAPON_SLOT_EMPTY;
+    presence.isHolstered = true;
+    if (isWeaponSlotOccupied(presence.weaponSlot0Kind)) {
+      presence.weaponKind = presence.weaponSlot0Kind;
+    } else if (isWeaponSlotOccupied(presence.weaponSlot1Kind)) {
+      presence.weaponKind = presence.weaponSlot1Kind;
+    } else {
+      presence.weaponKind = 0;
+    }
+  }
+
+  syncWeaponPresenceFlags(presence);
+
+  const state = ensureMatchPickups(ticket.matchId);
+  const dropSpawn = state && state.spawns.get(droppedSpawnId);
+  sendWeaponDropResultToSocket(socket, true, "ok", {
+    ticketId: ticket.ticketId,
+    slotIndex,
+    droppedSpawnId,
+    itemId,
+    x: dropSpawn ? dropSpawn.x : presence.position.x,
+    y: dropSpawn ? dropSpawn.y : presence.position.y,
+    z: dropSpawn ? dropSpawn.z : presence.position.z,
+    ...buildWeaponLoadoutPayload(presence),
+  });
+
+  broadcastPickupEvent(ticket.matchId, {
+    type: "pickup_event",
+    spawnId: droppedSpawnId,
+    ticketId: ticket.ticketId,
+    pickupKind: "weapon",
+    itemId,
+    weaponId: itemId,
+    amount: 1,
+    available: true,
+    x: dropSpawn ? dropSpawn.x : presence.position.x,
+    y: dropSpawn ? dropSpawn.y : presence.position.y,
+    z: dropSpawn ? dropSpawn.z : presence.position.z,
+  });
+
+  touchMatchSession(ticket.matchId);
+  broadcastMatchSnapshots(ticket.matchId);
 }
 
 function getMedkitRemainingSeconds(presence) {
@@ -1762,6 +2143,31 @@ function clampPositionToMovement(prevPresence, nextPosition, sampleTick) {
   };
 }
 
+function acceptAuthorizedClientPosition(prevPresence, nextPosition) {
+  const next = normalizePosition(nextPosition);
+  if (!prevPresence || !prevPresence.hasPose || !prevPresence.position) {
+    return next;
+  }
+
+  if (prevPresence.isUsingMedkit) {
+    return {
+      x: prevPresence.position.x,
+      y: next.y,
+      z: prevPresence.position.z
+    };
+  }
+
+  const dx = next.x - prevPresence.position.x;
+  const dz = next.z - prevPresence.position.z;
+  const horiz = Math.hypot(dx, dz);
+  const maxTeleportStep = MAX_PLAYER_SPEED * 0.35;
+  if (horiz <= maxTeleportStep) {
+    return next;
+  }
+
+  return clampPositionToMovement(prevPresence, next, currentServerTick);
+}
+
 function getPoseAtOrBeforeTick(ticket, tick) {
   if (!ticket) {
     return null;
@@ -1966,7 +2372,7 @@ function encodeSnapshotBinary(payload) {
     const chunks = [];
     const header = Buffer.alloc(11);
     header.write("RTS1", 0, 4, "ascii");
-    header.writeUInt8(9, 4);
+    header.writeUInt8(10, 4);
     header.writeUInt32LE(payload.serverTick >>> 0, 5);
     header.writeUInt16LE(payload.serverTickRate >>> 0, 9);
     chunks.push(header);
@@ -2022,7 +2428,7 @@ function encodeSnapshotBinary(payload) {
       body.writeUInt8(Math.max(0, Math.min(2, player.jumpState || 0)), 34);
       chunks.push(body);
 
-      const meta = Buffer.alloc(103);
+      const meta = Buffer.alloc(106);
       meta.writeFloatLE(player.lookPitch || 0, 0);
       meta.writeUInt32LE((player.shotSeq || 0) >>> 0, 4);
       meta.writeUInt32LE((player.reloadSeq || 0) >>> 0, 8);
@@ -2051,6 +2457,9 @@ function encodeSnapshotBinary(payload) {
       meta.writeFloatLE(player.medkitRemainingSeconds || 0, 97);
       meta.writeUInt8(Math.max(0, Math.min(255, player.medkitCount || 0)), 101);
       meta.writeUInt8(Math.max(0, Math.min(1, player.weaponKind || 0)), 102);
+      meta.writeUInt8(Math.max(0, Math.min(255, player.weaponSlot0Kind ?? WEAPON_SLOT_EMPTY)), 103);
+      meta.writeUInt8(Math.max(0, Math.min(255, player.weaponSlot1Kind ?? WEAPON_SLOT_EMPTY)), 104);
+      meta.writeUInt8(Math.max(0, Math.min(255, player.activeWeaponSlot ?? WEAPON_SLOT_EMPTY)), 105);
       chunks.push(meta);
 
       const recentShots = Array.isArray(player.recentShots) ? player.recentShots.slice(-8) : [];
@@ -2227,6 +2636,15 @@ function collectRealtimePlayersForMatch(matchId, ownerTicketId) {
       isHolstered: !!ticket.presence.isHolstered,
       hasWeapon: !!ticket.presence.hasWeapon,
       weaponKind: Number.isFinite(ticket.presence.weaponKind) ? ticket.presence.weaponKind : 0,
+      weaponSlot0Kind: Number.isFinite(ticket.presence.weaponSlot0Kind)
+        ? ticket.presence.weaponSlot0Kind
+        : WEAPON_SLOT_EMPTY,
+      weaponSlot1Kind: Number.isFinite(ticket.presence.weaponSlot1Kind)
+        ? ticket.presence.weaponSlot1Kind
+        : WEAPON_SLOT_EMPTY,
+      activeWeaponSlot: Number.isFinite(ticket.presence.activeWeaponSlot)
+        ? ticket.presence.activeWeaponSlot
+        : WEAPON_SLOT_EMPTY,
       isUsingMedkit: !!ticket.presence.isUsingMedkit,
       medkitRemainingSeconds: getMedkitRemainingSeconds(ticket.presence),
       medkitCount: Math.max(0, normalizeInt64(ticket.presence.medkitCount, 0)),

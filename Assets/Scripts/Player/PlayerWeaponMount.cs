@@ -210,9 +210,14 @@ namespace ShooterPrototype.Player
 
         public bool EquipWeapon(GameObject prefab)
         {
-            if (prefab == null || useNetworkState || weaponInstance != null)
+            if (prefab == null || useNetworkState)
             {
                 return false;
+            }
+
+            if (weaponInstance != null)
+            {
+                return ReplaceEquippedWeapon(prefab);
             }
 
             weaponPrefab = prefab;
@@ -221,6 +226,45 @@ namespace ShooterPrototype.Player
             handBinder?.SyncFirstPersonRigidHandIkMode();
             GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
             return weaponInstance != null;
+        }
+
+        public bool ReplaceEquippedWeapon(GameObject prefab)
+        {
+            if (prefab == null || useNetworkState)
+            {
+                return false;
+            }
+
+            UnequipWeaponInternal();
+            weaponPrefab = prefab;
+            MountWeaponFromPrefab(preserveAnchorPose: true);
+            handBinder = handBinder != null ? handBinder : GetComponent<SyntyWeaponHandBinder>();
+            handBinder?.SyncFirstPersonRigidHandIkMode();
+            GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
+            return weaponInstance != null;
+        }
+
+        public void UnequipWeapon()
+        {
+            if (useNetworkState)
+            {
+                return;
+            }
+
+            UnequipWeaponInternal();
+            GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
+        }
+
+        private void UnequipWeaponInternal()
+        {
+            if (weaponInstance != null)
+            {
+                DestroyWeaponModelObject(weaponInstance);
+                weaponInstance = null;
+            }
+
+            weaponPrefab = null;
+            ApplyWeaponProfile(null);
         }
 
         public float AdsBlend => adsBlend;
@@ -341,6 +385,43 @@ namespace ShooterPrototype.Player
         public void SetHandAttachedWeaponActive(bool active)
         {
             handAttachedWeaponActive = active;
+        }
+
+        public bool TryGetEquippedBaseLocalPose(
+            out Vector3 localPosition,
+            out Quaternion localRotation,
+            out Vector3 localScale)
+        {
+            if (weaponInstance == null)
+            {
+                localPosition = Vector3.zero;
+                localRotation = Quaternion.identity;
+                localScale = Vector3.one;
+                return false;
+            }
+
+            localPosition = baseLocalPosition;
+            localRotation = baseLocalRotation;
+            localScale = defaultLocalScale * activeHandsScaleMultiplier;
+            return true;
+        }
+
+        public void ApplyEquippedBaseLocalPose()
+        {
+            if (weaponInstance == null)
+            {
+                return;
+            }
+
+            weaponInstance.transform.localPosition = baseLocalPosition;
+            weaponInstance.transform.localRotation = baseLocalRotation;
+            ApplyHandsScaleToWeaponInstance();
+            bobPositionVelocity = Vector3.zero;
+            bobRotationVelocity = 0f;
+            pitchRotationVelocity = 0f;
+            pitchYawVelocity = 0f;
+            smoothedPitchOffset = 0f;
+            smoothedPitchYawOffset = 0f;
         }
 
         public void EnsureMounted()
@@ -490,6 +571,47 @@ namespace ShooterPrototype.Player
         public void SetHolsterTransitionActive(bool active)
         {
             holsterTransitionActive = active;
+        }
+
+        public bool IsHolsterTransitionActive => holsterTransitionActive;
+
+        /// <summary>
+        /// Snaps the weapon anchor to the current camera-locked hip pose.
+        /// Call before holster/draw transitions freeze anchor updates.
+        /// </summary>
+        public void ApplyCameraLockedHipAnchorPose()
+        {
+            if (useNetworkState || weaponParent == null || cameraPivot == null || !hipLockToCameraPivot)
+            {
+                return;
+            }
+
+            if (fpsController == null)
+            {
+                fpsController = GetComponent<FpsCharacterController>();
+            }
+
+            var parentTransform = weaponParent.parent;
+            if (parentTransform == null)
+            {
+                return;
+            }
+
+            var cameraWorldRotation = GetAimReferenceRotation(0f, 1f);
+            var lockedWorldPosition = cameraPivot.position + (cameraWorldRotation * hipCameraLocalPosition);
+            var lockedWorldRotation = cameraWorldRotation * Quaternion.Euler(hipCameraLocalEuler);
+            var hipLocalPosition = parentTransform.InverseTransformPoint(lockedWorldPosition);
+            var hipLocalRotation = Quaternion.Inverse(parentTransform.rotation) * lockedWorldRotation;
+
+            var targetCrouchBlend = fpsController != null ? fpsController.CrouchBlend01 : 0f;
+            hipLocalPosition.y -= crouchWeaponDrop * Mathf.Clamp01(targetCrouchBlend);
+
+            weaponParent.localPosition = hipLocalPosition;
+            weaponParent.localRotation = hipLocalRotation;
+            anchorPositionVelocity = Vector3.zero;
+            anchorRotXVelocity = 0f;
+            anchorRotYVelocity = 0f;
+            anchorRotZVelocity = 0f;
         }
 
         private void OnEnable()
@@ -1039,7 +1161,7 @@ namespace ShooterPrototype.Player
             MountWeaponFromPrefab();
         }
 
-        private void MountWeaponFromPrefab()
+        private void MountWeaponFromPrefab(bool preserveAnchorPose = false)
         {
             if (weaponPrefab == null)
             {
@@ -1057,7 +1179,7 @@ namespace ShooterPrototype.Player
             baseLocalPosition = weaponInstance.transform.localPosition;
             baseLocalRotation = weaponInstance.transform.localRotation;
 
-            FinalizeWeaponMount(skipAnchorReposition: false);
+            FinalizeWeaponMount(skipAnchorReposition: preserveAnchorPose);
             RemoveExtraWeaponModels(transform, weaponInstance);
         }
 

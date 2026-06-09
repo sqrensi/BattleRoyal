@@ -1545,6 +1545,37 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!1 &8766811425747102934
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 712247263052842031}
+  m_Layer: 0
+  m_Name: BackWeaponTarget2
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &712247263052842031
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8766811425747102934}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0.3931272, y: 0.56566536, z: 0.40504447, w: 0.60117614}
+  m_LocalPosition: {x: -0.074, y: 0.165, z: -0.104}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 8042244127623283438}
+  m_LocalEulerAnglesHint: {x: -111.422, y: 261.98102, z: -173.357}
 --- !u!1 &8894380108195426346
 GameObject:
   m_ObjectHideFlags: 0
@@ -1759,6 +1790,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 7135307701511344504, guid: dc0216bb95f205842b2047a8e89fddec, type: 3}
       insertIndex: -1
       addedObject: {fileID: 4488994831846727164}
+    - targetCorrespondingSourceObject: {fileID: 7135307701511344504, guid: dc0216bb95f205842b2047a8e89fddec, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 712247263052842031}
     - targetCorrespondingSourceObject: {fileID: 868097361264748561, guid: dc0216bb95f205842b2047a8e89fddec, type: 3}
       insertIndex: -1
       addedObject: {fileID: 7552425518838533372}
@@ -2139,6 +2173,7 @@ MonoBehaviour:
   weaponPrefab: {fileID: 6405278687639400286, guid: c0b9a0ada3999914a8bce7552f3d83a3, type: 3}
   attachTarget: {fileID: 5062842464355578656}
   defaultWeaponPrefabPath: Assets/Prefabs/AK-47/rifle_001.prefab
+  sniperWeaponPrefabPath: Assets/Prefabs/Sniper/sniper_rifle_001.prefab
   attachTargetName: RemoteWeaponTarget
   rightHandBoneName: Hand_R
   alignGripToAttachTarget: 0

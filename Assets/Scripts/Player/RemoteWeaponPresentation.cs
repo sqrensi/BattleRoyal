@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using UnityEngine;
 
 namespace ShooterPrototype.Player
@@ -32,6 +33,8 @@ namespace ShooterPrototype.Player
         [Header("Holster (Remote Back Only)")]
         [SerializeField] private Transform backHolsterTarget;
         [SerializeField] private string backHolsterTargetName = "BackWeaponTarget";
+        [SerializeField] private Transform backHolsterTargetSecondary;
+        [SerializeField] private string backHolsterTargetSecondaryName = "BackWeaponTarget2";
 
         [Header("Posture Lean Compensation")]
         [SerializeField] private bool enablePostureLeanCompensation = true;
@@ -45,6 +48,10 @@ namespace ShooterPrototype.Player
         [SerializeField] private float lookPitchSmoothTime = 0.1f;
         [SerializeField] private float crouchPitchCompensation = 30f;
         [SerializeField] private float crouchPitchSmoothTime = 0.12f;
+
+        [Header("Remote Weapon Swap")]
+        [SerializeField] private float weaponSwapIdleSeconds = 0.12f;
+        [SerializeField] private float remoteSniperScaleMultiplier = 0.5882353f;
 
         private Transform weaponRoot;
         private Transform thirdPersonBody;
@@ -65,6 +72,18 @@ namespace ShooterPrototype.Player
         private bool networkHasWeapon;
         private bool networkMedkitActive;
         private WeaponKind networkWeaponKind = WeaponKind.AssaultRifle;
+        private byte networkSlot0Kind = PlayerWeaponLoadout.EmptySlotKind;
+        private byte networkSlot1Kind = PlayerWeaponLoadout.EmptySlotKind;
+        private int networkActiveWeaponSlot = PlayerWeaponLoadout.NoActiveSlot;
+        private byte appliedSlot0Kind = PlayerWeaponLoadout.EmptySlotKind;
+        private byte appliedSlot1Kind = PlayerWeaponLoadout.EmptySlotKind;
+        private int appliedActiveWeaponSlot = PlayerWeaponLoadout.NoActiveSlot;
+        private bool appliedHolstered;
+        private bool appliedHasWeapon;
+        private byte appliedActiveWeaponKind;
+        private Transform backWeaponRootSlot0;
+        private Transform backWeaponRootSlot1;
+        private Coroutine weaponSwapRoutine;
         private bool hasHandPoseSnapshot;
         private Vector3 handPoseLocalPosition;
         private Quaternion handPoseLocalRotation;
@@ -95,6 +114,159 @@ namespace ShooterPrototype.Player
             {
                 EnsureAttached();
             }
+        }
+
+        public void SetWeaponLoadout(
+            byte slot0Kind,
+            byte slot1Kind,
+            int activeWeaponSlot,
+            bool holstered,
+            bool hasWeapon,
+            byte activeWeaponKind)
+        {
+            var resolvedWeaponKind = ResolveNetworkWeaponKind(
+                slot0Kind,
+                slot1Kind,
+                activeWeaponSlot,
+                holstered,
+                activeWeaponKind);
+            var shouldAnimateHandSwap = networkHasWeapon &&
+                                        !networkHolstered &&
+                                        hasWeapon &&
+                                        !holstered &&
+                                        (resolvedWeaponKind != networkWeaponKind ||
+                                         activeWeaponSlot != networkActiveWeaponSlot);
+            if (slot0Kind == appliedSlot0Kind &&
+                slot1Kind == appliedSlot1Kind &&
+                activeWeaponSlot == appliedActiveWeaponSlot &&
+                holstered == appliedHolstered &&
+                hasWeapon == appliedHasWeapon &&
+                activeWeaponKind == appliedActiveWeaponKind &&
+                IsHandWeaponPresentationCurrent(resolvedWeaponKind, hasWeapon, holstered))
+            {
+                return;
+            }
+
+            appliedSlot0Kind = slot0Kind;
+            appliedSlot1Kind = slot1Kind;
+            appliedActiveWeaponSlot = activeWeaponSlot;
+            appliedHolstered = holstered;
+            appliedHasWeapon = hasWeapon;
+            appliedActiveWeaponKind = activeWeaponKind;
+
+            networkSlot0Kind = slot0Kind;
+            networkSlot1Kind = slot1Kind;
+            networkActiveWeaponSlot = activeWeaponSlot;
+            networkHolstered = holstered;
+            networkHasWeapon = hasWeapon;
+            networkWeaponKind = resolvedWeaponKind;
+
+            if (networkMedkitActive)
+            {
+                ApplyMedkitWeaponHiddenState();
+                return;
+            }
+
+            ResolveHolsterAnimation()?.SetWeaponEquipped(hasWeapon);
+            if (!hasWeapon)
+            {
+                ApplyUnarmedPresentation();
+                ClearBackWeaponRoots();
+                return;
+            }
+
+            if (shouldAnimateHandSwap)
+            {
+                BeginRemoteWeaponSwap();
+                return;
+            }
+
+            ApplyDualWeaponPresentation();
+        }
+
+        private void BeginRemoteWeaponSwap()
+        {
+            if (weaponSwapRoutine != null)
+            {
+                StopCoroutine(weaponSwapRoutine);
+            }
+
+            weaponSwapRoutine = StartCoroutine(RemoteWeaponSwapRoutine());
+        }
+
+        private IEnumerator RemoteWeaponSwapRoutine()
+        {
+            SetWeaponRenderersEnabled(false);
+            GetComponent<RemoteLeftHandIkBinder>()?.SetHandIkEnabled(false);
+            ResolveHolsterAnimation()?.SetHolstered(true);
+
+            var delay = Mathf.Max(0f, weaponSwapIdleSeconds);
+            if (delay > 0f)
+            {
+                yield return new WaitForSeconds(delay);
+            }
+            else
+            {
+                yield return null;
+            }
+
+            ApplyDualWeaponPresentation();
+            weaponSwapRoutine = null;
+        }
+
+        private bool IsHandWeaponPresentationCurrent(WeaponKind expectedKind, bool hasWeapon, bool holstered)
+        {
+            if (!hasWeapon || holstered)
+            {
+                return true;
+            }
+
+            if (weaponRoot == null)
+            {
+                return false;
+            }
+
+            var profile = weaponRoot.GetComponentInChildren<WeaponProfile>(true);
+            if (profile != null)
+            {
+                return profile.Kind == expectedKind;
+            }
+
+            var expectedPrefab = ResolvePrefabForKind(expectedKind);
+            return expectedPrefab != null && weaponPrefab == expectedPrefab;
+        }
+
+        private static WeaponKind ResolveNetworkWeaponKind(
+            byte slot0Kind,
+            byte slot1Kind,
+            int activeWeaponSlot,
+            bool holstered,
+            byte activeWeaponKind)
+        {
+            if (!holstered)
+            {
+                if (activeWeaponSlot == 0 && slot0Kind != PlayerWeaponLoadout.EmptySlotKind)
+                {
+                    return (WeaponKind)Mathf.Clamp((int)slot0Kind, 0, 1);
+                }
+
+                if (activeWeaponSlot == 1 && slot1Kind != PlayerWeaponLoadout.EmptySlotKind)
+                {
+                    return (WeaponKind)Mathf.Clamp((int)slot1Kind, 0, 1);
+                }
+            }
+
+            if (slot0Kind != PlayerWeaponLoadout.EmptySlotKind)
+            {
+                return (WeaponKind)Mathf.Clamp((int)slot0Kind, 0, 1);
+            }
+
+            if (slot1Kind != PlayerWeaponLoadout.EmptySlotKind)
+            {
+                return (WeaponKind)Mathf.Clamp((int)slot1Kind, 0, 1);
+            }
+
+            return (WeaponKind)Mathf.Clamp((int)activeWeaponKind, 0, 1);
         }
 
         public WeaponProfile GetActiveWeaponProfile()
@@ -411,6 +583,7 @@ namespace ShooterPrototype.Player
             }
 
             SnapshotHandPoseFromWeapon();
+            ApplyHandWeaponScale();
             EnsureHierarchyActive(weaponRoot);
             SetWeaponRenderersEnabled(true);
             WireRemoteLeftHandIk();
@@ -489,9 +662,33 @@ namespace ShooterPrototype.Player
 
         private void FinishHandAttachment()
         {
+            ApplyHandWeaponScale();
             SetWeaponRenderersEnabled(true);
             WireRemoteLeftHandIk();
             ApplyAttachTargetLookPitchTilt();
+        }
+
+        private void ApplyHandWeaponScale()
+        {
+            if (weaponRoot == null)
+            {
+                return;
+            }
+
+            if (!hasHandPoseSnapshot)
+            {
+                SnapshotHandPoseFromWeapon();
+            }
+
+            var baseScale = hasHandPoseSnapshot ? handPoseLocalScale : weaponRoot.localScale;
+            weaponRoot.localScale = baseScale * ResolveRemoteWeaponScale(networkWeaponKind);
+        }
+
+        private float ResolveRemoteWeaponScale(WeaponKind kind)
+        {
+            return kind == WeaponKind.SniperRifle
+                ? Mathf.Max(0.01f, remoteSniperScaleMultiplier)
+                : 1f;
         }
 
         private void ResetAttachTargetBasePose()
@@ -629,7 +826,16 @@ namespace ShooterPrototype.Player
                 return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
             }
 #endif
-            return weaponPrefab;
+            if (weaponPrefab != null)
+            {
+                var profile = weaponPrefab.GetComponent<WeaponProfile>();
+                if (profile == null || profile.Kind == kind)
+                {
+                    return weaponPrefab;
+                }
+            }
+
+            return null;
         }
 
         private bool IsWeaponRootAlive()
@@ -1049,6 +1255,265 @@ namespace ShooterPrototype.Player
             }
 
             return null;
+        }
+
+        private void ApplyDualWeaponPresentation()
+        {
+            var slot0Occupied = networkSlot0Kind != PlayerWeaponLoadout.EmptySlotKind;
+            var slot1Occupied = networkSlot1Kind != PlayerWeaponLoadout.EmptySlotKind;
+            if (!slot0Occupied && !slot1Occupied)
+            {
+                ApplyUnarmedPresentation();
+                return;
+            }
+
+            if (networkHolstered)
+            {
+                EnsureBackWeapon(0, networkSlot0Kind);
+                EnsureBackWeapon(1, networkSlot1Kind);
+                SetWeaponRenderersEnabled(false);
+                ResolveHolsterAnimation()?.SetHolstered(true);
+                return;
+            }
+
+            var activeSlot = ResolveActiveWeaponSlot(slot0Occupied, slot1Occupied);
+            var activeKind = activeSlot == 0 ? networkSlot0Kind : networkSlot1Kind;
+            if (activeKind == PlayerWeaponLoadout.EmptySlotKind)
+            {
+                ApplyDualWeaponPresentationHolsteredFallback();
+                return;
+            }
+
+            networkWeaponKind = (WeaponKind)Mathf.Clamp((int)activeKind, 0, 1);
+            SetRenderersEnabled(backWeaponRootSlot0, false);
+            SetRenderersEnabled(backWeaponRootSlot1, false);
+            EquipHandWeapon(networkWeaponKind);
+            AttachWeaponToHand();
+            SetWeaponRenderersEnabled(true);
+
+            var backSlot = activeSlot == 0 ? 1 : 0;
+            var backKind = backSlot == 0 ? networkSlot0Kind : networkSlot1Kind;
+            if (backKind != PlayerWeaponLoadout.EmptySlotKind)
+            {
+                EnsureBackWeapon(backSlot, backKind);
+            }
+            else
+            {
+                ClearBackWeapon(backSlot);
+            }
+
+            ClearBackWeapon(activeSlot);
+            ResolveHolsterAnimation()?.SetHolstered(false);
+        }
+
+        private int ResolveActiveWeaponSlot(bool slot0Occupied, bool slot1Occupied)
+        {
+            if (networkHolstered)
+            {
+                return PlayerWeaponLoadout.NoActiveSlot;
+            }
+
+            if (networkActiveWeaponSlot == 0 && slot0Occupied)
+            {
+                return 0;
+            }
+
+            if (networkActiveWeaponSlot == 1 && slot1Occupied)
+            {
+                return 1;
+            }
+
+            if (slot1Occupied && (byte)networkSlot1Kind == (byte)networkWeaponKind)
+            {
+                return 1;
+            }
+
+            if (slot0Occupied && (byte)networkSlot0Kind == (byte)networkWeaponKind)
+            {
+                return 0;
+            }
+
+            if (!slot0Occupied && slot1Occupied)
+            {
+                return 1;
+            }
+
+            if (slot0Occupied)
+            {
+                return 0;
+            }
+
+            return slot1Occupied ? 1 : PlayerWeaponLoadout.NoActiveSlot;
+        }
+
+        private void EquipHandWeapon(WeaponKind kind)
+        {
+            var prefab = ResolvePrefabForKind(kind);
+            if (prefab == null)
+            {
+                return;
+            }
+
+            if (networkWeaponKind != kind || weaponPrefab != prefab || weaponRoot == null)
+            {
+                networkWeaponKind = kind;
+                weaponPrefab = prefab;
+                if (weaponRoot != null)
+                {
+                    Destroy(weaponRoot.gameObject);
+                    weaponRoot = null;
+                    hasHandPoseSnapshot = false;
+                }
+            }
+
+            EnsureAttached();
+        }
+
+        private void ApplyDualWeaponPresentationHolsteredFallback()
+        {
+            EnsureBackWeapon(0, networkSlot0Kind);
+            EnsureBackWeapon(1, networkSlot1Kind);
+            SetWeaponRenderersEnabled(false);
+            ResolveHolsterAnimation()?.SetHolstered(true);
+        }
+
+        private void EnsureBackWeapon(int slotIndex, byte kindByte)
+        {
+            if (kindByte == PlayerWeaponLoadout.EmptySlotKind)
+            {
+                ClearBackWeapon(slotIndex);
+                return;
+            }
+
+            var kind = (WeaponKind)Mathf.Clamp((int)kindByte, 0, 1);
+            var parent = ResolveBackHolsterTargetForSlot(slotIndex);
+            if (parent == null)
+            {
+                return;
+            }
+
+            var prefab = ResolvePrefabForKind(kind);
+            if (prefab == null)
+            {
+                return;
+            }
+
+            var existingRoot = slotIndex == 0 ? backWeaponRootSlot0 : backWeaponRootSlot1;
+            if (existingRoot != null)
+            {
+                var existingProfile = existingRoot.GetComponentInChildren<WeaponProfile>(true);
+                if (existingProfile != null && existingProfile.Kind == kind)
+                {
+                    SetRenderersEnabled(existingRoot, true);
+                    return;
+                }
+
+                Destroy(existingRoot.gameObject);
+                if (slotIndex == 0)
+                {
+                    backWeaponRootSlot0 = null;
+                }
+                else
+                {
+                    backWeaponRootSlot1 = null;
+                }
+            }
+
+            var instance = Instantiate(prefab, parent);
+            instance.name = slotIndex == 0 ? "BackWeaponModel0" : "BackWeaponModel1";
+            var root = instance.transform;
+            root.localPosition = Vector3.zero;
+            root.localRotation = Quaternion.identity;
+            root.localScale *= ResolveRemoteWeaponScale(kind);
+            SetRenderersEnabled(root, true);
+            if (slotIndex == 0)
+            {
+                backWeaponRootSlot0 = root;
+            }
+            else
+            {
+                backWeaponRootSlot1 = root;
+            }
+        }
+
+        private void ClearBackWeapon(int slotIndex)
+        {
+            var root = slotIndex == 0 ? backWeaponRootSlot0 : backWeaponRootSlot1;
+            if (root == null)
+            {
+                return;
+            }
+
+            Destroy(root.gameObject);
+            if (slotIndex == 0)
+            {
+                backWeaponRootSlot0 = null;
+            }
+            else
+            {
+                backWeaponRootSlot1 = null;
+            }
+        }
+
+        private void ClearBackWeaponRoots()
+        {
+            ClearBackWeapon(0);
+            ClearBackWeapon(1);
+        }
+
+        private Transform ResolveBackHolsterTargetForSlot(int slotIndex)
+        {
+            if (slotIndex == 0)
+            {
+                ResolveBackHolsterTarget();
+                return backHolsterTarget;
+            }
+
+            ResolveBackHolsterTargetSecondary();
+            return backHolsterTargetSecondary != null ? backHolsterTargetSecondary : backHolsterTarget;
+        }
+
+        private void ResolveBackHolsterTargetSecondary()
+        {
+            if (backHolsterTargetSecondary != null)
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(backHolsterTargetSecondaryName))
+            {
+                return;
+            }
+
+            var searchRoot = thirdPersonBody != null ? thirdPersonBody : transform;
+            var transforms = searchRoot.GetComponentsInChildren<Transform>(true);
+            for (var i = 0; i < transforms.Length; i++)
+            {
+                var current = transforms[i];
+                if (current != null &&
+                    string.Equals(current.name, backHolsterTargetSecondaryName, StringComparison.OrdinalIgnoreCase))
+                {
+                    backHolsterTargetSecondary = current;
+                    return;
+                }
+            }
+        }
+
+        private static void SetRenderersEnabled(Transform root, bool enabled)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            for (var i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] != null)
+                {
+                    renderers[i].enabled = enabled;
+                }
+            }
         }
     }
 }

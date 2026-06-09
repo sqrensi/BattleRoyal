@@ -54,11 +54,49 @@ namespace ShooterPrototype.Player
 
                 var itemId = !string.IsNullOrWhiteSpace(itemIdOverride)
                     ? itemIdOverride
-                    : pickupKindOverride == fallbackDefault.Kind
-                        ? fallbackDefault.ResolvedItemId
-                        : PickupKindUtility.ToProtocol(pickupKindOverride);
+                    : ResolveImplicitItemId(pickupKindOverride, visual, fallbackDefault);
                 var amount = amountOverride > 0 ? amountOverride : fallbackDefault.Amount;
-                return PickupItemDefinition.Create(pickupKindOverride, visual, itemId, amount);
+                var definition = PickupItemDefinition.Create(pickupKindOverride, visual, itemId, amount);
+                RegisterWeaponPrefab(definition);
+                return definition;
+            }
+
+            private static string ResolveImplicitItemId(
+                PickupKind pickupKind,
+                GameObject visual,
+                in PickupItemDefinition fallbackDefault)
+            {
+                if (pickupKind == PickupKind.Weapon && visual != null)
+                {
+                    return visual.name;
+                }
+
+                return pickupKind == fallbackDefault.Kind
+                    ? fallbackDefault.ResolvedItemId
+                    : PickupKindUtility.ToProtocol(pickupKind);
+            }
+
+            private static void RegisterWeaponPrefab(in PickupItemDefinition definition)
+            {
+                if (definition.Kind != PickupKind.Weapon || definition.VisualPrefab == null)
+                {
+                    return;
+                }
+
+                var profile = definition.VisualPrefab.GetComponent<WeaponProfile>() ??
+                              definition.VisualPrefab.GetComponentInChildren<WeaponProfile>(true);
+                var kind = profile != null
+                    ? profile.Kind
+                    : WeaponCatalog.ResolveKindFromItemId(definition.ResolvedItemId);
+                WeaponCatalog.RegisterWeaponPrefab(kind, definition.VisualPrefab);
+            }
+
+            public void ConfigureWeaponDrop(GameObject visualPrefab, string itemId)
+            {
+                pickupVisualOverride = visualPrefab;
+                itemIdOverride = itemId ?? string.Empty;
+                pickupKindOverride = PickupKind.Weapon;
+                amountOverride = 1;
             }
 
         }
@@ -997,8 +1035,132 @@ namespace ShooterPrototype.Player
 
         }
 
+
+
+        public void SpawnDynamicPickupAtWorld(
+
+            string spawnId,
+
+            Vector3 worldPosition,
+
+            Vector3 forward,
+
+            in PickupItemDefinition definition)
+
+        {
+
+            if (string.IsNullOrWhiteSpace(spawnId) || !definition.IsValid)
+
+            {
+
+                return;
+
+            }
+
+
+
+            if (activePickupsBySpawnId.ContainsKey(spawnId))
+
+            {
+
+                return;
+
+            }
+
+
+
+            EnsureDynamicSlot(spawnId, worldPosition, forward, definition);
+
+            ApplyServerPickupRespawn(spawnId);
+
+        }
+
+
+
+        public void EnsureDynamicSlot(
+
+            string spawnId,
+
+            Vector3 worldPosition,
+
+            Vector3 forward,
+
+            in PickupItemDefinition definition)
+
+        {
+
+            if (string.IsNullOrWhiteSpace(spawnId) || !definition.IsValid)
+
+            {
+
+                return;
+
+            }
+
+
+
+            if (slotsBySpawnId.TryGetValue(spawnId, out var existing) && existing != null)
+
+            {
+
+                existing.ConfigureWeaponDrop(definition.VisualPrefab, definition.ResolvedItemId);
+
+                if (existing.spawnPoint != null)
+
+                {
+
+                    existing.spawnPoint.SetPositionAndRotation(
+
+                        worldPosition,
+
+                        forward.sqrMagnitude > 0.001f
+
+                            ? Quaternion.LookRotation(forward.normalized, Vector3.up)
+
+                            : Quaternion.identity);
+
+                }
+
+                return;
+
+            }
+
+
+
+            var spawnRoot = new GameObject($"DynamicPickup_{spawnId}");
+
+            spawnRoot.transform.SetPositionAndRotation(
+
+                worldPosition,
+
+                forward.sqrMagnitude > 0.001f
+
+                    ? Quaternion.LookRotation(forward.normalized, Vector3.up)
+
+                    : Quaternion.identity);
+
+
+
+            var slot = new PickupSpawnSlot
+
+            {
+
+                spawnId = spawnId,
+
+                spawnPoint = spawnRoot.transform
+
+            };
+
+            slot.ConfigureWeaponDrop(definition.VisualPrefab, definition.ResolvedItemId);
+
+
+
+            spawnSlots.Add(slot);
+
+            RebuildSlotLookup();
+
+        }
+
     }
 
 }
-
-

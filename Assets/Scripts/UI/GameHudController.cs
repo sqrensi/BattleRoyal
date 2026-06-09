@@ -416,6 +416,15 @@ namespace ShooterPrototype.UI
         {
             while (true)
             {
+                if (pingText != null && !Application.isFocused)
+                {
+                    pingText.text = "Ping: paused (unfocused)";
+                    consecutivePingFailures = 0;
+                    RefreshFpsText();
+                    yield return new WaitForSecondsRealtime(1f);
+                    continue;
+                }
+
                 var realtimeClient = FindObjectOfType<RealtimeTransportClient>();
                 var wsPing = realtimeClient != null && realtimeClient.IsReady
                     ? realtimeClient.SmoothedRoundTripMs
@@ -450,7 +459,9 @@ namespace ShooterPrototype.UI
                     else
                     {
                         consecutivePingFailures++;
-                        if (!returnToMenuRequested && consecutivePingFailures >= 8)
+                        if (!returnToMenuRequested &&
+                            Application.isFocused &&
+                            consecutivePingFailures >= 8)
                         {
                             returnToMenuRequested = true;
                             networkLauncher.DisconnectClient("Lost connection to dedicated server.");

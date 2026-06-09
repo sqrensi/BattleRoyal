@@ -13,6 +13,7 @@ namespace ShooterPrototype.Player
         private RealtimeTransportClient transportClient;
         private NetworkLauncher networkLauncher;
         private PlayerPickupController localPickupController;
+        private PlayerWeaponLoadoutController localLoadoutController;
         private string localTicketId = string.Empty;
         private bool eventsSubscribed;
         private Coroutine networkRoutine;
@@ -100,6 +101,7 @@ namespace ShooterPrototype.Player
             }
 
             localPickupController = localMarker.GetComponent<PlayerPickupController>();
+            localLoadoutController = localMarker.GetComponent<PlayerWeaponLoadoutController>();
             if (localPickupController == null)
             {
                 return;
@@ -119,6 +121,7 @@ namespace ShooterPrototype.Player
             transportClient.PickupStateReceived += HandlePickupState;
             transportClient.PickupEventReceived += HandlePickupEvent;
             transportClient.PickupResultReceived += HandlePickupResult;
+            transportClient.WeaponDropResultReceived += HandleWeaponDropResult;
             eventsSubscribed = true;
         }
 
@@ -133,6 +136,7 @@ namespace ShooterPrototype.Player
             transportClient.PickupStateReceived -= HandlePickupState;
             transportClient.PickupEventReceived -= HandlePickupEvent;
             transportClient.PickupResultReceived -= HandlePickupResult;
+            transportClient.WeaponDropResultReceived -= HandleWeaponDropResult;
             eventsSubscribed = false;
         }
 
@@ -156,6 +160,7 @@ namespace ShooterPrototype.Player
 
             if (message.available)
             {
+                TrySpawnDynamicPickupFromEvent(message);
                 pickupSpawnManager.ApplyServerPickupRespawn(message.spawnId);
                 return;
             }
@@ -205,12 +210,135 @@ namespace ShooterPrototype.Player
             RealtimeTransportClient.PickupResultMessage message,
             PickupKind kind)
         {
-            if (kind != PickupKind.Medkit)
+            if (kind == PickupKind.Weapon)
             {
-                return PickupApplyServerState.None;
+                return new PickupApplyServerState(
+                    message.medkitCount,
+                    false,
+                    BuildWeaponLoadoutFromPickupResult(message));
             }
 
-            return new PickupApplyServerState(message.medkitCount, true);
+            if (kind == PickupKind.Medkit)
+            {
+                return new PickupApplyServerState(message.medkitCount, true);
+            }
+
+            return PickupApplyServerState.None;
+        }
+
+        private void HandleWeaponDropResult(RealtimeTransportClient.WeaponDropResultMessage message)
+        {
+            if (message == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(localTicketId) &&
+                !string.IsNullOrWhiteSpace(message.ticketId) &&
+                !string.Equals(message.ticketId, localTicketId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!message.success)
+            {
+                Debug.LogWarning($"[MatchPickupSync] Weapon drop rejected: {message.reason}");
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(message.droppedSpawnId))
+            {
+                TrySpawnDynamicPickupFromDropResult(message);
+            }
+
+            localLoadoutController?.ApplyServerDrop(
+                message.slotIndex,
+                BuildWeaponLoadoutFromDropResult(message));
+            localPickupController?.RefreshPickupContext();
+            localPickupController?.RefreshWeaponAvailability();
+        }
+
+        private void TrySpawnDynamicPickupFromEvent(RealtimeTransportClient.PickupEventMessage message)
+        {
+            if (pickupSpawnManager == null || message == null ||
+                string.IsNullOrWhiteSpace(message.spawnId))
+            {
+                return;
+            }
+
+            var itemId = !string.IsNullOrWhiteSpace(message.itemId)
+                ? message.itemId
+                : message.weaponId;
+            if (string.IsNullOrWhiteSpace(itemId))
+            {
+                return;
+            }
+
+            var kind = WeaponCatalog.ResolveKindFromItemId(itemId);
+            var prefab = WeaponCatalog.GetWeaponPrefab(kind);
+            if (prefab == null)
+            {
+                return;
+            }
+
+            var definition = PickupItemDefinition.Create(PickupKind.Weapon, prefab, itemId, 1);
+            var position = new Vector3(message.x, message.y, message.z);
+            if (position.sqrMagnitude < 0.001f)
+            {
+                return;
+            }
+
+            pickupSpawnManager.EnsureDynamicSlot(message.spawnId, position, Vector3.forward, definition);
+        }
+
+        private void TrySpawnDynamicPickupFromDropResult(RealtimeTransportClient.WeaponDropResultMessage message)
+        {
+            if (pickupSpawnManager == null || message == null ||
+                string.IsNullOrWhiteSpace(message.droppedSpawnId) ||
+                string.IsNullOrWhiteSpace(message.itemId))
+            {
+                return;
+            }
+
+            var kind = WeaponCatalog.ResolveKindFromItemId(message.itemId);
+            var prefab = WeaponCatalog.GetWeaponPrefab(kind);
+            if (prefab == null)
+            {
+                return;
+            }
+
+            var definition = PickupItemDefinition.Create(PickupKind.Weapon, prefab, message.itemId, 1);
+            var position = new Vector3(message.x, message.y, message.z);
+            pickupSpawnManager.EnsureDynamicSlot(message.droppedSpawnId, position, Vector3.forward, definition);
+            pickupSpawnManager.ApplyServerPickupRespawn(message.droppedSpawnId);
+        }
+
+        private static WeaponLoadoutServerState BuildWeaponLoadoutFromPickupResult(
+            RealtimeTransportClient.PickupResultMessage message)
+        {
+            return new WeaponLoadoutServerState(
+                true,
+                (byte)Mathf.Clamp(message.weaponSlot0Kind, 0, 255),
+                (byte)Mathf.Clamp(message.weaponSlot1Kind, 0, 255),
+                message.weaponSlot0ItemId ?? string.Empty,
+                message.weaponSlot1ItemId ?? string.Empty,
+                message.activeWeaponSlot,
+                message.bothHolstered,
+                message.droppedSpawnId ?? string.Empty);
+        }
+
+        private static WeaponLoadoutServerState BuildWeaponLoadoutFromDropResult(
+            RealtimeTransportClient.WeaponDropResultMessage message)
+        {
+            return new WeaponLoadoutServerState(
+                true,
+                (byte)Mathf.Clamp(message.weaponSlot0Kind, 0, 255),
+                (byte)Mathf.Clamp(message.weaponSlot1Kind, 0, 255),
+                message.weaponSlot0ItemId ?? string.Empty,
+                message.weaponSlot1ItemId ?? string.Empty,
+                message.activeWeaponSlot,
+                message.bothHolstered,
+                message.droppedSpawnId ?? string.Empty);
         }
     }
 }

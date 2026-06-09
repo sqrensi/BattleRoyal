@@ -186,13 +186,52 @@ namespace ShooterPrototype.Player
 
         public void ReconcileToServer(Vector3 authoritativePosition, float authoritativeYaw, int serverTick)
         {
-            if (!enableServerReconciliation ||
-                reconciliationSuspended ||
-                Time.realtimeSinceStartup < reconciliationGraceUntilRealtime ||
-                characterController == null ||
-                !characterController.enabled ||
-                serverTick <= lastReconciledServerTick)
+            var localPos = transform.position;
+            if (!Application.isFocused)
             {
+                MovementNetworkDiagnostics.LogReconcile(
+                    localPos, authoritativePosition, 0f, serverTick, string.Empty, "app_unfocused");
+                return;
+            }
+            if (!enableServerReconciliation)
+            {
+                MovementNetworkDiagnostics.LogReconcile(
+                    localPos, authoritativePosition, 0f, serverTick, string.Empty, "reconcile_disabled");
+                return;
+            }
+
+            if (reconciliationSuspended)
+            {
+                MovementNetworkDiagnostics.LogReconcile(
+                    localPos, authoritativePosition, 0f, serverTick, string.Empty, "reconcile_suspended");
+                return;
+            }
+
+            if (Time.realtimeSinceStartup < reconciliationGraceUntilRealtime)
+            {
+                MovementNetworkDiagnostics.LogReconcile(
+                    localPos, authoritativePosition, 0f, serverTick, string.Empty, "reconcile_grace");
+                return;
+            }
+
+            if (characterController == null)
+            {
+                MovementNetworkDiagnostics.LogReconcile(
+                    localPos, authoritativePosition, 0f, serverTick, string.Empty, "no_character_controller");
+                return;
+            }
+
+            if (!characterController.enabled)
+            {
+                MovementNetworkDiagnostics.LogReconcile(
+                    localPos, authoritativePosition, 0f, serverTick, string.Empty, "character_controller_disabled");
+                return;
+            }
+
+            if (serverTick <= lastReconciledServerTick)
+            {
+                MovementNetworkDiagnostics.LogReconcile(
+                    localPos, authoritativePosition, 0f, serverTick, string.Empty, "duplicate_tick");
                 return;
             }
 
@@ -202,6 +241,8 @@ namespace ShooterPrototype.Player
             var horizontalError = new Vector2(delta.x, delta.z).magnitude;
             if (horizontalError >= reconcileSnapDistance)
             {
+                MovementNetworkDiagnostics.LogReconcile(
+                    localPos, authoritativePosition, horizontalError, serverTick, "snap", string.Empty);
                 characterController.enabled = false;
                 transform.position = new Vector3(
                     authoritativePosition.x,
@@ -213,6 +254,8 @@ namespace ShooterPrototype.Player
 
             if (horizontalError > reconcileMinError)
             {
+                MovementNetworkDiagnostics.LogReconcile(
+                    localPos, authoritativePosition, horizontalError, serverTick, "blend", string.Empty);
                 var move = new Vector3(delta.x, 0f, delta.z);
                 characterController.Move(move * Mathf.Clamp01(Time.deltaTime * reconcileBlendSpeed));
             }
@@ -294,6 +337,7 @@ namespace ShooterPrototype.Player
         private void Update()
         {
             HandleCursorToggle();
+            RecordNetworkMoveInput();
             if (!ShouldPauseControls())
             {
                 TickLook();
@@ -303,20 +347,97 @@ namespace ShooterPrototype.Player
             {
                 TickMedkitRestrictedMove();
             }
-
-            if (!medkitUseMovementMode && !ShouldBlockMovement())
+            else if (!ShouldBlockMovement())
             {
-                TickMove();
+                ApplyLocalMovement();
             }
-            else if (!medkitUseMovementMode && movementLocked)
+            else
             {
                 horizontalSpeed = 0f;
-                moveInputMagnitude = 0f;
+                moveInputMagnitude = Mathf.Clamp01(
+                    new Vector2(networkMoveInputX, networkMoveInputZ).magnitude);
+                if (movementLocked)
+                {
+                    networkMoveInputX = 0f;
+                    networkMoveInputZ = 0f;
+                    networkJumpPressed = false;
+                    isSprinting = false;
+                }
+            }
+
+            LogMovementDiagnostics();
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            if (!lockCursorOnEnable)
+            {
+                return;
+            }
+
+            if (hasFocus)
+            {
+                reconciliationGraceUntilRealtime = Time.realtimeSinceStartup + 0.75f;
+                var health = GetComponent<PlayerHealth>();
+                if (health != null && health.IsDead)
+                {
+                    return;
+                }
+
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+                return;
+            }
+        }
+
+        private void RecordNetworkMoveInput()
+        {
+            if (movementLocked || medkitUseMovementMode)
+            {
                 networkMoveInputX = 0f;
                 networkMoveInputZ = 0f;
                 networkJumpPressed = false;
-                isSprinting = false;
+                return;
             }
+
+            var moveInput = ReadMoveInput();
+            networkMoveInputX = moveInput.x;
+            networkMoveInputZ = moveInput.y;
+        }
+
+        private void LogMovementDiagnostics()
+        {
+            if (characterController == null)
+            {
+                return;
+            }
+
+            var blocked = ShouldBlockMovement() || medkitUseMovementMode;
+            string blockReason = "none";
+            if (medkitUseMovementMode)
+            {
+                blockReason = "medkit_mode";
+            }
+            else if (movementLocked)
+            {
+                blockReason = "movement_locked";
+            }
+            else if (ShouldPauseControls())
+            {
+                blockReason = "cursor_unlocked";
+            }
+
+            MovementNetworkDiagnostics.LogLocalMovement(
+                transform.position,
+                characterController.velocity,
+                networkMoveInputX,
+                networkMoveInputZ,
+                blocked,
+                blockReason,
+                enabled,
+                characterController.enabled,
+                movementLocked,
+                Cursor.lockState != CursorLockMode.Locked);
         }
 
         private void LateUpdate()
@@ -547,17 +668,14 @@ namespace ShooterPrototype.Player
             horizontalSpeed = new Vector2(ccVelocity.x, ccVelocity.z).magnitude;
         }
 
-        private void TickMove()
+        private void ApplyLocalMovement()
         {
             UpdateCrouchState();
 
-            var moveInput = ReadMoveInput();
-            var inputX = moveInput.x;
-            var inputZ = moveInput.y;
-            networkMoveInputX = inputX;
-            networkMoveInputZ = inputZ;
+            var inputX = networkMoveInputX;
+            var inputZ = networkMoveInputZ;
             networkJumpPressed = false;
-            moveInputMagnitude = Mathf.Clamp01(moveInput.magnitude);
+            moveInputMagnitude = Mathf.Clamp01(Mathf.Sqrt(inputX * inputX + inputZ * inputZ));
             isSprinting = !isCrouching &&
                           ReadSprintPressed() &&
                           moveInputMagnitude > 0.12f &&

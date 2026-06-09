@@ -70,6 +70,9 @@ namespace ShooterPrototype.Network
             public int medkitCount;
             public int weaponPickupSeq;
             public int weaponKind;
+            public int weaponSlot0Kind;
+            public int weaponSlot1Kind;
+            public int activeWeaponSlot;
             public bool isGrounded;
             public int jumpState;
             public float animPhase;
@@ -179,6 +182,9 @@ namespace ShooterPrototype.Network
             public string weaponId;
             public int amount;
             public bool available;
+            public float x;
+            public float y;
+            public float z;
         }
 
         [Serializable]
@@ -195,6 +201,41 @@ namespace ShooterPrototype.Network
             public string weaponId;
             public int amount;
             public int medkitCount;
+            public int weaponSlot0Kind;
+            public int weaponSlot1Kind;
+            public string weaponSlot0ItemId;
+            public string weaponSlot1ItemId;
+            public int activeWeaponSlot;
+            public bool bothHolstered;
+            public string droppedSpawnId;
+        }
+
+        [Serializable]
+        public sealed class WeaponDropResultMessage
+        {
+            public string type;
+            public bool success;
+            public string reason;
+            public string ticketId;
+            public int slotIndex;
+            public string droppedSpawnId;
+            public string itemId;
+            public float x;
+            public float y;
+            public float z;
+            public int weaponSlot0Kind;
+            public int weaponSlot1Kind;
+            public string weaponSlot0ItemId;
+            public string weaponSlot1ItemId;
+            public int activeWeaponSlot;
+            public bool bothHolstered;
+        }
+
+        [Serializable]
+        private sealed class WeaponDropRequestMessage
+        {
+            public string type;
+            public int slotIndex;
         }
 
         [Serializable]
@@ -331,6 +372,9 @@ namespace ShooterPrototype.Network
             public float shotEndZ;
             public bool shotHasEndPoint;
             public int weaponKind;
+            public int weaponSlot0Kind;
+            public int weaponSlot1Kind;
+            public int activeWeaponSlot;
         }
 
         [Serializable]
@@ -354,6 +398,7 @@ namespace ShooterPrototype.Network
         private SemaphoreSlim sendSemaphore;
         private Task receiveTask;
         private string connectedTicketId = string.Empty;
+        private string pendingConnectTicketId = string.Empty;
         private bool isConnecting;
         private bool hasJoinAck;
         private float nextReconnectAllowedAt;
@@ -362,6 +407,7 @@ namespace ShooterPrototype.Network
         private bool hasPendingPose;
         private bool poseSendLoopRunning;
         private float lastSendErrorLogAt;
+        private float lastSnapshotDecodeErrorLogAt;
         private readonly object snapshotLock = new object();
         private RealtimeSnapshot latestSnapshot;
         private bool hasLatestSnapshot;
@@ -369,6 +415,8 @@ namespace ShooterPrototype.Network
         private int smoothedRoundTripMs = -1;
         private float lastSnapshotReceivedUnscaledTime;
         private Coroutine pingCoroutine;
+        private readonly object mainThreadActionsLock = new object();
+        private readonly Queue<Action> mainThreadActions = new Queue<Action>();
 
         public bool IsConnected => socket != null && socket.State == WebSocketState.Open;
         public bool IsConnecting => isConnecting;
@@ -382,8 +430,53 @@ namespace ShooterPrototype.Network
         public event Action<PickupStateMessage> PickupStateReceived;
         public event Action<PickupEventMessage> PickupEventReceived;
         public event Action<PickupResultMessage> PickupResultReceived;
+        public event Action<WeaponDropResultMessage> WeaponDropResultReceived;
         public event Action<MedkitResultMessage> MedkitResultReceived;
         public event Action<HealMessage> HealReceived;
+
+        private void Update()
+        {
+            ProcessMainThreadActions();
+        }
+
+        private void EnqueueMainThreadAction(Action action)
+        {
+            if (action == null)
+            {
+                return;
+            }
+
+            lock (mainThreadActionsLock)
+            {
+                mainThreadActions.Enqueue(action);
+            }
+        }
+
+        private void ProcessMainThreadActions()
+        {
+            while (true)
+            {
+                Action action;
+                lock (mainThreadActionsLock)
+                {
+                    if (mainThreadActions.Count == 0)
+                    {
+                        return;
+                    }
+
+                    action = mainThreadActions.Dequeue();
+                }
+
+                try
+                {
+                    action?.Invoke();
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogException(ex);
+                }
+            }
+        }
 
         public void Configure(string wsUrl)
         {
@@ -400,6 +493,7 @@ namespace ShooterPrototype.Network
                 return;
             }
 
+            ticketId = ticketId.Trim();
             if (Time.unscaledTime < nextReconnectAllowedAt)
             {
                 return;
@@ -410,11 +504,25 @@ namespace ShooterPrototype.Network
                 return;
             }
 
+            if (isConnecting && string.Equals(pendingConnectTicketId, ticketId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (IsConnected &&
+                string.Equals(connectedTicketId, ticketId, StringComparison.Ordinal) &&
+                !IsReady)
+            {
+                return;
+            }
+
             if (isConnecting)
             {
                 return;
             }
 
+            isConnecting = true;
+            pendingConnectTicketId = ticketId;
             _ = ConnectInternalAsync(ticketId);
         }
 
@@ -452,7 +560,10 @@ namespace ShooterPrototype.Network
             Vector3 shotDirection = default,
             Vector3 shotEndPoint = default,
             bool shotHasEndPoint = false,
-            int weaponKind = 0)
+            int weaponKind = 0,
+            int weaponSlot0Kind = 255,
+            int weaponSlot1Kind = 255,
+            int activeWeaponSlot = 255)
         {
             if (!IsConnected)
             {
@@ -504,6 +615,9 @@ namespace ShooterPrototype.Network
                 shotEndZ = shotEndPoint.z,
                 shotHasEndPoint = shotHasEndPoint,
                 weaponKind = Mathf.Clamp(weaponKind, 0, 1),
+                weaponSlot0Kind = Mathf.Clamp(weaponSlot0Kind, 0, 255),
+                weaponSlot1Kind = Mathf.Clamp(weaponSlot1Kind, 0, 255),
+                activeWeaponSlot = Mathf.Clamp(activeWeaponSlot, 0, 255),
                 poseSeq = ++nextPoseSeq
             };
             hasPendingPose = true;
@@ -699,6 +813,20 @@ namespace ShooterPrototype.Network
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 
+        public void SendWeaponDrop(int slotIndex)
+        {
+            if (!IsReady)
+            {
+                return;
+            }
+
+            _ = SendJsonAsync(new WeaponDropRequestMessage
+            {
+                type = "weapon_drop",
+                slotIndex = slotIndex
+            }, cts != null ? cts.Token : CancellationToken.None);
+        }
+
         public void SendMedkitUse()
         {
             if (!IsConnected)
@@ -727,16 +855,9 @@ namespace ShooterPrototype.Network
 
         private async Task ConnectInternalAsync(string ticketId)
         {
-            if (isConnecting)
-            {
-                return;
-            }
-
-            isConnecting = true;
-            await DisconnectInternalAsync();
-
             try
             {
+                await DisconnectInternalAsync(preserveConnecting: true);
                 cts = new CancellationTokenSource();
                 sendSemaphore = new SemaphoreSlim(1, 1);
                 socket = new ClientWebSocket();
@@ -753,16 +874,18 @@ namespace ShooterPrototype.Network
 
                 receiveTask = ReceiveLoopAsync(socket, cts.Token);
                 Debug.Log($"[RealtimeTransportClient] Connected to {websocketUrl} ticket={ticketId}");
+                MovementNetworkDiagnostics.LogWsState("connected", ticketId, $"url={websocketUrl}");
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"[RealtimeTransportClient] Connect failed: {ex.Message}");
                 nextReconnectAllowedAt = Time.unscaledTime + 0.35f;
-                await DisconnectInternalAsync();
+                await DisconnectInternalAsync(preserveConnecting: true);
             }
             finally
             {
                 isConnecting = false;
+                pendingConnectTicketId = string.Empty;
             }
         }
 
@@ -859,7 +982,8 @@ namespace ShooterPrototype.Network
 
                 if (damageMessage != null && string.Equals(damageMessage.type, "damage", StringComparison.Ordinal))
                 {
-                    DamageReceived?.Invoke(damageMessage);
+                    var message = damageMessage;
+                    EnqueueMainThreadAction(() => DamageReceived?.Invoke(message));
                     return;
                 }
 
@@ -876,7 +1000,8 @@ namespace ShooterPrototype.Network
                 if (pickupStateMessage != null &&
                     string.Equals(pickupStateMessage.type, "pickup_state", StringComparison.Ordinal))
                 {
-                    PickupStateReceived?.Invoke(pickupStateMessage);
+                    var message = pickupStateMessage;
+                    EnqueueMainThreadAction(() => PickupStateReceived?.Invoke(message));
                     return;
                 }
 
@@ -893,7 +1018,8 @@ namespace ShooterPrototype.Network
                 if (pickupEventMessage != null &&
                     string.Equals(pickupEventMessage.type, "pickup_event", StringComparison.Ordinal))
                 {
-                    PickupEventReceived?.Invoke(pickupEventMessage);
+                    var message = pickupEventMessage;
+                    EnqueueMainThreadAction(() => PickupEventReceived?.Invoke(message));
                     return;
                 }
 
@@ -910,7 +1036,26 @@ namespace ShooterPrototype.Network
                 if (pickupResultMessage != null &&
                     string.Equals(pickupResultMessage.type, "pickup_result", StringComparison.Ordinal))
                 {
-                    PickupResultReceived?.Invoke(pickupResultMessage);
+                    var message = pickupResultMessage;
+                    EnqueueMainThreadAction(() => PickupResultReceived?.Invoke(message));
+                    return;
+                }
+
+                WeaponDropResultMessage weaponDropResultMessage = null;
+                try
+                {
+                    weaponDropResultMessage = JsonUtility.FromJson<WeaponDropResultMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (weaponDropResultMessage != null &&
+                    string.Equals(weaponDropResultMessage.type, "weapon_drop_result", StringComparison.Ordinal))
+                {
+                    var message = weaponDropResultMessage;
+                    EnqueueMainThreadAction(() => WeaponDropResultReceived?.Invoke(message));
                     return;
                 }
 
@@ -927,7 +1072,8 @@ namespace ShooterPrototype.Network
                 if (medkitResultMessage != null &&
                     string.Equals(medkitResultMessage.type, "medkit_result", StringComparison.Ordinal))
                 {
-                    MedkitResultReceived?.Invoke(medkitResultMessage);
+                    var message = medkitResultMessage;
+                    EnqueueMainThreadAction(() => MedkitResultReceived?.Invoke(message));
                     return;
                 }
 
@@ -943,7 +1089,8 @@ namespace ShooterPrototype.Network
 
                 if (healMessage != null && string.Equals(healMessage.type, "heal", StringComparison.Ordinal))
                 {
-                    HealReceived?.Invoke(healMessage);
+                    var message = healMessage;
+                    EnqueueMainThreadAction(() => HealReceived?.Invoke(message));
                     return;
                 }
 
@@ -985,6 +1132,7 @@ namespace ShooterPrototype.Network
                     string.Equals(joined.ticketId, connectedTicketId, StringComparison.Ordinal))
                 {
                     hasJoinAck = true;
+                    MovementNetworkDiagnostics.LogWsState("joined", connectedTicketId, "ready=1");
                 }
                 return;
             }
@@ -1001,7 +1149,19 @@ namespace ShooterPrototype.Network
 
             if (!RealtimeSnapshotBinaryCodec.TryDecode(data, out var snapshot))
             {
+                if (Time.unscaledTime - lastSnapshotDecodeErrorLogAt > 2f)
+                {
+                    lastSnapshotDecodeErrorLogAt = Time.unscaledTime;
+                    Debug.LogWarning(
+                        $"[MoveDiag][snapshot-decode-fail] len={data?.Length ?? 0} " +
+                        "Restart QueueService after server updates.");
+                }
                 return;
+            }
+
+            if (snapshot != null && snapshot.binaryVersion > 0)
+            {
+                MovementNetworkDiagnostics.LogSnapshotDecodeOk(snapshot.binaryVersion, snapshot.serverTick);
             }
 
             ApplyIncomingSnapshot(snapshot);
@@ -1048,7 +1208,9 @@ namespace ShooterPrototype.Network
 
         private async Task SendJsonAsync(object payload, CancellationToken token)
         {
-            if (socket == null || socket.State != WebSocketState.Open || sendSemaphore == null)
+            var targetSocket = socket;
+            var semaphore = sendSemaphore;
+            if (targetSocket == null || targetSocket.State != WebSocketState.Open || semaphore == null)
             {
                 return;
             }
@@ -1057,12 +1219,20 @@ namespace ShooterPrototype.Network
             var bytes = Encoding.UTF8.GetBytes(json);
             var segment = new ArraySegment<byte>(bytes);
 
-            await sendSemaphore.WaitAsync(token);
             try
             {
-                if (socket != null && socket.State == WebSocketState.Open)
+                await semaphore.WaitAsync(token);
+            }
+            catch
+            {
+                return;
+            }
+
+            try
+            {
+                if (targetSocket.State == WebSocketState.Open)
                 {
-                    await socket.SendAsync(segment, WebSocketMessageType.Text, true, token);
+                    await targetSocket.SendAsync(segment, WebSocketMessageType.Text, true, token);
                 }
             }
             catch
@@ -1075,7 +1245,14 @@ namespace ShooterPrototype.Network
             }
             finally
             {
-                sendSemaphore.Release();
+                try
+                {
+                    semaphore.Release();
+                }
+                catch
+                {
+                    // Socket teardown can dispose the semaphore while a send is finishing.
+                }
             }
         }
 
@@ -1106,7 +1283,9 @@ namespace ShooterPrototype.Network
             }
         }
 
-        private async Task DisconnectInternalAsync(ClientWebSocket ownerSocket = null)
+        private async Task DisconnectInternalAsync(
+            ClientWebSocket ownerSocket = null,
+            bool preserveConnecting = false)
         {
             if (ownerSocket != null && socket != ownerSocket)
             {
@@ -1152,8 +1331,13 @@ namespace ShooterPrototype.Network
             }
 
             connectedTicketId = string.Empty;
-            isConnecting = false;
+            if (!preserveConnecting)
+            {
+                isConnecting = false;
+                pendingConnectTicketId = string.Empty;
+            }
             hasJoinAck = false;
+            MovementNetworkDiagnostics.LogWsState("disconnected", string.Empty, "snapshots_cleared=1");
             nextPoseSeq = 0;
             hasPendingPose = false;
             poseSendLoopRunning = false;
@@ -1162,6 +1346,11 @@ namespace ShooterPrototype.Network
                 latestSnapshot = null;
                 hasLatestSnapshot = false;
                 lastSnapshotReceivedUnscaledTime = 0f;
+            }
+
+            lock (mainThreadActionsLock)
+            {
+                mainThreadActions.Clear();
             }
 
             localCts?.Dispose();

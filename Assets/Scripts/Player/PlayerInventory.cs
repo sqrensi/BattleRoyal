@@ -114,7 +114,8 @@ namespace ShooterPrototype.Player
 
             var sb = new StringBuilder(96);
             sb.AppendLine("Inventory:");
-            AppendWeaponLine(sb, weaponMount, holster);
+            var loadoutController = GetComponent<PlayerWeaponLoadoutController>();
+            AppendWeaponLine(sb, weaponMount, holster, loadoutController != null ? loadoutController.Loadout : null);
 
             if (buffer.Count == 0)
             {
@@ -137,10 +138,31 @@ namespace ShooterPrototype.Player
         private static void AppendWeaponLine(
             StringBuilder sb,
             PlayerWeaponMount weaponMount,
-            PlayerWeaponHolsterController holster)
+            PlayerWeaponHolsterController holster,
+            PlayerWeaponLoadout loadout)
         {
             if (weaponMount == null || !weaponMount.HasMountedWeapon)
             {
+                if (loadout != null && loadout.HasAnyWeapon)
+                {
+                    var slot = loadout.GetSlot(loadout.ActiveSlotIndex);
+                    if (!slot.Occupied)
+                    {
+                        slot = loadout.IsSlotOccupied(0) ? loadout.GetSlot(0) : loadout.GetSlot(1);
+                    }
+
+                    sb.Append("  Weapon: ");
+                    sb.Append(string.IsNullOrWhiteSpace(slot.ItemId)
+                        ? WeaponCatalog.GetDefaultItemId(slot.Kind)
+                        : slot.ItemId);
+                    if (loadout.IsBothHolstered)
+                    {
+                        sb.Append(" (holstered)");
+                    }
+
+                    return;
+                }
+
                 sb.Append("  Weapon: none");
                 return;
             }

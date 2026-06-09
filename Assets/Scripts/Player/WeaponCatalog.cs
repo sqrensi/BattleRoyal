@@ -44,6 +44,24 @@ namespace ShooterPrototype.Player
                 : WeaponKind.AssaultRifle;
         }
 
+        public static void RegisterWeaponPrefab(WeaponKind kind, GameObject prefab)
+        {
+            if (prefab == null)
+            {
+                return;
+            }
+
+            switch (kind)
+            {
+                case WeaponKind.SniperRifle:
+                    sniperPrefabCache = prefab;
+                    break;
+                default:
+                    assaultPrefabCache = prefab;
+                    break;
+            }
+        }
+
         public static GameObject GetWeaponPrefab(WeaponKind kind)
         {
             switch (kind)
@@ -57,6 +75,11 @@ namespace ShooterPrototype.Player
                         ? assaultPrefabCache
                         : assaultPrefabCache = LoadAsset<GameObject>(AssaultPrefabPath);
             }
+        }
+
+        public static string GetDefaultItemId(WeaponKind kind)
+        {
+            return kind == WeaponKind.SniperRifle ? "sniper_rifle" : "assault_rifle";
         }
 
         public static WeaponProfile GetProfileTemplate(WeaponKind kind)

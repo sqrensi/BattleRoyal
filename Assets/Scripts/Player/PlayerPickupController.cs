@@ -16,6 +16,7 @@ namespace ShooterPrototype.Player
         private PlayerWeaponMount weaponMount;
         private PlayerWeaponController weaponController;
         private PlayerWeaponHolsterController weaponHolster;
+        private PlayerWeaponLoadoutController weaponLoadout;
         private PlayerHealth health;
         private PlayerInventory inventory;
         private PlayerMedkitController medkitController;
@@ -54,6 +55,7 @@ namespace ShooterPrototype.Player
             weaponMount = GetComponent<PlayerWeaponMount>();
             weaponController = GetComponent<PlayerWeaponController>();
             weaponHolster = GetComponent<PlayerWeaponHolsterController>();
+            weaponLoadout = GetComponent<PlayerWeaponLoadoutController>();
             health = GetComponent<PlayerHealth>();
             inventory = GetComponent<PlayerInventory>();
             medkitController = GetComponent<PlayerMedkitController>();
@@ -75,6 +77,7 @@ namespace ShooterPrototype.Player
                 weaponMount,
                 weaponController,
                 weaponHolster,
+                weaponLoadout,
                 health,
                 inventory,
                 medkitController);
@@ -138,11 +141,17 @@ namespace ShooterPrototype.Player
 
         public void RefreshWeaponAvailability()
         {
-            var hasWeapon = weaponMount != null && weaponMount.HasMountedWeapon;
+            var loadoutController = GetComponent<PlayerWeaponLoadoutController>();
+            var hasInventoryWeapon = loadoutController != null &&
+                                     loadoutController.Loadout != null &&
+                                     loadoutController.Loadout.HasAnyWeapon;
+            var hasWeapon = hasInventoryWeapon || (weaponMount != null && weaponMount.HasMountedWeapon);
             if (weaponController != null)
             {
-                weaponController.enabled = hasWeapon;
-                if (hasWeapon)
+                var holstered = weaponHolster != null && weaponHolster.IsHolstered;
+                weaponController.enabled = hasWeapon && weaponMount != null &&
+                                           weaponMount.HasMountedWeapon && !holstered;
+                if (weaponController.enabled)
                 {
                     weaponController.RefreshWeaponAvailability();
                 }
@@ -205,7 +214,7 @@ namespace ShooterPrototype.Player
             }
 
             pendingSpawnId = string.Empty;
-            var definition = ResolveDefinition(confirmed);
+            var definition = ResolveDefinition(confirmed, serverState);
             if (!definition.IsValid)
             {
                 pickupSpawnManager?.ApplyServerPickupTaken(confirmed.SpawnId);
@@ -225,7 +234,9 @@ namespace ShooterPrototype.Player
             RefreshWeaponAvailability();
         }
 
-        private PickupItemDefinition ResolveDefinition(PickupConfirmedInfo confirmed)
+        private PickupItemDefinition ResolveDefinition(
+            PickupConfirmedInfo confirmed,
+            PickupApplyServerState serverState)
         {
             var visualPrefab = pickupSpawnManager != null
                 ? pickupSpawnManager.ResolveDefinitionForSpawnId(confirmed.SpawnId).VisualPrefab
@@ -237,12 +248,58 @@ namespace ShooterPrototype.Player
                 visualPrefab = pickup != null ? pickup.VisualPrefab : null;
             }
 
+            var itemId = confirmed.ItemId;
+            if (confirmed.Kind == PickupKind.Weapon)
+            {
+                var kind = ResolveConfirmedWeaponKind(confirmed, serverState);
+                itemId = !string.IsNullOrWhiteSpace(itemId)
+                    ? itemId
+                    : WeaponCatalog.GetDefaultItemId(kind);
+                if (visualPrefab == null)
+                {
+                    visualPrefab = WeaponCatalog.GetWeaponPrefab(kind);
+                }
+            }
+
             if (visualPrefab == null)
             {
                 return default;
             }
 
-            return confirmed.ToDefinition(visualPrefab);
+            return PickupItemDefinition.Create(confirmed.Kind, visualPrefab, itemId, confirmed.Amount);
+        }
+
+        private static WeaponKind ResolveConfirmedWeaponKind(
+            PickupConfirmedInfo confirmed,
+            PickupApplyServerState serverState)
+        {
+            if (serverState.WeaponLoadout.HasWeaponLoadout)
+            {
+                var loadout = serverState.WeaponLoadout;
+                if (loadout.ActiveWeaponSlot == 0 &&
+                    loadout.Slot0Kind != PlayerWeaponLoadout.EmptySlotKind)
+                {
+                    return (WeaponKind)Mathf.Clamp((int)loadout.Slot0Kind, 0, 1);
+                }
+
+                if (loadout.ActiveWeaponSlot == 1 &&
+                    loadout.Slot1Kind != PlayerWeaponLoadout.EmptySlotKind)
+                {
+                    return (WeaponKind)Mathf.Clamp((int)loadout.Slot1Kind, 0, 1);
+                }
+
+                if (loadout.Slot0Kind != PlayerWeaponLoadout.EmptySlotKind)
+                {
+                    return (WeaponKind)Mathf.Clamp((int)loadout.Slot0Kind, 0, 1);
+                }
+
+                if (loadout.Slot1Kind != PlayerWeaponLoadout.EmptySlotKind)
+                {
+                    return (WeaponKind)Mathf.Clamp((int)loadout.Slot1Kind, 0, 1);
+                }
+            }
+
+            return WeaponCatalog.ResolveKindFromItemId(confirmed.ItemId);
         }
 
         private void RequestPickup(WorldPickup pickup)

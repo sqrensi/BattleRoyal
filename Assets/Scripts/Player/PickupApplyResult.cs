@@ -23,10 +23,19 @@ namespace ShooterPrototype.Player
         {
             MedkitCount = medkitCount;
             HasMedkitCount = hasMedkitCount;
+            WeaponLoadout = WeaponLoadoutServerState.None;
+        }
+
+        public PickupApplyServerState(int medkitCount, bool hasMedkitCount, WeaponLoadoutServerState weaponLoadout)
+        {
+            MedkitCount = medkitCount;
+            HasMedkitCount = hasMedkitCount;
+            WeaponLoadout = weaponLoadout;
         }
 
         public int MedkitCount { get; }
         public bool HasMedkitCount { get; }
+        public WeaponLoadoutServerState WeaponLoadout { get; }
 
         public static PickupApplyServerState None => new PickupApplyServerState(0, false);
     }

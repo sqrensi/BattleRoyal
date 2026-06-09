@@ -41,6 +41,8 @@ namespace ShooterPrototype.Player
         [SerializeField] private float verticalSnapDistance = 1.2f;
         [SerializeField] private float remoteStaleSeconds = 8f;
         [SerializeField] private float snapshotSilenceReconnectSeconds = 6f;
+        [SerializeField] private float wsReconnectIntervalSeconds = 2f;
+        [SerializeField] private float wsJoinGraceSeconds = 8f;
         [SerializeField] private bool debugRealtimeLogs = false;
         [SerializeField] private string charactersResourcesFolder = "Characters";
 
@@ -59,10 +61,12 @@ namespace ShooterPrototype.Player
         private int lastAppliedServerTick = -1;
         private int lastSnapshotBinaryVersion;
         private float lastConnectRequestAt = -10f;
+        private float wsJoinGraceUntilRealtime = -1f;
         private float lastSnapshotDebugAt;
         private PlayerWeaponMount localWeaponMount;
         private PlayerWeaponController localWeaponController;
         private PlayerWeaponHolsterController localWeaponHolster;
+        private PlayerWeaponLoadout localWeaponLoadout;
         private PlayerAudioController localAudioController;
         private FpsCharacterController localFpsController;
         private ProceduralLocomotionRig localLocomotionRig;
@@ -143,6 +147,8 @@ namespace ShooterPrototype.Player
             localWeaponMount = GetComponent<PlayerWeaponMount>();
             localWeaponController = GetComponent<PlayerWeaponController>();
             localWeaponHolster = GetComponent<PlayerWeaponHolsterController>();
+            localWeaponLoadout = GetComponent<PlayerWeaponLoadout>();
+            ResolveLocalWeaponLoadout();
             localAudioController = GetComponent<PlayerAudioController>();
             localFpsController = GetComponent<FpsCharacterController>();
             localLocomotionRig = GetComponent<ProceduralLocomotionRig>();
@@ -154,6 +160,9 @@ namespace ShooterPrototype.Player
             }
 
             localCharacterModelName = CharacterSelectionService.GetSelectedModelName(charactersResourcesFolder);
+            wsJoinGraceUntilRealtime = Time.unscaledTime + wsJoinGraceSeconds;
+            SyncLocalWeaponLoadoutFromMount();
+            SendLocalPose();
         }
 
         private void OnEnable()
@@ -472,6 +481,146 @@ namespace ShooterPrototype.Player
             SendLocalPose();
         }
 
+        private void ResolveLocalWeaponLoadout()
+        {
+            if (localWeaponLoadout == null)
+            {
+                localWeaponLoadout = GetComponent<PlayerWeaponLoadout>();
+            }
+
+            if (localWeaponLoadout == null)
+            {
+                var loadoutController = GetComponent<PlayerWeaponLoadoutController>();
+                localWeaponLoadout = loadoutController != null ? loadoutController.Loadout : null;
+            }
+        }
+
+        private void SyncLocalWeaponLoadoutFromMount()
+        {
+            ResolveLocalWeaponLoadout();
+            if (localWeaponLoadout == null || localWeaponLoadout.HasAnyWeapon)
+            {
+                return;
+            }
+
+            if (localWeaponMount == null || !localWeaponMount.HasMountedWeapon)
+            {
+                return;
+            }
+
+            var kind = localWeaponController != null
+                ? localWeaponController.CurrentWeaponKind
+                : localWeaponMount.ActiveWeaponProfile != null
+                    ? localWeaponMount.ActiveWeaponProfile.Kind
+                    : WeaponKind.AssaultRifle;
+            var holstered = localWeaponHolster != null && localWeaponHolster.IsHolstered;
+            localWeaponLoadout.TrySeedFromMountedWeapon(
+                kind,
+                WeaponCatalog.GetDefaultItemId(kind),
+                holstered);
+        }
+
+        private void ResolveLocalWeaponPoseState(
+            out bool isHolstered,
+            out bool hasWeapon,
+            out int weaponKind,
+            out byte weaponSlot0Kind,
+            out byte weaponSlot1Kind,
+            out int activeWeaponSlot)
+        {
+            SyncLocalWeaponLoadoutFromMount();
+
+            var loadoutReady = localWeaponLoadout != null && localWeaponLoadout.HasAnyWeapon;
+            hasWeapon = loadoutReady ||
+                        (localWeaponMount != null && localWeaponMount.HasMountedWeapon);
+
+            var mountedKind = localWeaponController != null
+                ? localWeaponController.CurrentWeaponKind
+                : localWeaponMount != null && localWeaponMount.ActiveWeaponProfile != null
+                    ? localWeaponMount.ActiveWeaponProfile.Kind
+                    : WeaponKind.AssaultRifle;
+
+            isHolstered = localWeaponHolster != null && localWeaponHolster.IsHolstered;
+            if (loadoutReady)
+            {
+                isHolstered = localWeaponLoadout.IsBothHolstered;
+            }
+
+            weaponSlot0Kind = PlayerWeaponLoadout.EmptySlotKind;
+            weaponSlot1Kind = PlayerWeaponLoadout.EmptySlotKind;
+            activeWeaponSlot = PlayerWeaponLoadout.NoActiveSlot;
+
+            weaponKind = hasWeapon ? (int)mountedKind : 0;
+            if (loadoutReady)
+            {
+                weaponSlot0Kind = localWeaponLoadout.EncodeSlotKind(0);
+                weaponSlot1Kind = localWeaponLoadout.EncodeSlotKind(1);
+                activeWeaponSlot = isHolstered
+                    ? PlayerWeaponLoadout.NoActiveSlot
+                    : localWeaponLoadout.ActiveSlotIndex;
+
+                if (!isHolstered &&
+                    activeWeaponSlot >= 0 &&
+                    activeWeaponSlot <= 1 &&
+                    localWeaponLoadout.IsSlotOccupied(activeWeaponSlot))
+                {
+                    weaponKind = (int)localWeaponLoadout.GetSlot(activeWeaponSlot).Kind;
+                }
+                else if (localWeaponLoadout.IsSlotOccupied(0))
+                {
+                    weaponKind = (int)localWeaponLoadout.GetSlot(0).Kind;
+                }
+                else if (localWeaponLoadout.IsSlotOccupied(1))
+                {
+                    weaponKind = (int)localWeaponLoadout.GetSlot(1).Kind;
+                }
+            }
+            else if (hasWeapon)
+            {
+                weaponSlot0Kind = (byte)Mathf.Clamp(weaponKind, 0, 1);
+                weaponSlot1Kind = PlayerWeaponLoadout.EmptySlotKind;
+                activeWeaponSlot = isHolstered ? PlayerWeaponLoadout.NoActiveSlot : 0;
+            }
+        }
+
+        private static bool ShouldApplyRemoteLoadout(RealtimeTransportClient.RealtimePlayerState player)
+        {
+            if (player == null)
+            {
+                return false;
+            }
+
+            return player.weaponSlot0Kind != PlayerWeaponLoadout.EmptySlotKind ||
+                   player.weaponSlot1Kind != PlayerWeaponLoadout.EmptySlotKind;
+        }
+
+        private static WeaponKind ResolveRemoteActiveWeaponKind(RealtimeTransportClient.RealtimePlayerState player)
+        {
+            if (player == null)
+            {
+                return WeaponKind.AssaultRifle;
+            }
+
+            if (player.isHolstered || player.activeWeaponSlot == PlayerWeaponLoadout.NoActiveSlot)
+            {
+                return (WeaponKind)Mathf.Clamp(player.weaponKind, 0, 1);
+            }
+
+            if (player.activeWeaponSlot == 0 &&
+                player.weaponSlot0Kind != PlayerWeaponLoadout.EmptySlotKind)
+            {
+                return (WeaponKind)Mathf.Clamp(player.weaponSlot0Kind, 0, 1);
+            }
+
+            if (player.activeWeaponSlot == 1 &&
+                player.weaponSlot1Kind != PlayerWeaponLoadout.EmptySlotKind)
+            {
+                return (WeaponKind)Mathf.Clamp(player.weaponSlot1Kind, 0, 1);
+            }
+
+            return (WeaponKind)Mathf.Clamp(player.weaponKind, 0, 1);
+        }
+
         private void SendLocalPose()
         {
             if (realtimeClient == null ||
@@ -482,6 +631,8 @@ namespace ShooterPrototype.Player
             {
                 return;
             }
+
+            ResolveLocalWeaponLoadout();
 
             if (localLocomotionRig == null)
             {
@@ -513,11 +664,14 @@ namespace ShooterPrototype.Player
                     shotHasEndPoint = true;
                 }
             }
-            var isHolstered = localWeaponHolster != null && localWeaponHolster.IsHolstered;
-            var hasWeapon = localWeaponMount != null && localWeaponMount.HasMountedWeapon;
-            var weaponKind = hasWeapon && localWeaponController != null
-                ? (int)localWeaponController.CurrentWeaponKind
-                : 0;
+            SyncLocalWeaponLoadoutFromMount();
+            ResolveLocalWeaponPoseState(
+                out var isHolstered,
+                out var hasWeapon,
+                out var weaponKind,
+                out var weaponSlot0Kind,
+                out var weaponSlot1Kind,
+                out var activeWeaponSlot);
             var animSpeed = localLocomotionRig != null
                 ? localLocomotionRig.GetNetworkAnimSpeed01()
                 : (localFpsController != null ? Mathf.Clamp01(localFpsController.MoveInputMagnitude) : 0f);
@@ -568,7 +722,19 @@ namespace ShooterPrototype.Player
                 shotDirection,
                 shotEndPoint,
                 shotHasEndPoint,
-                weaponKind);
+                weaponKind,
+                weaponSlot0Kind,
+                weaponSlot1Kind,
+                activeWeaponSlot);
+
+            MovementNetworkDiagnostics.LogPoseSend(
+                currentPos,
+                moveInputX,
+                moveInputZ,
+                inputAuth,
+                isDead,
+                weaponSlot0Kind,
+                weaponSlot1Kind);
         }
 
         public void SendLocalPoseImmediate()
@@ -587,7 +753,10 @@ namespace ShooterPrototype.Player
                 {
                     var wrongTicketConnected = realtimeClient.IsConnected &&
                         !string.Equals(realtimeClient.ConnectedTicketId, localTicketId, StringComparison.Ordinal);
-                    var snapshotSilentTooLong = realtimeClient.IsReady &&
+                    var pastJoinGrace = Time.unscaledTime >= wsJoinGraceUntilRealtime;
+                    var snapshotSilentTooLong = pastJoinGrace &&
+                        Application.isFocused &&
+                        realtimeClient.IsReady &&
                         (Time.unscaledTime - Mathf.Max(
                             lastSnapshotReceivedAt,
                             realtimeClient.LastSnapshotReceivedUnscaledTime)) >
@@ -596,12 +765,18 @@ namespace ShooterPrototype.Player
                     if (wrongTicketConnected || snapshotSilentTooLong)
                     {
                         realtimeClient.Disconnect();
+                        wsJoinGraceUntilRealtime = Time.unscaledTime + wsJoinGraceSeconds;
                     }
 
-                    if ((!realtimeClient.IsConnected || !string.Equals(realtimeClient.ConnectedTicketId, localTicketId, StringComparison.Ordinal)) &&
-                        (Time.unscaledTime - lastConnectRequestAt) > 0.4f)
+                    var needsConnect = !realtimeClient.IsReady &&
+                        !realtimeClient.IsConnecting &&
+                        (!realtimeClient.IsConnected ||
+                         !string.Equals(realtimeClient.ConnectedTicketId, localTicketId, StringComparison.Ordinal));
+                    if (needsConnect &&
+                        (Time.unscaledTime - lastConnectRequestAt) > wsReconnectIntervalSeconds)
                     {
                         lastConnectRequestAt = Time.unscaledTime;
+                        wsJoinGraceUntilRealtime = Time.unscaledTime + wsJoinGraceSeconds;
                         realtimeClient.Connect(localTicketId);
                     }
 
@@ -633,10 +808,12 @@ namespace ShooterPrototype.Player
             var serverTick = snapshot.serverTick;
             if (serverTick > 0 && serverTick == lastAppliedServerTick)
             {
-                // Pose can change within the same server tick (e.g. shotSeq). Still play one-shot events.
+                lastSnapshotReceivedAt = Time.unscaledTime;
                 lastSnapshotBinaryVersion = snapshot.binaryVersion;
                 ApplyRemotePresenceEvents(snapshot.players);
                 ApplyLocalMedkitFromSnapshot(snapshot.players);
+                ApplyRemoteWeaponPresence(snapshot.players);
+                ApplySelfAuthoritativePose(snapshot.selfAuthoritative);
                 return;
             }
 
@@ -646,6 +823,54 @@ namespace ShooterPrototype.Player
             }
 
             ApplyRealtimeSnapshot(snapshot);
+        }
+
+        private void ApplyRemoteWeaponPresence(RealtimeTransportClient.RealtimePlayerState[] players)
+        {
+            if (players == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < players.Length; i++)
+            {
+                var p = players[i];
+                if (p == null || string.IsNullOrWhiteSpace(p.ticketId) ||
+                    !remoteAvatars.TryGetValue(p.ticketId, out var avatar) ||
+                    avatar?.Root == null)
+                {
+                    continue;
+                }
+
+                var remoteWeapon = avatar.Root.GetComponent<RemoteWeaponPresentation>();
+                if (remoteWeapon == null)
+                {
+                    continue;
+                }
+
+                if (ShouldApplyRemoteLoadout(p))
+                {
+                    remoteWeapon.SetWeaponLoadout(
+                        (byte)Mathf.Clamp(p.weaponSlot0Kind, 0, 255),
+                        (byte)Mathf.Clamp(p.weaponSlot1Kind, 0, 255),
+                        p.activeWeaponSlot,
+                        p.isHolstered,
+                        p.hasWeapon,
+                        (byte)Mathf.Clamp(p.weaponKind, 0, 1));
+                }
+                else
+                {
+                    remoteWeapon.SetWeaponEquipped(p.hasWeapon);
+                    if (p.hasWeapon)
+                    {
+                        remoteWeapon.SetWeaponKind((WeaponKind)Mathf.Clamp(p.weaponKind, 0, 1));
+                    }
+
+                    remoteWeapon.SetHolstered(p.isHolstered);
+                }
+
+                ApplyRemoteWeaponEffects(avatar.Root, ResolveRemoteActiveWeaponKind(p));
+            }
         }
 
         private void ApplyRemotePresenceEvents(RealtimeTransportClient.RealtimePlayerState[] players)
@@ -811,6 +1036,16 @@ namespace ShooterPrototype.Player
         {
             if (selfPose == null || selfPose.position == null || localFpsController == null)
             {
+                MovementNetworkDiagnostics.LogSnapshotSelfAuth(
+                    false,
+                    transform.position,
+                    Vector3.zero,
+                    lastAppliedServerTick,
+                    lastSnapshotBinaryVersion,
+                    0,
+                    realtimeClient != null
+                        ? Time.unscaledTime - realtimeClient.LastSnapshotReceivedUnscaledTime
+                        : -1f);
                 return;
             }
 
@@ -819,10 +1054,24 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            localFpsController.ReconcileToServer(
-                new Vector3(selfPose.position.x, selfPose.position.y, selfPose.position.z),
-                selfPose.yaw,
-                selfPose.sampleTick);
+            if (!Application.isFocused)
+            {
+                return;
+            }
+
+            var serverPos = new Vector3(selfPose.position.x, selfPose.position.y, selfPose.position.z);
+            MovementNetworkDiagnostics.LogSnapshotSelfAuth(
+                true,
+                transform.position,
+                serverPos,
+                selfPose.sampleTick,
+                lastSnapshotBinaryVersion,
+                0,
+                realtimeClient != null
+                    ? Time.unscaledTime - realtimeClient.LastSnapshotReceivedUnscaledTime
+                    : -1f);
+
+            localFpsController.ReconcileToServer(serverPos, selfPose.yaw, selfPose.sampleTick);
         }
 
         private void IngestPlayerStateSamples(RemoteAvatar avatar, RealtimeTransportClient.RealtimePlayerState player)
@@ -949,14 +1198,28 @@ namespace ShooterPrototype.Player
                     var remoteWeapon = avatar.Root.GetComponent<RemoteWeaponPresentation>();
                     remoteWeapon?.SetNetworkLookPitch(p.lookPitch);
                     remoteWeapon?.SetNetworkCrouchState(p.isCrouching);
-                    remoteWeapon?.SetWeaponEquipped(p.hasWeapon);
-                    if (p.hasWeapon)
+                    if (ShouldApplyRemoteLoadout(p))
                     {
-                        remoteWeapon?.SetWeaponKind((WeaponKind)Mathf.Clamp(p.weaponKind, 0, 1));
+                        remoteWeapon?.SetWeaponLoadout(
+                            (byte)Mathf.Clamp(p.weaponSlot0Kind, 0, 255),
+                            (byte)Mathf.Clamp(p.weaponSlot1Kind, 0, 255),
+                            p.activeWeaponSlot,
+                            p.isHolstered,
+                            p.hasWeapon,
+                            (byte)Mathf.Clamp(p.weaponKind, 0, 1));
+                    }
+                    else
+                    {
+                        remoteWeapon?.SetWeaponEquipped(p.hasWeapon);
+                        if (p.hasWeapon)
+                        {
+                            remoteWeapon?.SetWeaponKind((WeaponKind)Mathf.Clamp(p.weaponKind, 0, 1));
+                        }
+
+                        remoteWeapon?.SetHolstered(p.isHolstered);
                     }
 
-                    remoteWeapon?.SetHolstered(p.isHolstered);
-                    ApplyRemoteWeaponEffects(avatar.Root, (WeaponKind)Mathf.Clamp(p.weaponKind, 0, 1));
+                    ApplyRemoteWeaponEffects(avatar.Root, ResolveRemoteActiveWeaponKind(p));
                     avatar.Root.GetComponent<RemoteMedkitPresentation>()?.SetNetworkMedkitState(p.isUsingMedkit);
 
                     avatar.Root.GetComponent<RemoteLookPitchPosture>()?.SetNetworkLookPitch(p.lookPitch);

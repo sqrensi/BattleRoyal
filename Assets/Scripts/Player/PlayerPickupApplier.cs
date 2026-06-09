@@ -22,7 +22,9 @@ namespace ShooterPrototype.Player
             switch (definition.Kind)
             {
                 case PickupKind.Weapon:
-                    return context.WeaponMount != null && !context.WeaponMount.HasMountedWeapon;
+                    return context.WeaponLoadout != null
+                        ? context.WeaponLoadout.Loadout.OccupiedCount < PlayerWeaponLoadout.MaxSlots
+                        : context.WeaponMount != null && !context.WeaponMount.HasMountedWeapon;
                 case PickupKind.Ammo:
                     return context.WeaponMount != null && context.WeaponMount.HasMountedWeapon;
                 case PickupKind.Grenade:
@@ -48,7 +50,7 @@ namespace ShooterPrototype.Player
             switch (definition.Kind)
             {
                 case PickupKind.Weapon:
-                    return TryApplyWeapon(context, definition);
+                    return TryApplyWeapon(context, definition, serverState);
                 case PickupKind.Ammo:
                     return TryApplyAmmo(context, definition);
                 case PickupKind.Grenade:
@@ -62,8 +64,29 @@ namespace ShooterPrototype.Player
 
         private static PickupApplyResult TryApplyWeapon(
             in PlayerPickupContext context,
-            in PickupItemDefinition definition)
+            in PickupItemDefinition definition,
+            in PickupApplyServerState serverState)
         {
+            if (serverState.WeaponLoadout.HasWeaponLoadout && context.WeaponLoadout != null)
+            {
+                context.WeaponLoadout.ApplyServerPickup(serverState.WeaponLoadout);
+                return PickupApplyResult.Ok;
+            }
+
+            if (context.WeaponLoadout != null)
+            {
+                var kind = WeaponCatalog.ResolveKindFromItemId(definition.ResolvedItemId);
+                if (!context.WeaponLoadout.TryApplyLocalPickup(
+                        definition.ResolvedItemId,
+                        kind,
+                        definition.VisualPrefab))
+                {
+                    return new PickupApplyResult(false, "equip_failed");
+                }
+
+                return PickupApplyResult.Ok;
+            }
+
             if (context.WeaponMount == null ||
                 !context.WeaponMount.EquipWeapon(definition.VisualPrefab))
             {
