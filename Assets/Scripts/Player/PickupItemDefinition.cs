@@ -10,10 +10,12 @@ namespace ShooterPrototype.Player
         public GameObject visualPrefab;
         public string itemId;
         public int amount;
+        public int magAmmo;
 
         public PickupKind Kind => kind;
         public GameObject VisualPrefab => visualPrefab;
         public int Amount => Mathf.Max(1, amount);
+        public int MagAmmo => magAmmo;
 
         public string ResolvedItemId
         {
@@ -41,7 +43,20 @@ namespace ShooterPrototype.Player
                 kind = pickupKind,
                 visualPrefab = prefab,
                 itemId = explicitItemId ?? string.Empty,
-                amount = Mathf.Max(1, pickupAmount)
+                amount = Mathf.Max(1, pickupAmount),
+                magAmmo = -1
+            };
+        }
+
+        public PickupItemDefinition WithMagAmmo(int ammo)
+        {
+            return new PickupItemDefinition
+            {
+                kind = kind,
+                visualPrefab = visualPrefab,
+                itemId = itemId,
+                amount = amount,
+                magAmmo = ammo
             };
         }
 
@@ -52,7 +67,8 @@ namespace ShooterPrototype.Player
                 kind = pickupKind,
                 visualPrefab = visualPrefab,
                 itemId = itemId,
-                amount = amount
+                amount = amount,
+                magAmmo = magAmmo
             };
         }
     }

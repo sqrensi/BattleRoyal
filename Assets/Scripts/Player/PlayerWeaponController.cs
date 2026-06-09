@@ -93,6 +93,7 @@ namespace ShooterPrototype.Player
         private Material tracerMaterial;
         private FpsCharacterController fpsController;
         private PlayerWeaponMount weaponMount;
+        private PlayerWeaponLoadoutController weaponLoadoutController;
         private PlayerAudioController audioController;
         private RealtimeTransportClient realtimeClient;
         private PlayerWeaponHolsterController weaponHolster;
@@ -118,6 +119,11 @@ namespace ShooterPrototype.Player
         public int LastHitPlayerSequence => hitPlayerSequence;
         public int CurrentAmmo => currentAmmo;
         public int MagazineSize => Mathf.Max(1, magazineSize);
+
+        public void SetCurrentAmmo(int ammo)
+        {
+            currentAmmo = Mathf.Clamp(ammo, 0, MagazineSize);
+        }
         public bool IsReloading => isReloading;
         public float ReloadDurationSeconds => Mathf.Max(0.05f, reloadDuration);
         public GameObject MuzzleFlashVfx => muzzleFlashVfx;
@@ -134,6 +140,7 @@ namespace ShooterPrototype.Player
 
             fpsController = GetComponent<FpsCharacterController>();
             weaponMount = GetComponent<PlayerWeaponMount>();
+            weaponLoadoutController = GetComponent<PlayerWeaponLoadoutController>();
             weaponHolster = GetComponent<PlayerWeaponHolsterController>();
             audioController = GetComponent<PlayerAudioController>();
             realtimeClient = FindObjectOfType<RealtimeTransportClient>();
@@ -142,7 +149,7 @@ namespace ShooterPrototype.Player
             RefreshWeaponAvailability();
         }
 
-        public void ApplyWeaponProfile(WeaponProfile profile)
+        public void ApplyWeaponProfile(WeaponProfile profile, bool resetAmmo = true)
         {
             CancelActiveReload();
             if (profile == null)
@@ -155,7 +162,11 @@ namespace ShooterPrototype.Player
                 currentWeaponKind = profile.Kind;
             }
 
-            currentAmmo = MagazineSize;
+            if (resetAmmo)
+            {
+                currentAmmo = MagazineSize;
+            }
+
             burstShotCount = 0;
             nextFireTime = 0f;
         }
@@ -386,6 +397,7 @@ namespace ShooterPrototype.Player
             lastShotDirection = shot.Direction;
             shotSequence++;
             currentAmmo = Mathf.Max(0, currentAmmo - 1);
+            SyncLoadoutMagAmmo();
             SimulateShotEffects(shot, applyRecoil: true);
             CaptureNetworkShotImpact(shot);
             SendNetworkShotEvent();
@@ -1130,9 +1142,20 @@ namespace ShooterPrototype.Player
             audioController?.PlayReloadSequence(true, reloadTime, ResolveWeaponAudioOverrides());
             yield return new WaitForSeconds(reloadTime);
             currentAmmo = MagazineSize;
+            SyncLoadoutMagAmmo();
             isReloading = false;
             weaponMount?.SetLocalReloading(false);
             reloadCoroutine = null;
+        }
+
+        private void SyncLoadoutMagAmmo()
+        {
+            if (weaponLoadoutController == null)
+            {
+                weaponLoadoutController = GetComponent<PlayerWeaponLoadoutController>();
+            }
+
+            weaponLoadoutController?.SyncActiveSlotMagAmmoFromController();
         }
 
         private void TryResolveRuntimeMuzzle()

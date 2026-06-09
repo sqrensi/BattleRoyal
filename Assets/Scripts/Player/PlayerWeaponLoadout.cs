@@ -26,6 +26,8 @@ namespace ShooterPrototype.Player
         private Slot slot1;
         private int activeSlotIndex = NoActiveSlot;
         private bool bothHolstered;
+        private int slot0MagAmmo = -1;
+        private int slot1MagAmmo = -1;
 
         public bool HasAnyWeapon => slot0.Occupied || slot1.Occupied;
         public int OccupiedCount => (slot0.Occupied ? 1 : 0) + (slot1.Occupied ? 1 : 0);
@@ -33,6 +35,41 @@ namespace ShooterPrototype.Player
         public int ActiveSlotIndex => activeSlotIndex;
 
         public bool IsSlotOccupied(int slotIndex) => GetSlot(slotIndex).Occupied;
+
+        public int GetSlotMagAmmo(int slotIndex)
+        {
+            if (slotIndex == 0)
+            {
+                return slot0MagAmmo;
+            }
+
+            if (slotIndex == 1)
+            {
+                return slot1MagAmmo;
+            }
+
+            return -1;
+        }
+
+        public void SetSlotMagAmmo(int slotIndex, int ammo)
+        {
+            var clamped = ammo < 0 ? -1 : ammo;
+            if (slotIndex == 0)
+            {
+                slot0MagAmmo = clamped;
+                return;
+            }
+
+            if (slotIndex == 1)
+            {
+                slot1MagAmmo = clamped;
+            }
+        }
+
+        public void ClearSlotMagAmmo(int slotIndex)
+        {
+            SetSlotMagAmmo(slotIndex, -1);
+        }
 
         public Slot GetSlot(int slotIndex) => slotIndex == 0 ? slot0 : slot1;
 
@@ -164,6 +201,7 @@ namespace ShooterPrototype.Player
             }
 
             SetSlot(slotIndex, string.Empty, WeaponKind.AssaultRifle);
+            ClearSlotMagAmmo(slotIndex);
             if (activeSlotIndex == slotIndex)
             {
                 activeSlotIndex = NoActiveSlot;
@@ -189,10 +227,21 @@ namespace ShooterPrototype.Player
             string slot0ItemId,
             string slot1ItemId,
             int activeSlot,
-            bool holsteredBoth)
+            bool holsteredBoth,
+            int activeMagAmmo = -1)
         {
             slot0 = BuildSlot(slot0Kind, slot0ItemId);
             slot1 = BuildSlot(slot1Kind, slot1ItemId);
+            if (!slot0.Occupied)
+            {
+                ClearSlotMagAmmo(0);
+            }
+
+            if (!slot1.Occupied)
+            {
+                ClearSlotMagAmmo(1);
+            }
+
             activeSlotIndex = activeSlot;
             bothHolstered = holsteredBoth;
 
@@ -200,6 +249,8 @@ namespace ShooterPrototype.Player
             {
                 activeSlotIndex = NoActiveSlot;
                 bothHolstered = true;
+                slot0MagAmmo = -1;
+                slot1MagAmmo = -1;
                 return;
             }
 
@@ -211,6 +262,11 @@ namespace ShooterPrototype.Player
             if (!IsSlotOccupied(activeSlotIndex))
             {
                 activeSlotIndex = slot0.Occupied ? 0 : 1;
+            }
+
+            if (activeMagAmmo >= 0 && activeSlotIndex >= 0 && activeSlotIndex <= 1)
+            {
+                SetSlotMagAmmo(activeSlotIndex, activeMagAmmo);
             }
         }
 

@@ -62,6 +62,7 @@ namespace ShooterPrototype.Player
         private PlayerNetworkIdentity networkIdentity;
         private bool medkitUsePresentationActive;
         private bool wasHolsteredBeforeMedkit;
+        private FpsCharacterController fpsController;
 
         public bool IsHolstered => phase == HolsterPhase.Holstered;
         public bool IsTransitioning => phase == HolsterPhase.Holstering || phase == HolsterPhase.Drawing;
@@ -158,6 +159,7 @@ namespace ShooterPrototype.Player
 
             loadoutController = GetComponent<PlayerWeaponLoadoutController>();
             medkitController = GetComponent<PlayerMedkitController>();
+            fpsController = GetComponent<FpsCharacterController>();
         }
 
         public void SetMedkitUsePresentationActive(bool active)
@@ -267,6 +269,11 @@ namespace ShooterPrototype.Player
 
         private void Start()
         {
+            if (weaponMount == null || !weaponMount.HasMountedWeapon)
+            {
+                phase = HolsterPhase.Holstered;
+            }
+
             SyncFirstPersonArmsPresentation();
         }
 
@@ -312,19 +319,25 @@ namespace ShooterPrototype.Player
 
         public void ForceArmedState()
         {
-            if (phase == HolsterPhase.Armed)
+            if (weaponMount == null || !weaponMount.HasMountedWeapon)
             {
                 return;
             }
 
+            if (phase != HolsterPhase.Armed || armedLocalPosition == Vector3.zero)
+            {
+                CaptureArmedLocalPose(useBasePose: phase == HolsterPhase.Armed);
+            }
+
             transitionElapsed = 0f;
-            weaponMount?.SetHolsterTransitionActive(false);
-            weaponMount?.SetHandAttachedWeaponActive(false);
-            weaponMount?.SetLocalHolstered(false);
+            weaponMount.SetHolsterTransitionActive(false);
+            weaponMount.SetHandAttachedWeaponActive(false);
+            weaponMount.SetLocalHolstered(false);
             ShowWeaponLocally();
             AttachWeaponToAnchorImmediate(armedLocalPosition, armedLocalRotation, armedLocalScale);
             ApplyHolsteredPresentation(false);
             handBinder?.SetHandIkEnabled(true);
+            handBinder?.SyncFirstPersonRigidHandIkMode();
             phase = HolsterPhase.Armed;
             NotifyHolsterNetworkState();
         }
@@ -369,7 +382,11 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            weaponMount.ApplyCameraLockedHipAnchorPose();
+            if (!IsLocalSprinting())
+            {
+                weaponMount.ApplyCameraLockedHipAnchorPose();
+            }
+
             CaptureArmedLocalPose(useBasePose: true);
             HideWeaponLocallyAt(
                 ResolveLoweredLocalPosition(),
@@ -440,8 +457,16 @@ namespace ShooterPrototype.Player
             }
 
             weaponController?.CancelActiveReload();
-            weaponMount.ApplyCameraLockedHipAnchorPose();
-            CaptureArmedLocalPose();
+            if (IsLocalSprinting())
+            {
+                CaptureArmedLocalPose(useBasePose: true);
+            }
+            else
+            {
+                weaponMount.ApplyCameraLockedHipAnchorPose();
+                CaptureArmedLocalPose();
+            }
+
             handBinder?.SetHandIkEnabled(false);
             weaponMount.SetHolsterTransitionActive(true);
             weaponMount.SetLocalHolstered(true);
@@ -473,7 +498,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (!weaponMount.IsHolsterTransitionActive)
+            if (!weaponMount.IsHolsterTransitionActive && !IsLocalSprinting())
             {
                 weaponMount.ApplyCameraLockedHipAnchorPose();
             }
@@ -567,6 +592,19 @@ namespace ShooterPrototype.Player
 
             var scaleT = isHolstering ? easedPosition : 1f - easedPosition;
             weapon.localScale = Vector3.Lerp(armedLocalScale, loweredScale, scaleT);
+        }
+
+        private bool IsLocalSprinting()
+        {
+            if (fpsController == null)
+            {
+                fpsController = GetComponent<FpsCharacterController>();
+            }
+
+            return fpsController != null &&
+                   fpsController.IsSprinting &&
+                   !fpsController.IsCrouching &&
+                   fpsController.MoveInputMagnitude > 0.12f;
         }
 
         private void ApplyTransitionPresentation(float normalized)

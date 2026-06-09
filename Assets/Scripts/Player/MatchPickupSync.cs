@@ -12,6 +12,7 @@ namespace ShooterPrototype.Player
         private PickupSpawnManager pickupSpawnManager;
         private RealtimeTransportClient transportClient;
         private NetworkLauncher networkLauncher;
+        private MatchPresenceSync localPresenceSync;
         private PlayerPickupController localPickupController;
         private PlayerWeaponLoadoutController localLoadoutController;
         private string localTicketId = string.Empty;
@@ -102,6 +103,7 @@ namespace ShooterPrototype.Player
 
             localPickupController = localMarker.GetComponent<PlayerPickupController>();
             localLoadoutController = localMarker.GetComponent<PlayerWeaponLoadoutController>();
+            localPresenceSync = localMarker.GetComponent<MatchPresenceSync>();
             if (localPickupController == null)
             {
                 return;
@@ -198,12 +200,14 @@ namespace ShooterPrototype.Player
             }
 
             var serverState = BuildServerState(message, kind);
+            localPresenceSync?.AcknowledgeWeaponPickupSeq(message.weaponPickupSeq);
             var confirmed = new PickupConfirmedInfo(
                 message.spawnId,
                 kind,
                 itemId,
                 message.amount > 0 ? message.amount : 1);
             localPickupController?.ApplyConfirmedPickup(confirmed, serverState);
+            localPresenceSync?.FlushLocalPose();
         }
 
         private static PickupApplyServerState BuildServerState(
@@ -254,8 +258,10 @@ namespace ShooterPrototype.Player
             localLoadoutController?.ApplyServerDrop(
                 message.slotIndex,
                 BuildWeaponLoadoutFromDropResult(message));
+            localPresenceSync?.AcknowledgeWeaponPickupSeq(message.weaponPickupSeq);
             localPickupController?.RefreshPickupContext();
             localPickupController?.RefreshWeaponAvailability();
+            localPresenceSync?.FlushLocalPose();
         }
 
         private void TrySpawnDynamicPickupFromEvent(RealtimeTransportClient.PickupEventMessage message)
@@ -308,6 +314,10 @@ namespace ShooterPrototype.Player
             }
 
             var definition = PickupItemDefinition.Create(PickupKind.Weapon, prefab, message.itemId, 1);
+            if (message.magAmmo >= 0)
+            {
+                definition = definition.WithMagAmmo(message.magAmmo);
+            }
             var position = new Vector3(message.x, message.y, message.z);
             pickupSpawnManager.EnsureDynamicSlot(message.droppedSpawnId, position, Vector3.forward, definition);
             pickupSpawnManager.ApplyServerPickupRespawn(message.droppedSpawnId);
@@ -324,7 +334,8 @@ namespace ShooterPrototype.Player
                 message.weaponSlot1ItemId ?? string.Empty,
                 message.activeWeaponSlot,
                 message.bothHolstered,
-                message.droppedSpawnId ?? string.Empty);
+                message.droppedSpawnId ?? string.Empty,
+                message.magAmmo);
         }
 
         private static WeaponLoadoutServerState BuildWeaponLoadoutFromDropResult(

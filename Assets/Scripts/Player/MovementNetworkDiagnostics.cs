@@ -7,7 +7,7 @@ namespace ShooterPrototype.Player
     /// </summary>
     public static class MovementNetworkDiagnostics
     {
-        public const bool Enabled = true;
+        public const bool Enabled = false;
         private const float LogIntervalSeconds = 1f;
 
         private static float lastPoseLogAt = -999f;

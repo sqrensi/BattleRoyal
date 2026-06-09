@@ -728,6 +728,28 @@ function syncWeaponPresenceFlags(presence) {
   }
 
   presence.hasWeapon = countOccupiedWeaponSlots(presence) > 0;
+  if (!presence.hasWeapon) {
+    presence.weaponKind = 0;
+    return;
+  }
+
+  const activeSlot = presence.activeWeaponSlot;
+  if (activeSlot === 0 || activeSlot === 1) {
+    const activeKind = getWeaponSlotKind(presence, activeSlot);
+    if (isWeaponSlotOccupied(activeKind)) {
+      presence.weaponKind = activeKind;
+      return;
+    }
+  }
+
+  if (isWeaponSlotOccupied(presence.weaponSlot0Kind)) {
+    presence.weaponKind = presence.weaponSlot0Kind;
+    return;
+  }
+
+  if (isWeaponSlotOccupied(presence.weaponSlot1Kind)) {
+    presence.weaponKind = presence.weaponSlot1Kind;
+  }
 }
 
 function getWeaponSlotKind(presence, slotIndex) {
@@ -750,6 +772,31 @@ function setWeaponSlot(presence, slotIndex, itemId, kind) {
 
 function clearWeaponSlot(presence, slotIndex) {
   setWeaponSlot(presence, slotIndex, "", WEAPON_SLOT_EMPTY);
+  setWeaponSlotMagAmmo(presence, slotIndex, -1);
+}
+
+function getWeaponSlotMagAmmo(presence, slotIndex) {
+  if (slotIndex === 0) {
+    return Number.isFinite(presence.weaponSlot0MagAmmo) ? presence.weaponSlot0MagAmmo : -1;
+  }
+
+  if (slotIndex === 1) {
+    return Number.isFinite(presence.weaponSlot1MagAmmo) ? presence.weaponSlot1MagAmmo : -1;
+  }
+
+  return -1;
+}
+
+function setWeaponSlotMagAmmo(presence, slotIndex, magAmmo) {
+  const normalized = Number.isFinite(magAmmo) ? Math.max(-1, Math.min(999, magAmmo)) : -1;
+  if (slotIndex === 0) {
+    presence.weaponSlot0MagAmmo = normalized;
+    return;
+  }
+
+  if (slotIndex === 1) {
+    presence.weaponSlot1MagAmmo = normalized;
+  }
 }
 
 function findFirstEmptyWeaponSlot(presence) {
@@ -792,7 +839,7 @@ function buildWeaponLoadoutPayload(presence) {
   };
 }
 
-function createDroppedWeaponSpawn(matchId, ticketId, position, yaw, itemId) {
+function createDroppedWeaponSpawn(matchId, ticketId, position, yaw, itemId, magAmmo = -1) {
   const state = ensureMatchPickups(matchId);
   if (!state || !position) {
     return "";
@@ -805,12 +852,14 @@ function createDroppedWeaponSpawn(matchId, ticketId, position, yaw, itemId) {
   const offset = 1.2;
   const x = position.x + Math.sin(rad) * offset;
   const z = position.z + Math.cos(rad) * offset;
+  const normalizedMagAmmo = Number.isFinite(magAmmo) ? Math.max(-1, Math.min(999, magAmmo)) : -1;
   state.spawns.set(spawnId, {
     spawnId,
     pickupKind: "weapon",
     itemId: itemId || "",
     weaponId: itemId || "",
     amount: 1,
+    magAmmo: normalizedMagAmmo,
     x,
     y: position.y,
     z,
@@ -886,6 +935,11 @@ function handleWsPose(socket, message) {
     0,
     Math.min(255, normalizeInt64(message.activeWeaponSlot, prevPresence.activeWeaponSlot ?? WEAPON_SLOT_EMPTY))
   );
+  const activeWeaponMagAmmo = Math.max(
+    -1,
+    Math.min(999, normalizeInt64(message.activeWeaponMagAmmo, -1))
+  );
+  const clientWeaponPickupSeq = Math.max(0, normalizeInt64(message.weaponPickupSeq, 0));
   const prevWasDead = !!prevPresence.isDead;
 
   ticket.inputState = {
@@ -986,10 +1040,18 @@ function handleWsPose(socket, message) {
   presence.animSpeed = animSpeed;
   presence.isAiming = isAiming;
   presence.isHolstered = isHolstered;
-  presence.weaponKind = weaponKind;
-  presence.weaponSlot0Kind = weaponSlot0Kind;
-  presence.weaponSlot1Kind = weaponSlot1Kind;
-  presence.activeWeaponSlot = activeWeaponSlot;
+  const serverWeaponPickupSeq = Math.max(0, normalizeInt64(presence.weaponPickupSeq, 0));
+  if (clientWeaponPickupSeq >= serverWeaponPickupSeq) {
+    presence.weaponSlot0Kind = weaponSlot0Kind;
+    presence.weaponSlot1Kind = weaponSlot1Kind;
+    presence.activeWeaponSlot = activeWeaponSlot;
+    presence.weaponKind = weaponKind;
+    if (activeWeaponMagAmmo >= 0 &&
+        (activeWeaponSlot === 0 || activeWeaponSlot === 1) &&
+        isWeaponSlotOccupied(getWeaponSlotKind(presence, activeWeaponSlot))) {
+      setWeaponSlotMagAmmo(presence, activeWeaponSlot, activeWeaponMagAmmo);
+    }
+  }
   syncWeaponPresenceFlags(presence);
   presence.isGrounded = isGrounded;
   presence.jumpState = jumpState;
@@ -1397,6 +1459,7 @@ function handleWsPickup(socket, message) {
 
   let weaponPickupSeq = Math.max(0, normalizeInt64(presence.weaponPickupSeq, 0));
   let droppedSpawnId = "";
+  let pickedMagAmmo = -1;
   if (pickupKind === "weapon") {
     let targetSlot = findFirstEmptyWeaponSlot(presence);
     if (targetSlot < 0) {
@@ -1408,7 +1471,8 @@ function handleWsPickup(socket, message) {
           ticket.ticketId,
           pos,
           presence.yaw || 0,
-          dropItemId
+          dropItemId,
+          getWeaponSlotMagAmmo(presence, targetSlot)
         );
         if (droppedSpawnId) {
           const dropSpawn = state.spawns.get(droppedSpawnId);
@@ -1440,6 +1504,8 @@ function handleWsPickup(socket, message) {
     presence.activeWeaponSlot = targetSlot;
     presence.weaponKind = kind;
     presence.isHolstered = false;
+    pickedMagAmmo = Number.isFinite(spawn.magAmmo) ? Math.max(-1, Math.min(999, spawn.magAmmo)) : -1;
+    setWeaponSlotMagAmmo(presence, targetSlot, pickedMagAmmo);
     weaponPickupSeq += 1;
     presence.weaponPickupSeq = weaponPickupSeq;
     syncWeaponPresenceFlags(presence);
@@ -1465,6 +1531,7 @@ function handleWsPickup(socket, message) {
     amount,
     medkitCount: Math.max(0, normalizeInt64(presence.medkitCount, 0)),
     droppedSpawnId,
+    magAmmo: pickedMagAmmo,
     ...buildWeaponLoadoutPayload(presence),
   });
 
@@ -1509,6 +1576,7 @@ function sendPickupResultToSocket(socket, success, reason, details) {
       weaponSlot1ItemId: details && typeof details.weaponSlot1ItemId === "string" ? details.weaponSlot1ItemId : "",
       activeWeaponSlot: details && Number.isFinite(details.activeWeaponSlot) ? details.activeWeaponSlot : WEAPON_SLOT_EMPTY,
       bothHolstered: !!(details && details.bothHolstered),
+      magAmmo: details && Number.isFinite(details.magAmmo) ? details.magAmmo : -1,
     }));
   } catch {
     // ignored
@@ -1538,6 +1606,8 @@ function sendWeaponDropResultToSocket(socket, success, reason, details) {
       weaponSlot1ItemId: details && typeof details.weaponSlot1ItemId === "string" ? details.weaponSlot1ItemId : "",
       activeWeaponSlot: details && Number.isFinite(details.activeWeaponSlot) ? details.activeWeaponSlot : WEAPON_SLOT_EMPTY,
       bothHolstered: !!(details && details.bothHolstered),
+      weaponPickupSeq: details && Number.isFinite(details.weaponPickupSeq) ? details.weaponPickupSeq : 0,
+      magAmmo: details && Number.isFinite(details.magAmmo) ? details.magAmmo : -1,
     }));
   } catch {
     // ignored
@@ -1573,12 +1643,15 @@ function handleWsWeaponDrop(socket, message) {
   }
 
   const itemId = getWeaponSlotItemId(presence, slotIndex);
+  const slotMagAmmo = getWeaponSlotMagAmmo(presence, slotIndex);
+  const magAmmo = Math.max(-1, Math.min(999, normalizeInt64(message && message.magAmmo, slotMagAmmo)));
   const droppedSpawnId = createDroppedWeaponSpawn(
     ticket.matchId,
     ticket.ticketId,
     presence.position,
     presence.yaw || 0,
-    itemId
+    itemId,
+    magAmmo
   );
   if (!droppedSpawnId) {
     sendWeaponDropResultToSocket(socket, false, "spawn_failed");
@@ -1598,6 +1671,9 @@ function handleWsWeaponDrop(socket, message) {
     }
   }
 
+  let weaponPickupSeq = Math.max(0, normalizeInt64(presence.weaponPickupSeq, 0));
+  weaponPickupSeq += 1;
+  presence.weaponPickupSeq = weaponPickupSeq;
   syncWeaponPresenceFlags(presence);
 
   const state = ensureMatchPickups(ticket.matchId);
@@ -1607,6 +1683,8 @@ function handleWsWeaponDrop(socket, message) {
     slotIndex,
     droppedSpawnId,
     itemId,
+    magAmmo,
+    weaponPickupSeq,
     x: dropSpawn ? dropSpawn.x : presence.position.x,
     y: dropSpawn ? dropSpawn.y : presence.position.y,
     z: dropSpawn ? dropSpawn.z : presence.position.z,

@@ -23686,36 +23686,42 @@ MonoBehaviour:
     pickupKindOverride: 0
     itemIdOverride: 
     amountOverride: 1
+    magAmmoOverride: -1
   - spawnId: PickupSpawn_02
     spawnPoint: {fileID: 1289295218}
     pickupVisualOverride: {fileID: 0}
     pickupKindOverride: 0
     itemIdOverride: 
     amountOverride: 1
+    magAmmoOverride: -1
   - spawnId: PickupSpawn_03
     spawnPoint: {fileID: 135087592}
     pickupVisualOverride: {fileID: 0}
     pickupKindOverride: 0
     itemIdOverride: 
     amountOverride: 1
+    magAmmoOverride: -1
   - spawnId: PickupSpawn_04
     spawnPoint: {fileID: 341487413}
     pickupVisualOverride: {fileID: 0}
     pickupKindOverride: 0
     itemIdOverride: 
     amountOverride: 1
+    magAmmoOverride: -1
   - spawnId: PickupSpawn_05
     spawnPoint: {fileID: 943204997}
     pickupVisualOverride: {fileID: 0}
     pickupKindOverride: 0
     itemIdOverride: 
     amountOverride: 1
+    magAmmoOverride: -1
   - spawnId: PickupSpawn_Sniper
     spawnPoint: {fileID: 317514904}
     pickupVisualOverride: {fileID: 1387354669614330, guid: ff8235cae3149824eaccda4c1683ebea, type: 3}
     pickupKindOverride: 0
     itemIdOverride: sniper_rifle
     amountOverride: 1
+    magAmmoOverride: -1
   defaultPickupKind: 0
   defaultVisualPrefab: {fileID: 6405278687639400286, guid: c0b9a0ada3999914a8bce7552f3d83a3, type: 3}
   defaultItemId: 

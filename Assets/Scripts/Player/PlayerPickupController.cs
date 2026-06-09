@@ -130,9 +130,6 @@ namespace ShooterPrototype.Player
             var context = BuildPickupContext();
             if (!PlayerPickupApplier.CanPickup(context, pickup.Definition))
             {
-                Debug.Log(
-                    $"[PlayerPickup] Cannot pick up {pickup.Kind} ({pickup.SpawnId}). " +
-                    $"medkits={context.Medkit?.MedkitCount.ToString() ?? "n/a"}");
                 return;
             }
 

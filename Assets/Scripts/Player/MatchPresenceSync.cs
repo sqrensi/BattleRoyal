@@ -67,6 +67,7 @@ namespace ShooterPrototype.Player
         private PlayerWeaponController localWeaponController;
         private PlayerWeaponHolsterController localWeaponHolster;
         private PlayerWeaponLoadout localWeaponLoadout;
+        private int localWeaponPickupSeq;
         private PlayerAudioController localAudioController;
         private FpsCharacterController localFpsController;
         private ProceduralLocomotionRig localLocomotionRig;
@@ -481,6 +482,14 @@ namespace ShooterPrototype.Player
             SendLocalPose();
         }
 
+        public void AcknowledgeWeaponPickupSeq(int weaponPickupSeq)
+        {
+            if (weaponPickupSeq > localWeaponPickupSeq)
+            {
+                localWeaponPickupSeq = weaponPickupSeq;
+            }
+        }
+
         private void ResolveLocalWeaponLoadout()
         {
             if (localWeaponLoadout == null)
@@ -672,6 +681,22 @@ namespace ShooterPrototype.Player
                 out var weaponSlot0Kind,
                 out var weaponSlot1Kind,
                 out var activeWeaponSlot);
+            var activeWeaponMagAmmo = -1;
+            if (localWeaponLoadout != null &&
+                activeWeaponSlot >= 0 &&
+                activeWeaponSlot <= 1 &&
+                localWeaponLoadout.IsSlotOccupied(activeWeaponSlot))
+            {
+                activeWeaponMagAmmo = localWeaponLoadout.GetSlotMagAmmo(activeWeaponSlot);
+                if (localWeaponController != null &&
+                    localWeaponMount != null &&
+                    localWeaponMount.HasMountedWeapon &&
+                    !isHolstered)
+                {
+                    activeWeaponMagAmmo = localWeaponController.CurrentAmmo;
+                }
+            }
+
             var animSpeed = localLocomotionRig != null
                 ? localLocomotionRig.GetNetworkAnimSpeed01()
                 : (localFpsController != null ? Mathf.Clamp01(localFpsController.MoveInputMagnitude) : 0f);
@@ -725,7 +750,9 @@ namespace ShooterPrototype.Player
                 weaponKind,
                 weaponSlot0Kind,
                 weaponSlot1Kind,
-                activeWeaponSlot);
+                activeWeaponSlot,
+                activeWeaponMagAmmo,
+                localWeaponPickupSeq);
 
             MovementNetworkDiagnostics.LogPoseSend(
                 currentPos,

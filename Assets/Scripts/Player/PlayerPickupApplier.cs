@@ -79,7 +79,8 @@ namespace ShooterPrototype.Player
                 if (!context.WeaponLoadout.TryApplyLocalPickup(
                         definition.ResolvedItemId,
                         kind,
-                        definition.VisualPrefab))
+                        definition.VisualPrefab,
+                        definition.MagAmmo))
                 {
                     return new PickupApplyResult(false, "equip_failed");
                 }
@@ -110,8 +111,6 @@ namespace ShooterPrototype.Player
             in PlayerPickupContext context,
             in PickupItemDefinition definition)
         {
-            Debug.Log(
-                $"[PlayerPickup] Ammo pickup placeholder: item={definition.ResolvedItemId} amount={definition.Amount}");
             return PickupApplyResult.Ok;
         }
 

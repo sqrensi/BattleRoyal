@@ -115,13 +115,16 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            loadout.SetBothHolstered(true);
             if (weaponHolster != null && weaponHolster.IsHolstered)
             {
+                loadout.SetBothHolstered(false);
+                weaponHolster.BeginDrawEquippedWeapon();
                 presenceSync?.FlushLocalPose();
+                GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
                 return;
             }
 
+            loadout.SetBothHolstered(true);
             weaponHolster?.BeginHolsterAll();
             presenceSync?.FlushLocalPose();
         }
@@ -200,13 +203,34 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            SyncActiveSlotMagAmmoFromController();
+
             if (ShouldUseServerActions())
             {
-                transportClient.SendWeaponDrop(slotIndex);
+                transportClient.SendWeaponDrop(slotIndex, ResolveDropMagAmmo(slotIndex));
                 return;
             }
 
             ApplyLocalDrop(slotIndex);
+        }
+
+        public void SyncActiveSlotMagAmmoFromController()
+        {
+            if (loadout == null || weaponController == null || weaponMount == null || !weaponMount.HasMountedWeapon)
+            {
+                return;
+            }
+
+            var slotIndex = loadout.ActiveSlotIndex;
+            if (slotIndex < 0 || slotIndex > 1 || !loadout.IsSlotOccupied(slotIndex))
+            {
+                slotIndex = ResolveDropSlotIndex();
+            }
+
+            if (slotIndex >= 0 && slotIndex <= 1 && loadout.IsSlotOccupied(slotIndex))
+            {
+                loadout.SetSlotMagAmmo(slotIndex, weaponController.CurrentAmmo);
+            }
         }
 
         public void ApplyServerDrop(int slotIndex, in WeaponLoadoutServerState serverState)
@@ -242,7 +266,7 @@ namespace ShooterPrototype.Player
             RefreshWeaponPresentationAfterServerChange();
         }
 
-        public bool TryApplyLocalPickup(string itemId, WeaponKind kind, GameObject visualPrefab)
+        public bool TryApplyLocalPickup(string itemId, WeaponKind kind, GameObject visualPrefab, int magAmmo = -1)
         {
             if (loadout == null || visualPrefab == null)
             {
@@ -267,6 +291,11 @@ namespace ShooterPrototype.Player
             if (!loadout.TryAddWeapon(itemId, kind, out var assignedSlot))
             {
                 return false;
+            }
+
+            if (magAmmo >= 0)
+            {
+                loadout.SetSlotMagAmmo(assignedSlot, magAmmo);
             }
 
             if (shouldAnimatePickup &&
@@ -367,6 +396,7 @@ namespace ShooterPrototype.Player
 
         private void ApplyLocalDrop(int slotIndex, bool spawnWorldPickup = true)
         {
+            var droppedMagAmmo = ResolveDropMagAmmo(slotIndex);
             if (loadout == null || !loadout.TryRemoveSlot(slotIndex, out var removed))
             {
                 return;
@@ -374,7 +404,7 @@ namespace ShooterPrototype.Player
 
             if (spawnWorldPickup)
             {
-                SpawnDroppedPickup(removed);
+                SpawnDroppedPickup(removed, droppedMagAmmo);
             }
 
             if (!loadout.HasAnyWeapon)
@@ -394,7 +424,7 @@ namespace ShooterPrototype.Player
             presenceSync?.FlushLocalPose();
         }
 
-        private void SpawnDroppedPickup(PlayerWeaponLoadout.Slot removed)
+        private void SpawnDroppedPickup(PlayerWeaponLoadout.Slot removed, int magAmmo = -1)
         {
             if (!removed.Occupied)
             {
@@ -418,6 +448,10 @@ namespace ShooterPrototype.Player
                 prefab,
                 removed.ItemId,
                 1);
+            if (magAmmo >= 0)
+            {
+                definition = definition.WithMagAmmo(magAmmo);
+            }
             var forward = dropOrigin != null ? dropOrigin.forward : transform.forward;
             forward.y = 0f;
             if (forward.sqrMagnitude < 0.001f)
@@ -439,7 +473,13 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var prefab = loadout.ResolvePrefabForSlot(loadout.ActiveSlotIndex);
+            var equipSlotIndex = loadout.ActiveSlotIndex;
+            if (equipSlotIndex < 0 || equipSlotIndex > 1)
+            {
+                equipSlotIndex = loadout.IsSlotOccupied(0) ? 0 : 1;
+            }
+
+            var prefab = loadout.ResolvePrefabForSlot(equipSlotIndex);
             if (prefab == null)
             {
                 weaponMount.UnequipWeapon();
@@ -454,7 +494,17 @@ namespace ShooterPrototype.Player
             if (weaponController != null)
             {
                 weaponController.enabled = true;
-                weaponController.ApplyWeaponProfile(weaponMount.ActiveWeaponProfile);
+                var magAmmo = loadout.GetSlotMagAmmo(equipSlotIndex);
+                weaponController.ApplyWeaponProfile(weaponMount.ActiveWeaponProfile, resetAmmo: magAmmo < 0);
+                if (magAmmo >= 0)
+                {
+                    weaponController.SetCurrentAmmo(magAmmo);
+                    loadout.SetSlotMagAmmo(equipSlotIndex, magAmmo);
+                }
+                else
+                {
+                    loadout.SetSlotMagAmmo(equipSlotIndex, weaponController.CurrentAmmo);
+                }
             }
 
             if (drawIfHolstered && weaponHolster != null &&
@@ -509,7 +559,42 @@ namespace ShooterPrototype.Player
                 serverState.Slot0ItemId,
                 serverState.Slot1ItemId,
                 serverState.ActiveWeaponSlot,
-                serverState.BothHolstered);
+                serverState.BothHolstered,
+                serverState.ActiveMagAmmo);
+        }
+
+        private int ResolveDropMagAmmo(int slotIndex)
+        {
+            if (loadout == null || slotIndex < 0 || slotIndex > 1 || !loadout.IsSlotOccupied(slotIndex))
+            {
+                return -1;
+            }
+
+            if (weaponController != null &&
+                (loadout.OccupiedCount <= 1 || IsDropSlotCurrentlyWielded(slotIndex)))
+            {
+                loadout.SetSlotMagAmmo(slotIndex, weaponController.CurrentAmmo);
+                return weaponController.CurrentAmmo;
+            }
+
+            SyncActiveSlotMagAmmoFromController();
+            var slotMag = loadout.GetSlotMagAmmo(slotIndex);
+            return slotMag >= 0 ? slotMag : -1;
+        }
+
+        private bool IsDropSlotCurrentlyWielded(int slotIndex)
+        {
+            if (loadout.ActiveSlotIndex == slotIndex)
+            {
+                return true;
+            }
+
+            if (loadout.ActiveSlotIndex != PlayerWeaponLoadout.NoActiveSlot)
+            {
+                return false;
+            }
+
+            return ResolveDropSlotIndex() == slotIndex;
         }
 
         private int ResolveDropSlotIndex()

@@ -40,6 +40,8 @@ namespace ShooterPrototype.Player
 
             [SerializeField] private int amountOverride = 1;
 
+            [SerializeField] private int magAmmoOverride = -1;
+
 
 
             public PickupItemDefinition ResolveDefinition(in PickupItemDefinition fallbackDefault)
@@ -57,6 +59,10 @@ namespace ShooterPrototype.Player
                     : ResolveImplicitItemId(pickupKindOverride, visual, fallbackDefault);
                 var amount = amountOverride > 0 ? amountOverride : fallbackDefault.Amount;
                 var definition = PickupItemDefinition.Create(pickupKindOverride, visual, itemId, amount);
+                if (magAmmoOverride >= 0)
+                {
+                    definition = definition.WithMagAmmo(magAmmoOverride);
+                }
                 RegisterWeaponPrefab(definition);
                 return definition;
             }
@@ -91,12 +97,13 @@ namespace ShooterPrototype.Player
                 WeaponCatalog.RegisterWeaponPrefab(kind, definition.VisualPrefab);
             }
 
-            public void ConfigureWeaponDrop(GameObject visualPrefab, string itemId)
+            public void ConfigureWeaponDrop(GameObject visualPrefab, string itemId, int magAmmo = -1)
             {
                 pickupVisualOverride = visualPrefab;
                 itemIdOverride = itemId ?? string.Empty;
                 pickupKindOverride = PickupKind.Weapon;
                 amountOverride = 1;
+                magAmmoOverride = magAmmo;
             }
 
         }
@@ -1103,7 +1110,7 @@ namespace ShooterPrototype.Player
 
             {
 
-                existing.ConfigureWeaponDrop(definition.VisualPrefab, definition.ResolvedItemId);
+                existing.ConfigureWeaponDrop(definition.VisualPrefab, definition.ResolvedItemId, definition.MagAmmo);
 
                 if (existing.spawnPoint != null)
 
@@ -1151,7 +1158,7 @@ namespace ShooterPrototype.Player
 
             };
 
-            slot.ConfigureWeaponDrop(definition.VisualPrefab, definition.ResolvedItemId);
+            slot.ConfigureWeaponDrop(definition.VisualPrefab, definition.ResolvedItemId, definition.MagAmmo);
 
 
 

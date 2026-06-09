@@ -208,6 +208,7 @@ namespace ShooterPrototype.Network
             public int activeWeaponSlot;
             public bool bothHolstered;
             public string droppedSpawnId;
+            public int magAmmo;
         }
 
         [Serializable]
@@ -229,14 +230,17 @@ namespace ShooterPrototype.Network
             public string weaponSlot1ItemId;
             public int activeWeaponSlot;
             public bool bothHolstered;
+            public int weaponPickupSeq;
+            public int magAmmo;
         }
 
-        [Serializable]
-        private sealed class WeaponDropRequestMessage
-        {
-            public string type;
-            public int slotIndex;
-        }
+    [Serializable]
+    private sealed class WeaponDropRequestMessage
+    {
+        public string type;
+        public int slotIndex;
+        public int magAmmo;
+    }
 
         [Serializable]
         public sealed class MedkitResultMessage
@@ -375,6 +379,8 @@ namespace ShooterPrototype.Network
             public int weaponSlot0Kind;
             public int weaponSlot1Kind;
             public int activeWeaponSlot;
+            public int activeWeaponMagAmmo;
+            public int weaponPickupSeq;
         }
 
         [Serializable]
@@ -563,7 +569,9 @@ namespace ShooterPrototype.Network
             int weaponKind = 0,
             int weaponSlot0Kind = 255,
             int weaponSlot1Kind = 255,
-            int activeWeaponSlot = 255)
+            int activeWeaponSlot = 255,
+            int activeWeaponMagAmmo = -1,
+            int weaponPickupSeq = 0)
         {
             if (!IsConnected)
             {
@@ -618,6 +626,8 @@ namespace ShooterPrototype.Network
                 weaponSlot0Kind = Mathf.Clamp(weaponSlot0Kind, 0, 255),
                 weaponSlot1Kind = Mathf.Clamp(weaponSlot1Kind, 0, 255),
                 activeWeaponSlot = Mathf.Clamp(activeWeaponSlot, 0, 255),
+                activeWeaponMagAmmo = Mathf.Clamp(activeWeaponMagAmmo, -1, 999),
+                weaponPickupSeq = Math.Max(0, weaponPickupSeq),
                 poseSeq = ++nextPoseSeq
             };
             hasPendingPose = true;
@@ -813,7 +823,7 @@ namespace ShooterPrototype.Network
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 
-        public void SendWeaponDrop(int slotIndex)
+        public void SendWeaponDrop(int slotIndex, int magAmmo = -1)
         {
             if (!IsReady)
             {
@@ -823,7 +833,8 @@ namespace ShooterPrototype.Network
             _ = SendJsonAsync(new WeaponDropRequestMessage
             {
                 type = "weapon_drop",
-                slotIndex = slotIndex
+                slotIndex = slotIndex,
+                magAmmo = magAmmo
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 
@@ -870,10 +881,8 @@ namespace ShooterPrototype.Network
                     type = "join",
                     ticketId = ticketId
                 }, cts.Token);
-                Debug.Log($"[RealtimeTransportClient] Join sent ticket={ticketId}");
 
                 receiveTask = ReceiveLoopAsync(socket, cts.Token);
-                Debug.Log($"[RealtimeTransportClient] Connected to {websocketUrl} ticket={ticketId}");
                 MovementNetworkDiagnostics.LogWsState("connected", ticketId, $"url={websocketUrl}");
             }
             catch (Exception ex)

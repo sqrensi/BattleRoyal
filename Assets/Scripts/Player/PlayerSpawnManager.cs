@@ -176,8 +176,6 @@ namespace ShooterPrototype.Player
                 AttachPresenceSync(instance);
             }
 
-            var selectedModelName = selectedModel.ModelAsset != null ? selectedModel.DisplayName : "Default";
-            Debug.Log($"[PlayerSpawnManager] Spawned player at {resolvedPosition}. Model: {selectedModelName}");
         }
 
         private void AttachPresenceSync(GameObject localPlayer)
@@ -199,7 +197,6 @@ namespace ShooterPrototype.Player
 
                 var wsUrl = launcher.Config != null ? launcher.Config.RealtimeWsUrl : "ws://127.0.0.1:5051";
                 realtimeClient.Configure(wsUrl);
-                Debug.Log($"[PlayerSpawnManager] RealtimeTransportClient auto-created. ws={wsUrl}");
             }
 
             var sync = localPlayer.GetComponent<MatchPresenceSync>();
