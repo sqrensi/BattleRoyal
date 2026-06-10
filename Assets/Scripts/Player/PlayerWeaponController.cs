@@ -458,11 +458,6 @@ namespace ShooterPrototype.Player
 
         public void CancelActiveReload()
         {
-            if (!isReloading && reloadCoroutine == null)
-            {
-                return;
-            }
-
             isReloading = false;
             if (reloadCoroutine != null)
             {
@@ -470,7 +465,9 @@ namespace ShooterPrototype.Player
                 reloadCoroutine = null;
             }
 
+            weaponMount?.StopReloadAnimation();
             weaponMount?.SetLocalReloading(false);
+            audioController?.StopReloadAudio();
         }
 
         private struct CrosshairShot

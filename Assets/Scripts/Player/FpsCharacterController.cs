@@ -30,6 +30,7 @@ namespace ShooterPrototype.Player
 
         [Header("Look")]
         [SerializeField] private float mouseSensitivity = 2.2f;
+        [SerializeField] private bool scaleLookSensitivityWithFov = true;
         [SerializeField] private float maxLookAngle = 80f;
         [SerializeField] private float hipMaxLookAngle = 50f;
         [SerializeField] private float adsMaxLookAngle = 40f;
@@ -88,7 +89,9 @@ namespace ShooterPrototype.Player
         private int footstepSequence;
         private PlayerAudioController audioController;
         private PlayerWeaponHolsterController weaponHolster;
+        private PlayerWeaponMount weaponMount;
         private PlayerMedkitController medkitController;
+        private float referenceLookFov = -1f;
         [Header("Audio")]
         [SerializeField] private float footstepIntervalSlow = 0.8f;
         [SerializeField] private float footstepIntervalFast = 0.42f;
@@ -291,6 +294,7 @@ namespace ShooterPrototype.Player
             }
             audioController = GetComponent<PlayerAudioController>();
             weaponHolster = GetComponent<PlayerWeaponHolsterController>();
+            weaponMount = GetComponent<PlayerWeaponMount>();
             medkitController = GetComponent<PlayerMedkitController>();
 
             standingHeight = characterController != null ? characterController.height : 1.8f;
@@ -475,8 +479,9 @@ namespace ShooterPrototype.Player
         private void TickLook()
         {
             var lookDelta = ReadLookInput();
-            var mouseX = lookDelta.x * mouseSensitivity;
-            var mouseY = lookDelta.y * mouseSensitivity;
+            var sensitivity = mouseSensitivity * ResolveLookSensitivityScale();
+            var mouseX = lookDelta.x * sensitivity;
+            var mouseY = lookDelta.y * sensitivity;
 
             transform.Rotate(Vector3.up * mouseX, Space.Self);
 
@@ -520,6 +525,33 @@ namespace ShooterPrototype.Player
 
             var manualRecoveryAmount = -mouseY * Mathf.Max(0f, manualRecoilRecoveryScale);
             recoilPitchOffset = Mathf.MoveTowards(recoilPitchOffset, 0f, manualRecoveryAmount);
+        }
+
+        private float ResolveLookSensitivityScale()
+        {
+            if (!scaleLookSensitivityWithFov)
+            {
+                return 1f;
+            }
+
+            if (weaponMount != null)
+            {
+                return weaponMount.GetFovLookSensitivityScale();
+            }
+
+            if (playerCamera == null)
+            {
+                return 1f;
+            }
+
+            if (referenceLookFov <= 0f)
+            {
+                referenceLookFov = playerCamera.fieldOfView;
+            }
+
+            return PlayerWeaponMount.ComputeFovLookSensitivityScale(
+                playerCamera.fieldOfView,
+                referenceLookFov);
         }
 
         public void ApplyRecoil(float pitchUpDegrees, float yawDegrees)

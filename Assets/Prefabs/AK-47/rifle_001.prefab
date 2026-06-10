@@ -457,6 +457,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: c0d77e676f3f0ef4ebbfb067fe81ae27, type: 3}
       insertIndex: -1
       addedObject: {fileID: 6400379736086773949}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: c0d77e676f3f0ef4ebbfb067fe81ae27, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 7196149105241958234}
   m_SourcePrefab: {fileID: 100100000, guid: c0d77e676f3f0ef4ebbfb067fe81ae27, type: 3}
 --- !u!4 &6030266760401270244 stripped
 Transform:
@@ -490,6 +493,52 @@ MeshCollider:
   m_Convex: 0
   m_CookingOptions: 30
   m_Mesh: {fileID: 3265388620181421356, guid: c0d77e676f3f0ef4ebbfb067fe81ae27, type: 3}
+--- !u!114 &7196149105241958234
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6405278687639400286}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4ac9bfdbb6d8fa34ca6999a05cc6ed32, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ShooterPrototype.Player.WeaponProfile
+  weaponKind: 0
+  automatic: 1
+  fireRate: 9
+  magazineSize: 30
+  reloadDuration: 1.25
+  maxDistance: 180
+  bulletDropAngleDegrees: 0.25
+  legDamage: 15
+  bodyDamage: 25
+  neckDamage: 80
+  headDamage: 100
+  spreadStartDegrees: 0.08
+  spreadPerShotDegrees: 0.22
+  spreadMaxDegrees: 2.3
+  hipFireSpreadMultiplier: 1.75
+  adsSpreadMultiplier: 0.65
+  hipFireRecoilMultiplier: 1
+  adsRecoilMultiplier: 0.72
+  hasScope: 0
+  adsCameraFov: 35
+  adsMaxLookAngle: 40
+  overrideAdsCameraPose: 0
+  adsCameraLocalPosition: {x: 0, y: -0.14, z: 0.35}
+  adsCameraLocalEuler: {x: 1, y: 0, z: 0}
+  handsScaleMultiplier: 1
+  muzzleFlashVfx: {fileID: 100002, guid: 00fedc70b62a31e448e8ccc298257b56, type: 3}
+  shotClip: {fileID: 8300000, guid: b9bcff787e03ea4448419527c126e177, type: 3}
+  reloadPullClip: {fileID: 8300000, guid: e0c70bed5c1a4443083a81de5648c7d5, type: 3}
+  reloadInsertClip: {fileID: 8300000, guid: 9158afb6966d445db9caf1dccf7acbcc, type: 3}
+  remoteReloadClip: {fileID: 8300000, guid: eb5685b26a6494994af389a3293064e8, type: 3}
+  shotVolume: 0.288
+  reloadPullVolume: 0.185
+  reloadInsertVolume: 0.19
+  reloadInsertNormalizedTime: 0.78
 --- !u!1001 &8579414916047666910
 PrefabInstance:
   m_ObjectHideFlags: 0

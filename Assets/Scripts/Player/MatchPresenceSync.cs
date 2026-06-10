@@ -107,6 +107,8 @@ namespace ShooterPrototype.Player
             public int LastAppliedHitPlayerSeq = -1;
             public int LastAppliedFootstepSeq = -1;
             public bool WasDead;
+            public bool WasHolstered;
+            public bool HadWeapon;
             public int LastAppliedStateTick = -1;
             public string AppliedCharacterModelName;
             public readonly List<PresenceSnapshot> Snapshots = new List<PresenceSnapshot>();
@@ -897,6 +899,7 @@ namespace ShooterPrototype.Player
                 }
 
                 ApplyRemoteWeaponEffects(avatar.Root, ResolveRemoteActiveWeaponKind(p));
+                MaybeStopRemoteReloadOnWeaponInterrupt(avatar, p);
             }
         }
 
@@ -1247,6 +1250,7 @@ namespace ShooterPrototype.Player
                     }
 
                     ApplyRemoteWeaponEffects(avatar.Root, ResolveRemoteActiveWeaponKind(p));
+                    MaybeStopRemoteReloadOnWeaponInterrupt(avatar, p);
                     avatar.Root.GetComponent<RemoteMedkitPresentation>()?.SetNetworkMedkitState(p.isUsingMedkit);
 
                     avatar.Root.GetComponent<RemoteLookPitchPosture>()?.SetNetworkLookPitch(p.lookPitch);
@@ -1368,7 +1372,9 @@ namespace ShooterPrototype.Player
                 LastKnownPosition = initialPosition,
                 LastKnownYaw = initialYaw,
                 HasKnownPose = true,
-                AppliedCharacterModelName = string.Empty
+                AppliedCharacterModelName = string.Empty,
+                HadWeapon = false,
+                WasHolstered = true
             };
         }
 
@@ -1551,6 +1557,28 @@ namespace ShooterPrototype.Player
             }
 
             remoteAudio.InheritFrom(localAudioController);
+        }
+
+        private static void MaybeStopRemoteReloadOnWeaponInterrupt(
+            RemoteAvatar avatar,
+            RealtimeTransportClient.RealtimePlayerState playerState)
+        {
+            if (avatar?.Root == null || playerState == null)
+            {
+                return;
+            }
+
+            var holsteredNow = playerState.isHolstered;
+            var hasWeaponNow = playerState.hasWeapon;
+            var interrupted = (holsteredNow && !avatar.WasHolstered) ||
+                              (!hasWeaponNow && avatar.HadWeapon);
+            if (interrupted)
+            {
+                avatar.Root.GetComponent<RemotePlayerShotEffects>()?.StopRemoteReload();
+            }
+
+            avatar.WasHolstered = holsteredNow;
+            avatar.HadWeapon = hasWeaponNow;
         }
 
         private static void ApplyRemoteWeaponEffects(GameObject remoteRoot, WeaponKind weaponKind)

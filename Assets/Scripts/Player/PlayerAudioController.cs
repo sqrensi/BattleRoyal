@@ -106,6 +106,20 @@ namespace ShooterPrototype.Player
             reloadAudioRoutine = StartCoroutine(ReloadAudioRoutine(isLocal, durationSeconds, overrides));
         }
 
+        public void StopReloadAudio()
+        {
+            if (reloadAudioRoutine != null)
+            {
+                StopCoroutine(reloadAudioRoutine);
+                reloadAudioRoutine = null;
+            }
+
+            if (nearSource != null && nearSource.isPlaying)
+            {
+                nearSource.Stop();
+            }
+        }
+
         public void PlayHitPlayer(bool isLocal)
         {
             PlayClip(nearSource, hitPlayerClip, hitPlayerVolume, isLocal, defaultMaxDistance);

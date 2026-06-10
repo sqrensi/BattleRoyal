@@ -23710,9 +23710,9 @@ MonoBehaviour:
     magAmmoOverride: -1
   - spawnId: PickupSpawn_05
     spawnPoint: {fileID: 943204997}
-    pickupVisualOverride: {fileID: 0}
+    pickupVisualOverride: {fileID: 1387354669614330, guid: ff8235cae3149824eaccda4c1683ebea, type: 3}
     pickupKindOverride: 0
-    itemIdOverride: 
+    itemIdOverride: sniper_rifle
     amountOverride: 1
     magAmmoOverride: -1
   - spawnId: PickupSpawn_Sniper

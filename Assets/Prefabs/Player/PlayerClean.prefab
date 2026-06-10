@@ -305,6 +305,10 @@ PrefabInstance:
       value: 3
       objectReference: {fileID: 0}
     - target: {fileID: 3177340306102640231, guid: bc9a6079647017a4c9931c852d09bfac, type: 3}
+      propertyPath: mouseSensitivity
+      value: 3.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 3177340306102640231, guid: bc9a6079647017a4c9931c852d09bfac, type: 3}
       propertyPath: groundedSphereRadius
       value: 0.02
       objectReference: {fileID: 0}
@@ -851,6 +855,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ShooterPrototype.Player.PlayerPickupController
   pickupRadius: 2.2
   pickupLookDot: 0.1
+  pickupSampleHeight: 0.35
 --- !u!4 &8810726252714248224 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 6210655964752675740, guid: bc9a6079647017a4c9931c852d09bfac, type: 3}

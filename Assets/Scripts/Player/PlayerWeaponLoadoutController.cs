@@ -396,6 +396,7 @@ namespace ShooterPrototype.Player
 
         private void ApplyLocalDrop(int slotIndex, bool spawnWorldPickup = true)
         {
+            weaponController?.CancelActiveReload();
             var droppedMagAmmo = ResolveDropMagAmmo(slotIndex);
             if (loadout == null || !loadout.TryRemoveSlot(slotIndex, out var removed))
             {
@@ -526,6 +527,7 @@ namespace ShooterPrototype.Player
         {
             if (loadout == null || !loadout.HasAnyWeapon)
             {
+                weaponController?.CancelActiveReload();
                 weaponMount?.UnequipWeapon();
                 if (weaponController != null)
                 {

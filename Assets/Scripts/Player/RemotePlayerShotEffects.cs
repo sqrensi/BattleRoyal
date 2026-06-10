@@ -273,6 +273,12 @@ namespace ShooterPrototype.Player
             audioController?.PlayReloadSequence(false, durationSeconds > 0f ? durationSeconds : activeReloadDurationSeconds, activeAudioOverrides);
         }
 
+        public void StopRemoteReload()
+        {
+            EnsureAudioSources();
+            audioController?.StopReloadAudio();
+        }
+
         public void PlayRemoteHitPlayer()
         {
             EnsureAudioSources();

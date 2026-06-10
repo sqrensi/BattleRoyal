@@ -127,8 +127,8 @@
     <Compile Include="Assets\Scripts\Player\SyntyWeaponHandBinder.cs" />
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_SimpleRotate.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\FollowCam.cs" />
-    <Compile Include="Assets\Scripts\Player\PlayerWeaponHolsterController.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponScopeOverlay.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerWeaponHolsterController.cs" />
     <Compile Include="Assets\Scripts\Player\MatchPresenceSync.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_DigitValidator.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_FrameRateCounter.cs" />
