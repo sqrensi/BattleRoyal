@@ -108,6 +108,7 @@
     <Compile Include="Assets\Scripts\Player\InventoryItemIds.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponCatalog.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextInfoDebugTool.cs" />
+    <Compile Include="Assets\Scripts\Player\RemoteResourceClothingApplier.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponMount.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\CFX_AutoDestructShuriken.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyCrouchPosture.cs" />

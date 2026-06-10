@@ -99,6 +99,23 @@ namespace ShooterPrototype.Player
             }
 
             RefreshRemoteHitboxes(playerRoot, syntyVisual);
+            RefreshRemoteResourceClothing(playerRoot, syntyVisual);
+        }
+
+        private static void RefreshRemoteResourceClothing(GameObject playerRoot, Transform syntyVisual)
+        {
+            if (playerRoot == null || syntyVisual == null)
+            {
+                return;
+            }
+
+            var clothingApplier = playerRoot.GetComponent<RemoteResourceClothingApplier>();
+            if (clothingApplier == null)
+            {
+                clothingApplier = playerRoot.AddComponent<RemoteResourceClothingApplier>();
+            }
+
+            clothingApplier.ApplyToRemoteVisual(syntyVisual, forceReapply: true);
         }
 
         public static void RefreshRemoteHitboxes(GameObject playerRoot, Transform syntyVisual, bool forceRebuild = false)

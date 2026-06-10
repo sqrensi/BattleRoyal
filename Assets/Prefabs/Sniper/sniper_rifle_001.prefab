@@ -234,7 +234,7 @@ MonoBehaviour:
   magazineSize: 7
   reloadDuration: 1.36
   maxDistance: 300
-  bulletDropAngleDegrees: 0.15
+  bulletDropAngleDegrees: 0.25
   legDamage: 35
   bodyDamage: 70
   neckDamage: 90

@@ -40,6 +40,7 @@ namespace ShooterPrototype.Player
             WireRemoteMedkit(thirdPersonBody);
             WireRemoteLookPitchPosture(thirdPersonBody);
             EnsureBoneHitboxes(thirdPersonBody);
+            ApplyRemoteResourceClothing(thirdPersonBody);
             EnsureRemoteShotEffects();
         }
 
@@ -169,6 +170,28 @@ namespace ShooterPrototype.Player
             {
                 gameObject.AddComponent<RemotePlayerShotEffects>();
             }
+        }
+
+        private void ApplyRemoteResourceClothing(Transform thirdPersonBody)
+        {
+            if (thirdPersonBody == null)
+            {
+                return;
+            }
+
+            var syntyVisual = thirdPersonBody.Find("SyntyVisual");
+            if (syntyVisual == null)
+            {
+                return;
+            }
+
+            var clothingApplier = GetComponent<RemoteResourceClothingApplier>();
+            if (clothingApplier == null)
+            {
+                clothingApplier = gameObject.AddComponent<RemoteResourceClothingApplier>();
+            }
+
+            clothingApplier.ApplyToRemoteVisual(syntyVisual, forceReapply: true);
         }
 
         private void WireRemoteHolsterAnimation(Transform thirdPersonBody)

@@ -1288,6 +1288,8 @@ namespace ShooterPrototype.Player
                 Debug.Log($"[MatchPresenceSync] create avatar ticket={ticketId}");
             }
 
+            EnsureAvatarHasFallbackModel(root);
+
             var bootstrap = root.GetComponent<RemoteThirdPersonPlayerBootstrap>();
             if (bootstrap != null)
             {
@@ -1306,8 +1308,6 @@ namespace ShooterPrototype.Player
                 remoteWeapon.SetWeaponEquipped(false);
                 EnsureRemoteVisuals(root);
             }
-
-            EnsureAvatarHasFallbackModel(root);
             RefreshRemoteAvatarHitboxes(root);
 
             var identity = root.GetComponent<PlayerNetworkIdentity>();
