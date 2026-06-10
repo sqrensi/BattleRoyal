@@ -526,6 +526,7 @@ MonoBehaviour:
   hasScope: 0
   adsCameraFov: 35
   adsMaxLookAngle: 40
+  adsLookSensitivityMultiplier: 0.7
   overrideAdsCameraPose: 0
   adsCameraLocalPosition: {x: 0, y: -0.14, z: 0.35}
   adsCameraLocalEuler: {x: 1, y: 0, z: 0}

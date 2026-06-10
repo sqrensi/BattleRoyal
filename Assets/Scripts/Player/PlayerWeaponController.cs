@@ -176,6 +176,7 @@ namespace ShooterPrototype.Player
             ApplyWeaponDefaults(weaponDefaults);
             currentWeaponKind = WeaponKind.AssaultRifle;
             fpsController?.RestoreDefaultAdsMaxLookAngle();
+            fpsController?.RestoreDefaultAdsLookSensitivityMultiplier();
             weaponMount?.RestoreDefaultAdsCameraFov();
             weaponMount?.RestoreDefaultAdsCameraPose();
             weaponMount?.RestoreDefaultHandsScale();

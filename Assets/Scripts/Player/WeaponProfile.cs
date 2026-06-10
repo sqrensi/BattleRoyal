@@ -40,6 +40,7 @@ namespace ShooterPrototype.Player
         [SerializeField] private bool hasScope = false;
         [SerializeField] private float adsCameraFov = 55f;
         [SerializeField] private float adsMaxLookAngle = 40f;
+        [SerializeField] private float adsLookSensitivityMultiplier = 1f;
         [SerializeField] private bool overrideAdsCameraPose;
         [SerializeField] private Vector3 adsCameraLocalPosition = new Vector3(0f, -0.14f, 0.35f);
         [SerializeField] private Vector3 adsCameraLocalEuler = new Vector3(0f, -1f, 0f);
@@ -98,6 +99,7 @@ namespace ShooterPrototype.Player
             if (fpsController != null)
             {
                 fpsController.ConfigureAdsMaxLookAngle(adsMaxLookAngle);
+                fpsController.ConfigureAdsLookSensitivityMultiplier(adsLookSensitivityMultiplier);
             }
         }
 
@@ -125,6 +127,7 @@ namespace ShooterPrototype.Player
             profile.hasScope = false;
             profile.adsCameraFov = 55f;
             profile.adsMaxLookAngle = 40f;
+            profile.adsLookSensitivityMultiplier = 1.85f;
             profile.overrideAdsCameraPose = false;
             profile.handsScaleMultiplier = 1f;
             return profile;
@@ -167,6 +170,7 @@ namespace ShooterPrototype.Player
             profile.hasScope = true;
             profile.adsCameraFov = 22f;
             profile.adsMaxLookAngle = 28f;
+            profile.adsLookSensitivityMultiplier = 2.6f;
             profile.overrideAdsCameraPose = true;
             profile.adsCameraLocalPosition = new Vector3(0f, -0.1f, 0.33f);
             profile.adsCameraLocalEuler = new Vector3(1.5f, 0f, 0f);

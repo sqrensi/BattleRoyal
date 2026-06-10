@@ -306,7 +306,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3177340306102640231, guid: bc9a6079647017a4c9931c852d09bfac, type: 3}
       propertyPath: mouseSensitivity
-      value: 3.5
+      value: 1.8
       objectReference: {fileID: 0}
     - target: {fileID: 3177340306102640231, guid: bc9a6079647017a4c9931c852d09bfac, type: 3}
       propertyPath: groundedSphereRadius

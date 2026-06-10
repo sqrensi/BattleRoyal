@@ -30,7 +30,6 @@ namespace ShooterPrototype.Player
 
         [Header("Look")]
         [SerializeField] private float mouseSensitivity = 2.2f;
-        [SerializeField] private bool scaleLookSensitivityWithFov = true;
         [SerializeField] private float maxLookAngle = 80f;
         [SerializeField] private float hipMaxLookAngle = 50f;
         [SerializeField] private float adsMaxLookAngle = 40f;
@@ -91,7 +90,6 @@ namespace ShooterPrototype.Player
         private PlayerWeaponHolsterController weaponHolster;
         private PlayerWeaponMount weaponMount;
         private PlayerMedkitController medkitController;
-        private float referenceLookFov = -1f;
         [Header("Audio")]
         [SerializeField] private float footstepIntervalSlow = 0.8f;
         [SerializeField] private float footstepIntervalFast = 0.42f;
@@ -110,6 +108,7 @@ namespace ShooterPrototype.Player
         private bool medkitUseMovementMode;
         private System.Action medkitMovementCancelHandler;
         private float defaultAdsMaxLookAngle;
+        private float adsLookSensitivityMultiplier = 1f;
 
         public bool IsGrounded => isGrounded;
         public bool IsMovementLocked => movementLocked;
@@ -311,9 +310,19 @@ namespace ShooterPrototype.Player
             adsMaxLookAngle = Mathf.Clamp(value, 1f, 89f);
         }
 
+        public void ConfigureAdsLookSensitivityMultiplier(float value)
+        {
+            adsLookSensitivityMultiplier = Mathf.Max(0.01f, value);
+        }
+
         public void RestoreDefaultAdsMaxLookAngle()
         {
             adsMaxLookAngle = defaultAdsMaxLookAngle;
+        }
+
+        public void RestoreDefaultAdsLookSensitivityMultiplier()
+        {
+            adsLookSensitivityMultiplier = 1f;
         }
 
         private void OnEnable()
@@ -479,7 +488,7 @@ namespace ShooterPrototype.Player
         private void TickLook()
         {
             var lookDelta = ReadLookInput();
-            var sensitivity = mouseSensitivity * ResolveLookSensitivityScale();
+            var sensitivity = mouseSensitivity * ResolveAdsLookSensitivityMultiplier();
             var mouseX = lookDelta.x * sensitivity;
             var mouseY = lookDelta.y * sensitivity;
 
@@ -527,31 +536,20 @@ namespace ShooterPrototype.Player
             recoilPitchOffset = Mathf.MoveTowards(recoilPitchOffset, 0f, manualRecoveryAmount);
         }
 
-        private float ResolveLookSensitivityScale()
+        private float ResolveAdsLookSensitivityMultiplier()
         {
-            if (!scaleLookSensitivityWithFov)
+            var multiplier = Mathf.Max(0.01f, adsLookSensitivityMultiplier);
+            if (Mathf.Approximately(multiplier, 1f))
             {
                 return 1f;
             }
 
-            if (weaponMount != null)
-            {
-                return weaponMount.GetFovLookSensitivityScale();
-            }
-
-            if (playerCamera == null)
-            {
-                return 1f;
-            }
-
-            if (referenceLookFov <= 0f)
-            {
-                referenceLookFov = playerCamera.fieldOfView;
-            }
-
-            return PlayerWeaponMount.ComputeFovLookSensitivityScale(
-                playerCamera.fieldOfView,
-                referenceLookFov);
+            var adsBlend = weaponMount != null
+                ? weaponMount.AdsBlend
+                : ReadAimPressed() && !IsAimBlockedDuringMedkit()
+                    ? 1f
+                    : 0f;
+            return Mathf.Lerp(1f, multiplier, Mathf.Clamp01(adsBlend));
         }
 
         public void ApplyRecoil(float pitchUpDegrees, float yawDegrees)

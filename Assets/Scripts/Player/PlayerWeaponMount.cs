@@ -270,43 +270,6 @@ namespace ShooterPrototype.Player
         public float AdsBlend => adsBlend;
         public bool IsAdsFullyOut => adsBlend <= 0.001f;
 
-        public float GetFovLookSensitivityScale()
-        {
-            if (useNetworkState || !enableAdsCameraZoom)
-            {
-                return 1f;
-            }
-
-            ResolveLocalPlayerCamera();
-            if (localPlayerCamera == null)
-            {
-                return 1f;
-            }
-
-            if (baseCameraFov <= 0f)
-            {
-                baseCameraFov = localPlayerCamera.fieldOfView;
-            }
-
-            if (baseCameraFov <= 0f)
-            {
-                return 1f;
-            }
-
-            var targetAdsFov = Mathf.Clamp(activeAdsCameraFov, 12f, 179f);
-            var effectiveFov = Mathf.Lerp(baseCameraFov, targetAdsFov, Mathf.Clamp01(adsBlend));
-            return ComputeFovLookSensitivityScale(effectiveFov, baseCameraFov);
-        }
-
-        public static float ComputeFovLookSensitivityScale(float effectiveFov, float referenceFov)
-        {
-            effectiveFov = Mathf.Clamp(effectiveFov, 1f, 179f);
-            referenceFov = Mathf.Clamp(referenceFov, 1f, 179f);
-            var effectiveTan = Mathf.Tan(effectiveFov * 0.5f * Mathf.Deg2Rad);
-            var referenceTan = Mathf.Tan(referenceFov * 0.5f * Mathf.Deg2Rad);
-            return referenceTan <= 0.000001f ? 1f : effectiveTan / referenceTan;
-        }
-
         public bool HasScopedWeapon => activeWeaponProfile != null && activeWeaponProfile.HasScope;
         public bool IsScopePresentationActive =>
             HasScopedWeapon &&
