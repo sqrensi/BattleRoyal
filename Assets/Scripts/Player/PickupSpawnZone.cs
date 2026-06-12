@@ -26,7 +26,7 @@ namespace ShooterPrototype.Player
 
         public string BuildSpawnId(int slotIndex)
         {
-            return $"pz_{ResolvePrefabInstanceId()}_{ResolveLocalZoneKey()}_{slotIndex:00}";
+            return $"pz_{ResolveStableInstanceKey()}_{ResolveLocalZoneKey()}_{slotIndex:00}";
         }
 
         public static bool TryParseSpawnSlotIndex(string spawnId, out int slotIndex)
@@ -64,6 +64,18 @@ namespace ShooterPrototype.Player
             out Vector3 position,
             out Quaternion rotation)
         {
+            return TryResolveSpawnPose(null, slotIndex, yOffset, eulerOffset, avoidPositions, out position, out rotation);
+        }
+
+        public bool TryResolveSpawnPose(
+            string deterministicSpawnId,
+            int slotIndex,
+            float yOffset,
+            Vector3 eulerOffset,
+            IReadOnlyList<Vector3> avoidPositions,
+            out Vector3 position,
+            out Quaternion rotation)
+        {
             position = Vector3.zero;
             rotation = Quaternion.Euler(eulerOffset);
             EnsureCollider();
@@ -78,7 +90,7 @@ namespace ShooterPrototype.Player
 
             for (var attempt = 0; attempt < maxPlacementAttempts; attempt++)
             {
-                var candidate = SampleRandomPointInBounds(bounds);
+                var candidate = SamplePointInBounds(bounds, deterministicSpawnId, attempt);
                 candidate.y = spawnHeight;
 
                 if (!HasSeparation(candidate, avoidPositions))
@@ -103,10 +115,14 @@ namespace ShooterPrototype.Player
                 return zoneKey.Trim();
             }
 
-            return $"s{transform.GetSiblingIndex()}";
+            var localPosition = transform.localPosition;
+            return $"{SanitizeKeyPart(gameObject.name)}@" +
+                   $"{Mathf.RoundToInt(localPosition.x * 8f)}@" +
+                   $"{Mathf.RoundToInt(localPosition.y * 8f)}@" +
+                   $"{Mathf.RoundToInt(localPosition.z * 8f)}";
         }
 
-        private int ResolvePrefabInstanceId()
+        private string ResolveStableInstanceKey()
         {
             var instanceRoot = transform;
             while (instanceRoot.parent != null && instanceRoot.parent.parent != null)
@@ -114,7 +130,21 @@ namespace ShooterPrototype.Player
                 instanceRoot = instanceRoot.parent;
             }
 
-            return instanceRoot.GetInstanceID();
+            var position = instanceRoot.position;
+            return $"{SanitizeKeyPart(instanceRoot.name)}@" +
+                   $"{Mathf.RoundToInt(position.x * 4f)}@" +
+                   $"{Mathf.RoundToInt(position.y * 4f)}@" +
+                   $"{Mathf.RoundToInt(position.z * 4f)}";
+        }
+
+        private static string SanitizeKeyPart(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "root";
+            }
+
+            return value.Trim().Replace(' ', '_');
         }
 
         private void EnsureCollider()
@@ -136,7 +166,7 @@ namespace ShooterPrototype.Player
             return zoneCollider != null ? zoneCollider.bounds : new Bounds(transform.position, Vector3.one);
         }
 
-        private Vector3 SampleRandomPointInBounds(Bounds bounds)
+        private Vector3 SamplePointInBounds(Bounds bounds, string deterministicSpawnId, int attemptIndex)
         {
             var min = bounds.min;
             var max = bounds.max;
@@ -144,9 +174,37 @@ namespace ShooterPrototype.Player
                 edgePadding,
                 Mathf.Max(0f, (max.x - min.x) * 0.5f - 0.01f),
                 Mathf.Max(0f, (max.z - min.z) * 0.5f - 0.01f));
-            var x = Random.Range(min.x + safePadding, max.x - safePadding);
-            var z = Random.Range(min.z + safePadding, max.z - safePadding);
-            return new Vector3(x, bounds.center.y, z);
+
+            var previousState = UnityEngine.Random.state;
+            if (!string.IsNullOrWhiteSpace(deterministicSpawnId))
+            {
+                UnityEngine.Random.InitState(ComputeStableSeed($"{deterministicSpawnId}_{attemptIndex}"));
+            }
+
+            try
+            {
+                var x = UnityEngine.Random.Range(min.x + safePadding, max.x - safePadding);
+                var z = UnityEngine.Random.Range(min.z + safePadding, max.z - safePadding);
+                return new Vector3(x, bounds.center.y, z);
+            }
+            finally
+            {
+                UnityEngine.Random.state = previousState;
+            }
+        }
+
+        private static int ComputeStableSeed(string value)
+        {
+            unchecked
+            {
+                var hash = 17;
+                for (var i = 0; i < value.Length; i++)
+                {
+                    hash = (hash * 31) + value[i];
+                }
+
+                return hash;
+            }
         }
 
         private bool HasSeparation(Vector3 spawnPoint, IReadOnlyList<Vector3> avoidPositions)

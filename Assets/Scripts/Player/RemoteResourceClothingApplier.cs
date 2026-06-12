@@ -8,6 +8,7 @@ namespace ShooterPrototype.Player
     public sealed class RemoteResourceClothingApplier : MonoBehaviour
     {
         private const string ClothingRootName = "RemoteResourceClothing";
+        public const string FirstPersonGlovesRootName = "LocalFirstPersonGloves";
         private const float MinimumBoneBindRatio = 0.65f;
 
         private static readonly string[] CriticalArmBoneCores =
@@ -20,6 +21,34 @@ namespace ShooterPrototype.Player
             "RightForeArm"
         };
 
+        private static readonly string[] CriticalLegBoneCores =
+        {
+            "LeftUpLeg",
+            "RightUpLeg",
+            "LeftLeg",
+            "RightLeg"
+        };
+
+        private static readonly string[] CriticalFootBoneCores =
+        {
+            "LeftFoot",
+            "RightFoot"
+        };
+
+        private static readonly string[] CriticalHandBoneCores =
+        {
+            "LeftHand",
+            "RightHand"
+        };
+
+        private enum ClothingBindProfile
+        {
+            Arms,
+            Legs,
+            Feet,
+            Hands
+        }
+
         private static readonly Dictionary<string, GameObject> PrefabCache =
             new Dictionary<string, GameObject>(4, StringComparer.Ordinal);
 
@@ -29,11 +58,35 @@ namespace ShooterPrototype.Player
         private static readonly Dictionary<int, Mesh> BodyWithoutTorsoMeshCache =
             new Dictionary<int, Mesh>(8);
 
+        private static readonly Dictionary<int, Mesh> BodyWithoutLegsMeshCache =
+            new Dictionary<int, Mesh>(8);
+
+        private static readonly Dictionary<int, Mesh> BodyWithoutFeetMeshCache =
+            new Dictionary<int, Mesh>(8);
+
+        private static readonly Dictionary<int, Mesh> BodyWithoutHandsMeshCache =
+            new Dictionary<int, Mesh>(8);
+
         [SerializeField] private bool applyOnRemote = true;
         [SerializeField] private bool hideBodyTorsoWhenClothed = true;
         [SerializeField] private float minTorsoHideBoneWeight = 0.35f;
         [SerializeField] private string clothingResourcePath = "1";
         [SerializeField] private string clothingMaterialResourcePath = "tshirt";
+        [SerializeField] private bool applyPantsOnRemote = true;
+        [SerializeField] private bool hideBodyLegsWhenPants = true;
+        [SerializeField] private float minLegHideBoneWeight = 0.35f;
+        [SerializeField] private string pantsResourcePath = "2";
+        [SerializeField] private string pantsMaterialResourcePath = "pants";
+        [SerializeField] private bool applyBootsOnRemote = true;
+        [SerializeField] private bool hideBodyFeetWhenBoots = true;
+        [SerializeField] private float minFootHideBoneWeight = 0.35f;
+        [SerializeField] private string bootsResourcePath = "3";
+        [SerializeField] private string bootsMaterialResourcePath = "feets";
+        [SerializeField] private bool applyGloves = true;
+        [SerializeField] private bool hideBodyHandsWhenGloves = true;
+        [SerializeField] private float minHandHideBoneWeight = 0.35f;
+        [SerializeField] private string glovesResourcePath = "4";
+        [SerializeField] private string glovesMaterialResourcePath = "gloves";
         [Tooltip("Skinned clothing should stay at zero offset. Non-zero values break sleeve alignment.")]
         [SerializeField] private Vector3 clothingLocalOffset = Vector3.zero;
 
@@ -41,9 +94,12 @@ namespace ShooterPrototype.Player
         private bool warnedIncompatibleRig;
         private bool warnedStaticMesh;
         private bool warnedTorsoHideFailed;
+        private bool warnedLegHideFailed;
+        private bool warnedFootHideFailed;
+        private bool warnedHandHideFailed;
 
-        private SkinnedMeshRenderer bodyRendererWithHiddenTorso;
-        private Mesh originalBodyMeshBeforeTorsoHide;
+        private SkinnedMeshRenderer bodyRendererWithHiddenParts;
+        private Mesh originalBodyMeshBeforeHide;
 
         public void ApplyToRemoteVisual(Transform syntyVisual, bool forceReapply = false)
         {
@@ -64,19 +120,59 @@ namespace ShooterPrototype.Player
                 warnedIncompatibleRig = false;
                 warnedStaticMesh = false;
                 warnedTorsoHideFailed = false;
+                warnedLegHideFailed = false;
+                warnedFootHideFailed = false;
+                warnedHandHideFailed = false;
             }
 
             ClearExistingClothing(syntyVisual);
+            ApplyClothingToVisual(syntyVisual, forceReapply);
+        }
 
-            var prefab = LoadClothingAsset(clothingResourcePath);
-            if (prefab == null)
+        public void ApplyToLocalVisual(
+            Transform syntyVisual,
+            SyntyFirstPersonArmsPresenter armsPresenter,
+            bool forceReapply = false)
+        {
+            if (syntyVisual == null || armsPresenter == null)
             {
-                WarnMissingResourceOnce();
                 return;
             }
 
+            armsPresenter.EnsureBuilt();
+
+            var existing = syntyVisual.Find(ClothingRootName);
+            if (!forceReapply && existing != null)
+            {
+                ApplyFirstPersonGloves(syntyVisual, armsPresenter);
+                return;
+            }
+
+            if (forceReapply)
+            {
+                warnedMissingResource = false;
+                warnedIncompatibleRig = false;
+                warnedStaticMesh = false;
+                warnedTorsoHideFailed = false;
+                warnedLegHideFailed = false;
+                warnedFootHideFailed = false;
+                warnedHandHideFailed = false;
+            }
+
+            ClearExistingClothing(syntyVisual);
+            ClearFirstPersonGloves(armsPresenter);
+
+            if (!ApplyClothingToVisual(syntyVisual, forceReapply))
+            {
+                return;
+            }
+
+            ApplyFirstPersonGloves(syntyVisual, armsPresenter);
+        }
+
+        private bool ApplyClothingToVisual(Transform syntyVisual, bool forceReapply)
+        {
             var bodyRenderer = FindCharacterBodyRenderer(syntyVisual);
-            var clothingMaterial = LoadClothingMaterial(clothingMaterialResourcePath);
             var bodyParent = bodyRenderer != null ? bodyRenderer.transform.parent : syntyVisual;
 
             var clothingRootObject = new GameObject(ClothingRootName);
@@ -86,6 +182,197 @@ namespace ShooterPrototype.Player
             clothingRoot.localRotation = Quaternion.identity;
             clothingRoot.localScale = Vector3.one;
 
+            var appliedAny = ApplyAllClothingLayers(
+                syntyVisual,
+                clothingRoot,
+                bodyRenderer,
+                bodyParent);
+
+            if (!appliedAny)
+            {
+                Destroy(clothingRootObject);
+                WarnIncompatibleRigOnce();
+                return false;
+            }
+
+            RefreshHiddenBodyParts(bodyRenderer);
+            return true;
+        }
+
+        private bool ApplyAllClothingLayers(
+            Transform syntyVisual,
+            Transform clothingRoot,
+            SkinnedMeshRenderer bodyRenderer,
+            Transform bodyParent,
+            Transform layerParentOverride = null)
+        {
+            var layerParent = layerParentOverride != null ? layerParentOverride : clothingRoot;
+            var appliedAny = false;
+            appliedAny |= ApplyClothingLayer(
+                syntyVisual,
+                clothingRoot,
+                clothingResourcePath,
+                clothingMaterialResourcePath,
+                bodyRenderer,
+                bodyParent,
+                ClothingBindProfile.Arms,
+                layerParent);
+            if (applyPantsOnRemote)
+            {
+                appliedAny |= ApplyClothingLayer(
+                    syntyVisual,
+                    clothingRoot,
+                    pantsResourcePath,
+                    pantsMaterialResourcePath,
+                    bodyRenderer,
+                    bodyParent,
+                    ClothingBindProfile.Legs,
+                    layerParent);
+            }
+
+            if (applyBootsOnRemote)
+            {
+                appliedAny |= ApplyClothingLayer(
+                    syntyVisual,
+                    clothingRoot,
+                    bootsResourcePath,
+                    bootsMaterialResourcePath,
+                    bodyRenderer,
+                    bodyParent,
+                    ClothingBindProfile.Feet,
+                    layerParent);
+            }
+
+            if (applyGloves)
+            {
+                appliedAny |= ApplyClothingLayer(
+                    syntyVisual,
+                    clothingRoot,
+                    glovesResourcePath,
+                    glovesMaterialResourcePath,
+                    bodyRenderer,
+                    bodyParent,
+                    ClothingBindProfile.Hands,
+                    layerParent);
+            }
+
+            return appliedAny;
+        }
+
+        private void ApplyFirstPersonGloves(Transform syntyVisual, SyntyFirstPersonArmsPresenter armsPresenter)
+        {
+            if (!applyGloves || armsPresenter == null || syntyVisual == null)
+            {
+                return;
+            }
+
+            var bodyRenderer = FindCharacterBodyRenderer(syntyVisual);
+            if (bodyRenderer == null)
+            {
+                return;
+            }
+
+            var bodyParent = bodyRenderer.transform.parent;
+            var glovesRoot = armsPresenter.GetOrCreateFirstPersonGlovesRoot();
+            if (glovesRoot == null)
+            {
+                return;
+            }
+
+            ClearFirstPersonGloves(armsPresenter);
+            glovesRoot = armsPresenter.GetOrCreateFirstPersonGlovesRoot();
+
+            var clothingRoot = syntyVisual.Find(ClothingRootName);
+            if (!ApplyClothingLayer(
+                syntyVisual,
+                clothingRoot != null ? clothingRoot : glovesRoot,
+                glovesResourcePath,
+                glovesMaterialResourcePath,
+                bodyRenderer,
+                bodyParent,
+                ClothingBindProfile.Hands,
+                glovesRoot,
+                snapToBodyHierarchy: false))
+            {
+                return;
+            }
+
+            armsPresenter.RegisterFirstPersonGloveRenderers(glovesRoot);
+            HideHandsOnFirstPersonArms(armsPresenter);
+            RefreshLocalFirstPersonView(armsPresenter);
+        }
+
+        private static void RefreshLocalFirstPersonView(SyntyFirstPersonArmsPresenter armsPresenter)
+        {
+            if (armsPresenter == null)
+            {
+                return;
+            }
+
+            var viewPresentation = armsPresenter.GetComponent<PlayerViewPresentation>();
+            if (viewPresentation != null)
+            {
+                viewPresentation.RefreshViewMode();
+                return;
+            }
+
+            var holster = armsPresenter.GetComponent<PlayerWeaponHolsterController>();
+            if (holster != null)
+            {
+                holster.SyncFirstPersonArmsPresentation();
+                return;
+            }
+
+            armsPresenter.ApplyFirstPersonVisibility(true);
+        }
+
+        private void HideHandsOnFirstPersonArms(SyntyFirstPersonArmsPresenter armsPresenter)
+        {
+            if (!hideBodyHandsWhenGloves || armsPresenter == null)
+            {
+                return;
+            }
+
+            var armsRenderers = armsPresenter.FirstPersonArmsRenderers;
+            for (var i = 0; i < armsRenderers.Count; i++)
+            {
+                var armsRenderer = armsRenderers[i];
+                if (armsRenderer == null || armsRenderer.sharedMesh == null)
+                {
+                    continue;
+                }
+
+                var withoutHands = GetOrCreateBodyWithoutHandsMesh(armsRenderer, minHandHideBoneWeight);
+                if (withoutHands == null)
+                {
+                    WarnHandHideFailedOnce(armsRenderer);
+                    continue;
+                }
+
+                armsPresenter.RegisterGeneratedMesh(withoutHands);
+                armsRenderer.sharedMesh = withoutHands;
+            }
+        }
+
+        private bool ApplyClothingLayer(
+            Transform syntyVisual,
+            Transform clothingRoot,
+            string resourcePath,
+            string materialResourcePath,
+            SkinnedMeshRenderer bodyRenderer,
+            Transform bodyParent,
+            ClothingBindProfile bindProfile,
+            Transform layerParent,
+            bool snapToBodyHierarchy = true)
+        {
+            var prefab = LoadClothingAsset(resourcePath);
+            if (prefab == null)
+            {
+                WarnMissingResourceOnce(resourcePath);
+                return false;
+            }
+
+            var clothingMaterial = LoadClothingMaterial(materialResourcePath);
             var instance = Instantiate(prefab, syntyVisual);
             instance.name = $"RemoteClothing_{prefab.name}";
 
@@ -96,7 +383,9 @@ namespace ShooterPrototype.Player
                 clothingRoot,
                 bodyRenderer,
                 bodyParent,
-                clothingMaterial);
+                clothingMaterial,
+                bindProfile,
+                snapToBodyHierarchy);
             if (!appliedAny)
             {
                 appliedAny = EnableStaticRenderers(instance);
@@ -104,6 +393,11 @@ namespace ShooterPrototype.Player
                 {
                     WarnStaticClothingOnce();
                 }
+            }
+
+            if (clothingMaterial != null)
+            {
+                ApplyClothingMaterialToInstance(instance, clothingMaterial);
             }
 
             StripEmbeddedArmature(instance);
@@ -115,52 +409,127 @@ namespace ShooterPrototype.Player
             }
             else
             {
-                instance.transform.SetParent(clothingRoot, true);
+                instance.transform.SetParent(layerParent, true);
             }
 
-            if (!appliedAny)
+            return appliedAny;
+        }
+
+        private void ClearFirstPersonGloves(SyntyFirstPersonArmsPresenter armsPresenter)
+        {
+            if (armsPresenter == null)
             {
-                Destroy(clothingRootObject);
-                WarnIncompatibleRigOnce();
                 return;
             }
 
-            if (hideBodyTorsoWhenClothed)
+            var glovesRoot = armsPresenter.FindFirstPersonGlovesRoot();
+            if (glovesRoot != null)
             {
-                HideBodyTorsoUnderClothing(bodyRenderer);
+                Destroy(glovesRoot.gameObject);
             }
+
+            armsPresenter.ClearFirstPersonGloveRenderers();
         }
 
-        private void HideBodyTorsoUnderClothing(SkinnedMeshRenderer bodyRenderer)
+        private void RefreshHiddenBodyParts(SkinnedMeshRenderer bodyRenderer)
         {
             if (bodyRenderer == null)
             {
                 return;
             }
 
-            var sourceMesh = bodyRenderer.sharedMesh;
-            if (sourceMesh == null)
+            EnsureOriginalBodyMeshCached(bodyRenderer);
+
+            var workingMesh = originalBodyMeshBeforeHide;
+            if (workingMesh == null)
             {
                 return;
             }
 
-            if (bodyRendererWithHiddenTorso == bodyRenderer &&
-                originalBodyMeshBeforeTorsoHide != null &&
-                bodyRenderer.sharedMesh != originalBodyMeshBeforeTorsoHide)
+            bodyRenderer.sharedMesh = workingMesh;
+
+            if (hideBodyTorsoWhenClothed && !string.IsNullOrWhiteSpace(clothingResourcePath))
+            {
+                var withoutTorso = GetOrCreateBodyWithoutTorsoMesh(bodyRenderer, minTorsoHideBoneWeight);
+                if (withoutTorso == null)
+                {
+                    WarnTorsoHideFailedOnce(bodyRenderer);
+                }
+                else
+                {
+                    workingMesh = withoutTorso;
+                    bodyRenderer.sharedMesh = workingMesh;
+                }
+            }
+
+            if (hideBodyLegsWhenPants && applyPantsOnRemote && !string.IsNullOrWhiteSpace(pantsResourcePath))
+            {
+                var withoutLegs = GetOrCreateBodyWithoutLegsMesh(bodyRenderer, minLegHideBoneWeight);
+                if (withoutLegs == null)
+                {
+                    WarnLegHideFailedOnce(bodyRenderer);
+                }
+                else
+                {
+                    workingMesh = withoutLegs;
+                    bodyRenderer.sharedMesh = workingMesh;
+                }
+            }
+
+            if (hideBodyFeetWhenBoots && applyBootsOnRemote && !string.IsNullOrWhiteSpace(bootsResourcePath))
+            {
+                var withoutFeet = GetOrCreateBodyWithoutFeetMesh(bodyRenderer, minFootHideBoneWeight);
+                if (withoutFeet == null)
+                {
+                    WarnFootHideFailedOnce(bodyRenderer);
+                }
+                else
+                {
+                    workingMesh = withoutFeet;
+                    bodyRenderer.sharedMesh = workingMesh;
+                }
+            }
+
+            if (hideBodyHandsWhenGloves && applyGloves && !string.IsNullOrWhiteSpace(glovesResourcePath))
+            {
+                var withoutHands = GetOrCreateBodyWithoutHandsMesh(bodyRenderer, minHandHideBoneWeight);
+                if (withoutHands == null)
+                {
+                    WarnHandHideFailedOnce(bodyRenderer);
+                }
+                else
+                {
+                    workingMesh = withoutHands;
+                    bodyRenderer.sharedMesh = workingMesh;
+                }
+            }
+
+            bodyRendererWithHiddenParts = bodyRenderer;
+        }
+
+        private void EnsureOriginalBodyMeshCached(SkinnedMeshRenderer bodyRenderer)
+        {
+            if (bodyRenderer == null || bodyRenderer.sharedMesh == null)
             {
                 return;
             }
 
-            var trimmedMesh = GetOrCreateBodyWithoutTorsoMesh(bodyRenderer, minTorsoHideBoneWeight);
-            if (trimmedMesh == null)
+            if (bodyRendererWithHiddenParts == bodyRenderer && originalBodyMeshBeforeHide != null)
             {
-                WarnTorsoHideFailedOnce(bodyRenderer);
                 return;
             }
 
-            originalBodyMeshBeforeTorsoHide = sourceMesh;
-            bodyRendererWithHiddenTorso = bodyRenderer;
-            bodyRenderer.sharedMesh = trimmedMesh;
+            if (originalBodyMeshBeforeHide == null ||
+                bodyRendererWithHiddenParts != bodyRenderer)
+            {
+                originalBodyMeshBeforeHide = bodyRenderer.sharedMesh;
+                bodyRendererWithHiddenParts = bodyRenderer;
+            }
+        }
+
+        private void HideBodyTorsoUnderClothing(SkinnedMeshRenderer bodyRenderer)
+        {
+            RefreshHiddenBodyParts(bodyRenderer);
         }
 
         private static Mesh GetOrCreateBodyWithoutTorsoMesh(
@@ -190,22 +559,103 @@ namespace ShooterPrototype.Player
             return trimmedMesh;
         }
 
+        private static Mesh GetOrCreateBodyWithoutLegsMesh(
+            SkinnedMeshRenderer bodyRenderer,
+            float minLegBoneWeight)
+        {
+            var sourceMesh = bodyRenderer.sharedMesh;
+            if (sourceMesh == null)
+            {
+                return null;
+            }
+
+            var cacheKey = sourceMesh.GetInstanceID();
+            if (BodyWithoutLegsMeshCache.TryGetValue(cacheKey, out var cached) && cached != null)
+            {
+                return cached;
+            }
+
+            var trimmedMesh = SyntyFirstPersonArmsMeshBuilder.ExtractBodyWithoutLegsMesh(
+                bodyRenderer,
+                minLegBoneWeight);
+            if (trimmedMesh != null)
+            {
+                BodyWithoutLegsMeshCache[cacheKey] = trimmedMesh;
+            }
+
+            return trimmedMesh;
+        }
+
+        private static Mesh GetOrCreateBodyWithoutFeetMesh(
+            SkinnedMeshRenderer bodyRenderer,
+            float minFootBoneWeight)
+        {
+            var sourceMesh = bodyRenderer.sharedMesh;
+            if (sourceMesh == null)
+            {
+                return null;
+            }
+
+            var cacheKey = sourceMesh.GetInstanceID();
+            if (BodyWithoutFeetMeshCache.TryGetValue(cacheKey, out var cached) && cached != null)
+            {
+                return cached;
+            }
+
+            var trimmedMesh = SyntyFirstPersonArmsMeshBuilder.ExtractBodyWithoutFeetMesh(
+                bodyRenderer,
+                minFootBoneWeight);
+            if (trimmedMesh != null)
+            {
+                BodyWithoutFeetMeshCache[cacheKey] = trimmedMesh;
+            }
+
+            return trimmedMesh;
+        }
+
+        private static Mesh GetOrCreateBodyWithoutHandsMesh(
+            SkinnedMeshRenderer bodyRenderer,
+            float minHandBoneWeight)
+        {
+            var sourceMesh = bodyRenderer.sharedMesh;
+            if (sourceMesh == null)
+            {
+                return null;
+            }
+
+            var cacheKey = sourceMesh.GetInstanceID();
+            if (BodyWithoutHandsMeshCache.TryGetValue(cacheKey, out var cached) && cached != null)
+            {
+                return cached;
+            }
+
+            var trimmedMesh = SyntyFirstPersonArmsMeshBuilder.ExtractBodyWithoutHandsMesh(
+                bodyRenderer,
+                minHandBoneWeight);
+            if (trimmedMesh != null)
+            {
+                BodyWithoutHandsMeshCache[cacheKey] = trimmedMesh;
+            }
+
+            return trimmedMesh;
+        }
+
         private void RestoreHiddenBodyTorso()
         {
-            if (bodyRendererWithHiddenTorso == null || originalBodyMeshBeforeTorsoHide == null)
+            if (bodyRendererWithHiddenParts == null || originalBodyMeshBeforeHide == null)
             {
-                bodyRendererWithHiddenTorso = null;
-                originalBodyMeshBeforeTorsoHide = null;
+                bodyRendererWithHiddenParts = null;
+                originalBodyMeshBeforeHide = null;
                 return;
             }
 
-            if (bodyRendererWithHiddenTorso.sharedMesh != originalBodyMeshBeforeTorsoHide)
+            if (bodyRendererWithHiddenParts.sharedMesh != originalBodyMeshBeforeHide)
             {
-                bodyRendererWithHiddenTorso.sharedMesh = originalBodyMeshBeforeTorsoHide;
+                bodyRendererWithHiddenParts.sharedMesh = originalBodyMeshBeforeHide;
             }
 
-            bodyRendererWithHiddenTorso = null;
-            originalBodyMeshBeforeTorsoHide = null;
+            bodyRendererWithHiddenParts = null;
+            originalBodyMeshBeforeHide = null;
         }
 
         private void ClearExistingClothing(Transform syntyVisual)
@@ -225,7 +675,9 @@ namespace ShooterPrototype.Player
             Transform excludeFromBoneSearch,
             SkinnedMeshRenderer bodyRenderer,
             Transform bodyParent,
-            Material clothingMaterial)
+            Material clothingMaterial,
+            ClothingBindProfile bindProfile,
+            bool snapToBodyHierarchy)
         {
             if (clothingRenderers == null ||
                 clothingRenderers.Length == 0 ||
@@ -248,7 +700,7 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
-                if (!TryRebindRenderer(renderer, bodyRenderer, bodyBoneMap))
+                if (!TryRebindRenderer(renderer, bodyRenderer, bodyBoneMap, bindProfile))
                 {
                     expandedBoneMap ??= BuildExpandedBoneMap(skeletonRoot, excludeFromBoneSearch, bodyRenderer, bodyBoneMap);
                     animator ??= skeletonRoot.GetComponent<Animator>();
@@ -257,7 +709,7 @@ namespace ShooterPrototype.Player
                         animator.Update(0f);
                     }
 
-                    if (!TryRebindRendererSlow(renderer, bodyRenderer, expandedBoneMap, animator))
+                    if (!TryRebindRendererSlow(renderer, bodyRenderer, expandedBoneMap, animator, bindProfile))
                     {
                         renderer.enabled = false;
                         continue;
@@ -271,7 +723,11 @@ namespace ShooterPrototype.Player
 
                 renderer.updateWhenOffscreen = true;
                 renderer.enabled = true;
-                SnapRendererToBodyHierarchy(renderer, bodyRenderer, bodyParent);
+                if (snapToBodyHierarchy)
+                {
+                    SnapRendererToBodyHierarchy(renderer, bodyRenderer, bodyParent);
+                }
+
                 reboundAny = true;
             }
 
@@ -374,7 +830,8 @@ namespace ShooterPrototype.Player
         private static bool TryRebindRenderer(
             SkinnedMeshRenderer renderer,
             SkinnedMeshRenderer bodyRenderer,
-            Dictionary<string, Transform> bodyBoneMap)
+            Dictionary<string, Transform> bodyBoneMap,
+            ClothingBindProfile bindProfile)
         {
             var mesh = renderer.sharedMesh;
             if (mesh == null)
@@ -391,7 +848,7 @@ namespace ShooterPrototype.Player
             var bodyBones = bodyRenderer.bones;
             if (sourceBindPoses.Length == bodyBones.Length &&
                 bodyRenderer.rootBone != null &&
-                HasCriticalArmBonesOnBody(bodyBoneMap))
+                (bindProfile != ClothingBindProfile.Arms || HasCriticalArmBonesOnBody(bodyBoneMap)))
             {
                 ApplyRebind(renderer, mesh, bodyBones, bodyRenderer.rootBone, copyMesh: false);
                 return true;
@@ -404,14 +861,15 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            return TryRebindByBodyBoneMap(renderer, sourceBones, sourceBindPoses, bodyRenderer, bodyBoneMap);
+            return TryRebindByBodyBoneMap(renderer, sourceBones, sourceBindPoses, bodyRenderer, bodyBoneMap, bindProfile);
         }
 
         private static bool TryRebindRendererSlow(
             SkinnedMeshRenderer renderer,
             SkinnedMeshRenderer bodyRenderer,
             Dictionary<string, Transform> characterBoneMap,
-            Animator animator)
+            Animator animator,
+            ClothingBindProfile bindProfile)
         {
             var mesh = renderer.sharedMesh;
             if (mesh == null)
@@ -434,7 +892,8 @@ namespace ShooterPrototype.Player
                 sourceBindPoses,
                 bodyRenderer,
                 characterBoneMap,
-                animator);
+                animator,
+                bindProfile);
         }
 
         private static bool TryRebindByBodyBoneMap(
@@ -442,7 +901,8 @@ namespace ShooterPrototype.Player
             Transform[] sourceBones,
             Matrix4x4[] sourceBindPoses,
             SkinnedMeshRenderer bodyRenderer,
-            Dictionary<string, Transform> bodyBoneMap)
+            Dictionary<string, Transform> bodyBoneMap,
+            ClothingBindProfile bindProfile)
         {
             var boneCount = sourceBones.Length;
             var reboundBones = new Transform[boneCount];
@@ -479,7 +939,8 @@ namespace ShooterPrototype.Player
             }
 
             var bindRatio = matched / Mathf.Max(1f, boneCount);
-            if (bindRatio < MinimumBoneBindRatio || !HasCriticalArmBones(sourceBones, reboundBones))
+            if (bindRatio < MinimumBoneBindRatio ||
+                !PassesCriticalBoneCheck(sourceBones, reboundBones, bindProfile))
             {
                 return false;
             }
@@ -500,7 +961,8 @@ namespace ShooterPrototype.Player
             Matrix4x4[] sourceBindPoses,
             SkinnedMeshRenderer bodyRenderer,
             Dictionary<string, Transform> characterBoneMap,
-            Animator animator)
+            Animator animator,
+            ClothingBindProfile bindProfile)
         {
             var boneCount = sourceBones.Length;
             var reboundBones = new Transform[boneCount];
@@ -533,7 +995,8 @@ namespace ShooterPrototype.Player
             }
 
             var bindRatio = matched / Mathf.Max(1f, boneCount);
-            if (bindRatio < MinimumBoneBindRatio || !HasCriticalArmBones(sourceBones, reboundBones))
+            if (bindRatio < MinimumBoneBindRatio ||
+                !PassesCriticalBoneCheck(sourceBones, reboundBones, bindProfile))
             {
                 return false;
             }
@@ -546,6 +1009,334 @@ namespace ShooterPrototype.Player
                 copyMesh: !preserveMesh,
                 reboundBindPoses: preserveMesh ? null : reboundBindPoses);
             return true;
+        }
+
+        private static bool PassesCriticalBoneCheck(
+            Transform[] sourceBones,
+            Transform[] reboundBones,
+            ClothingBindProfile bindProfile)
+        {
+            if (bindProfile == ClothingBindProfile.Arms || UsesArmBones(sourceBones))
+            {
+                return HasCriticalArmBones(sourceBones, reboundBones);
+            }
+
+            if (bindProfile == ClothingBindProfile.Feet || UsesFootBones(sourceBones))
+            {
+                return HasCriticalFootBones(sourceBones, reboundBones);
+            }
+
+            if (bindProfile == ClothingBindProfile.Hands || UsesHandBones(sourceBones))
+            {
+                return HasCriticalHandBones(sourceBones, reboundBones);
+            }
+
+            if (bindProfile == ClothingBindProfile.Legs || UsesLegBones(sourceBones))
+            {
+                return HasCriticalLegBones(sourceBones, reboundBones);
+            }
+
+            return true;
+        }
+
+        private static bool UsesArmBones(Transform[] sourceBones)
+        {
+            for (var i = 0; i < sourceBones.Length; i++)
+            {
+                var sourceBone = sourceBones[i];
+                if (sourceBone == null)
+                {
+                    continue;
+                }
+
+                for (var coreIndex = 0; coreIndex < CriticalArmBoneCores.Length; coreIndex++)
+                {
+                    if (MatchesCriticalArmCore(sourceBone.name, CriticalArmBoneCores[coreIndex]))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool UsesLegBones(Transform[] sourceBones)
+        {
+            for (var i = 0; i < sourceBones.Length; i++)
+            {
+                var sourceBone = sourceBones[i];
+                if (sourceBone == null)
+                {
+                    continue;
+                }
+
+                for (var coreIndex = 0; coreIndex < CriticalLegBoneCores.Length; coreIndex++)
+                {
+                    if (MatchesCriticalLegCore(sourceBone.name, CriticalLegBoneCores[coreIndex]))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool UsesHandBones(Transform[] sourceBones)
+        {
+            for (var i = 0; i < sourceBones.Length; i++)
+            {
+                var sourceBone = sourceBones[i];
+                if (sourceBone == null)
+                {
+                    continue;
+                }
+
+                for (var coreIndex = 0; coreIndex < CriticalHandBoneCores.Length; coreIndex++)
+                {
+                    if (MatchesCriticalHandCore(sourceBone.name, CriticalHandBoneCores[coreIndex]))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool HasCriticalHandBones(Transform[] sourceBones, Transform[] reboundBones)
+        {
+            for (var i = 0; i < CriticalHandBoneCores.Length; i++)
+            {
+                var coreName = CriticalHandBoneCores[i];
+                var found = false;
+                for (var boneIndex = 0; boneIndex < sourceBones.Length; boneIndex++)
+                {
+                    var sourceBone = sourceBones[boneIndex];
+                    if (sourceBone == null)
+                    {
+                        continue;
+                    }
+
+                    if (!MatchesCriticalHandCore(sourceBone.name, coreName))
+                    {
+                        continue;
+                    }
+
+                    if (reboundBones[boneIndex] != null)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool MatchesCriticalHandCore(string sourceBoneName, string criticalCoreName)
+        {
+            var sourceCore = ExtractBoneCoreName(sourceBoneName);
+            if (string.Equals(sourceCore, criticalCoreName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            foreach (var alias in ResolveBoneAliases(criticalCoreName))
+            {
+                if (string.Equals(sourceCore, alias, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            foreach (var alias in ResolveBoneAliases(sourceCore))
+            {
+                if (string.Equals(alias, criticalCoreName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            if (criticalCoreName.IndexOf("Hand", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                sourceCore.IndexOf("Hand", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                var criticalSide = criticalCoreName.StartsWith("Left", StringComparison.OrdinalIgnoreCase) ? "L" :
+                    criticalCoreName.StartsWith("Right", StringComparison.OrdinalIgnoreCase) ? "R" : string.Empty;
+                if (!string.IsNullOrEmpty(criticalSide) &&
+                    (sourceCore.EndsWith("_" + criticalSide, StringComparison.OrdinalIgnoreCase) ||
+                     sourceCore.EndsWith(criticalSide, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool HasCriticalLegBones(Transform[] sourceBones, Transform[] reboundBones)
+        {
+            for (var i = 0; i < CriticalLegBoneCores.Length; i++)
+            {
+                var coreName = CriticalLegBoneCores[i];
+                var found = false;
+                for (var boneIndex = 0; boneIndex < sourceBones.Length; boneIndex++)
+                {
+                    var sourceBone = sourceBones[boneIndex];
+                    if (sourceBone == null)
+                    {
+                        continue;
+                    }
+
+                    if (!MatchesCriticalLegCore(sourceBone.name, coreName))
+                    {
+                        continue;
+                    }
+
+                    if (reboundBones[boneIndex] != null)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool UsesFootBones(Transform[] sourceBones)
+        {
+            for (var i = 0; i < sourceBones.Length; i++)
+            {
+                var sourceBone = sourceBones[i];
+                if (sourceBone == null)
+                {
+                    continue;
+                }
+
+                for (var coreIndex = 0; coreIndex < CriticalFootBoneCores.Length; coreIndex++)
+                {
+                    if (MatchesCriticalFootCore(sourceBone.name, CriticalFootBoneCores[coreIndex]))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool HasCriticalFootBones(Transform[] sourceBones, Transform[] reboundBones)
+        {
+            for (var i = 0; i < CriticalFootBoneCores.Length; i++)
+            {
+                var coreName = CriticalFootBoneCores[i];
+                var found = false;
+                for (var boneIndex = 0; boneIndex < sourceBones.Length; boneIndex++)
+                {
+                    var sourceBone = sourceBones[boneIndex];
+                    if (sourceBone == null)
+                    {
+                        continue;
+                    }
+
+                    if (!MatchesCriticalFootCore(sourceBone.name, coreName))
+                    {
+                        continue;
+                    }
+
+                    if (reboundBones[boneIndex] != null)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool MatchesCriticalFootCore(string sourceBoneName, string criticalCoreName)
+        {
+            var sourceCore = ExtractBoneCoreName(sourceBoneName);
+            if (string.Equals(sourceCore, criticalCoreName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            foreach (var alias in ResolveBoneAliases(criticalCoreName))
+            {
+                if (string.Equals(sourceCore, alias, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            foreach (var alias in ResolveBoneAliases(sourceCore))
+            {
+                if (string.Equals(alias, criticalCoreName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            if (criticalCoreName.IndexOf("Foot", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                sourceCore.IndexOf("Foot", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                var criticalSide = criticalCoreName.StartsWith("Left", StringComparison.OrdinalIgnoreCase) ? "L" :
+                    criticalCoreName.StartsWith("Right", StringComparison.OrdinalIgnoreCase) ? "R" : string.Empty;
+                if (!string.IsNullOrEmpty(criticalSide) &&
+                    (sourceCore.EndsWith("_" + criticalSide, StringComparison.OrdinalIgnoreCase) ||
+                     sourceCore.EndsWith(criticalSide, StringComparison.OrdinalIgnoreCase)))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool MatchesCriticalLegCore(string sourceBoneName, string criticalCoreName)
+        {
+            var sourceCore = ExtractBoneCoreName(sourceBoneName);
+            if (string.Equals(sourceCore, criticalCoreName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            foreach (var alias in ResolveBoneAliases(criticalCoreName))
+            {
+                if (string.Equals(sourceCore, alias, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            foreach (var alias in ResolveBoneAliases(sourceCore))
+            {
+                if (string.Equals(alias, criticalCoreName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static Transform ResolveBodyBone(Dictionary<string, Transform> bodyBoneMap, string sourceBoneName)
@@ -1144,6 +1935,55 @@ namespace ShooterPrototype.Player
             return false;
         }
 
+        private static void ApplyClothingMaterialToInstance(GameObject instance, Material clothingMaterial)
+        {
+            if (instance == null || clothingMaterial == null)
+            {
+                return;
+            }
+
+            var skinnedRenderers = instance.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            for (var i = 0; i < skinnedRenderers.Length; i++)
+            {
+                var renderer = skinnedRenderers[i];
+                if (renderer == null || !renderer.enabled)
+                {
+                    continue;
+                }
+
+                AssignMaterialToAllSlots(renderer, clothingMaterial);
+            }
+
+            var meshRenderers = instance.GetComponentsInChildren<MeshRenderer>(true);
+            for (var i = 0; i < meshRenderers.Length; i++)
+            {
+                var renderer = meshRenderers[i];
+                if (renderer == null || !renderer.enabled)
+                {
+                    continue;
+                }
+
+                AssignMaterialToAllSlots(renderer, clothingMaterial);
+            }
+        }
+
+        private static void AssignMaterialToAllSlots(Renderer renderer, Material clothingMaterial)
+        {
+            var materials = renderer.sharedMaterials;
+            if (materials == null || materials.Length == 0)
+            {
+                renderer.sharedMaterial = clothingMaterial;
+                return;
+            }
+
+            for (var slot = 0; slot < materials.Length; slot++)
+            {
+                materials[slot] = clothingMaterial;
+            }
+
+            renderer.sharedMaterials = materials;
+        }
+
         private static bool EnableStaticRenderers(GameObject instance)
         {
             var renderers = instance.GetComponentsInChildren<MeshRenderer>(true);
@@ -1227,7 +2067,7 @@ namespace ShooterPrototype.Player
             }
         }
 
-        private void WarnMissingResourceOnce()
+        private void WarnMissingResourceOnce(string resourcePath)
         {
             if (warnedMissingResource)
             {
@@ -1236,7 +2076,7 @@ namespace ShooterPrototype.Player
 
             warnedMissingResource = true;
             Debug.LogWarning(
-                $"[RemoteResourceClothingApplier] Resources.Load<GameObject>(\"{clothingResourcePath}\") returned null.",
+                $"[RemoteResourceClothingApplier] Resources.Load<GameObject>(\"{resourcePath}\") returned null.",
                 this);
         }
 
@@ -1278,6 +2118,48 @@ namespace ShooterPrototype.Player
             warnedTorsoHideFailed = true;
             Debug.LogWarning(
                 "[RemoteResourceClothingApplier] Could not hide body torso under clothing. " +
+                "Enable Read/Write on the Ch36 body mesh import settings.",
+                bodyRenderer);
+        }
+
+        private void WarnLegHideFailedOnce(SkinnedMeshRenderer bodyRenderer)
+        {
+            if (warnedLegHideFailed)
+            {
+                return;
+            }
+
+            warnedLegHideFailed = true;
+            Debug.LogWarning(
+                "[RemoteResourceClothingApplier] Could not hide body legs under pants. " +
+                "Enable Read/Write on the Ch36 body mesh import settings.",
+                bodyRenderer);
+        }
+
+        private void WarnFootHideFailedOnce(SkinnedMeshRenderer bodyRenderer)
+        {
+            if (warnedFootHideFailed)
+            {
+                return;
+            }
+
+            warnedFootHideFailed = true;
+            Debug.LogWarning(
+                "[RemoteResourceClothingApplier] Could not hide body feet under boots. " +
+                "Enable Read/Write on the Ch36 body mesh import settings.",
+                bodyRenderer);
+        }
+
+        private void WarnHandHideFailedOnce(SkinnedMeshRenderer bodyRenderer)
+        {
+            if (warnedHandHideFailed)
+            {
+                return;
+            }
+
+            warnedHandHideFailed = true;
+            Debug.LogWarning(
+                "[RemoteResourceClothingApplier] Could not hide body hands under gloves. " +
                 "Enable Read/Write on the Ch36 body mesh import settings.",
                 bodyRenderer);
         }

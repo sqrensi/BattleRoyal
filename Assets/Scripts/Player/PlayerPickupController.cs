@@ -237,23 +237,20 @@ namespace ShooterPrototype.Player
         {
             if (pickupSpawnManager != null)
             {
-                var spawned = pickupSpawnManager.ResolveDefinitionForSpawnId(confirmed.SpawnId);
-                if (spawned.IsValid)
+                var magAmmo = -1;
+                if (confirmed.Kind == PickupKind.Weapon &&
+                    serverState.WeaponLoadout.HasWeaponLoadout)
                 {
-                    var itemId = !string.IsNullOrWhiteSpace(confirmed.ItemId)
-                        ? confirmed.ItemId
-                        : spawned.ResolvedItemId;
-                    var amount = confirmed.Amount > 0 ? confirmed.Amount : spawned.Amount;
-                    var definition = PickupItemDefinition.Create(
-                        confirmed.Kind,
-                        spawned.VisualPrefab,
-                        itemId,
-                        amount);
-                    if (confirmed.Kind == PickupKind.Weapon && spawned.MagAmmo >= 0)
-                    {
-                        definition = definition.WithMagAmmo(spawned.MagAmmo);
-                    }
+                    magAmmo = serverState.WeaponLoadout.ActiveMagAmmo;
+                }
 
+                var definition = pickupSpawnManager.ResolveDefinitionFromProtocol(
+                    confirmed.Kind,
+                    confirmed.ItemId,
+                    confirmed.Amount,
+                    magAmmo);
+                if (definition.IsValid)
+                {
                     return definition;
                 }
             }

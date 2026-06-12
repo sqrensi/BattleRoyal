@@ -118,6 +118,33 @@ namespace ShooterPrototype.Player
             clothingApplier.ApplyToRemoteVisual(syntyVisual, forceReapply: true);
         }
 
+        private static void RefreshLocalResourceClothing(GameObject playerRoot, Transform syntyVisual)
+        {
+            if (playerRoot == null || syntyVisual == null)
+            {
+                return;
+            }
+
+            if (playerRoot.GetComponent<RemoteThirdPersonPlayerBootstrap>() != null)
+            {
+                return;
+            }
+
+            var armsPresenter = playerRoot.GetComponent<SyntyFirstPersonArmsPresenter>();
+            if (armsPresenter == null)
+            {
+                return;
+            }
+
+            var clothingApplier = playerRoot.GetComponent<RemoteResourceClothingApplier>();
+            if (clothingApplier == null)
+            {
+                clothingApplier = playerRoot.AddComponent<RemoteResourceClothingApplier>();
+            }
+
+            clothingApplier.ApplyToLocalVisual(syntyVisual, armsPresenter, forceReapply: true);
+        }
+
         public static void RefreshRemoteHitboxes(GameObject playerRoot, Transform syntyVisual, bool forceRebuild = false)
         {
             if (playerRoot == null || syntyVisual == null)
@@ -185,6 +212,7 @@ namespace ShooterPrototype.Player
             if (armsPresenter.TryRefreshArmsFromBody(syntyVisual, bodyRenderer))
             {
                 SyncFirstPersonArmsAfterModelApply(playerRoot, armsPresenter);
+                RefreshLocalResourceClothing(playerRoot, syntyVisual);
                 return;
             }
 
@@ -197,6 +225,7 @@ namespace ShooterPrototype.Player
                         FirstPersonArmsCoverage.ArmsWithoutShoulders))
                 {
                     SyncFirstPersonArmsAfterModelApply(playerRoot, armsPresenter);
+                    RefreshLocalResourceClothing(playerRoot, syntyVisual);
                     return;
                 }
             }

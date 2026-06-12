@@ -207,7 +207,8 @@ namespace ShooterPrototype.Player
 
             if (ShouldUseServerActions())
             {
-                transportClient.SendWeaponDrop(slotIndex, ResolveDropMagAmmo(slotIndex));
+                TryResolveDropPosition(out var dropPosition);
+                transportClient.SendWeaponDrop(slotIndex, ResolveDropMagAmmo(slotIndex), dropPosition);
                 return;
             }
 
@@ -396,7 +397,7 @@ namespace ShooterPrototype.Player
         private void ApplyLocalDrop(int slotIndex, bool spawnWorldPickup = true)
         {
             weaponController?.CancelActiveReload();
-            var droppedMagAmmo = ResolveDropMagAmmo(slotIndex);
+            DrainWeaponMagIntoSpare(slotIndex);
             if (loadout == null || !loadout.TryRemoveSlot(slotIndex, out var removed))
             {
                 return;
@@ -404,7 +405,7 @@ namespace ShooterPrototype.Player
 
             if (spawnWorldPickup)
             {
-                SpawnDroppedPickup(removed, droppedMagAmmo);
+                SpawnDroppedPickup(removed);
             }
 
             if (!loadout.HasAnyWeapon)
@@ -420,13 +421,17 @@ namespace ShooterPrototype.Player
             else
             {
                 RefreshWeaponPresentationAfterServerChange();
+                if (weaponController != null)
+                {
+                    weaponController.SetReserveAmmo(loadout.SpareAmmo);
+                }
             }
 
             GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
             presenceSync?.FlushLocalPose();
         }
 
-        private void SpawnDroppedPickup(PlayerWeaponLoadout.Slot removed, int magAmmo = -1)
+        private void SpawnDroppedPickup(PlayerWeaponLoadout.Slot removed)
         {
             if (!removed.Occupied)
             {
@@ -449,23 +454,55 @@ namespace ShooterPrototype.Player
                 PickupKind.Weapon,
                 prefab,
                 removed.ItemId,
-                1);
-            if (magAmmo >= 0)
-            {
-                definition = definition.WithMagAmmo(magAmmo);
-            }
+                1).WithMagAmmo(0);
             var forward = dropOrigin != null ? dropOrigin.forward : transform.forward;
-            forward.y = 0f;
-            if (forward.sqrMagnitude < 0.001f)
+            var origin = dropOrigin != null ? dropOrigin.position : transform.position;
+            Vector3 position;
+            if (spawnManager.TryResolveWeaponDropPose(origin, forward, dropForwardDistance, out position, out forward))
             {
-                forward = transform.forward;
+                // Ground + wall resolved by spawn manager.
+            }
+            else
+            {
+                forward.y = 0f;
+                if (forward.sqrMagnitude < 0.001f)
+                {
+                    forward = transform.forward;
+                }
+
+                forward.Normalize();
+                position = origin + forward * dropForwardDistance;
             }
 
-            forward.Normalize();
-            var position = (dropOrigin != null ? dropOrigin.position : transform.position) +
-                             forward * dropForwardDistance;
             var spawnId = $"local_drop_{System.Guid.NewGuid():N}";
             spawnManager.SpawnDynamicPickupAtWorld(spawnId, position, forward, definition);
+        }
+
+        private bool TryResolveDropPosition(out Vector3 dropPosition)
+        {
+            dropPosition = Vector3.zero;
+            var forward = dropOrigin != null ? dropOrigin.forward : transform.forward;
+            var origin = dropOrigin != null ? dropOrigin.position : transform.position;
+            var spawnManager = FindFirstObjectByType<PickupSpawnManager>();
+            if (spawnManager == null)
+            {
+                forward.y = 0f;
+                if (forward.sqrMagnitude < 0.001f)
+                {
+                    forward = transform.forward;
+                }
+
+                forward.Normalize();
+                dropPosition = origin + forward * dropForwardDistance;
+                return true;
+            }
+
+            return spawnManager.TryResolveWeaponDropPose(
+                origin,
+                forward,
+                dropForwardDistance,
+                out dropPosition,
+                out _);
         }
 
         private void EquipActiveSlotWeapon(bool drawIfHolstered)
@@ -564,6 +601,29 @@ namespace ShooterPrototype.Player
                 serverState.BothHolstered,
                 serverState.ActiveMagAmmo,
                 serverState.ActiveReserveAmmo);
+        }
+
+        private int DrainWeaponMagIntoSpare(int slotIndex)
+        {
+            if (loadout == null || slotIndex < 0 || slotIndex > 1 || !loadout.IsSlotOccupied(slotIndex))
+            {
+                return 0;
+            }
+
+            var magAmmo = ResolveDropMagAmmo(slotIndex);
+            if (magAmmo > 0)
+            {
+                loadout.AddSpareAmmo(magAmmo);
+            }
+
+            loadout.SetSlotMagAmmo(slotIndex, 0);
+            if (weaponController != null && IsDropSlotCurrentlyWielded(slotIndex))
+            {
+                weaponController.SetCurrentAmmo(0);
+                weaponController.SetReserveAmmo(loadout.SpareAmmo);
+            }
+
+            return magAmmo;
         }
 
         private int ResolveDropMagAmmo(int slotIndex)

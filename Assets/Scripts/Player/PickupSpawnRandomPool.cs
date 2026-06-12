@@ -26,7 +26,7 @@ namespace ShooterPrototype.Player
 
         public bool Enabled => enabled;
 
-        public PickupItemDefinition Roll(Transform owner)
+        public PickupItemDefinition Roll(Transform owner, string deterministicSpawnId = null)
         {
             EnsureDefaultEntries();
             if (!enabled || entries == null || entries.Count == 0)
@@ -34,6 +34,24 @@ namespace ShooterPrototype.Player
                 return default;
             }
 
+            var previousState = UnityEngine.Random.state;
+            if (!string.IsNullOrWhiteSpace(deterministicSpawnId))
+            {
+                UnityEngine.Random.InitState(ComputeStableSeed(deterministicSpawnId));
+            }
+
+            try
+            {
+                return RollInternal(owner);
+            }
+            finally
+            {
+                UnityEngine.Random.state = previousState;
+            }
+        }
+
+        private PickupItemDefinition RollInternal(Transform owner)
+        {
             var resolvedAmmoVisual = ResolveAmmoVisualPrefab(owner);
 
             var totalWeight = 0f;
@@ -72,6 +90,20 @@ namespace ShooterPrototype.Player
             }
 
             return BuildDefinition(entries[entries.Count - 1], resolvedAmmoVisual);
+        }
+
+        private static int ComputeStableSeed(string value)
+        {
+            unchecked
+            {
+                var hash = 17;
+                for (var i = 0; i < value.Length; i++)
+                {
+                    hash = (hash * 31) + value[i];
+                }
+
+                return hash;
+            }
         }
 
         public GameObject ResolveAmmoVisualPrefab(Transform owner)

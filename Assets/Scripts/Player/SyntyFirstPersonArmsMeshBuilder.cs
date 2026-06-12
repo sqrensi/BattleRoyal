@@ -359,6 +359,371 @@ namespace ShooterPrototype.Player
                 mesh.name + "_WithoutTorso");
         }
 
+        private static readonly string[] LegBoneCoreNamesToHide =
+        {
+            "LeftUpLeg",
+            "RightUpLeg",
+            "LeftLeg",
+            "RightLeg",
+            "Thigh_L",
+            "Thigh_R",
+            "UpperLeg_L",
+            "UpperLeg_R",
+            "Knee_L",
+            "Knee_R",
+            "LowerLeg_L",
+            "LowerLeg_R"
+        };
+
+        public static Mesh ExtractBodyWithoutLegsMesh(
+            SkinnedMeshRenderer source,
+            float minLegBoneWeight = 0.35f)
+        {
+            if (source == null || source.sharedMesh == null)
+            {
+                return null;
+            }
+
+            var legBoneIndices = CollectLegBoneIndicesToHide(source.bones);
+            if (legBoneIndices.Count == 0)
+            {
+                return null;
+            }
+
+            var mesh = source.sharedMesh;
+            if (!mesh.isReadable)
+            {
+                Debug.LogWarning(
+                    $"[SyntyFirstPersonArmsMeshBuilder] Mesh '{mesh.name}' is not readable. " +
+                    "Enable Read/Write on the body model import settings to hide legs under pants.",
+                    source);
+                return null;
+            }
+
+            var vertices = mesh.vertices;
+            var boneWeights = mesh.boneWeights;
+            if (boneWeights == null || boneWeights.Length != vertices.Length)
+            {
+                return null;
+            }
+
+            var vertexIsLeg = new bool[vertices.Length];
+            for (var i = 0; i < vertices.Length; i++)
+            {
+                vertexIsLeg[i] = IsLegWeighted(boneWeights[i], legBoneIndices, minLegBoneWeight);
+            }
+
+            return BuildFilteredMesh(
+                mesh,
+                vertices,
+                boneWeights,
+                vertexIsLeg,
+                includeWhenMarked: false,
+                mesh.name + "_WithoutLegs");
+        }
+
+        public static Mesh ExtractBodyWithoutFeetMesh(
+            SkinnedMeshRenderer source,
+            float minFootBoneWeight = 0.35f)
+        {
+            if (source == null || source.sharedMesh == null)
+            {
+                return null;
+            }
+
+            var footBoneIndices = CollectFootBoneIndicesToHide(source.bones);
+            if (footBoneIndices.Count == 0)
+            {
+                return null;
+            }
+
+            var mesh = source.sharedMesh;
+            if (!mesh.isReadable)
+            {
+                Debug.LogWarning(
+                    $"[SyntyFirstPersonArmsMeshBuilder] Mesh '{mesh.name}' is not readable. " +
+                    "Enable Read/Write on the body model import settings to hide feet under boots.",
+                    source);
+                return null;
+            }
+
+            var vertices = mesh.vertices;
+            var boneWeights = mesh.boneWeights;
+            if (boneWeights == null || boneWeights.Length != vertices.Length)
+            {
+                return null;
+            }
+
+            var vertexIsFoot = new bool[vertices.Length];
+            for (var i = 0; i < vertices.Length; i++)
+            {
+                vertexIsFoot[i] = IsFootWeighted(boneWeights[i], footBoneIndices, minFootBoneWeight);
+            }
+
+            return BuildFilteredMesh(
+                mesh,
+                vertices,
+                boneWeights,
+                vertexIsFoot,
+                includeWhenMarked: false,
+                mesh.name + "_WithoutFeet");
+        }
+
+        public static Mesh ExtractBodyWithoutHandsMesh(
+            SkinnedMeshRenderer source,
+            float minHandBoneWeight = 0.35f)
+        {
+            if (source == null || source.sharedMesh == null)
+            {
+                return null;
+            }
+
+            var handBoneIndices = CollectHandBoneIndicesToHide(source.bones);
+            if (handBoneIndices.Count == 0)
+            {
+                return null;
+            }
+
+            var mesh = source.sharedMesh;
+            if (!mesh.isReadable)
+            {
+                Debug.LogWarning(
+                    $"[SyntyFirstPersonArmsMeshBuilder] Mesh '{mesh.name}' is not readable. " +
+                    "Enable Read/Write on the body model import settings to hide palms and fingers under gloves.",
+                    source);
+                return null;
+            }
+
+            var vertices = mesh.vertices;
+            var boneWeights = mesh.boneWeights;
+            if (boneWeights == null || boneWeights.Length != vertices.Length)
+            {
+                return null;
+            }
+
+            var vertexIsHand = new bool[vertices.Length];
+            for (var i = 0; i < vertices.Length; i++)
+            {
+                vertexIsHand[i] = IsHandWeighted(boneWeights[i], handBoneIndices, minHandBoneWeight);
+            }
+
+            return BuildFilteredMesh(
+                mesh,
+                vertices,
+                boneWeights,
+                vertexIsHand,
+                includeWhenMarked: false,
+                mesh.name + "_WithoutHands");
+        }
+
+        private static HashSet<int> CollectHandBoneIndicesToHide(IReadOnlyList<Transform> bones)
+        {
+            var indices = new HashSet<int>();
+            if (bones == null)
+            {
+                return indices;
+            }
+
+            for (var i = 0; i < bones.Count; i++)
+            {
+                var bone = bones[i];
+                if (bone != null && IsHandBoneNameToHide(bone.name))
+                {
+                    indices.Add(i);
+                }
+            }
+
+            return indices;
+        }
+
+        private static bool IsHandBoneNameToHide(string boneName)
+        {
+            if (string.IsNullOrWhiteSpace(boneName))
+            {
+                return false;
+            }
+
+            var coreName = ExtractBoneCoreName(boneName);
+            if (coreName.IndexOf("ForeArm", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                coreName.IndexOf("LowerArm", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                coreName.IndexOf("UpperArm", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                coreName.IndexOf("Elbow", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                coreName.IndexOf("Shoulder", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                coreName.IndexOf("Clavicle", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < HandOnlyBoneNameTokens.Length; i++)
+            {
+                if (coreName.IndexOf(HandOnlyBoneNameTokens[i], System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IsHandWeighted(BoneWeight boneWeight, HashSet<int> handBoneIndices, float minHandBoneWeight)
+        {
+            var handWeight = 0f;
+            if (handBoneIndices.Contains(boneWeight.boneIndex0))
+            {
+                handWeight += boneWeight.weight0;
+            }
+
+            if (handBoneIndices.Contains(boneWeight.boneIndex1))
+            {
+                handWeight += boneWeight.weight1;
+            }
+
+            if (handBoneIndices.Contains(boneWeight.boneIndex2))
+            {
+                handWeight += boneWeight.weight2;
+            }
+
+            if (handBoneIndices.Contains(boneWeight.boneIndex3))
+            {
+                handWeight += boneWeight.weight3;
+            }
+
+            return handWeight >= minHandBoneWeight;
+        }
+
+        private static HashSet<int> CollectFootBoneIndicesToHide(IReadOnlyList<Transform> bones)
+        {
+            var indices = new HashSet<int>();
+            if (bones == null)
+            {
+                return indices;
+            }
+
+            for (var i = 0; i < bones.Count; i++)
+            {
+                var bone = bones[i];
+                if (bone != null && IsFootOrToeBoneName(bone.name))
+                {
+                    indices.Add(i);
+                }
+            }
+
+            return indices;
+        }
+
+        private static bool IsFootWeighted(BoneWeight boneWeight, HashSet<int> footBoneIndices, float minFootBoneWeight)
+        {
+            var footWeight = 0f;
+            if (footBoneIndices.Contains(boneWeight.boneIndex0))
+            {
+                footWeight += boneWeight.weight0;
+            }
+
+            if (footBoneIndices.Contains(boneWeight.boneIndex1))
+            {
+                footWeight += boneWeight.weight1;
+            }
+
+            if (footBoneIndices.Contains(boneWeight.boneIndex2))
+            {
+                footWeight += boneWeight.weight2;
+            }
+
+            if (footBoneIndices.Contains(boneWeight.boneIndex3))
+            {
+                footWeight += boneWeight.weight3;
+            }
+
+            return footWeight >= minFootBoneWeight;
+        }
+
+        private static HashSet<int> CollectLegBoneIndicesToHide(IReadOnlyList<Transform> bones)
+        {
+            var indices = new HashSet<int>();
+            if (bones == null)
+            {
+                return indices;
+            }
+
+            for (var i = 0; i < bones.Count; i++)
+            {
+                var bone = bones[i];
+                if (bone != null && IsLegBoneNameToHide(bone.name))
+                {
+                    indices.Add(i);
+                }
+            }
+
+            return indices;
+        }
+
+        private static bool IsLegBoneNameToHide(string boneName)
+        {
+            if (string.IsNullOrWhiteSpace(boneName) || IsFootOrToeBoneName(boneName))
+            {
+                return false;
+            }
+
+            var coreName = ExtractBoneCoreName(boneName);
+            for (var i = 0; i < LegBoneCoreNamesToHide.Length; i++)
+            {
+                if (string.Equals(coreName, LegBoneCoreNamesToHide[i], System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            if (coreName.IndexOf("UpLeg", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                coreName.IndexOf("UpperLeg", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                coreName.IndexOf("Thigh", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                coreName.IndexOf("Knee", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                coreName.IndexOf("LowerLeg", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            return coreName.IndexOf("Leg", System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsFootOrToeBoneName(string boneName)
+        {
+            if (string.IsNullOrWhiteSpace(boneName))
+            {
+                return false;
+            }
+
+            var coreName = ExtractBoneCoreName(boneName);
+            return coreName.IndexOf("Foot", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   coreName.IndexOf("Toe", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   coreName.StartsWith("Ball", System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsLegWeighted(BoneWeight boneWeight, HashSet<int> legBoneIndices, float minLegBoneWeight)
+        {
+            var legWeight = 0f;
+            if (legBoneIndices.Contains(boneWeight.boneIndex0))
+            {
+                legWeight += boneWeight.weight0;
+            }
+
+            if (legBoneIndices.Contains(boneWeight.boneIndex1))
+            {
+                legWeight += boneWeight.weight1;
+            }
+
+            if (legBoneIndices.Contains(boneWeight.boneIndex2))
+            {
+                legWeight += boneWeight.weight2;
+            }
+
+            if (legBoneIndices.Contains(boneWeight.boneIndex3))
+            {
+                legWeight += boneWeight.weight3;
+            }
+
+            return legWeight >= minLegBoneWeight;
+        }
+
         private static HashSet<int> CollectTorsoBoneIndices(IReadOnlyList<Transform> bones)
         {
             var indices = new HashSet<int>();

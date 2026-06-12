@@ -17010,6 +17010,17 @@ MonoBehaviour:
   worldPickupEulerOffset: {x: 0, y: 0, z: 90}
   worldPickupLocalScale: {x: 1, y: 1, z: 1}
   pickupYOffset: 0.08
+  dropGroundMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  dropGroundProbeHeight: 3
+  dropGroundProbeDistance: 6
+  dropWallMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  dropWallProbeHeight: 0.6
+  dropWallClearance: 0.35
+  weaponDropSurfaceOffset: 0.14
   spawnOnStart: 1
   respawnDelaySeconds: 0
   randomPickupPool:
@@ -17036,6 +17047,7 @@ MonoBehaviour:
     ammoVisualPrefab: {fileID: 1364968598790260, guid: 18ec3f4f140dca44cad65132c8fcc35e, type: 3}
     ammoItemId: ammo_pack
     ammoPickupAmount: 30
+  waitForServerPickupSync: 1
 --- !u!4 &550016058
 Transform:
   m_ObjectHideFlags: 0

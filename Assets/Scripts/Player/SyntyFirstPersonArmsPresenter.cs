@@ -13,11 +13,98 @@ namespace ShooterPrototype.Player
         [SerializeField] private float minArmBoneWeight = 0.35f;
 
         private readonly List<SkinnedMeshRenderer> firstPersonArmsRenderers = new List<SkinnedMeshRenderer>();
+        private readonly List<Renderer> firstPersonGloveRenderers = new List<Renderer>();
         private readonly List<SkinnedMeshRenderer> sourceRenderers = new List<SkinnedMeshRenderer>();
         private readonly List<Mesh> generatedMeshes = new List<Mesh>();
         private bool built;
 
         public bool HasFirstPersonArms => firstPersonArmsRenderers.Count > 0;
+
+        public IReadOnlyList<SkinnedMeshRenderer> FirstPersonArmsRenderers => firstPersonArmsRenderers;
+
+        public void EnsureBuilt()
+        {
+            BuildIfNeeded();
+        }
+
+        public void RegisterGeneratedMesh(Mesh mesh)
+        {
+            if (mesh != null && !generatedMeshes.Contains(mesh))
+            {
+                generatedMeshes.Add(mesh);
+            }
+        }
+
+        public Transform GetOrCreateFirstPersonGlovesRoot()
+        {
+            var container = GetOrCreateArmsContainer();
+            var existing = container.Find(RemoteResourceClothingApplier.FirstPersonGlovesRootName);
+            if (existing != null)
+            {
+                return existing;
+            }
+
+            var glovesRoot = new GameObject(RemoteResourceClothingApplier.FirstPersonGlovesRootName);
+            glovesRoot.transform.SetParent(container, false);
+            glovesRoot.transform.localPosition = Vector3.zero;
+            glovesRoot.transform.localRotation = Quaternion.identity;
+            glovesRoot.transform.localScale = Vector3.one;
+            return glovesRoot.transform;
+        }
+
+        public Transform FindFirstPersonGlovesRoot()
+        {
+            var parent = ResolveFirstPersonArmsParent();
+            if (parent == null)
+            {
+                return null;
+            }
+
+            var armsContainer = parent.Find("GeneratedFirstPersonArms");
+            return armsContainer != null
+                ? armsContainer.Find(RemoteResourceClothingApplier.FirstPersonGlovesRootName)
+                : null;
+        }
+
+        public void RegisterFirstPersonGloveRenderers(Transform glovesRoot)
+        {
+            ClearFirstPersonGloveRenderers();
+            if (glovesRoot == null)
+            {
+                return;
+            }
+
+            var renderers = glovesRoot.GetComponentsInChildren<Renderer>(true);
+            for (var i = 0; i < renderers.Length; i++)
+            {
+                var renderer = renderers[i];
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                if (renderer is SkinnedMeshRenderer skinnedGloveRenderer)
+                {
+                    skinnedGloveRenderer.updateWhenOffscreen = true;
+                }
+
+                if (!firstPersonGloveRenderers.Contains(renderer))
+                {
+                    firstPersonGloveRenderers.Add(renderer);
+                }
+            }
+        }
+
+        public void ClearFirstPersonGloveRenderers()
+        {
+            firstPersonGloveRenderers.Clear();
+        }
+
+        public bool IsFirstPersonGloveRenderer(Renderer renderer)
+        {
+            return renderer != null && firstPersonGloveRenderers.Contains(renderer);
+        }
 
         public void Configure(Transform visualRoot, float armBoneWeightThreshold)
         {
@@ -175,6 +262,8 @@ namespace ShooterPrototype.Player
             {
                 sourceRenderer = primarySource;
             }
+
+            TryApplyLocalResourceClothing();
         }
 
         private void ApplyArmsMeshToExistingRenderers(SkinnedMeshRenderer bodyRenderer, Mesh armsMesh)
@@ -359,6 +448,19 @@ namespace ShooterPrototype.Player
 
                 arms.enabled = localFirstPersonView;
             }
+
+            for (var i = 0; i < firstPersonGloveRenderers.Count; i++)
+            {
+                var gloves = firstPersonGloveRenderers[i];
+                if (gloves == null)
+                {
+                    continue;
+                }
+
+                gloves.enabled = localFirstPersonView && HasFirstPersonArms;
+            }
+
+            SyncFirstPersonGlovesVisibility(localFirstPersonView && HasFirstPersonArms);
         }
 
         public void SetHolsteredArmsPresentation(bool holstered)
@@ -385,6 +487,28 @@ namespace ShooterPrototype.Player
                 }
 
                 arms.enabled = !holstered;
+            }
+
+            for (var i = 0; i < firstPersonGloveRenderers.Count; i++)
+            {
+                var gloves = firstPersonGloveRenderers[i];
+                if (gloves == null)
+                {
+                    continue;
+                }
+
+                gloves.enabled = !holstered;
+            }
+
+            SyncFirstPersonGlovesVisibility(!holstered);
+        }
+
+        private void SyncFirstPersonGlovesVisibility(bool visible)
+        {
+            var glovesRoot = FindFirstPersonGlovesRoot();
+            if (glovesRoot != null)
+            {
+                glovesRoot.gameObject.SetActive(visible);
             }
         }
 
@@ -450,6 +574,22 @@ namespace ShooterPrototype.Player
 
             ApplyNewArmsMesh(primarySource, armsMesh);
             built = true;
+        }
+
+        private void TryApplyLocalResourceClothing()
+        {
+            if (syntyVisualRoot == null)
+            {
+                return;
+            }
+
+            var clothingApplier = GetComponent<RemoteResourceClothingApplier>();
+            if (clothingApplier == null)
+            {
+                clothingApplier = gameObject.AddComponent<RemoteResourceClothingApplier>();
+            }
+
+            clothingApplier.ApplyToLocalVisual(syntyVisualRoot, this, forceReapply: false);
         }
 
         private SkinnedMeshRenderer FindPrimaryCharacterSource(string preferredSourceName)

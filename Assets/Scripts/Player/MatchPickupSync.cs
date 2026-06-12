@@ -162,8 +162,13 @@ namespace ShooterPrototype.Player
 
             if (message.available)
             {
+                if (TryReadEventPosition(message, out var eventPosition))
+                {
+                    pickupSpawnManager.ApplyServerSpawnPosition(message.spawnId, eventPosition);
+                }
+
                 TrySpawnDynamicPickupFromEvent(message);
-                pickupSpawnManager.ApplyServerPickupRespawn(message.spawnId);
+                pickupSpawnManager.ApplyServerPickupRespawn(message.spawnId, true);
                 return;
             }
 
@@ -288,21 +293,33 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var kind = WeaponCatalog.ResolveKindFromItemId(itemId);
-            var prefab = WeaponCatalog.GetWeaponPrefab(kind);
-            if (prefab == null)
+            var kind = PickupKindUtility.FromProtocol(message.pickupKind);
+            if (string.IsNullOrWhiteSpace(message.pickupKind))
+            {
+                kind = PickupKind.Weapon;
+            }
+
+            var definition = pickupSpawnManager.ResolveDefinitionFromProtocol(
+                kind,
+                itemId,
+                message.amount > 0 ? message.amount : 1);
+            if (!definition.IsValid)
             {
                 return;
             }
 
-            var definition = PickupItemDefinition.Create(PickupKind.Weapon, prefab, itemId, 1);
-            var position = new Vector3(message.x, message.y, message.z);
-            if (position.sqrMagnitude < 0.001f)
-            {
-                return;
-            }
+            pickupSpawnManager.CacheServerDefinition(message.spawnId, definition);
 
-            pickupSpawnManager.EnsureDynamicSlot(message.spawnId, position, Vector3.forward, definition);
+            if (!pickupSpawnManager.HasRegisteredSlot(message.spawnId))
+            {
+                var position = new Vector3(message.x, message.y, message.z);
+                if (position.sqrMagnitude < 0.001f)
+                {
+                    return;
+                }
+
+                pickupSpawnManager.EnsureDynamicSlot(message.spawnId, position, Vector3.forward, definition);
+            }
         }
 
         private void TrySpawnDynamicPickupFromDropResult(RealtimeTransportClient.WeaponDropResultMessage message)
@@ -321,11 +338,8 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var definition = PickupItemDefinition.Create(PickupKind.Weapon, prefab, message.itemId, 1);
-            if (message.magAmmo >= 0)
-            {
-                definition = definition.WithMagAmmo(message.magAmmo);
-            }
+            var definition = PickupItemDefinition.Create(PickupKind.Weapon, prefab, message.itemId, 1)
+                .WithMagAmmo(0);
             var position = new Vector3(message.x, message.y, message.z);
             pickupSpawnManager.EnsureDynamicSlot(message.droppedSpawnId, position, Vector3.forward, definition);
             pickupSpawnManager.ApplyServerPickupRespawn(message.droppedSpawnId);
@@ -347,6 +361,27 @@ namespace ShooterPrototype.Player
                 message.reserveAmmo);
         }
 
+        private static bool TryReadEventPosition(
+            RealtimeTransportClient.PickupEventMessage message,
+            out Vector3 position)
+        {
+            position = Vector3.zero;
+            if (message == null)
+            {
+                return false;
+            }
+
+            if (Mathf.Abs(message.x) < 0.001f &&
+                Mathf.Abs(message.y) < 0.001f &&
+                Mathf.Abs(message.z) < 0.001f)
+            {
+                return false;
+            }
+
+            position = new Vector3(message.x, message.y, message.z);
+            return true;
+        }
+
         private static WeaponLoadoutServerState BuildWeaponLoadoutFromDropResult(
             RealtimeTransportClient.WeaponDropResultMessage message)
         {
@@ -358,7 +393,9 @@ namespace ShooterPrototype.Player
                 message.weaponSlot1ItemId ?? string.Empty,
                 message.activeWeaponSlot,
                 message.bothHolstered,
-                message.droppedSpawnId ?? string.Empty);
+                message.droppedSpawnId ?? string.Empty,
+                0,
+                message.reserveAmmo);
         }
     }
 }

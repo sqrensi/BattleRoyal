@@ -162,6 +162,10 @@ namespace ShooterPrototype.Network
             public string weaponId;
             public int amount;
             public bool available;
+            public float x;
+            public float y;
+            public float z;
+            public int magAmmo;
         }
 
         [Serializable]
@@ -234,6 +238,7 @@ namespace ShooterPrototype.Network
             public bool bothHolstered;
             public int weaponPickupSeq;
             public int magAmmo;
+            public int reserveAmmo;
         }
 
     [Serializable]
@@ -242,6 +247,10 @@ namespace ShooterPrototype.Network
         public string type;
         public int slotIndex;
         public int magAmmo;
+        public bool hasDropPosition;
+        public float x;
+        public float y;
+        public float z;
     }
 
         [Serializable]
@@ -825,19 +834,29 @@ namespace ShooterPrototype.Network
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 
-        public void SendWeaponDrop(int slotIndex, int magAmmo = -1)
+        public void SendWeaponDrop(int slotIndex, int magAmmo = -1, Vector3? dropPosition = null)
         {
             if (!IsReady)
             {
                 return;
             }
 
-            _ = SendJsonAsync(new WeaponDropRequestMessage
+            var message = new WeaponDropRequestMessage
             {
                 type = "weapon_drop",
                 slotIndex = slotIndex,
                 magAmmo = magAmmo
-            }, cts != null ? cts.Token : CancellationToken.None);
+            };
+            if (dropPosition.HasValue)
+            {
+                var position = dropPosition.Value;
+                message.hasDropPosition = true;
+                message.x = position.x;
+                message.y = position.y;
+                message.z = position.z;
+            }
+
+            _ = SendJsonAsync(message, cts != null ? cts.Token : CancellationToken.None);
         }
 
         public void SendMedkitUse()

@@ -154,6 +154,12 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
+                if (armsPresenter != null && armsPresenter.IsFirstPersonGloveRenderer(renderer))
+                {
+                    renderer.enabled = localFirstPersonView && !hideArms;
+                    continue;
+                }
+
                 var objectName = renderer.gameObject.name;
                 renderer.enabled = IsFirstPersonVisibleRenderer(renderer.transform, objectName);
             }
