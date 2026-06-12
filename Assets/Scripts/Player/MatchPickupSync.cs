@@ -222,6 +222,14 @@ namespace ShooterPrototype.Player
                     BuildWeaponLoadoutFromPickupResult(message));
             }
 
+            if (kind == PickupKind.Ammo)
+            {
+                return new PickupApplyServerState(
+                    message.medkitCount,
+                    false,
+                    BuildWeaponLoadoutFromPickupResult(message));
+            }
+
             if (kind == PickupKind.Medkit)
             {
                 return new PickupApplyServerState(message.medkitCount, true);
@@ -335,7 +343,8 @@ namespace ShooterPrototype.Player
                 message.activeWeaponSlot,
                 message.bothHolstered,
                 message.droppedSpawnId ?? string.Empty,
-                message.magAmmo);
+                message.magAmmo,
+                message.reserveAmmo);
         }
 
         private static WeaponLoadoutServerState BuildWeaponLoadoutFromDropResult(

@@ -28,6 +28,7 @@ namespace ShooterPrototype.Player
         private bool bothHolstered;
         private int slot0MagAmmo = -1;
         private int slot1MagAmmo = -1;
+        private int spareAmmo;
 
         public bool HasAnyWeapon => slot0.Occupied || slot1.Occupied;
         public int OccupiedCount => (slot0.Occupied ? 1 : 0) + (slot1.Occupied ? 1 : 0);
@@ -66,6 +67,23 @@ namespace ShooterPrototype.Player
             }
         }
 
+        public int SpareAmmo => spareAmmo;
+
+        public void SetSpareAmmo(int ammo)
+        {
+            spareAmmo = Mathf.Clamp(ammo, 0, 999);
+        }
+
+        public void AddSpareAmmo(int amount)
+        {
+            if (amount <= 0)
+            {
+                return;
+            }
+
+            SetSpareAmmo(spareAmmo + amount);
+        }
+
         public void ClearSlotMagAmmo(int slotIndex)
         {
             SetSlotMagAmmo(slotIndex, -1);
@@ -101,6 +119,17 @@ namespace ShooterPrototype.Player
         /// <summary>
         /// Mirrors a weapon already equipped on the mount into slot 0 until server loadout arrives.
         /// </summary>
+        public void ClearForSpawn()
+        {
+            slot0 = default;
+            slot1 = default;
+            activeSlotIndex = NoActiveSlot;
+            bothHolstered = true;
+            slot0MagAmmo = -1;
+            slot1MagAmmo = -1;
+            spareAmmo = 0;
+        }
+
         public bool TrySeedFromMountedWeapon(WeaponKind kind, string itemId, bool holstered)
         {
             if (HasAnyWeapon)
@@ -228,7 +257,8 @@ namespace ShooterPrototype.Player
             string slot1ItemId,
             int activeSlot,
             bool holsteredBoth,
-            int activeMagAmmo = -1)
+            int activeMagAmmo = -1,
+            int activeReserveAmmo = -1)
         {
             slot0 = BuildSlot(slot0Kind, slot0ItemId);
             slot1 = BuildSlot(slot1Kind, slot1ItemId);
@@ -264,7 +294,12 @@ namespace ShooterPrototype.Player
                 activeSlotIndex = slot0.Occupied ? 0 : 1;
             }
 
-            if (activeMagAmmo >= 0 && activeSlotIndex >= 0 && activeSlotIndex <= 1)
+            if (activeReserveAmmo >= 0)
+            {
+                SetSpareAmmo(activeReserveAmmo);
+            }
+
+            if (activeSlotIndex >= 0 && activeSlotIndex <= 1 && activeMagAmmo >= 0)
             {
                 SetSlotMagAmmo(activeSlotIndex, activeMagAmmo);
             }

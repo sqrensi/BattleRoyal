@@ -12,13 +12,12 @@ namespace ShooterPrototype.Player
         [SerializeField] private GameObject visualPrefab;
         [SerializeField] private string itemId;
         [SerializeField] private int amount = 1;
-        [SerializeField] private float pickupRadius = 2.5f;
-        [SerializeField] private float pickupVerticalHalfHeight = 2f;
+        [SerializeField] private int magAmmo = -1;
+        [SerializeField] private float pickupVerticalHalfHeight = 3f;
 
         private PickupSpawnManager owner;
         private Transform spawnPoint;
         private string spawnId;
-        private SphereCollider triggerCollider;
 
         public PickupKind Kind => kind;
         public GameObject VisualPrefab => visualPrefab;
@@ -26,12 +25,22 @@ namespace ShooterPrototype.Player
             ? visualPrefab != null ? visualPrefab.name : string.Empty
             : itemId.Trim();
         public int Amount => Mathf.Max(1, amount);
-        public float PickupRadius => pickupRadius;
         public string SpawnId => spawnId;
         public Transform SpawnPoint => spawnPoint;
 
-        public PickupItemDefinition Definition =>
-            PickupItemDefinition.Create(kind, visualPrefab, ItemId, Amount);
+        public PickupItemDefinition Definition
+        {
+            get
+            {
+                var definition = PickupItemDefinition.Create(kind, visualPrefab, ItemId, Amount);
+                if (kind == PickupKind.Weapon && magAmmo >= 0)
+                {
+                    definition = definition.WithMagAmmo(magAmmo);
+                }
+
+                return definition;
+            }
+        }
 
         public static IReadOnlyList<WorldPickup> Active => ActivePickups;
 
@@ -50,7 +59,7 @@ namespace ShooterPrototype.Player
             visualPrefab = definition.VisualPrefab;
             itemId = definition.ResolvedItemId;
             amount = definition.Amount;
-            EnsureTriggerCollider();
+            magAmmo = definition.MagAmmo;
         }
 
         private void OnEnable()
@@ -68,7 +77,9 @@ namespace ShooterPrototype.Player
 
         public bool IsAvailableForPickup(
             Vector3 playerPosition,
-            Vector3 playerForward,
+            Vector3 lookOrigin,
+            Vector3 lookForward,
+            float maxRadius,
             float minFacingDot,
             out float distanceSqr)
         {
@@ -79,35 +90,38 @@ namespace ShooterPrototype.Player
             }
 
             var center = transform.position;
-            var offset = playerPosition - center;
-            if (Mathf.Abs(offset.y) > pickupVerticalHalfHeight + 0.35f)
+            var horizontalOffset = playerPosition - center;
+            if (Mathf.Abs(horizontalOffset.y) > pickupVerticalHalfHeight + 0.35f)
             {
                 return false;
             }
 
-            offset.y = 0f;
-            distanceSqr = offset.sqrMagnitude;
-            if (distanceSqr > pickupRadius * pickupRadius)
+            horizontalOffset.y = 0f;
+            distanceSqr = horizontalOffset.sqrMagnitude;
+            if (maxRadius > 0.01f && distanceSqr > maxRadius * maxRadius)
             {
                 return false;
             }
 
-            if (PickupApplyRules.RequiresFacingCheck(kind) &&
-                playerForward.sqrMagnitude > 0.0001f)
+            if (!PickupApplyRules.RequiresFacingCheck(kind))
             {
-                var toPickup = center - playerPosition;
-                toPickup.y = 0f;
-                if (toPickup.sqrMagnitude > 0.0001f)
-                {
-                    var facing = Vector3.Dot(playerForward.normalized, toPickup.normalized);
-                    if (facing < minFacingDot)
-                    {
-                        return false;
-                    }
-                }
+                return true;
             }
 
-            return true;
+            if (lookForward.sqrMagnitude <= 0.0001f)
+            {
+                return false;
+            }
+
+            var toPickup = center - lookOrigin;
+            toPickup.y = 0f;
+            if (toPickup.sqrMagnitude <= 0.0001f)
+            {
+                return true;
+            }
+
+            var facing = Vector3.Dot(lookForward.normalized, toPickup.normalized);
+            return facing >= minFacingDot;
         }
 
         public void Collect(PickupSpawnManager collectorOwner)
@@ -119,20 +133,6 @@ namespace ShooterPrototype.Player
 
             owner?.NotifyPickupCollected(spawnPoint, Definition);
             Destroy(gameObject);
-        }
-
-        private void EnsureTriggerCollider()
-        {
-            if (TryGetComponent(out triggerCollider))
-            {
-                triggerCollider.isTrigger = true;
-                triggerCollider.radius = pickupRadius;
-                return;
-            }
-
-            triggerCollider = gameObject.AddComponent<SphereCollider>();
-            triggerCollider.isTrigger = true;
-            triggerCollider.radius = pickupRadius;
         }
     }
 }

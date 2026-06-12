@@ -23,10 +23,9 @@ namespace ShooterPrototype.Player
             {
                 case PickupKind.Weapon:
                     return context.WeaponLoadout != null
-                        ? context.WeaponLoadout.Loadout.OccupiedCount < PlayerWeaponLoadout.MaxSlots
-                        : context.WeaponMount != null && !context.WeaponMount.HasMountedWeapon;
+                        || (context.WeaponMount != null && !context.WeaponMount.HasMountedWeapon);
                 case PickupKind.Ammo:
-                    return context.WeaponMount != null && context.WeaponMount.HasMountedWeapon;
+                    return CanPickupAmmo(context);
                 case PickupKind.Grenade:
                     return context.Health != null;
                 case PickupKind.Medkit:
@@ -52,7 +51,7 @@ namespace ShooterPrototype.Player
                 case PickupKind.Weapon:
                     return TryApplyWeapon(context, definition, serverState);
                 case PickupKind.Ammo:
-                    return TryApplyAmmo(context, definition);
+                    return TryApplyAmmo(context, definition, serverState);
                 case PickupKind.Grenade:
                     return TryApplyGrenade(context, definition);
                 case PickupKind.Medkit:
@@ -76,11 +75,12 @@ namespace ShooterPrototype.Player
             if (context.WeaponLoadout != null)
             {
                 var kind = WeaponCatalog.ResolveKindFromItemId(definition.ResolvedItemId);
+                var pickupMagAmmo = definition.MagAmmo >= 0 ? definition.MagAmmo : 0;
                 if (!context.WeaponLoadout.TryApplyLocalPickup(
                         definition.ResolvedItemId,
                         kind,
                         definition.VisualPrefab,
-                        definition.MagAmmo))
+                        pickupMagAmmo))
                 {
                     return new PickupApplyResult(false, "equip_failed");
                 }
@@ -97,7 +97,9 @@ namespace ShooterPrototype.Player
             if (context.WeaponController != null)
             {
                 context.WeaponController.enabled = true;
-                context.WeaponController.RestoreAfterRespawn();
+                var pickupAmmo = definition.MagAmmo >= 0 ? definition.MagAmmo : 0;
+                context.WeaponController.SetCurrentAmmo(pickupAmmo);
+                context.WeaponController.SetReserveAmmo(0);
             }
             else
             {
@@ -107,10 +109,48 @@ namespace ShooterPrototype.Player
             return PickupApplyResult.Ok;
         }
 
+        private static bool CanPickupAmmo(in PlayerPickupContext context)
+        {
+            if (context.WeaponLoadout == null || !context.WeaponLoadout.Loadout.HasAnyWeapon)
+            {
+                return context.WeaponMount != null && context.WeaponMount.HasMountedWeapon;
+            }
+
+            if (context.WeaponController == null)
+            {
+                return true;
+            }
+
+            return true;
+        }
+
         private static PickupApplyResult TryApplyAmmo(
             in PlayerPickupContext context,
-            in PickupItemDefinition definition)
+            in PickupItemDefinition definition,
+            in PickupApplyServerState serverState)
         {
+            if (serverState.WeaponLoadout.HasWeaponLoadout && context.WeaponLoadout != null)
+            {
+                context.WeaponLoadout.ApplyServerPickup(serverState.WeaponLoadout);
+                return PickupApplyResult.Ok;
+            }
+
+            if (context.WeaponController == null)
+            {
+                return new PickupApplyResult(false, "no_weapon");
+            }
+
+            var addedAmmo = Mathf.Max(1, definition.Amount);
+            if (context.WeaponLoadout != null)
+            {
+                context.WeaponLoadout.Loadout.AddSpareAmmo(addedAmmo);
+                context.WeaponController.SetReserveAmmo(context.WeaponLoadout.Loadout.SpareAmmo);
+            }
+            else
+            {
+                context.WeaponController.SetReserveAmmo(context.WeaponController.ReserveAmmo + addedAmmo);
+            }
+
             return PickupApplyResult.Ok;
         }
 

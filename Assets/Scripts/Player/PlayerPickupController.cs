@@ -10,7 +10,7 @@ namespace ShooterPrototype.Player
     public sealed class PlayerPickupController : MonoBehaviour
     {
         [SerializeField] private float pickupRadius = 3f;
-        [SerializeField] private float pickupLookDot = 0.1f;
+        [SerializeField] private float pickupLookDot = 0.7f;
         [SerializeField] private float pickupSampleHeight = 0.35f;
 
         private PlayerWeaponMount weaponMount;
@@ -235,68 +235,36 @@ namespace ShooterPrototype.Player
             PickupConfirmedInfo confirmed,
             PickupApplyServerState serverState)
         {
-            var visualPrefab = pickupSpawnManager != null
-                ? pickupSpawnManager.ResolveDefinitionForSpawnId(confirmed.SpawnId).VisualPrefab
-                : null;
-
-            if (visualPrefab == null)
+            if (pickupSpawnManager != null)
             {
-                var pickup = FindPickupBySpawnId(confirmed.SpawnId);
-                visualPrefab = pickup != null ? pickup.VisualPrefab : null;
-            }
-
-            var itemId = confirmed.ItemId;
-            if (confirmed.Kind == PickupKind.Weapon)
-            {
-                var kind = ResolveConfirmedWeaponKind(confirmed, serverState);
-                itemId = !string.IsNullOrWhiteSpace(itemId)
-                    ? itemId
-                    : WeaponCatalog.GetDefaultItemId(kind);
-                if (visualPrefab == null)
+                var spawned = pickupSpawnManager.ResolveDefinitionForSpawnId(confirmed.SpawnId);
+                if (spawned.IsValid)
                 {
-                    visualPrefab = WeaponCatalog.GetWeaponPrefab(kind);
-                }
-            }
+                    var itemId = !string.IsNullOrWhiteSpace(confirmed.ItemId)
+                        ? confirmed.ItemId
+                        : spawned.ResolvedItemId;
+                    var amount = confirmed.Amount > 0 ? confirmed.Amount : spawned.Amount;
+                    var definition = PickupItemDefinition.Create(
+                        confirmed.Kind,
+                        spawned.VisualPrefab,
+                        itemId,
+                        amount);
+                    if (confirmed.Kind == PickupKind.Weapon && spawned.MagAmmo >= 0)
+                    {
+                        definition = definition.WithMagAmmo(spawned.MagAmmo);
+                    }
 
-            if (visualPrefab == null)
-            {
-                return default;
-            }
-
-            return PickupItemDefinition.Create(confirmed.Kind, visualPrefab, itemId, confirmed.Amount);
-        }
-
-        private static WeaponKind ResolveConfirmedWeaponKind(
-            PickupConfirmedInfo confirmed,
-            PickupApplyServerState serverState)
-        {
-            if (serverState.WeaponLoadout.HasWeaponLoadout)
-            {
-                var loadout = serverState.WeaponLoadout;
-                if (loadout.ActiveWeaponSlot == 0 &&
-                    loadout.Slot0Kind != PlayerWeaponLoadout.EmptySlotKind)
-                {
-                    return (WeaponKind)Mathf.Clamp((int)loadout.Slot0Kind, 0, 1);
-                }
-
-                if (loadout.ActiveWeaponSlot == 1 &&
-                    loadout.Slot1Kind != PlayerWeaponLoadout.EmptySlotKind)
-                {
-                    return (WeaponKind)Mathf.Clamp((int)loadout.Slot1Kind, 0, 1);
-                }
-
-                if (loadout.Slot0Kind != PlayerWeaponLoadout.EmptySlotKind)
-                {
-                    return (WeaponKind)Mathf.Clamp((int)loadout.Slot0Kind, 0, 1);
-                }
-
-                if (loadout.Slot1Kind != PlayerWeaponLoadout.EmptySlotKind)
-                {
-                    return (WeaponKind)Mathf.Clamp((int)loadout.Slot1Kind, 0, 1);
+                    return definition;
                 }
             }
 
-            return WeaponCatalog.ResolveKindFromItemId(confirmed.ItemId);
+            var pickup = FindPickupBySpawnId(confirmed.SpawnId);
+            if (pickup != null && pickup.Definition.IsValid)
+            {
+                return pickup.Definition;
+            }
+
+            return default;
         }
 
         private void RequestPickup(WorldPickup pickup)
@@ -366,9 +334,15 @@ namespace ShooterPrototype.Player
             return pickupOrigin != null ? pickupOrigin.forward : transform.forward;
         }
 
+        private Vector3 GetPickupLookOrigin()
+        {
+            return pickupOrigin != null ? pickupOrigin.position : GetPickupSamplePosition();
+        }
+
         private WorldPickup FindBestPickup()
         {
-            var origin = GetPickupSamplePosition();
+            var playerPosition = GetPickupSamplePosition();
+            var lookOrigin = GetPickupLookOrigin();
             var forward = GetPickupLookForward();
             var context = BuildPickupContext();
             WorldPickup best = null;
@@ -383,12 +357,13 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
-                if (!pickup.IsAvailableForPickup(origin, forward, pickupLookDot, out var distanceSqr))
-                {
-                    continue;
-                }
-
-                if (pickupRadius > 0.01f && distanceSqr > pickupRadius * pickupRadius)
+                if (!pickup.IsAvailableForPickup(
+                        playerPosition,
+                        lookOrigin,
+                        forward,
+                        pickupRadius,
+                        pickupLookDot,
+                        out var distanceSqr))
                 {
                     continue;
                 }

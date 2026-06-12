@@ -146,6 +146,7 @@ namespace ShooterPrototype.Network
             public string itemId;
             public string weaponId;
             public int amount;
+            public int magAmmo = -1;
             public float x;
             public float y;
             public float z;
@@ -209,6 +210,7 @@ namespace ShooterPrototype.Network
             public bool bothHolstered;
             public string droppedSpawnId;
             public int magAmmo;
+            public int reserveAmmo;
         }
 
         [Serializable]

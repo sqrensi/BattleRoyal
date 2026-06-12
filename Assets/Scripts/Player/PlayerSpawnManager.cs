@@ -176,6 +176,34 @@ namespace ShooterPrototype.Player
                 AttachPresenceSync(instance);
             }
 
+            ResetPlayerLoadoutForSpawn(instance);
+        }
+
+        private static void ResetPlayerLoadoutForSpawn(GameObject player)
+        {
+            if (player == null)
+            {
+                return;
+            }
+
+            var loadout = player.GetComponent<PlayerWeaponLoadout>();
+            loadout?.ClearForSpawn();
+
+            var weaponMount = player.GetComponent<PlayerWeaponMount>();
+            if (weaponMount != null && weaponMount.HasMountedWeapon)
+            {
+                weaponMount.UnequipWeapon();
+            }
+
+            var weaponController = player.GetComponent<PlayerWeaponController>();
+            if (weaponController != null)
+            {
+                weaponController.SetCurrentAmmo(0);
+                weaponController.RefreshWeaponAvailability();
+            }
+
+            var weaponHolster = player.GetComponent<PlayerWeaponHolsterController>();
+            weaponHolster?.BeginHolsterAllImmediate();
         }
 
         private void AttachPresenceSync(GameObject localPlayer)

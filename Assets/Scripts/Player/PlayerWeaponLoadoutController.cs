@@ -230,6 +230,7 @@ namespace ShooterPrototype.Player
             if (slotIndex >= 0 && slotIndex <= 1 && loadout.IsSlotOccupied(slotIndex))
             {
                 loadout.SetSlotMagAmmo(slotIndex, weaponController.CurrentAmmo);
+                loadout.SetSpareAmmo(weaponController.ReserveAmmo);
             }
         }
 
@@ -293,10 +294,8 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            if (magAmmo >= 0)
-            {
-                loadout.SetSlotMagAmmo(assignedSlot, magAmmo);
-            }
+            var resolvedMagAmmo = magAmmo >= 0 ? magAmmo : 0;
+            loadout.SetSlotMagAmmo(assignedSlot, resolvedMagAmmo);
 
             if (shouldAnimatePickup &&
                 previousActiveSlot >= 0 &&
@@ -414,6 +413,8 @@ namespace ShooterPrototype.Player
                 if (weaponController != null)
                 {
                     weaponController.enabled = false;
+                    weaponController.SetCurrentAmmo(0);
+                    weaponController.SetReserveAmmo(loadout.SpareAmmo);
                 }
             }
             else
@@ -496,16 +497,15 @@ namespace ShooterPrototype.Player
             {
                 weaponController.enabled = true;
                 var magAmmo = loadout.GetSlotMagAmmo(equipSlotIndex);
-                weaponController.ApplyWeaponProfile(weaponMount.ActiveWeaponProfile, resetAmmo: magAmmo < 0);
-                if (magAmmo >= 0)
+                if (magAmmo < 0)
                 {
-                    weaponController.SetCurrentAmmo(magAmmo);
-                    loadout.SetSlotMagAmmo(equipSlotIndex, magAmmo);
+                    magAmmo = 0;
                 }
-                else
-                {
-                    loadout.SetSlotMagAmmo(equipSlotIndex, weaponController.CurrentAmmo);
-                }
+
+                weaponController.ApplyWeaponProfile(weaponMount.ActiveWeaponProfile, resetAmmo: false);
+                weaponController.SetCurrentAmmo(magAmmo);
+                weaponController.SetReserveAmmo(loadout.SpareAmmo);
+                loadout.SetSlotMagAmmo(equipSlotIndex, magAmmo);
             }
 
             if (drawIfHolstered && weaponHolster != null &&
@@ -562,7 +562,8 @@ namespace ShooterPrototype.Player
                 serverState.Slot1ItemId,
                 serverState.ActiveWeaponSlot,
                 serverState.BothHolstered,
-                serverState.ActiveMagAmmo);
+                serverState.ActiveMagAmmo,
+                serverState.ActiveReserveAmmo);
         }
 
         private int ResolveDropMagAmmo(int slotIndex)

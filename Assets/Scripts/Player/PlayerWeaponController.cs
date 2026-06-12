@@ -88,6 +88,7 @@ namespace ShooterPrototype.Player
         private Vector3 lastShotEndPoint;
         private bool lastShotHasEndPoint;
         private int currentAmmo;
+        private int reserveAmmo;
         private bool isReloading;
         private Coroutine reloadCoroutine;
         private Material tracerMaterial;
@@ -118,11 +119,18 @@ namespace ShooterPrototype.Player
         public int LastReloadSequence => reloadSequence;
         public int LastHitPlayerSequence => hitPlayerSequence;
         public int CurrentAmmo => currentAmmo;
+
+        public int ReserveAmmo => reserveAmmo;
         public int MagazineSize => Mathf.Max(1, magazineSize);
 
         public void SetCurrentAmmo(int ammo)
         {
             currentAmmo = Mathf.Clamp(ammo, 0, MagazineSize);
+        }
+
+        public void SetReserveAmmo(int ammo)
+        {
+            reserveAmmo = Mathf.Clamp(ammo, 0, 999);
         }
         public bool IsReloading => isReloading;
         public float ReloadDurationSeconds => Mathf.Max(0.05f, reloadDuration);
@@ -144,12 +152,13 @@ namespace ShooterPrototype.Player
             weaponHolster = GetComponent<PlayerWeaponHolsterController>();
             audioController = GetComponent<PlayerAudioController>();
             realtimeClient = FindObjectOfType<RealtimeTransportClient>();
-            currentAmmo = Mathf.Max(1, magazineSize);
+            currentAmmo = 0;
+            reserveAmmo = 0;
             weaponDefaults = CaptureWeaponDefaults();
             RefreshWeaponAvailability();
         }
 
-        public void ApplyWeaponProfile(WeaponProfile profile, bool resetAmmo = true)
+        public void ApplyWeaponProfile(WeaponProfile profile, bool resetAmmo = false)
         {
             CancelActiveReload();
             if (profile == null)
@@ -444,7 +453,25 @@ namespace ShooterPrototype.Player
 
         public void RestoreAfterRespawn()
         {
-            currentAmmo = MagazineSize;
+            var restoredAmmo = 0;
+            if (weaponLoadoutController != null && weaponLoadoutController.Loadout != null)
+            {
+                var loadout = weaponLoadoutController.Loadout;
+                if (loadout.HasAnyWeapon)
+                {
+                    var slotIndex = loadout.ActiveSlotIndex;
+                    if (slotIndex < 0 || slotIndex > 1)
+                    {
+                        slotIndex = loadout.IsSlotOccupied(0) ? 0 : 1;
+                    }
+
+                    var slotMag = loadout.GetSlotMagAmmo(slotIndex);
+                    restoredAmmo = slotMag >= 0 ? slotMag : 0;
+                    reserveAmmo = loadout.SpareAmmo;
+                }
+            }
+
+            currentAmmo = Mathf.Clamp(restoredAmmo, 0, MagazineSize);
             isReloading = false;
             if (reloadCoroutine != null)
             {
@@ -1089,7 +1116,7 @@ namespace ShooterPrototype.Player
 
         private bool TryStartReload()
         {
-            if (isReloading || currentAmmo >= MagazineSize)
+            if (isReloading || currentAmmo >= MagazineSize || reserveAmmo <= 0)
             {
                 return false;
             }
@@ -1139,7 +1166,15 @@ namespace ShooterPrototype.Player
             weaponMount?.PlayReloadAnimation(reloadTime);
             audioController?.PlayReloadSequence(true, reloadTime, ResolveWeaponAudioOverrides());
             yield return new WaitForSeconds(reloadTime);
-            currentAmmo = MagazineSize;
+            var needed = MagazineSize - currentAmmo;
+            var transferred = Mathf.Min(needed, reserveAmmo);
+            currentAmmo += transferred;
+            reserveAmmo -= transferred;
+            if (weaponLoadoutController != null && weaponLoadoutController.Loadout != null)
+            {
+                weaponLoadoutController.Loadout.SetSpareAmmo(reserveAmmo);
+            }
+
             SyncLoadoutMagAmmo();
             isReloading = false;
             weaponMount?.SetLocalReloading(false);

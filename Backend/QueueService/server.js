@@ -703,6 +703,10 @@ function resolveWeaponKindFromItemId(itemId) {
   return 0;
 }
 
+function resolveMagazineSizeForKind(kind) {
+  return normalizeInt64(kind, 0) === 1 ? 7 : 30;
+}
+
 function isWeaponSlotOccupied(kind) {
   return kind !== WEAPON_SLOT_EMPTY && kind >= 0 && kind <= 1;
 }
@@ -797,6 +801,14 @@ function setWeaponSlotMagAmmo(presence, slotIndex, magAmmo) {
   if (slotIndex === 1) {
     presence.weaponSlot1MagAmmo = normalized;
   }
+}
+
+function getSpareAmmo(presence) {
+  return Number.isFinite(presence.spareAmmo) ? Math.max(0, Math.min(999, presence.spareAmmo)) : 0;
+}
+
+function setSpareAmmo(presence, spareAmmo) {
+  presence.spareAmmo = Number.isFinite(spareAmmo) ? Math.max(0, Math.min(999, spareAmmo)) : 0;
 }
 
 function findFirstEmptyWeaponSlot(presence) {
@@ -1274,6 +1286,9 @@ function createDefaultPresence(sampleTick, sampleTimeMs) {
     weaponSlot0ItemId: "",
     weaponSlot1ItemId: "",
     activeWeaponSlot: WEAPON_SLOT_EMPTY,
+    weaponSlot0MagAmmo: -1,
+    weaponSlot1MagAmmo: -1,
+    spareAmmo: 0,
     weaponPickupSeq: 0,
     medkitCount: MEDKIT_STARTING_COUNT,
     isUsingMedkit: false,
@@ -1367,6 +1382,9 @@ function handleWsRegisterPickups(socket, message) {
         existingSpawn.itemId = itemId;
         existingSpawn.weaponId = itemId;
         existingSpawn.amount = Math.max(1, normalizeInt64(entry.amount, 1));
+        if (pickupKind === "weapon" && Number.isFinite(entry.magAmmo)) {
+          existingSpawn.magAmmo = Math.max(0, Math.min(999, normalizeInt64(entry.magAmmo, 0)));
+        }
         existingSpawn.x = normalizeNumber(entry.x, existingSpawn.x);
         existingSpawn.y = normalizeNumber(entry.y, existingSpawn.y);
         existingSpawn.z = normalizeNumber(entry.z, existingSpawn.z);
@@ -1385,6 +1403,9 @@ function handleWsRegisterPickups(socket, message) {
       itemId,
       weaponId: itemId,
       amount: Math.max(1, normalizeInt64(entry.amount, 1)),
+      magAmmo: pickupKind === "weapon"
+        ? Math.max(0, Math.min(999, normalizeInt64(entry.magAmmo, 0)))
+        : -1,
       x: normalizeNumber(entry.x, 0),
       y: normalizeNumber(entry.y, 0),
       z: normalizeNumber(entry.z, 0),
@@ -1445,6 +1466,13 @@ function handleWsPickup(socket, message) {
     return;
   }
 
+  if (pickupKind === "ammo" &&
+    !isWeaponSlotOccupied(presence.weaponSlot0Kind) &&
+    !isWeaponSlotOccupied(presence.weaponSlot1Kind)) {
+    sendPickupResultToSocket(socket, false, "no_weapon");
+    return;
+  }
+
   const pos = presence.position;
   const dx = pos.x - spawn.x;
   const dz = pos.z - spawn.z;
@@ -1460,6 +1488,7 @@ function handleWsPickup(socket, message) {
   let weaponPickupSeq = Math.max(0, normalizeInt64(presence.weaponPickupSeq, 0));
   let droppedSpawnId = "";
   let pickedMagAmmo = -1;
+  let pickedReserveAmmo = -1;
   if (pickupKind === "weapon") {
     let targetSlot = findFirstEmptyWeaponSlot(presence);
     if (targetSlot < 0) {
@@ -1504,10 +1533,37 @@ function handleWsPickup(socket, message) {
     presence.activeWeaponSlot = targetSlot;
     presence.weaponKind = kind;
     presence.isHolstered = false;
-    pickedMagAmmo = Number.isFinite(spawn.magAmmo) ? Math.max(-1, Math.min(999, spawn.magAmmo)) : -1;
+    pickedMagAmmo = Number.isFinite(spawn.magAmmo) ? Math.max(0, Math.min(999, spawn.magAmmo)) : 0;
+    pickedReserveAmmo = getSpareAmmo(presence);
     setWeaponSlotMagAmmo(presence, targetSlot, pickedMagAmmo);
     weaponPickupSeq += 1;
     presence.weaponPickupSeq = weaponPickupSeq;
+    syncWeaponPresenceFlags(presence);
+  } else if (pickupKind === "ammo") {
+    let activeSlot = presence.activeWeaponSlot;
+    if (activeSlot !== 0 && activeSlot !== 1) {
+      if (isWeaponSlotOccupied(presence.weaponSlot0Kind)) {
+        activeSlot = 0;
+      } else if (isWeaponSlotOccupied(presence.weaponSlot1Kind)) {
+        activeSlot = 1;
+      } else {
+        sendPickupResultToSocket(socket, false, "no_weapon");
+        return;
+      }
+    }
+
+    const activeKind = activeSlot === 0 ? presence.weaponSlot0Kind : presence.weaponSlot1Kind;
+    if (!isWeaponSlotOccupied(activeKind)) {
+      sendPickupResultToSocket(socket, false, "no_weapon");
+      return;
+    }
+
+    const newReserve = Math.min(999, getSpareAmmo(presence) + amount);
+    setSpareAmmo(presence, newReserve);
+    presence.activeWeaponSlot = activeSlot;
+    pickedMagAmmo = Math.max(0, getWeaponSlotMagAmmo(presence, activeSlot));
+    pickedReserveAmmo = newReserve;
+    weaponPickupSeq = Math.max(0, normalizeInt64(presence.weaponPickupSeq, 0));
     syncWeaponPresenceFlags(presence);
   } else if (pickupKind === "medkit") {
     presence.medkitCount = Math.min(
@@ -1532,6 +1588,7 @@ function handleWsPickup(socket, message) {
     medkitCount: Math.max(0, normalizeInt64(presence.medkitCount, 0)),
     droppedSpawnId,
     magAmmo: pickedMagAmmo,
+    reserveAmmo: pickedReserveAmmo,
     ...buildWeaponLoadoutPayload(presence),
   });
 
@@ -1577,6 +1634,7 @@ function sendPickupResultToSocket(socket, success, reason, details) {
       activeWeaponSlot: details && Number.isFinite(details.activeWeaponSlot) ? details.activeWeaponSlot : WEAPON_SLOT_EMPTY,
       bothHolstered: !!(details && details.bothHolstered),
       magAmmo: details && Number.isFinite(details.magAmmo) ? details.magAmmo : -1,
+      reserveAmmo: details && Number.isFinite(details.reserveAmmo) ? details.reserveAmmo : -1,
     }));
   } catch {
     // ignored

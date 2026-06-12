@@ -563,15 +563,25 @@ namespace ShooterPrototype.UI
             }
 
             var local = FindObjectOfType<ShooterPrototype.Player.LocalPlayerMarker>();
-            var weapon = local != null ? local.GetComponent<ShooterPrototype.Player.PlayerWeaponController>() : null;
-            if (weapon == null)
+            if (local == null)
             {
                 ammoText.text = "Ammo: --/--";
                 return;
             }
 
-            var suffix = weapon.IsReloading ? " (reloading)" : string.Empty;
-            ammoText.text = $"Ammo: {weapon.CurrentAmmo}/{weapon.MagazineSize}{suffix}";
+            var weapon = local.GetComponent<ShooterPrototype.Player.PlayerWeaponController>();
+            var loadout = local.GetComponent<ShooterPrototype.Player.PlayerWeaponLoadout>();
+            var hasWeapon = loadout != null && loadout.HasAnyWeapon;
+            var currentAmmo = weapon != null && weapon.enabled ? weapon.CurrentAmmo : 0;
+            var spareAmmo = loadout != null ? loadout.SpareAmmo : weapon != null ? weapon.ReserveAmmo : 0;
+            if (!hasWeapon && spareAmmo <= 0)
+            {
+                ammoText.text = "Ammo: --/--";
+                return;
+            }
+
+            var suffix = weapon != null && weapon.IsReloading ? " (reloading)" : string.Empty;
+            ammoText.text = $"Ammo: {currentAmmo}/{spareAmmo}{suffix}";
         }
 
         private void RefreshHealthText()
