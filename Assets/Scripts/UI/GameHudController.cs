@@ -30,7 +30,11 @@ namespace ShooterPrototype.UI
         private Text ammoText;
         private Text healthText;
         private Text medkitText;
+        private Text killsText;
         private Text inventoryText;
+        private Text matchStatusText;
+        private Text victoryBannerText;
+        private Text victorySubtitleText;
         private Button backButton;
         private Button muteButton;
         private Button perfButton;
@@ -116,6 +120,65 @@ namespace ShooterPrototype.UI
                 RefreshPlayersText();
                 RefreshPingText();
             }
+        }
+
+        public void SetMatchStatusMessage(string message)
+        {
+            if (matchStatusText == null)
+            {
+                EnsureHudExists();
+            }
+
+            if (matchStatusText != null)
+            {
+                matchStatusText.text = string.IsNullOrWhiteSpace(message) ? string.Empty : message;
+                matchStatusText.gameObject.SetActive(!string.IsNullOrWhiteSpace(message));
+            }
+        }
+
+        public void SetKillCount(int killCount)
+        {
+            if (killsText == null)
+            {
+                EnsureHudExists();
+            }
+
+            if (killsText != null)
+            {
+                killsText.text = $"Киллы: {Mathf.Max(0, killCount)}";
+            }
+        }
+
+        public void SetVictoryBanner(bool visible, string subtitle = "")
+        {
+            if (victoryBannerText == null)
+            {
+                EnsureHudExists();
+            }
+
+            if (victoryBannerText != null)
+            {
+                victoryBannerText.text = visible ? "ПОБЕДА" : string.Empty;
+                victoryBannerText.gameObject.SetActive(visible);
+            }
+
+            if (victorySubtitleText != null)
+            {
+                victorySubtitleText.text = subtitle ?? string.Empty;
+                victorySubtitleText.gameObject.SetActive(visible && !string.IsNullOrWhiteSpace(subtitle));
+            }
+        }
+
+        public void RequestReturnToMenu(string reason)
+        {
+            if (returnToMenuRequested)
+            {
+                return;
+            }
+
+            returnToMenuRequested = true;
+            networkLauncher?.DisconnectClient(reason ?? "match ended");
+            StartCoroutine(LeaveMatchAndReturnRoutine());
         }
 
         private void HandleBackPressed()
@@ -232,7 +295,8 @@ namespace ShooterPrototype.UI
             ammoText = CreateLabel(panelObject.transform, "AmmoText", new Vector2(10f, -106f), "Ammo: --/--");
             healthText = CreateLabel(panelObject.transform, "HealthText", new Vector2(10f, -130f), "HP: --/--");
             medkitText = CreateLabel(panelObject.transform, "MedkitText", new Vector2(10f, -154f), "Medkits: -- [8]");
-            panelRect.sizeDelta = new Vector2(0f, 180f);
+            killsText = CreateLabel(panelObject.transform, "KillsText", new Vector2(10f, -178f), "Киллы: 0");
+            panelRect.sizeDelta = new Vector2(0f, 204f);
 
             var inventoryPanel = new GameObject("InventoryPanel");
             inventoryPanel.transform.SetParent(rootCanvasObject.transform, false);
@@ -255,6 +319,55 @@ namespace ShooterPrototype.UI
             inventoryText.fontSize = 14;
             inventoryText.horizontalOverflow = HorizontalWrapMode.Wrap;
             inventoryText.verticalOverflow = VerticalWrapMode.Overflow;
+
+            var matchStatusObject = new GameObject("MatchStatusText");
+            matchStatusObject.transform.SetParent(rootCanvasObject.transform, false);
+            var matchStatusRect = matchStatusObject.AddComponent<RectTransform>();
+            matchStatusRect.anchorMin = new Vector2(0.5f, 0.5f);
+            matchStatusRect.anchorMax = new Vector2(0.5f, 0.5f);
+            matchStatusRect.pivot = new Vector2(0.5f, 0.5f);
+            matchStatusRect.sizeDelta = new Vector2(640f, 48f);
+            matchStatusRect.anchoredPosition = new Vector2(0f, 120f);
+            matchStatusText = matchStatusObject.AddComponent<Text>();
+            matchStatusText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            matchStatusText.fontSize = 24;
+            matchStatusText.alignment = TextAnchor.MiddleCenter;
+            matchStatusText.color = Color.white;
+            matchStatusText.text = string.Empty;
+            matchStatusObject.SetActive(false);
+
+            var victoryBannerObject = new GameObject("VictoryBannerText");
+            victoryBannerObject.transform.SetParent(rootCanvasObject.transform, false);
+            var victoryBannerRect = victoryBannerObject.AddComponent<RectTransform>();
+            victoryBannerRect.anchorMin = new Vector2(0.5f, 0.5f);
+            victoryBannerRect.anchorMax = new Vector2(0.5f, 0.5f);
+            victoryBannerRect.pivot = new Vector2(0.5f, 0.5f);
+            victoryBannerRect.sizeDelta = new Vector2(720f, 96f);
+            victoryBannerRect.anchoredPosition = new Vector2(0f, 40f);
+            victoryBannerText = victoryBannerObject.AddComponent<Text>();
+            victoryBannerText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            victoryBannerText.fontSize = 64;
+            victoryBannerText.fontStyle = FontStyle.Bold;
+            victoryBannerText.alignment = TextAnchor.MiddleCenter;
+            victoryBannerText.color = new Color(1f, 0.84f, 0.2f, 1f);
+            victoryBannerText.text = string.Empty;
+            victoryBannerObject.SetActive(false);
+
+            var victorySubtitleObject = new GameObject("VictorySubtitleText");
+            victorySubtitleObject.transform.SetParent(rootCanvasObject.transform, false);
+            var victorySubtitleRect = victorySubtitleObject.AddComponent<RectTransform>();
+            victorySubtitleRect.anchorMin = new Vector2(0.5f, 0.5f);
+            victorySubtitleRect.anchorMax = new Vector2(0.5f, 0.5f);
+            victorySubtitleRect.pivot = new Vector2(0.5f, 0.5f);
+            victorySubtitleRect.sizeDelta = new Vector2(640f, 36f);
+            victorySubtitleRect.anchoredPosition = new Vector2(0f, -24f);
+            victorySubtitleText = victorySubtitleObject.AddComponent<Text>();
+            victorySubtitleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            victorySubtitleText.fontSize = 20;
+            victorySubtitleText.alignment = TextAnchor.MiddleCenter;
+            victorySubtitleText.color = Color.white;
+            victorySubtitleText.text = string.Empty;
+            victorySubtitleObject.SetActive(false);
 
             var buttonObject = new GameObject("BackButton");
             buttonObject.transform.SetParent(panelObject.transform, false);

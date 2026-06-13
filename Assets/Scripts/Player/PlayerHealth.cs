@@ -49,6 +49,7 @@ namespace ShooterPrototype.Player
         private Rigidbody deathRigidbody;
         private CapsuleCollider deathCapsule;
         private bool networkMode;
+        private bool eliminationMode;
         private int deathSequence;
         private int lastNetworkDeathSeq = -1;
         private Coroutine simpleDeathFallRoutine;
@@ -219,6 +220,11 @@ namespace ShooterPrototype.Player
             }
         }
 
+        public void SetEliminationMode(bool enabled)
+        {
+            eliminationMode = enabled;
+        }
+
         public void SetNetworkDeadState(bool dead, int deathSeq, Vector3 networkDeathFallDirection)
         {
             if (!networkMode)
@@ -281,7 +287,7 @@ namespace ShooterPrototype.Player
                 StartDeathFallPhysics();
             }
 
-            if (startRespawn)
+            if (startRespawn && !eliminationMode)
             {
                 if (respawnRoutine != null)
                 {

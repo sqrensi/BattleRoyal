@@ -12,6 +12,8 @@ namespace ShooterPrototype.Player
         [SerializeField] private string armNameContains = "Thread";
         [SerializeField] private string weaponNameContains = "Weapon";
 
+        private bool forceThirdPersonBody;
+
         public bool IsLocalPlayerView => isLocalPlayer;
         public bool UsesSingleModelForFirstPerson => useSingleModelForFirstPerson;
         public GameObject FirstPersonViewRoot => firstPersonRoot;
@@ -40,6 +42,12 @@ namespace ShooterPrototype.Player
 
         public void RefreshViewMode()
         {
+            ApplyViewMode();
+        }
+
+        public void SetForceThirdPersonBody(bool force)
+        {
+            forceThirdPersonBody = force;
             ApplyViewMode();
         }
 
@@ -101,7 +109,7 @@ namespace ShooterPrototype.Player
             var syntyBinder = GetComponent<SyntyCharacterVisualBinder>();
             var armsPresenter = GetComponent<SyntyFirstPersonArmsPresenter>();
             var localFirstPersonView = isLocalPlayer;
-            var hideArms = ShouldHideFirstPersonArms();
+            var hideArms = forceThirdPersonBody || ShouldHideFirstPersonArms();
             if (hideArms)
             {
                 armsPresenter?.SetHolsteredArmsPresentation(true);
@@ -122,6 +130,12 @@ namespace ShooterPrototype.Player
                 }
 
                 if (!isLocalPlayer)
+                {
+                    renderer.enabled = true;
+                    continue;
+                }
+
+                if (forceThirdPersonBody)
                 {
                     renderer.enabled = true;
                     continue;

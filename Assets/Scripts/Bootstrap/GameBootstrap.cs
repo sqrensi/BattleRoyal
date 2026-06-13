@@ -184,6 +184,23 @@ namespace ShooterPrototype.Bootstrap
             {
                 playerSpawnManager.HandleSceneLoaded(scene);
             }
+
+            if (scene.name == gameSceneName && !Application.isBatchMode)
+            {
+                EnsureBattleRoyaleController();
+            }
+        }
+
+        private void EnsureBattleRoyaleController()
+        {
+            var existing = FindFirstObjectByType<MatchBattleRoyaleController>();
+            if (existing != null)
+            {
+                return;
+            }
+
+            var controllerObject = new GameObject("MatchBattleRoyale");
+            controllerObject.AddComponent<MatchBattleRoyaleController>();
         }
 
         private void EnsurePerformancePreset()

@@ -15575,6 +15575,7 @@ Transform:
   - {fileID: 421736119}
   - {fileID: 899200722}
   - {fileID: 2090386433}
+  - {fileID: 1806324158}
   - {fileID: 739450717}
   - {fileID: 1671029214}
   - {fileID: 493519991}
@@ -33384,7 +33385,7 @@ Transform:
   m_GameObject: {fileID: 1174734440}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -32.01, y: 0.787, z: -34.03}
+  m_LocalPosition: {x: 55.29, y: 2.27, z: 312.17}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -43730,6 +43731,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ShooterPrototype.Player.MatchDamageZoneController
   zoneCenter: {fileID: 952641177}
   phase1CenterOffset: 10
+  phase2CenterOffset: 40
   centerGroundProbeHeight: 12
   centerGroundProbeDistance: 40
   centerGroundMask:
@@ -43738,8 +43740,7 @@ MonoBehaviour:
   initialRadius: 220
   phase1EndRadius: 100
   finalRadius: 0
-  phase1DurationSeconds: 90
-  phase2DurationSeconds: 90
+  totalShrinkDurationSeconds: 90
   shrinkCurve:
     serializedVersion: 2
     m_Curve:
@@ -43793,8 +43794,6 @@ MonoBehaviour:
     m_RotationOrder: 4
   damageZoneVisualPrefab: {fileID: 1588347508130068, guid: dd68423548c16c047ac1ea1abf44e810, type: 3}
   visualHeightOffset: 0.05
-  visualRadiusSmoothSpeed: 6
-  visualCenterSmoothSpeed: 8
   applyLocalDamageWhenOffline: 1
 --- !u!4 &1543702528
 Transform:
@@ -51483,6 +51482,76 @@ PrefabInstance:
 Transform:
   m_CorrespondingSourceObject: {fileID: 4546259155988080, guid: 6c5763059d78ddc449acd2e31e6f24d1, type: 3}
   m_PrefabInstance: {fileID: 1799650042}
+  m_PrefabAsset: {fileID: 0}
+--- !u!1001 &1806324157
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 531542662}
+    m_Modifications:
+    - target: {fileID: 1420342771738900, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+      propertyPath: m_Name
+      value: SM_Generic_Mountains_Soft_01 (4)
+      objectReference: {fileID: 0}
+    - target: {fileID: 4219504137179772, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+      propertyPath: m_RootOrder
+      value: 501
+      objectReference: {fileID: 0}
+    - target: {fileID: 4219504137179772, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 1.6806
+      objectReference: {fileID: 0}
+    - target: {fileID: 4219504137179772, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 0.49225175
+      objectReference: {fileID: 0}
+    - target: {fileID: 4219504137179772, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 2.0775578
+      objectReference: {fileID: 0}
+    - target: {fileID: 4219504137179772, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 33.9
+      objectReference: {fileID: 0}
+    - target: {fileID: 4219504137179772, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -29.36
+      objectReference: {fileID: 0}
+    - target: {fileID: 4219504137179772, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 295.7
+      objectReference: {fileID: 0}
+    - target: {fileID: 4219504137179772, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 0.97602576
+      objectReference: {fileID: 0}
+    - target: {fileID: 4219504137179772, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4219504137179772, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0.21765533
+      objectReference: {fileID: 0}
+    - target: {fileID: 4219504137179772, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: -0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4219504137179772, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 25.143
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+--- !u!4 &1806324158 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 4219504137179772, guid: 5c6d758d37ba80347ba0f4683cb854ad, type: 3}
+  m_PrefabInstance: {fileID: 1806324157}
   m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1807575668
 PrefabInstance:

@@ -84,6 +84,10 @@ namespace ShooterPrototype.Player
             }
 
             SpawnVisual();
+            if (visualRoot != null)
+            {
+                visualRoot.gameObject.SetActive(false);
+            }
             displayedRadius = initialRadius;
             targetRadius = initialRadius;
             displayedCenter = GetMapCenterPosition();
@@ -417,6 +421,24 @@ namespace ShooterPrototype.Player
             }
 
             return worldPosition.y;
+        }
+
+        public void SetZoneVisualActive(bool active)
+        {
+            if (visualRoot == null)
+            {
+                if (!active)
+                {
+                    return;
+                }
+
+                SpawnVisual();
+            }
+
+            if (visualRoot != null)
+            {
+                visualRoot.gameObject.SetActive(active);
+            }
         }
 
         private void SpawnVisual()

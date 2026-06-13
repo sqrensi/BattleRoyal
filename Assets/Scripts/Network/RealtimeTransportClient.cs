@@ -68,6 +68,7 @@ namespace ShooterPrototype.Network
             public bool isUsingMedkit;
             public float medkitRemainingSeconds;
             public int medkitCount;
+            public int killCount;
             public int weaponPickupSeq;
             public int weaponKind;
             public int weaponSlot0Kind;
@@ -366,6 +367,64 @@ namespace ShooterPrototype.Network
         }
 
         [Serializable]
+        public sealed class MatchStateMessage
+        {
+            public string type;
+            public string phase;
+            public bool joinLocked;
+            public int countdownRemainingSeconds;
+            public long planeStartedAtMs;
+            public long planeEndsAtMs;
+            public long playingStartedAtMs;
+            public long endingStartedAtMs;
+            public string winnerTicketId;
+            public int aliveCount;
+            public int connectedCount;
+            public bool hasJumped;
+            public bool hasLanded;
+            public bool inCombat;
+            public bool forceJump;
+            public bool useForcedDrop;
+            public float dropPosX;
+            public float dropPosZ;
+            public float mapCenterX;
+            public float mapCenterZ;
+            public float planeStartX;
+            public float planeStartZ;
+            public float planeEndX;
+            public float planeEndZ;
+            public float planeY;
+            public float planeSpeed;
+            public float planePosX;
+            public float planePosY;
+            public float planePosZ;
+            public string localTicketId;
+            public int localKillCount;
+            public bool isLocalWinner;
+            public int winnerDisconnectSeconds;
+        }
+
+        [Serializable]
+        public sealed class MatchDisconnectMessage
+        {
+            public string type;
+            public string ticketId;
+            public string reason;
+        }
+
+        [Serializable]
+        private sealed class PlaneLandedMessage
+        {
+            public string type;
+        }
+
+        [Serializable]
+        private sealed class PlaneJumpMessage
+        {
+            public string type;
+        }
+
+        [Serializable]
         private sealed class PickupRequestMessage
         {
             public string type;
@@ -595,6 +654,8 @@ namespace ShooterPrototype.Network
         public event Action<MedkitResultMessage> MedkitResultReceived;
         public event Action<HealMessage> HealReceived;
         public event Action<DamageZoneStateMessage> DamageZoneStateReceived;
+        public event Action<MatchStateMessage> MatchStateReceived;
+        public event Action<MatchDisconnectMessage> MatchDisconnectReceived;
 
         private void Awake()
         {
@@ -1365,6 +1426,32 @@ namespace ShooterPrototype.Network
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 
+        public void SendPlaneJump()
+        {
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            _ = SendJsonAsync(new PlaneJumpMessage
+            {
+                type = "plane_jump"
+            }, cts != null ? cts.Token : CancellationToken.None);
+        }
+
+        public void SendPlaneLanded()
+        {
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            _ = SendJsonAsync(new PlaneLandedMessage
+            {
+                type = "plane_landed"
+            }, cts != null ? cts.Token : CancellationToken.None);
+        }
+
         private async Task ConnectInternalAsync(string ticketId)
         {
             try
@@ -1625,6 +1712,42 @@ namespace ShooterPrototype.Network
                 {
                     var message = damageZoneStateMessage;
                     EnqueueMainThreadAction(() => DamageZoneStateReceived?.Invoke(message));
+                    return;
+                }
+
+                MatchStateMessage matchStateMessage = null;
+                try
+                {
+                    matchStateMessage = JsonUtility.FromJson<MatchStateMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (matchStateMessage != null &&
+                    string.Equals(matchStateMessage.type, "match_state", StringComparison.Ordinal))
+                {
+                    var message = matchStateMessage;
+                    EnqueueMainThreadAction(() => MatchStateReceived?.Invoke(message));
+                    return;
+                }
+
+                MatchDisconnectMessage matchDisconnectMessage = null;
+                try
+                {
+                    matchDisconnectMessage = JsonUtility.FromJson<MatchDisconnectMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (matchDisconnectMessage != null &&
+                    string.Equals(matchDisconnectMessage.type, "match_disconnect", StringComparison.Ordinal))
+                {
+                    var message = matchDisconnectMessage;
+                    EnqueueMainThreadAction(() => MatchDisconnectReceived?.Invoke(message));
                     return;
                 }
 

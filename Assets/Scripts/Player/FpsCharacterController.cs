@@ -112,6 +112,7 @@ namespace ShooterPrototype.Player
         private bool reconciliationSuspended;
         private float reconciliationGraceUntilRealtime;
         private bool movementLocked;
+        private Vector2 externalHorizontalVelocity;
         private bool medkitUseMovementMode;
         private System.Action medkitMovementCancelHandler;
         private float defaultAdsMaxLookAngle;
@@ -175,6 +176,20 @@ namespace ShooterPrototype.Player
             networkMoveInputZ = 0f;
             networkJumpPressed = false;
             isSprinting = false;
+            externalHorizontalVelocity = Vector2.zero;
+        }
+
+        public void ApplyExternalLaunchVelocity(Vector3 worldVelocity)
+        {
+            verticalVelocity = worldVelocity.y;
+            externalHorizontalVelocity = new Vector2(worldVelocity.x, worldVelocity.z);
+            isGrounded = false;
+            groundedEvalFrame = -1;
+        }
+
+        public void ClearExternalLaunchVelocity()
+        {
+            externalHorizontalVelocity = Vector2.zero;
         }
 
         /// <summary>
@@ -789,6 +804,7 @@ namespace ShooterPrototype.Player
             if (isGrounded && verticalVelocity < 0f)
             {
                 verticalVelocity = -1.5f;
+                externalHorizontalVelocity = Vector2.zero;
             }
 
             if (isGrounded && ReadJumpPressed())
@@ -816,6 +832,13 @@ namespace ShooterPrototype.Player
             }
 
             var velocity = moveDirection * (moveSpeed * speedMultiplier);
+            if (externalHorizontalVelocity.sqrMagnitude > 0.04f)
+            {
+                velocity.x += externalHorizontalVelocity.x;
+                velocity.z += externalHorizontalVelocity.y;
+                externalHorizontalVelocity *= Mathf.Clamp01(1f - (Time.deltaTime * 0.75f));
+            }
+
             velocity.y = verticalVelocity;
             characterController.Move(velocity * Time.deltaTime);
             isGrounded = EvaluateGroundedCached(forceRefresh: true);
