@@ -7,6 +7,10 @@ namespace ShooterPrototype.Player
     [DisallowMultipleComponent]
     public sealed class RemoteResourceClothingApplier : MonoBehaviour
     {
+        private sealed class FirstPersonGloveRendererMarker : MonoBehaviour
+        {
+        }
+
         private const string ClothingRootName = "RemoteResourceClothing";
         public const string FirstPersonGlovesRootName = "LocalFirstPersonGloves";
         private const float MinimumBoneBindRatio = 0.65f;
@@ -100,6 +104,7 @@ namespace ShooterPrototype.Player
 
         private SkinnedMeshRenderer bodyRendererWithHiddenParts;
         private Mesh originalBodyMeshBeforeHide;
+        private readonly List<Renderer> lastAppliedGloveRenderers = new List<Renderer>(4);
 
         public void ApplyToRemoteVisual(Transform syntyVisual, bool forceReapply = false)
         {
@@ -162,16 +167,13 @@ namespace ShooterPrototype.Player
             ClearExistingClothing(syntyVisual);
             ClearFirstPersonGloves(armsPresenter);
 
-            if (!ApplyClothingToVisual(syntyVisual, forceReapply))
-            {
-                return;
-            }
-
+            ApplyClothingToVisual(syntyVisual, forceReapply);
             ApplyFirstPersonGloves(syntyVisual, armsPresenter);
         }
 
         private bool ApplyClothingToVisual(Transform syntyVisual, bool forceReapply)
         {
+            lastAppliedGloveRenderers.Clear();
             var bodyRenderer = FindCharacterBodyRenderer(syntyVisual);
             var bodyParent = bodyRenderer != null ? bodyRenderer.transform.parent : syntyVisual;
 
@@ -261,45 +263,61 @@ namespace ShooterPrototype.Player
 
         private void ApplyFirstPersonGloves(Transform syntyVisual, SyntyFirstPersonArmsPresenter armsPresenter)
         {
-            if (!applyGloves || armsPresenter == null || syntyVisual == null)
+            if (!applyGloves || armsPresenter == null)
             {
                 return;
             }
 
-            var bodyRenderer = FindCharacterBodyRenderer(syntyVisual);
-            if (bodyRenderer == null)
+            armsPresenter.ClearFirstPersonGloveRenderers();
+
+            if (lastAppliedGloveRenderers.Count > 0)
             {
-                return;
+                armsPresenter.RegisterFirstPersonGloveRenderers(lastAppliedGloveRenderers);
+            }
+            else if (syntyVisual != null)
+            {
+                RegisterBodyGloveRenderersFromVisual(syntyVisual, armsPresenter);
             }
 
-            var bodyParent = bodyRenderer.transform.parent;
-            var glovesRoot = armsPresenter.GetOrCreateFirstPersonGlovesRoot();
-            if (glovesRoot == null)
-            {
-                return;
-            }
-
-            ClearFirstPersonGloves(armsPresenter);
-            glovesRoot = armsPresenter.GetOrCreateFirstPersonGlovesRoot();
-
-            var clothingRoot = syntyVisual.Find(ClothingRootName);
-            if (!ApplyClothingLayer(
-                syntyVisual,
-                clothingRoot != null ? clothingRoot : glovesRoot,
-                glovesResourcePath,
-                glovesMaterialResourcePath,
-                bodyRenderer,
-                bodyParent,
-                ClothingBindProfile.Hands,
-                glovesRoot,
-                snapToBodyHierarchy: false))
-            {
-                return;
-            }
-
-            armsPresenter.RegisterFirstPersonGloveRenderers(glovesRoot);
             HideHandsOnFirstPersonArms(armsPresenter);
             RefreshLocalFirstPersonView(armsPresenter);
+        }
+
+        private void RegisterBodyGloveRenderersFromVisual(
+            Transform syntyVisual,
+            SyntyFirstPersonArmsPresenter armsPresenter)
+        {
+            if (syntyVisual == null || armsPresenter == null)
+            {
+                return;
+            }
+
+            var markers = syntyVisual.GetComponentsInChildren<FirstPersonGloveRendererMarker>(true);
+            if (markers.Length == 0)
+            {
+                return;
+            }
+
+            var matched = new List<Renderer>(markers.Length);
+            for (var i = 0; i < markers.Length; i++)
+            {
+                var marker = markers[i];
+                if (marker == null)
+                {
+                    continue;
+                }
+
+                var renderer = marker.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    matched.Add(renderer);
+                }
+            }
+
+            if (matched.Count > 0)
+            {
+                armsPresenter.RegisterFirstPersonGloveRenderers(matched);
+            }
         }
 
         private static void RefreshLocalFirstPersonView(SyntyFirstPersonArmsPresenter armsPresenter)
@@ -400,6 +418,11 @@ namespace ShooterPrototype.Player
                 ApplyClothingMaterialToInstance(instance, clothingMaterial);
             }
 
+            if (bindProfile == ClothingBindProfile.Hands && appliedAny)
+            {
+                TrackAppliedGloveRenderers(instance, clothingRenderers);
+            }
+
             StripEmbeddedArmature(instance);
             DisableColliders(instance);
 
@@ -413,6 +436,51 @@ namespace ShooterPrototype.Player
             }
 
             return appliedAny;
+        }
+
+        private void TrackAppliedGloveRenderers(GameObject instance, SkinnedMeshRenderer[] clothingRenderers)
+        {
+            if (clothingRenderers != null)
+            {
+                for (var i = 0; i < clothingRenderers.Length; i++)
+                {
+                    var renderer = clothingRenderers[i];
+                    if (renderer != null && renderer.enabled && !lastAppliedGloveRenderers.Contains(renderer))
+                    {
+                        lastAppliedGloveRenderers.Add(renderer);
+                        MarkFirstPersonGloveRenderer(renderer);
+                    }
+                }
+            }
+
+            if (instance == null)
+            {
+                return;
+            }
+
+            var staticRenderers = instance.GetComponentsInChildren<MeshRenderer>(true);
+            for (var i = 0; i < staticRenderers.Length; i++)
+            {
+                var renderer = staticRenderers[i];
+                if (renderer != null && renderer.enabled && !lastAppliedGloveRenderers.Contains(renderer))
+                {
+                    lastAppliedGloveRenderers.Add(renderer);
+                    MarkFirstPersonGloveRenderer(renderer);
+                }
+            }
+        }
+
+        private static void MarkFirstPersonGloveRenderer(Renderer renderer)
+        {
+            if (renderer == null)
+            {
+                return;
+            }
+
+            if (renderer.GetComponent<FirstPersonGloveRendererMarker>() == null)
+            {
+                renderer.gameObject.AddComponent<FirstPersonGloveRendererMarker>();
+            }
         }
 
         private void ClearFirstPersonGloves(SyntyFirstPersonArmsPresenter armsPresenter)

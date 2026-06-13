@@ -202,7 +202,12 @@ namespace ShooterPrototype.Player
             }
 
             var armsPresenter = playerRoot.GetComponent<SyntyFirstPersonArmsPresenter>();
-            if (armsPresenter == null || bodyRenderer == null)
+            if (armsPresenter == null)
+            {
+                armsPresenter = playerRoot.AddComponent<SyntyFirstPersonArmsPresenter>();
+            }
+
+            if (bodyRenderer == null)
             {
                 return;
             }

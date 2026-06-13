@@ -217,7 +217,7 @@ namespace ShooterPrototype.Player
 
         [SerializeField] private Vector3 worldPickupLocalScale = Vector3.one;
 
-        [SerializeField] private float pickupYOffset = 0.08f;
+        [SerializeField] private float pickupYOffset = 0.12f;
 
         [Header("Weapon Drop Placement")]
         [SerializeField] private LayerMask dropGroundMask = ~0;
@@ -226,7 +226,7 @@ namespace ShooterPrototype.Player
         [SerializeField] private LayerMask dropWallMask = ~0;
         [SerializeField] private float dropWallProbeHeight = 0.6f;
         [SerializeField] private float dropWallClearance = 0.35f;
-        [SerializeField] private float weaponDropSurfaceOffset = 0.14f;
+        [SerializeField] private float weaponDropSurfaceOffset = 0.18f;
 
         [SerializeField] private bool spawnOnStart = true;
 
@@ -1734,7 +1734,9 @@ namespace ShooterPrototype.Player
                 if (!string.IsNullOrWhiteSpace(slot.spawnId) &&
                     serverPositionsBySpawnId.TryGetValue(slot.spawnId, out var serverPosition))
                 {
-                    spawnPosition = serverPosition;
+                    spawnPosition = ResolveGroundedDropPosition(
+                        serverPosition,
+                        ResolvePickupSurfaceOffset(slot.spawnId));
                     spawnRotation = Quaternion.Euler(worldPickupEulerOffset);
                     spawnAnchor = slot.Zone.GetOrCreateAnchor(slot.ZoneSlotIndex);
                     spawnAnchor.SetPositionAndRotation(spawnPosition, spawnRotation);
@@ -1764,13 +1766,15 @@ namespace ShooterPrototype.Player
             if (!string.IsNullOrWhiteSpace(slot.spawnId) &&
                 serverPositionsBySpawnId.TryGetValue(slot.spawnId, out var dynamicServerPosition))
             {
-                spawnPosition = dynamicServerPosition;
+                spawnPosition = ResolveGroundedDropPosition(
+                    dynamicServerPosition,
+                    ResolvePickupSurfaceOffset(slot.spawnId));
             }
             else
             {
-                spawnPosition = IsWeaponDropSpawnId(slot.spawnId)
-                    ? slot.spawnPoint.position
-                    : ResolveGroundedDropPosition(slot.spawnPoint.position);
+                spawnPosition = ResolveGroundedDropPosition(
+                    slot.spawnPoint.position,
+                    ResolvePickupSurfaceOffset(slot.spawnId));
             }
             spawnRotation = slot.spawnPoint.rotation * Quaternion.Euler(worldPickupEulerOffset);
             spawnAnchor = slot.spawnPoint;
@@ -1819,18 +1823,53 @@ namespace ShooterPrototype.Player
         public Vector3 ResolveGroundedDropPosition(Vector3 approximatePosition, float surfaceOffset)
         {
             var probeOrigin = approximatePosition + Vector3.up * dropGroundProbeHeight;
-            if (Physics.Raycast(
-                    probeOrigin,
-                    Vector3.down,
-                    out var groundHit,
-                    dropGroundProbeDistance,
-                    dropGroundMask,
-                    QueryTriggerInteraction.Ignore))
+            var maxDistance = dropGroundProbeHeight + dropGroundProbeDistance;
+            var hits = Physics.RaycastAll(
+                probeOrigin,
+                Vector3.down,
+                maxDistance,
+                dropGroundMask,
+                QueryTriggerInteraction.Ignore);
+            if (hits == null || hits.Length == 0)
             {
-                return groundHit.point + Vector3.up * Mathf.Max(0.01f, surfaceOffset);
+                return approximatePosition + Vector3.up * Mathf.Max(0.01f, surfaceOffset);
+            }
+
+            var bestY = float.MinValue;
+            var bestPoint = approximatePosition;
+            var maxDriftSqr = 2.25f;
+            for (var i = 0; i < hits.Length; i++)
+            {
+                var hit = hits[i];
+                if (hit.normal.y < 0.5f)
+                {
+                    continue;
+                }
+
+                var driftSqr = (new Vector2(hit.point.x, hit.point.z) - new Vector2(approximatePosition.x, approximatePosition.z)).sqrMagnitude;
+                if (driftSqr > maxDriftSqr)
+                {
+                    continue;
+                }
+
+                if (hit.point.y > bestY)
+                {
+                    bestY = hit.point.y;
+                    bestPoint = hit.point;
+                }
+            }
+
+            if (bestY > float.MinValue)
+            {
+                return bestPoint + Vector3.up * Mathf.Max(0.01f, surfaceOffset);
             }
 
             return approximatePosition + Vector3.up * Mathf.Max(0.01f, surfaceOffset);
+        }
+
+        private float ResolvePickupSurfaceOffset(string spawnId)
+        {
+            return IsWeaponDropSpawnId(spawnId) ? weaponDropSurfaceOffset : pickupYOffset;
         }
 
         private List<Vector3> BuildDeterministicAvoidPositions(PickupSpawnSlot slot)
@@ -1902,10 +1941,17 @@ namespace ShooterPrototype.Player
             if (slot.IsZoneSlot && slot.Zone != null)
             {
                 var anchor = slot.Zone.GetOrCreateAnchor(Mathf.Max(0, slot.ZoneSlotIndex));
+                worldPosition = ResolveGroundedDropPosition(
+                    worldPosition,
+                    ResolvePickupSurfaceOffset(spawnId));
                 anchor.position = worldPosition;
                 slot.spawnPoint = anchor;
                 return;
             }
+
+            worldPosition = ResolveGroundedDropPosition(
+                worldPosition,
+                ResolvePickupSurfaceOffset(spawnId));
 
             if (slot.spawnPoint != null)
             {
@@ -2205,9 +2251,9 @@ namespace ShooterPrototype.Player
 
             }
 
-            worldPosition = IsWeaponDropSpawnId(spawnId)
-                ? worldPosition
-                : ResolveGroundedDropPosition(worldPosition);
+            worldPosition = ResolveGroundedDropPosition(
+                worldPosition,
+                ResolvePickupSurfaceOffset(spawnId));
 
             spawnedDefinitionsBySpawnId[spawnId] = definition;
 

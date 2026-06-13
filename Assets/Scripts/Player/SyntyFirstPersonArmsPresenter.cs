@@ -68,31 +68,58 @@ namespace ShooterPrototype.Player
 
         public void RegisterFirstPersonGloveRenderers(Transform glovesRoot)
         {
-            ClearFirstPersonGloveRenderers();
             if (glovesRoot == null)
             {
                 return;
             }
 
-            var renderers = glovesRoot.GetComponentsInChildren<Renderer>(true);
+            RegisterFirstPersonGloveRenderers(glovesRoot.GetComponentsInChildren<Renderer>(true));
+        }
+
+        public void RegisterFirstPersonGloveRenderers(IReadOnlyList<Renderer> renderers)
+        {
+            ClearFirstPersonGloveRenderers();
+            if (renderers == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < renderers.Count; i++)
+            {
+                RegisterFirstPersonGloveRenderer(renderers[i]);
+            }
+        }
+
+        public void RegisterFirstPersonGloveRenderers(Renderer[] renderers)
+        {
+            ClearFirstPersonGloveRenderers();
+            if (renderers == null)
+            {
+                return;
+            }
+
             for (var i = 0; i < renderers.Length; i++)
             {
-                var renderer = renderers[i];
-                if (renderer == null)
-                {
-                    continue;
-                }
+                RegisterFirstPersonGloveRenderer(renderers[i]);
+            }
+        }
 
-                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                if (renderer is SkinnedMeshRenderer skinnedGloveRenderer)
-                {
-                    skinnedGloveRenderer.updateWhenOffscreen = true;
-                }
+        private void RegisterFirstPersonGloveRenderer(Renderer renderer)
+        {
+            if (renderer == null)
+            {
+                return;
+            }
 
-                if (!firstPersonGloveRenderers.Contains(renderer))
-                {
-                    firstPersonGloveRenderers.Add(renderer);
-                }
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            if (renderer is SkinnedMeshRenderer skinnedGloveRenderer)
+            {
+                skinnedGloveRenderer.updateWhenOffscreen = true;
+            }
+
+            if (!firstPersonGloveRenderers.Contains(renderer))
+            {
+                firstPersonGloveRenderers.Add(renderer);
             }
         }
 
@@ -173,10 +200,12 @@ namespace ShooterPrototype.Player
                 }
 
                 ApplyArmsMeshToExistingRenderers(bodyRenderer, armsMesh);
+                TryApplyLocalResourceClothing();
                 return true;
             }
 
             SyncArmsBindingsToBody(bodyRenderer);
+            TryApplyLocalResourceClothing();
             return true;
         }
 
@@ -563,6 +592,7 @@ namespace ShooterPrototype.Player
             if (TryAdoptExistingArmsRenderer(primarySource))
             {
                 built = true;
+                TryApplyLocalResourceClothing();
                 return;
             }
 

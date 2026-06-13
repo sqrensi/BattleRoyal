@@ -142,6 +142,12 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
+                if (armsPresenter != null && armsPresenter.IsFirstPersonGloveRenderer(renderer))
+                {
+                    renderer.enabled = localFirstPersonView && !hideArms;
+                    continue;
+                }
+
                 if (syntyBinder != null && syntyBinder.ShouldHideSourceBodyInFirstPerson(renderer))
                 {
                     renderer.enabled = false;
@@ -149,12 +155,6 @@ namespace ShooterPrototype.Player
                 }
 
                 if (armsPresenter != null && armsPresenter.IsFirstPersonArmsRenderer(renderer))
-                {
-                    renderer.enabled = localFirstPersonView && !hideArms;
-                    continue;
-                }
-
-                if (armsPresenter != null && armsPresenter.IsFirstPersonGloveRenderer(renderer))
                 {
                     renderer.enabled = localFirstPersonView && !hideArms;
                     continue;

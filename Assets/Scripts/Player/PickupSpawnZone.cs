@@ -5,7 +5,7 @@ namespace ShooterPrototype.Player
 {
     /// <summary>
     /// Floor area inside buildings where pickups spawn at random XZ inside the box.
-    /// Spawn height uses the vertical center of the BoxCollider plus PickupSpawnManager offset.
+    /// Spawn height raycasts down from above the zone to the walkable surface.
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(BoxCollider))]
@@ -18,6 +18,9 @@ namespace ShooterPrototype.Player
         [SerializeField] private float edgePadding = 0.35f;
         [SerializeField] private int maxPlacementAttempts = 24;
         [SerializeField] private float minSeparation = 1.2f;
+        [SerializeField] private float groundProbeHeight = 4f;
+        [SerializeField] private float groundProbeDistance = 10f;
+        [SerializeField] private LayerMask groundMask = ~0;
 
         private BoxCollider zoneCollider;
         private readonly List<Transform> anchors = new List<Transform>();
@@ -86,12 +89,10 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            var spawnHeight = bounds.center.y + yOffset;
-
             for (var attempt = 0; attempt < maxPlacementAttempts; attempt++)
             {
                 var candidate = SamplePointInBounds(bounds, deterministicSpawnId, attempt);
-                candidate.y = spawnHeight;
+                candidate.y = ResolveSpawnSurfaceY(candidate, bounds, yOffset);
 
                 if (!HasSeparation(candidate, avoidPositions))
                 {
@@ -103,9 +104,56 @@ namespace ShooterPrototype.Player
                 return true;
             }
 
-            position = new Vector3(bounds.center.x, spawnHeight, bounds.center.z);
+            position = new Vector3(
+                bounds.center.x,
+                ResolveSpawnSurfaceY(bounds.center, bounds, yOffset),
+                bounds.center.z);
             rotation = Quaternion.Euler(eulerOffset);
             return true;
+        }
+
+        private float ResolveSpawnSurfaceY(Vector3 xzPoint, Bounds bounds, float yOffset)
+        {
+            var probeOrigin = new Vector3(xzPoint.x, bounds.max.y + groundProbeHeight, xzPoint.z);
+            var hits = Physics.RaycastAll(
+                probeOrigin,
+                Vector3.down,
+                groundProbeDistance,
+                groundMask,
+                QueryTriggerInteraction.Ignore);
+            if (hits == null || hits.Length == 0)
+            {
+                return bounds.max.y + yOffset;
+            }
+
+            var bestY = float.MinValue;
+            var maxDriftSqr = 2.25f;
+            for (var i = 0; i < hits.Length; i++)
+            {
+                var hit = hits[i];
+                if (hit.normal.y < 0.5f)
+                {
+                    continue;
+                }
+
+                var driftSqr = (new Vector2(hit.point.x, hit.point.z) - new Vector2(xzPoint.x, xzPoint.z)).sqrMagnitude;
+                if (driftSqr > maxDriftSqr)
+                {
+                    continue;
+                }
+
+                if (hit.point.y > bestY)
+                {
+                    bestY = hit.point.y;
+                }
+            }
+
+            if (bestY > float.MinValue)
+            {
+                return bestY + yOffset;
+            }
+
+            return bounds.max.y + yOffset;
         }
 
         private string ResolveLocalZoneKey()
@@ -185,7 +233,7 @@ namespace ShooterPrototype.Player
             {
                 var x = UnityEngine.Random.Range(min.x + safePadding, max.x - safePadding);
                 var z = UnityEngine.Random.Range(min.z + safePadding, max.z - safePadding);
-                return new Vector3(x, bounds.center.y, z);
+                return new Vector3(x, bounds.max.y, z);
             }
             finally
             {
@@ -243,7 +291,8 @@ namespace ShooterPrototype.Player
             Gizmos.DrawWireCube(bounds.center, bounds.size);
 
             Gizmos.color = Color.yellow;
-            Gizmos.DrawSphere(new Vector3(bounds.center.x, bounds.center.y, bounds.center.z), 0.12f);
+            var surfaceY = ResolveSpawnSurfaceY(bounds.center, bounds, 0f);
+            Gizmos.DrawSphere(new Vector3(bounds.center.x, surfaceY, bounds.center.z), 0.12f);
         }
     }
 }

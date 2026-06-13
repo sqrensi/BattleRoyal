@@ -131,6 +131,12 @@ namespace ShooterPrototype.Player
 
                 if (syntyBinder != null && syntyBinder.IsRendererUnderSyntyVisual(renderer.transform))
                 {
+                    if (armsPresenter != null && armsPresenter.IsFirstPersonGloveRenderer(renderer))
+                    {
+                        renderer.enabled = true;
+                        continue;
+                    }
+
                     renderer.enabled = false;
                     continue;
                 }
@@ -156,7 +162,8 @@ namespace ShooterPrototype.Player
             }
 
             return renderer.gameObject.name.IndexOf("_FirstPersonArms", System.StringComparison.Ordinal) >= 0 ||
-                   (armsPresenter != null && armsPresenter.IsFirstPersonArmsRenderer(renderer));
+                   (armsPresenter != null && armsPresenter.IsFirstPersonArmsRenderer(renderer)) ||
+                   (armsPresenter != null && armsPresenter.IsFirstPersonGloveRenderer(renderer));
         }
 
         private static bool IsLegacyProceduralLine(string objectName)
