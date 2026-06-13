@@ -128,7 +128,7 @@ namespace ShooterPrototype.Player
         {
             if (serverState.WeaponLoadout.HasWeaponLoadout && context.WeaponLoadout != null)
             {
-                context.WeaponLoadout.ApplyServerPickup(serverState.WeaponLoadout);
+                context.WeaponLoadout.ApplyServerAmmoPickup(serverState.WeaponLoadout);
                 return PickupApplyResult.Ok;
             }
 

@@ -318,7 +318,7 @@ namespace ShooterPrototype.Player
                 return EmptySlotKind;
             }
 
-            return (byte)Mathf.Clamp((int)slot.Kind, 0, 1);
+            return WeaponKindUtility.ClampKindByte((int)slot.Kind);
         }
 
         private static Slot BuildSlot(byte kind, string itemId)
@@ -328,7 +328,7 @@ namespace ShooterPrototype.Player
                 return default;
             }
 
-            var resolvedKind = (WeaponKind)Mathf.Clamp((int)kind, 0, 1);
+            var resolvedKind = WeaponKindUtility.ClampKind((int)kind);
             return new Slot
             {
                 ItemId = string.IsNullOrWhiteSpace(itemId)

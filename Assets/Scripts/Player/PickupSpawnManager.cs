@@ -222,6 +222,12 @@ namespace ShooterPrototype.Player
         [Tooltip("Optional original sniper prefab override. Falls back to WeaponCatalog.")]
         [SerializeField] private GameObject defaultSniperWeaponPrefab;
 
+        [Tooltip("Optional original pistol prefab override. Falls back to WeaponCatalog.")]
+        [SerializeField] private GameObject defaultPistolWeaponPrefab;
+
+        [Tooltip("Optional MP7/SMG prefab override. Falls back to WeaponCatalog.")]
+        [SerializeField] private GameObject defaultMp7WeaponPrefab;
+
         [SerializeField] private string defaultItemId;
 
         [SerializeField] private int defaultAmount = 1;
@@ -1699,6 +1705,14 @@ namespace ShooterPrototype.Player
                     return defaultSniperWeaponPrefab != null
                         ? defaultSniperWeaponPrefab
                         : WeaponCatalog.GetWeaponPrefab(WeaponKind.SniperRifle);
+                case WeaponKind.Pistol:
+                    return defaultPistolWeaponPrefab != null
+                        ? defaultPistolWeaponPrefab
+                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.Pistol);
+                case WeaponKind.Mp7:
+                    return defaultMp7WeaponPrefab != null
+                        ? defaultMp7WeaponPrefab
+                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.Mp7);
                 default:
                     return defaultVisualPrefab != null
                         ? defaultVisualPrefab

@@ -71,6 +71,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerPickupContext.cs" />
     <Compile Include="Assets\Scripts\Network\RealtimeSnapshotBinaryCodec.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark02.cs" />
+    <Compile Include="Assets\Scripts\Player\WeaponKindUtility.cs" />
     <Compile Include="Assets\Scripts\Player\PickupSpawnZone.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerHeadMaskSelector.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponLoadout.cs" />

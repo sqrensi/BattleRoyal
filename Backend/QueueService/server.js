@@ -61,6 +61,7 @@ const lastMatchSnapshotBroadcastAtMs = new Map();
 const matchPickupsByMatchId = new Map();
 const droppedWeaponSeqByMatchId = new Map();
 const WEAPON_SLOT_EMPTY = 255;
+const WEAPON_KIND_MAX = 3;
 const WEAPON_MAX_SLOTS = 2;
 const PICKUP_MAX_DISTANCE = Number.isFinite(Number(process.env.PICKUP_MAX_DISTANCE))
   ? Math.max(1, Number(process.env.PICKUP_MAX_DISTANCE))
@@ -718,15 +719,31 @@ function resolveWeaponKindFromItemId(itemId) {
   if (id.includes("sniper")) {
     return 1;
   }
+  if (id.includes("pistol")) {
+    return 2;
+  }
+  if (id.includes("mp7") || id.includes("ppsh")) {
+    return 3;
+  }
   return 0;
 }
 
 function resolveMagazineSizeForKind(kind) {
-  return normalizeInt64(kind, 0) === 1 ? 7 : 30;
+  const normalized = normalizeInt64(kind, 0);
+  if (normalized === 1) {
+    return 7;
+  }
+  if (normalized === 2) {
+    return 12;
+  }
+  if (normalized === 3) {
+    return 30;
+  }
+  return 30;
 }
 
 function isWeaponSlotOccupied(kind) {
-  return kind !== WEAPON_SLOT_EMPTY && kind >= 0 && kind <= 1;
+  return kind !== WEAPON_SLOT_EMPTY && kind >= 0 && kind <= WEAPON_KIND_MAX;
 }
 
 function countOccupiedWeaponSlots(presence) {
@@ -1100,7 +1117,7 @@ function handleWsPose(socket, message) {
   const inputAuth = !!message.inputAuth;
   const serverSampleTimeMs = Date.now();
   const prevPresence = ticket.presence || {};
-  const weaponKind = Math.max(0, Math.min(1, normalizeInt64(message.weaponKind, prevPresence.weaponKind || 0)));
+  const weaponKind = Math.max(0, Math.min(WEAPON_KIND_MAX, normalizeInt64(message.weaponKind, prevPresence.weaponKind || 0)));
   const weaponSlot0Kind = Math.max(
     0,
     Math.min(255, normalizeInt64(message.weaponSlot0Kind, prevPresence.weaponSlot0Kind ?? WEAPON_SLOT_EMPTY))
@@ -2780,7 +2797,7 @@ function encodeSnapshotBinary(payload) {
       meta.writeUInt32LE((player.weaponPickupSeq || 0) >>> 0, 93);
       meta.writeFloatLE(player.medkitRemainingSeconds || 0, 97);
       meta.writeUInt8(Math.max(0, Math.min(255, player.medkitCount || 0)), 101);
-      meta.writeUInt8(Math.max(0, Math.min(1, player.weaponKind || 0)), 102);
+      meta.writeUInt8(Math.max(0, Math.min(WEAPON_KIND_MAX, player.weaponKind || 0)), 102);
       meta.writeUInt8(Math.max(0, Math.min(255, player.weaponSlot0Kind ?? WEAPON_SLOT_EMPTY)), 103);
       meta.writeUInt8(Math.max(0, Math.min(255, player.weaponSlot1Kind ?? WEAPON_SLOT_EMPTY)), 104);
       meta.writeUInt8(Math.max(0, Math.min(255, player.activeWeaponSlot ?? WEAPON_SLOT_EMPTY)), 105);

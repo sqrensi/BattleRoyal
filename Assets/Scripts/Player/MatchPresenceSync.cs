@@ -646,7 +646,7 @@ namespace ShooterPrototype.Player
             }
             else if (hasWeapon)
             {
-                weaponSlot0Kind = (byte)Mathf.Clamp(weaponKind, 0, 1);
+                weaponSlot0Kind = WeaponKindUtility.ClampKindByte(weaponKind);
                 weaponSlot1Kind = PlayerWeaponLoadout.EmptySlotKind;
                 activeWeaponSlot = isHolstered ? PlayerWeaponLoadout.NoActiveSlot : 0;
             }
@@ -672,22 +672,22 @@ namespace ShooterPrototype.Player
 
             if (player.isHolstered || player.activeWeaponSlot == PlayerWeaponLoadout.NoActiveSlot)
             {
-                return (WeaponKind)Mathf.Clamp(player.weaponKind, 0, 1);
+                return WeaponKindUtility.ClampKind(player.weaponKind);
             }
 
             if (player.activeWeaponSlot == 0 &&
                 player.weaponSlot0Kind != PlayerWeaponLoadout.EmptySlotKind)
             {
-                return (WeaponKind)Mathf.Clamp(player.weaponSlot0Kind, 0, 1);
+                return WeaponKindUtility.ClampKind(player.weaponSlot0Kind);
             }
 
             if (player.activeWeaponSlot == 1 &&
                 player.weaponSlot1Kind != PlayerWeaponLoadout.EmptySlotKind)
             {
-                return (WeaponKind)Mathf.Clamp(player.weaponSlot1Kind, 0, 1);
+                return WeaponKindUtility.ClampKind(player.weaponSlot1Kind);
             }
 
-            return (WeaponKind)Mathf.Clamp(player.weaponKind, 0, 1);
+            return WeaponKindUtility.ClampKind(player.weaponKind);
         }
 
         private void SendLocalPose(bool forceImmediate = false)
@@ -956,14 +956,14 @@ namespace ShooterPrototype.Player
                         p.activeWeaponSlot,
                         p.isHolstered,
                         p.hasWeapon,
-                        (byte)Mathf.Clamp(p.weaponKind, 0, 1));
+                        WeaponKindUtility.ClampKindByte(p.weaponKind));
                 }
                 else
                 {
                     remoteWeapon.SetWeaponEquipped(p.hasWeapon);
                     if (p.hasWeapon)
                     {
-                        remoteWeapon.SetWeaponKind((WeaponKind)Mathf.Clamp(p.weaponKind, 0, 1));
+                        remoteWeapon.SetWeaponKind(WeaponKindUtility.ClampKind(p.weaponKind));
                     }
 
                     remoteWeapon.SetHolstered(p.isHolstered);
@@ -1324,14 +1324,14 @@ namespace ShooterPrototype.Player
                             p.activeWeaponSlot,
                             p.isHolstered,
                             p.hasWeapon,
-                            (byte)Mathf.Clamp(p.weaponKind, 0, 1));
+                            WeaponKindUtility.ClampKindByte(p.weaponKind));
                     }
                     else
                     {
                         remoteWeapon?.SetWeaponEquipped(p.hasWeapon);
                         if (p.hasWeapon)
                         {
-                            remoteWeapon?.SetWeaponKind((WeaponKind)Mathf.Clamp(p.weaponKind, 0, 1));
+                            remoteWeapon?.SetWeaponKind(WeaponKindUtility.ClampKind(p.weaponKind));
                         }
 
                         remoteWeapon?.SetHolstered(p.isHolstered);
@@ -1557,7 +1557,7 @@ namespace ShooterPrototype.Player
 
             if (shotEffects != null && localWeaponController != null)
             {
-                ApplyRemoteWeaponEffects(avatar, (WeaponKind)Mathf.Clamp(playerState.weaponKind, 0, 1));
+                ApplyRemoteWeaponEffects(avatar, WeaponKindUtility.ClampKind(playerState.weaponKind));
             }
 
             EnsureRemoteAudio(avatar.Root);

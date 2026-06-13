@@ -269,6 +269,26 @@ namespace ShooterPrototype.Player
             EnsureActiveWeaponEquipped(!serverState.BothHolstered);
         }
 
+        /// <summary>
+        /// Syncs authoritative ammo/loadout counters from server without mounting or drawing weapons.
+        /// </summary>
+        public void ApplyServerAmmoPickup(in WeaponLoadoutServerState serverState)
+        {
+            if (loadout == null || !serverState.HasWeaponLoadout)
+            {
+                return;
+            }
+
+            ApplyServerLoadout(serverState);
+
+            if (weaponController != null)
+            {
+                weaponController.SetReserveAmmo(loadout.SpareAmmo);
+            }
+
+            GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
+        }
+
         public bool TryApplyLocalPickup(string itemId, WeaponKind kind, GameObject equipPrefab, int magAmmo = -1)
         {
             if (loadout == null)
@@ -385,7 +405,7 @@ namespace ShooterPrototype.Player
             }
 
             var currentKind = loadout.IsSlotOccupied(currentSlot)
-                ? (byte)Mathf.Clamp((int)loadout.GetSlot(currentSlot).Kind, 0, 1)
+                ? WeaponKindUtility.ClampKindByte((int)loadout.GetSlot(currentSlot).Kind)
                 : PlayerWeaponLoadout.EmptySlotKind;
             var nextKind = serverState.ActiveWeaponSlot == 0
                 ? serverState.Slot0Kind
@@ -598,10 +618,6 @@ namespace ShooterPrototype.Player
                 (loadout.IsBothHolstered || weaponHolster.IsHolstered))
             {
                 loadout.SetBothHolstered(false);
-                weaponHolster.ForceArmedState();
-            }
-            else if (weaponHolster != null && !loadout.IsBothHolstered && weaponHolster.IsHolstered)
-            {
                 weaponHolster.ForceArmedState();
             }
 

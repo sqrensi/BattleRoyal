@@ -146,6 +146,19 @@ namespace ShooterPrototype.Player
             profile.reloadInsertNormalizedTime = 0.72f;
         }
 
+        private static void ApplyDefaultPistolEffects(WeaponProfile profile)
+        {
+            profile.muzzleFlashVfx = WeaponCatalog.LoadMuzzleFlash(WeaponKind.Pistol);
+            profile.shotClip = WeaponCatalog.LoadShotClip(WeaponKind.Pistol);
+            profile.reloadPullClip = WeaponCatalog.LoadReloadPullClip(WeaponKind.Pistol);
+            profile.reloadInsertClip = WeaponCatalog.LoadReloadInsertClip(WeaponKind.Pistol);
+            profile.remoteReloadClip = profile.reloadPullClip;
+            profile.shotVolume = 0.72f;
+            profile.reloadPullVolume = 0.42f;
+            profile.reloadInsertVolume = 0.5f;
+            profile.reloadInsertNormalizedTime = 0.74f;
+        }
+
         public static WeaponProfile CreateRuntimeSniperDefaults(GameObject host)
         {
             var profile = host.AddComponent<WeaponProfile>();
@@ -176,6 +189,85 @@ namespace ShooterPrototype.Player
             profile.adsCameraLocalEuler = new Vector3(1.5f, 0f, 0f);
             profile.handsScaleMultiplier = 1.45f;
             ApplyDefaultSniperEffects(profile);
+            return profile;
+        }
+
+        public static WeaponProfile CreateRuntimePistolDefaults(GameObject host)
+        {
+            var profile = host.AddComponent<WeaponProfile>();
+            profile.weaponKind = WeaponKind.Pistol;
+            profile.automatic = false;
+            profile.fireRate = 4.5f;
+            profile.magazineSize = 12;
+            profile.reloadDuration = 1.35f;
+            profile.maxDistance = 90f;
+            profile.bulletDropAngleDegrees = 0.2f;
+            profile.legDamage = 12f;
+            profile.bodyDamage = 22f;
+            profile.neckDamage = 55f;
+            profile.headDamage = 85f;
+            profile.spreadStartDegrees = 0.12f;
+            profile.spreadPerShotDegrees = 0.28f;
+            profile.spreadMaxDegrees = 2.8f;
+            profile.hipFireSpreadMultiplier = 2f;
+            profile.adsSpreadMultiplier = 0.45f;
+            profile.hipFireRecoilMultiplier = 0.85f;
+            profile.adsRecoilMultiplier = 0.6f;
+            profile.hasScope = false;
+            profile.adsCameraFov = 58f;
+            profile.adsMaxLookAngle = 38f;
+            profile.adsLookSensitivityMultiplier = 1.4f;
+            profile.overrideAdsCameraPose = true;
+            profile.adsCameraLocalPosition = new Vector3(0f, -0.12f, 0.28f);
+            profile.adsCameraLocalEuler = new Vector3(0.5f, 0f, 0f);
+            profile.handsScaleMultiplier = 1.05f;
+            ApplyDefaultPistolEffects(profile);
+            return profile;
+        }
+
+        private static void ApplyDefaultMp7Effects(WeaponProfile profile)
+        {
+            profile.muzzleFlashVfx = WeaponCatalog.LoadMuzzleFlash(WeaponKind.Mp7);
+            profile.shotClip = WeaponCatalog.LoadShotClip(WeaponKind.Mp7);
+            profile.reloadPullClip = WeaponCatalog.LoadReloadPullClip(WeaponKind.Mp7);
+            profile.reloadInsertClip = WeaponCatalog.LoadReloadInsertClip(WeaponKind.Mp7);
+            profile.remoteReloadClip = profile.reloadPullClip;
+            profile.shotVolume = 0.78f;
+            profile.reloadPullVolume = 0.45f;
+            profile.reloadInsertVolume = 0.52f;
+            profile.reloadInsertNormalizedTime = 0.76f;
+        }
+
+        public static WeaponProfile CreateRuntimeMp7Defaults(GameObject host)
+        {
+            var profile = host.AddComponent<WeaponProfile>();
+            profile.weaponKind = WeaponKind.Mp7;
+            profile.automatic = true;
+            profile.fireRate = 13f;
+            profile.magazineSize = 30;
+            profile.reloadDuration = 1.65f;
+            profile.maxDistance = 120f;
+            profile.bulletDropAngleDegrees = 0.22f;
+            profile.legDamage = 11f;
+            profile.bodyDamage = 18f;
+            profile.neckDamage = 48f;
+            profile.headDamage = 72f;
+            profile.spreadStartDegrees = 0.1f;
+            profile.spreadPerShotDegrees = 0.18f;
+            profile.spreadMaxDegrees = 3.2f;
+            profile.hipFireSpreadMultiplier = 2.1f;
+            profile.adsSpreadMultiplier = 0.55f;
+            profile.hipFireRecoilMultiplier = 0.95f;
+            profile.adsRecoilMultiplier = 0.68f;
+            profile.hasScope = false;
+            profile.adsCameraFov = 52f;
+            profile.adsMaxLookAngle = 40f;
+            profile.adsLookSensitivityMultiplier = 1.55f;
+            profile.overrideAdsCameraPose = true;
+            profile.adsCameraLocalPosition = new Vector3(0f, -0.13f, 0.32f);
+            profile.adsCameraLocalEuler = new Vector3(0.5f, 0f, 0f);
+            profile.handsScaleMultiplier = 1.15f;
+            ApplyDefaultMp7Effects(profile);
             return profile;
         }
 

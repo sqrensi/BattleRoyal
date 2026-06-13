@@ -17,6 +17,8 @@ namespace ShooterPrototype.Player
         [SerializeField] private Transform attachTarget;
         [SerializeField] private string defaultWeaponPrefabPath = "Assets/Prefabs/AK-47/rifle_001.prefab";
         [SerializeField] private string sniperWeaponPrefabPath = "Assets/Prefabs/Sniper/sniper_rifle_001.prefab";
+        [SerializeField] private string pistolWeaponPrefabPath = "Assets/Prefabs/Pistol/pistol_001.prefab";
+        [SerializeField] private string mp7WeaponPrefabPath = "Assets/Prefabs/mp7/mp7.prefab";
         [SerializeField] private string attachTargetName = "RemoteWeaponTarget";
         [SerializeField] private string rightHandBoneName = "Hand_R";
         [Header("Grip Alignment")]
@@ -247,26 +249,26 @@ namespace ShooterPrototype.Player
             {
                 if (activeWeaponSlot == 0 && slot0Kind != PlayerWeaponLoadout.EmptySlotKind)
                 {
-                    return (WeaponKind)Mathf.Clamp((int)slot0Kind, 0, 1);
+                    return WeaponKindUtility.ClampKind((int)slot0Kind);
                 }
 
                 if (activeWeaponSlot == 1 && slot1Kind != PlayerWeaponLoadout.EmptySlotKind)
                 {
-                    return (WeaponKind)Mathf.Clamp((int)slot1Kind, 0, 1);
+                    return WeaponKindUtility.ClampKind((int)slot1Kind);
                 }
             }
 
             if (slot0Kind != PlayerWeaponLoadout.EmptySlotKind)
             {
-                return (WeaponKind)Mathf.Clamp((int)slot0Kind, 0, 1);
+                return WeaponKindUtility.ClampKind((int)slot0Kind);
             }
 
             if (slot1Kind != PlayerWeaponLoadout.EmptySlotKind)
             {
-                return (WeaponKind)Mathf.Clamp((int)slot1Kind, 0, 1);
+                return WeaponKindUtility.ClampKind((int)slot1Kind);
             }
 
-            return (WeaponKind)Mathf.Clamp((int)activeWeaponKind, 0, 1);
+            return WeaponKindUtility.ClampKind((int)activeWeaponKind);
         }
 
         public WeaponProfile GetActiveWeaponProfile()
@@ -879,7 +881,13 @@ namespace ShooterPrototype.Player
                 return catalogPrefab;
             }
 
-            var path = kind == WeaponKind.SniperRifle ? sniperWeaponPrefabPath : defaultWeaponPrefabPath;
+            var path = kind switch
+            {
+                WeaponKind.SniperRifle => sniperWeaponPrefabPath,
+                WeaponKind.Pistol => pistolWeaponPrefabPath,
+                WeaponKind.Mp7 => mp7WeaponPrefabPath,
+                _ => defaultWeaponPrefabPath
+            };
 #if UNITY_EDITOR
             if (!string.IsNullOrWhiteSpace(path))
             {
@@ -1386,7 +1394,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            networkWeaponKind = (WeaponKind)Mathf.Clamp((int)activeKind, 0, 1);
+            networkWeaponKind = WeaponKindUtility.ClampKind((int)activeKind);
             SetRenderersEnabled(backWeaponRootSlot0, false);
             SetRenderersEnabled(backWeaponRootSlot1, false);
             EquipHandWeapon(networkWeaponKind);
@@ -1490,7 +1498,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var kind = (WeaponKind)Mathf.Clamp((int)kindByte, 0, 1);
+            var kind = WeaponKindUtility.ClampKind((int)kindByte);
             var parent = ResolveBackHolsterTargetForSlot(slotIndex);
             if (parent == null)
             {

@@ -744,7 +744,7 @@ namespace ShooterPrototype.Network
                 shotEndY = shotEndPoint.y,
                 shotEndZ = shotEndPoint.z,
                 shotHasEndPoint = shotHasEndPoint,
-                weaponKind = Mathf.Clamp(weaponKind, 0, 1),
+                weaponKind = WeaponKindUtility.ClampKindByte(weaponKind),
                 weaponSlot0Kind = Mathf.Clamp(weaponSlot0Kind, 0, 255),
                 weaponSlot1Kind = Mathf.Clamp(weaponSlot1Kind, 0, 255),
                 activeWeaponSlot = Mathf.Clamp(activeWeaponSlot, 0, 255),

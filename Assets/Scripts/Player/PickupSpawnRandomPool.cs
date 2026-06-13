@@ -200,6 +200,24 @@ namespace ShooterPrototype.Player
             });
             entries.Add(new Entry
             {
+                kind = PickupKind.Weapon,
+                weaponKind = WeaponKind.Pistol,
+                visualPrefab = WeaponCatalog.GetWeaponPrefab(WeaponKind.Pistol),
+                itemId = WeaponCatalog.GetDefaultItemId(WeaponKind.Pistol),
+                amount = 1,
+                weight = 1f
+            });
+            entries.Add(new Entry
+            {
+                kind = PickupKind.Weapon,
+                weaponKind = WeaponKind.Mp7,
+                visualPrefab = WeaponCatalog.GetWeaponPrefab(WeaponKind.Mp7),
+                itemId = WeaponCatalog.GetDefaultItemId(WeaponKind.Mp7),
+                amount = 1,
+                weight = 1f
+            });
+            entries.Add(new Entry
+            {
                 kind = PickupKind.Ammo,
                 amount = Mathf.Max(1, ammoPickupAmount),
                 itemId = ammoItemId,

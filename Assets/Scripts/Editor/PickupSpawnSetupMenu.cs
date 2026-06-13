@@ -9,6 +9,8 @@ namespace ShooterPrototype.EditorTools
     {
         private const string AssaultWeaponPath = "Assets/Prefabs/AK-47/rifle_001.prefab";
         private const string SniperWeaponPath = "Assets/Prefabs/Sniper/sniper_rifle_001.prefab";
+        private const string PistolWeaponPath = "Assets/Prefabs/Pistol/pistol_001.prefab";
+        private const string Mp7WeaponPath = "Assets/Prefabs/mp7/mp7.prefab";
 
         [MenuItem("ShooterPrototype/Setup Weapon Pickup Spawns")]
         public static void CreatePickupSpawnsInScene()
@@ -32,21 +34,27 @@ namespace ShooterPrototype.EditorTools
 
             var assaultPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(AssaultWeaponPath);
             var sniperPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(SniperWeaponPath);
+            var pistolPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PistolWeaponPath);
+            var mp7Prefab = AssetDatabase.LoadAssetAtPath<GameObject>(Mp7WeaponPath);
             var serialized = new SerializedObject(manager);
             serialized.FindProperty("spawnZonesRoot").objectReferenceValue = spawnZonesRoot;
             serialized.FindProperty("autoCollectSpawnZonesFromScene").boolValue = true;
             serialized.FindProperty("spawnCollectionMode").enumValueIndex = (int)0;
             serialized.FindProperty("defaultVisualPrefab").objectReferenceValue = assaultPrefab;
+            serialized.FindProperty("defaultPistolWeaponPrefab").objectReferenceValue = pistolPrefab;
+            serialized.FindProperty("defaultMp7WeaponPrefab").objectReferenceValue = mp7Prefab;
             serialized.FindProperty("defaultPickupKind").enumValueIndex = (int)PickupKind.Weapon;
             serialized.FindProperty("spawnOnStart").boolValue = true;
 
             var randomPool = serialized.FindProperty("randomPickupPool");
             randomPool.FindPropertyRelative("enabled").boolValue = true;
             var entries = randomPool.FindPropertyRelative("entries");
-            entries.arraySize = 3;
+            entries.arraySize = 5;
             SetRandomPoolEntry(entries.GetArrayElementAtIndex(0), PickupKind.Weapon, WeaponKind.AssaultRifle, assaultPrefab, "assault_rifle", 1, 1f);
             SetRandomPoolEntry(entries.GetArrayElementAtIndex(1), PickupKind.Weapon, WeaponKind.SniperRifle, sniperPrefab, "sniper_rifle", 1, 1f);
-            SetRandomPoolEntry(entries.GetArrayElementAtIndex(2), PickupKind.Ammo, WeaponKind.AssaultRifle, null, "ammo_pack", 30, 1f);
+            SetRandomPoolEntry(entries.GetArrayElementAtIndex(2), PickupKind.Weapon, WeaponKind.Pistol, pistolPrefab, "pistol", 1, 1f);
+            SetRandomPoolEntry(entries.GetArrayElementAtIndex(3), PickupKind.Weapon, WeaponKind.Mp7, mp7Prefab, "mp7", 1, 1f);
+            SetRandomPoolEntry(entries.GetArrayElementAtIndex(4), PickupKind.Ammo, WeaponKind.AssaultRifle, null, "ammo_pack", 30, 1f);
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
             manager.RebuildSpawnZonesFromRoot();
