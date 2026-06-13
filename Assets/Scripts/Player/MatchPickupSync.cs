@@ -345,7 +345,7 @@ namespace ShooterPrototype.Player
             }
 
             var definition = PickupItemDefinition.Create(PickupKind.Weapon, sourcePrefab, message.itemId, 1)
-                .WithMagAmmo(0);
+                .WithMagAmmo(Mathf.Clamp(message.magAmmo, 0, 999));
             var position = new Vector3(message.x, message.y, message.z);
             pickupSpawnManager.EnsureDynamicSlot(message.droppedSpawnId, position, Vector3.forward, definition);
             pickupSpawnManager.ApplyServerPickupRespawn(message.droppedSpawnId);
@@ -364,7 +364,11 @@ namespace ShooterPrototype.Player
                 message.bothHolstered,
                 message.droppedSpawnId ?? string.Empty,
                 message.magAmmo,
-                message.reserveAmmo);
+                message.reserveAmmo,
+                message.spareAmmoAssault,
+                message.spareAmmoSniper,
+                message.spareAmmoPistol,
+                message.spareAmmoMp7);
         }
 
         private static bool TryReadEventPosition(
@@ -401,7 +405,11 @@ namespace ShooterPrototype.Player
                 message.bothHolstered,
                 message.droppedSpawnId ?? string.Empty,
                 0,
-                message.reserveAmmo);
+                message.reserveAmmo,
+                message.spareAmmoAssault,
+                message.spareAmmoSniper,
+                message.spareAmmoPistol,
+                message.spareAmmoMp7);
         }
     }
 }

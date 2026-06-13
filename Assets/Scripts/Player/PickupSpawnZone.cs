@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace ShooterPrototype.Player
 {
@@ -16,7 +17,10 @@ namespace ShooterPrototype.Player
         [Tooltip("Optional id inside a prefab (e.g. floor1, floor2). Can repeat across prefab copies and match other zone object names.")]
         [SerializeField] private string zoneKey = string.Empty;
 
-        [SerializeField] private int pickupCount = 2;
+        [Tooltip("Max weapon pickup points in this zone. Actual count per respawn is rolled 0..max.")]
+        [FormerlySerializedAs("pickupCount")]
+        [SerializeField] private int maxWeaponSlots = 2;
+        [SerializeField] private int maxStandaloneAmmoSlots = 1;
         [SerializeField] private float edgePadding = 0.35f;
         [SerializeField] private int maxPlacementAttempts = 24;
         [SerializeField] private float minSeparation = 1.2f;
@@ -29,11 +33,27 @@ namespace ShooterPrototype.Player
         private BoxCollider zoneCollider;
         private readonly List<Transform> anchors = new List<Transform>();
 
-        public int PickupCount => Mathf.Max(1, pickupCount);
+        public int MaxWeaponSlots => Mathf.Clamp(maxWeaponSlots, 0, 2);
+
+        public int MaxStandaloneAmmoSlots => Mathf.Clamp(maxStandaloneAmmoSlots, 0, 2);
+
+        [System.Obsolete("Use MaxWeaponSlots.")]
+        public int PickupCount => MaxWeaponSlots;
 
         public string BuildSpawnId(int slotIndex)
         {
             return $"pz_{ResolveStableInstanceKey()}_{ResolveLocalZoneKey()}_{slotIndex:00}";
+        }
+
+        public string BuildStandaloneAmmoSpawnId(int slotIndex)
+        {
+            return $"pz_{ResolveStableInstanceKey()}_{ResolveLocalZoneKey()}_sa_{slotIndex:00}";
+        }
+
+        public static bool IsStandaloneAmmoSpawnId(string spawnId)
+        {
+            return !string.IsNullOrWhiteSpace(spawnId) &&
+                   spawnId.IndexOf("_sa_", System.StringComparison.Ordinal) >= 0;
         }
 
         public static bool TryParseSpawnSlotIndex(string spawnId, out int slotIndex)

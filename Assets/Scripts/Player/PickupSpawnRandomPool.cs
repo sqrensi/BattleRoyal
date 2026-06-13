@@ -20,9 +20,16 @@ namespace ShooterPrototype.Player
 
         [SerializeField] private bool enabled = true;
         [SerializeField] private List<Entry> entries = new List<Entry>();
-        [SerializeField] private GameObject ammoVisualPrefab;
-        [SerializeField] private string ammoItemId = "ammo_pack";
-        [SerializeField] private int ammoPickupAmount = 30;
+
+        [Header("Ammo Visual Prefabs")]
+        [Tooltip("World pickup prefab for assault rifle ammo.")]
+        [SerializeField] private GameObject assaultAmmoPrefab;
+        [Tooltip("World pickup prefab for sniper rifle ammo.")]
+        [SerializeField] private GameObject sniperAmmoPrefab;
+        [Tooltip("World pickup prefab for pistol ammo.")]
+        [SerializeField] private GameObject pistolAmmoPrefab;
+        [Tooltip("World pickup prefab for MP7 ammo.")]
+        [SerializeField] private GameObject mp7AmmoPrefab;
 
         public bool Enabled => enabled;
 
@@ -42,7 +49,7 @@ namespace ShooterPrototype.Player
 
             try
             {
-                return RollInternal(owner);
+                return RollInternal();
             }
             finally
             {
@@ -50,15 +57,27 @@ namespace ShooterPrototype.Player
             }
         }
 
-        private PickupItemDefinition RollInternal(Transform owner)
+        public WeaponKind RollStandaloneAmmoKind(string deterministicSpawnId)
         {
-            var resolvedAmmoVisual = ResolveAmmoVisualPrefab(owner);
+            var previousState = UnityEngine.Random.state;
+            UnityEngine.Random.InitState(ComputeStableSeed($"{deterministicSpawnId}_standalone_ammo_kind"));
+            try
+            {
+                return (WeaponKind)UnityEngine.Random.Range(0, 4);
+            }
+            finally
+            {
+                UnityEngine.Random.state = previousState;
+            }
+        }
 
+        private PickupItemDefinition RollInternal()
+        {
             var totalWeight = 0f;
             for (var i = 0; i < entries.Count; i++)
             {
                 var entry = entries[i];
-                if (entry == null || entry.weight <= 0f)
+                if (entry == null || entry.weight <= 0f || entry.kind != PickupKind.Weapon)
                 {
                     continue;
                 }
@@ -75,7 +94,7 @@ namespace ShooterPrototype.Player
             for (var i = 0; i < entries.Count; i++)
             {
                 var entry = entries[i];
-                if (entry == null || entry.weight <= 0f)
+                if (entry == null || entry.weight <= 0f || entry.kind != PickupKind.Weapon)
                 {
                     continue;
                 }
@@ -86,13 +105,13 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
-                return BuildDefinition(entry, resolvedAmmoVisual);
+                return BuildDefinition(entry);
             }
 
-            return BuildDefinition(entries[entries.Count - 1], resolvedAmmoVisual);
+            return BuildDefinition(entries[entries.Count - 1]);
         }
 
-        private static int ComputeStableSeed(string value)
+        public static int ComputeStableSeed(string value)
         {
             unchecked
             {
@@ -106,26 +125,57 @@ namespace ShooterPrototype.Player
             }
         }
 
-        public GameObject ResolveAmmoVisualPrefab(Transform owner)
+        public PickupItemDefinition BuildAmmoDefinition(WeaponKind weaponKind)
         {
-            if (ammoVisualPrefab != null && !IsWeaponLikePrefab(ammoVisualPrefab))
+            var ammoVisual = ResolveAmmoVisualPrefab(weaponKind);
+            if (ammoVisual == null)
             {
-                return ammoVisualPrefab;
+                return default;
             }
 
-            if (owner == null)
+            return PickupItemDefinition.Create(
+                PickupKind.Ammo,
+                ammoVisual,
+                AmmoCatalog.GetAmmoItemId(weaponKind),
+                AmmoCatalog.GetDefaultPickupAmount(weaponKind));
+        }
+
+        public GameObject ResolveAmmoVisualPrefab(WeaponKind weaponKind)
+        {
+            var assigned = GetAssignedAmmoPrefab(weaponKind);
+            if (assigned != null && !IsWeaponLikePrefab(assigned))
             {
-                return null;
+                return assigned;
             }
 
-            var existing = owner.Find("AmmoPickupTemplate");
+            return CreateFallbackAmmoTemplate(weaponKind);
+        }
+
+        public GameObject GetAssignedAmmoPrefab(WeaponKind weaponKind)
+        {
+            switch (weaponKind)
+            {
+                case WeaponKind.SniperRifle:
+                    return sniperAmmoPrefab;
+                case WeaponKind.Pistol:
+                    return pistolAmmoPrefab;
+                case WeaponKind.Mp7:
+                    return mp7AmmoPrefab;
+                default:
+                    return assaultAmmoPrefab;
+            }
+        }
+
+        private GameObject CreateFallbackAmmoTemplate(WeaponKind weaponKind)
+        {
+            var templateName = $"AmmoPickupTemplate_{weaponKind}";
+            var existing = GameObject.Find(templateName);
             if (existing != null)
             {
-                return existing.gameObject;
+                return existing;
             }
 
-            var template = new GameObject("AmmoPickupTemplate");
-            template.transform.SetParent(owner, false);
+            var template = new GameObject(templateName);
             template.SetActive(false);
 
             var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -144,10 +194,37 @@ namespace ShooterPrototype.Player
             var renderer = cube.GetComponent<Renderer>();
             if (renderer != null)
             {
-                renderer.sharedMaterial = CreateAmmoMaterial();
+                renderer.sharedMaterial = CreateAmmoMaterial(AmmoCatalog.GetAmmoColor(weaponKind));
             }
 
             return template;
+        }
+
+        public void ApplyInspectorAmmoPrefabs(
+            GameObject assaultPrefab,
+            GameObject sniperPrefab,
+            GameObject pistolPrefab,
+            GameObject mp7Prefab)
+        {
+            if (assaultPrefab != null)
+            {
+                assaultAmmoPrefab = assaultPrefab;
+            }
+
+            if (sniperPrefab != null)
+            {
+                sniperAmmoPrefab = sniperPrefab;
+            }
+
+            if (pistolPrefab != null)
+            {
+                pistolAmmoPrefab = pistolPrefab;
+            }
+
+            if (mp7Prefab != null)
+            {
+                mp7AmmoPrefab = mp7Prefab;
+            }
         }
 
         public void NormalizeEntryWeights()
@@ -216,69 +293,26 @@ namespace ShooterPrototype.Player
                 amount = 1,
                 weight = 1f
             });
-            entries.Add(new Entry
-            {
-                kind = PickupKind.Ammo,
-                amount = Mathf.Max(1, ammoPickupAmount),
-                itemId = ammoItemId,
-                weight = 1f
-            });
         }
 
-        private PickupItemDefinition BuildDefinition(Entry entry, GameObject resolvedAmmoVisual)
+        private PickupItemDefinition BuildDefinition(Entry entry)
         {
-            if (entry == null)
+            if (entry == null || entry.kind != PickupKind.Weapon)
             {
                 return default;
             }
 
-            if (entry.kind == PickupKind.Ammo)
-            {
-                var ammoVisual = resolvedAmmoVisual;
-                if (ammoVisual != null && IsWeaponLikePrefab(ammoVisual))
-                {
-                    ammoVisual = null;
-                }
-
-                if (ammoVisual == null)
-                {
-                    return default;
-                }
-
-                var ammoId = string.IsNullOrWhiteSpace(entry.itemId) ? ammoItemId : entry.itemId.Trim();
-                var ammoAmount = entry.amount > 0 ? entry.amount : ammoPickupAmount;
-                return PickupItemDefinition.Create(PickupKind.Ammo, ammoVisual, ammoId, ammoAmount);
-            }
-
-            var visual = entry.visualPrefab;
-            if (visual == null && entry.kind == PickupKind.Weapon)
-            {
-                visual = WeaponCatalog.GetWeaponPrefab(entry.weaponKind);
-            }
-
-            var itemId = !string.IsNullOrWhiteSpace(entry.itemId)
-                ? entry.itemId.Trim()
-                : entry.kind == PickupKind.Weapon
-                    ? WeaponCatalog.GetDefaultItemId(entry.weaponKind)
-                    : visual != null ? visual.name : string.Empty;
-            var amount = entry.amount > 0 ? entry.amount : 1;
-
-            if (entry.kind == PickupKind.Weapon)
-            {
-                if (visual == null)
-                {
-                    return default;
-                }
-
-                return PickupItemDefinition.Create(PickupKind.Weapon, visual, itemId, amount).WithMagAmmo(0);
-            }
-
+            var visual = entry.visualPrefab ?? WeaponCatalog.GetWeaponPrefab(entry.weaponKind);
             if (visual == null)
             {
                 return default;
             }
 
-            return PickupItemDefinition.Create(entry.kind, visual, itemId, amount);
+            var itemId = !string.IsNullOrWhiteSpace(entry.itemId)
+                ? entry.itemId.Trim()
+                : WeaponCatalog.GetDefaultItemId(entry.weaponKind);
+            var amount = entry.amount > 0 ? entry.amount : 1;
+            return PickupItemDefinition.Create(PickupKind.Weapon, visual, itemId, amount).WithMagAmmo(0);
         }
 
         private static bool IsWeaponLikePrefab(GameObject prefab)
@@ -292,14 +326,10 @@ namespace ShooterPrototype.Player
                    prefab.GetComponentInChildren<WeaponProfile>(true) != null;
         }
 
-        private static Material CreateAmmoMaterial()
+        private static Material CreateAmmoMaterial(Color color)
         {
             var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
-            var material = new Material(shader)
-            {
-                color = new Color(0.82f, 0.68f, 0.18f, 1f)
-            };
-            return material;
+            return new Material(shader) { color = color };
         }
     }
 }

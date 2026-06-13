@@ -175,6 +175,22 @@ namespace ShooterPrototype.Player
 
         }
 
+        private sealed class PairedAmmoSpawnContext
+        {
+            public PickupSpawnZone zone;
+            public Transform spawnAnchor;
+            public WeaponKind weaponKind;
+            public Vector3 spawnPosition;
+            public Quaternion spawnRotation;
+        }
+
+        private struct ZoneSpawnPlan
+        {
+            public int activeWeaponCount;
+            public bool spawnStandaloneAmmo;
+            public WeaponKind standaloneAmmoKind;
+        }
+
 
 
         private enum SpawnCollectionMode
@@ -245,6 +261,15 @@ namespace ShooterPrototype.Player
         [Tooltip("Extra clearance when aligning weapon pickup meshes to the floor by renderer bounds.")]
         [SerializeField] private float weaponPickupGroundClearance = 0.06f;
 
+        [Header("Paired Ammo")]
+        [SerializeField] private Vector3 pairedAmmoBoxOffsetA = new Vector3(0.42f, 0f, 0.28f);
+        [SerializeField] private Vector3 pairedAmmoBoxOffsetB = new Vector3(0.42f, 0f, -0.28f);
+        [SerializeField] private float ammoPickupGroundClearance = 0.04f;
+
+        [Header("Zone Spawn Rolls")]
+        [SerializeField] private int maxWeaponsPerZone = 2;
+        [SerializeField] [Range(0f, 1f)] private float standaloneAmmoZoneChance = 0.22f;
+
         [Header("Weapon Drop Placement")]
         [SerializeField] private LayerMask dropGroundMask;
         [SerializeField] private float dropGroundProbeHeight = 3f;
@@ -263,6 +288,13 @@ namespace ShooterPrototype.Player
         [Header("Random Pool")]
 
         [SerializeField] private PickupSpawnRandomPool randomPickupPool = new PickupSpawnRandomPool();
+
+        [Header("Ammo Prefabs")]
+        [Tooltip("Assign world pickup prefabs here or under Random Pool.")]
+        [SerializeField] private GameObject assaultAmmoPrefab;
+        [SerializeField] private GameObject sniperAmmoPrefab;
+        [SerializeField] private GameObject pistolAmmoPrefab;
+        [SerializeField] private GameObject mp7AmmoPrefab;
 
 
 
@@ -290,6 +322,12 @@ namespace ShooterPrototype.Player
 
             new Dictionary<string, Vector3>(StringComparer.Ordinal);
 
+        private readonly Dictionary<string, PairedAmmoSpawnContext> pairedAmmoContextsByWeaponSpawnId =
+            new Dictionary<string, PairedAmmoSpawnContext>(StringComparer.Ordinal);
+
+        private readonly Dictionary<PickupSpawnZone, ZoneSpawnPlan> zoneSpawnPlans =
+            new Dictionary<PickupSpawnZone, ZoneSpawnPlan>();
+
         private static readonly RaycastHit[] DropGroundRaycastBuffer = new RaycastHit[32];
 
         private bool registeredWithServer;
@@ -314,6 +352,11 @@ namespace ShooterPrototype.Player
 
             randomPickupPool?.EnsureDefaultEntries();
             randomPickupPool?.NormalizeEntryWeights();
+            randomPickupPool?.ApplyInspectorAmmoPrefabs(
+                assaultAmmoPrefab,
+                sniperAmmoPrefab,
+                pistolAmmoPrefab,
+                mp7AmmoPrefab);
 
         }
 
@@ -395,6 +438,7 @@ namespace ShooterPrototype.Player
             }
 
             var createdSlots = 0;
+            zoneSpawnPlans.Clear();
 
             for (var zoneIndex = 0; zoneIndex < zones.Length; zoneIndex++)
 
@@ -410,11 +454,11 @@ namespace ShooterPrototype.Player
 
                 }
 
+                zoneSpawnPlans[zone] = BuildZoneSpawnPlan(zone);
 
+                var weaponSlots = Mathf.Clamp(maxWeaponsPerZone, 0, zone.MaxWeaponSlots);
 
-                var pickupCount = zone.PickupCount;
-
-                for (var slotIndex = 0; slotIndex < pickupCount; slotIndex++)
+                for (var slotIndex = 0; slotIndex < weaponSlots; slotIndex++)
 
                 {
 
@@ -434,6 +478,20 @@ namespace ShooterPrototype.Player
 
                     createdSlots++;
 
+                }
+
+                var standaloneAmmoSlots = zone.MaxStandaloneAmmoSlots;
+                for (var ammoSlotIndex = 0; ammoSlotIndex < standaloneAmmoSlots; ammoSlotIndex++)
+                {
+                    var ammoAnchorIndex = weaponSlots + ammoSlotIndex;
+                    var ammoSlot = new PickupSpawnSlot
+                    {
+                        spawnId = zone.BuildStandaloneAmmoSpawnId(ammoSlotIndex),
+                        spawnPoint = zone.GetOrCreateAnchor(ammoAnchorIndex)
+                    };
+                    ammoSlot.BindZone(zone, ammoAnchorIndex);
+                    spawnSlots.Add(ammoSlot);
+                    createdSlots++;
                 }
 
             }
@@ -1013,7 +1071,7 @@ namespace ShooterPrototype.Player
 
                 var definition = ResolveSpawnedDefinition(slot);
 
-                if (!definition.IsValid)
+                if (!definition.IsValid || !ShouldSpawnSlot(slot))
 
                 {
 
@@ -1054,6 +1112,17 @@ namespace ShooterPrototype.Player
                     respawnDelaySeconds = respawnDelaySeconds
 
                 });
+
+                if (definition.Kind == PickupKind.Weapon && ShouldSpawnPairedAmmoForWeaponSpawn(slot.spawnId))
+                {
+                    TryAppendPairedAmmoRegistration(
+                        entries,
+                        slot.spawnId,
+                        definition,
+                        position,
+                        Quaternion.Euler(worldPickupEulerOffset),
+                        slot.Zone);
+                }
 
             }
 
@@ -1204,9 +1273,27 @@ namespace ShooterPrototype.Player
 
         {
 
-            if (string.IsNullOrWhiteSpace(spawnId) ||
+            if (string.IsNullOrWhiteSpace(spawnId))
 
-                !slotsBySpawnId.TryGetValue(spawnId, out var slot))
+            {
+
+                return;
+
+            }
+
+            if (AmmoCatalog.IsPairedAmmoSpawnId(spawnId))
+            {
+                if (AmmoCatalog.TryParsePairedAmmoSpawnId(spawnId, out var weaponSpawnId, out var boxIndex))
+                {
+                    RespawnPairedAmmo(weaponSpawnId, boxIndex, forceResync);
+                }
+
+                return;
+            }
+
+
+
+            if (!slotsBySpawnId.TryGetValue(spawnId, out var slot))
 
             {
 
@@ -1311,9 +1398,14 @@ namespace ShooterPrototype.Player
 
 
 
-        public void NotifyPickupCollected(Transform spawnPoint, in PickupItemDefinition definition)
+        public void NotifyPickupCollected(Transform spawnPoint, in PickupItemDefinition definition, string collectedSpawnId = null)
 
         {
+
+            if (!string.IsNullOrWhiteSpace(collectedSpawnId))
+            {
+                activePickupsBySpawnId.Remove(collectedSpawnId);
+            }
 
             if (spawnPoint != null)
 
@@ -1331,6 +1423,13 @@ namespace ShooterPrototype.Player
 
                 return;
 
+            }
+
+            if (!string.IsNullOrWhiteSpace(collectedSpawnId) &&
+                AmmoCatalog.TryParsePairedAmmoSpawnId(collectedSpawnId, out var weaponSpawnId, out var boxIndex))
+            {
+                StartCoroutine(RespawnPairedAmmoAfterDelay(weaponSpawnId, boxIndex, respawnDelaySeconds));
+                return;
             }
 
 
@@ -1415,6 +1514,11 @@ namespace ShooterPrototype.Player
 
                 return;
 
+            }
+
+            if (!ShouldSpawnSlot(slot))
+            {
+                return;
             }
 
 
@@ -1542,6 +1646,15 @@ namespace ShooterPrototype.Player
                 AlignPickupRootToSurface(pickupRoot.transform, floorY, weaponPickupGroundClearance);
                 spawnAnchor.SetPositionAndRotation(pickupRoot.transform.position, spawnRotation);
             }
+            else if (definition.Kind == PickupKind.Ammo)
+            {
+                var floorY = spawnPosition.y - pickupYOffset;
+                AlignPickupRootToSurface(pickupRoot.transform, floorY, ammoPickupGroundClearance);
+                if (spawnAnchor != null)
+                {
+                    spawnAnchor.SetPositionAndRotation(pickupRoot.transform.position, spawnRotation);
+                }
+            }
 
             var pickup = pickupRoot.AddComponent<WorldPickup>();
 
@@ -1550,6 +1663,19 @@ namespace ShooterPrototype.Player
             activePickupsBySpawnPoint[slot.spawnPoint] = pickup;
 
             activePickupsBySpawnId[slot.spawnId] = pickup;
+
+            if (definition.Kind == PickupKind.Weapon && ShouldSpawnPairedAmmoForWeaponSpawn(slot.spawnId))
+            {
+                DestroyPairedAmmoIfPresent(slot.spawnId);
+                var weaponKind = WeaponCatalog.ResolveKindFromItemId(definition.ResolvedItemId);
+                TrySpawnPairedAmmo(
+                    slot.spawnId,
+                    weaponKind,
+                    spawnPosition,
+                    spawnRotation,
+                    spawnAnchor,
+                    slot.Zone);
+            }
 
         }
 
@@ -1842,6 +1968,28 @@ namespace ShooterPrototype.Player
 
                 return ResolvePickupDefinition(slot);
 
+            }
+
+            if (PickupSpawnZone.IsStandaloneAmmoSpawnId(slot.spawnId))
+            {
+                if (!ShouldSpawnStandaloneAmmo(slot))
+                {
+                    return default;
+                }
+
+                var plan = GetZoneSpawnPlan(slot.Zone);
+                return randomPickupPool != null
+                    ? randomPickupPool.BuildAmmoDefinition(plan.standaloneAmmoKind)
+                    : default;
+            }
+
+            if (slot.IsZoneSlot && slot.Zone != null && slot.ZoneSlotIndex < maxWeaponsPerZone)
+            {
+                var plan = GetZoneSpawnPlan(slot.Zone);
+                if (slot.ZoneSlotIndex >= plan.activeWeaponCount)
+                {
+                    return default;
+                }
             }
 
 
@@ -2301,8 +2449,13 @@ namespace ShooterPrototype.Player
                 }
                 case PickupKind.Ammo:
                 {
+                    if (!AmmoCatalog.TryResolveKindFromItemId(resolvedItemId, out var ammoKind))
+                    {
+                        ammoKind = WeaponKind.AssaultRifle;
+                    }
+
                     var ammoVisual = randomPickupPool != null
-                        ? randomPickupPool.ResolveAmmoVisualPrefab(transform)
+                        ? randomPickupPool.ResolveAmmoVisualPrefab(ammoKind)
                         : null;
                     if (ammoVisual == null)
                     {
@@ -2311,14 +2464,21 @@ namespace ShooterPrototype.Player
 
                     if (string.IsNullOrWhiteSpace(resolvedItemId))
                     {
-                        resolvedItemId = "ammo_pack";
+                        resolvedItemId = AmmoCatalog.GetAmmoItemId(ammoKind);
                     }
 
-                    return PickupItemDefinition.Create(
-                        PickupKind.Ammo,
-                        ammoVisual,
-                        resolvedItemId,
-                        resolvedAmount);
+                    if (resolvedAmount <= 1)
+                    {
+                        resolvedAmount = AmmoCatalog.GetDefaultPickupAmount(ammoKind);
+                    }
+
+                    return randomPickupPool != null
+                        ? randomPickupPool.BuildAmmoDefinition(ammoKind)
+                        : PickupItemDefinition.Create(
+                            PickupKind.Ammo,
+                            ammoVisual,
+                            resolvedItemId,
+                            resolvedAmount);
                 }
                 default:
                     return default;
@@ -2330,7 +2490,13 @@ namespace ShooterPrototype.Player
         private static bool IsWeaponDropSpawnId(string spawnId)
         {
             return !string.IsNullOrWhiteSpace(spawnId) &&
-                   spawnId.StartsWith("drop_", StringComparison.Ordinal);
+                   (spawnId.StartsWith("drop_", StringComparison.Ordinal) ||
+                    spawnId.StartsWith("local_drop_", StringComparison.Ordinal));
+        }
+
+        private static bool ShouldSpawnPairedAmmoForWeaponSpawn(string spawnId)
+        {
+            return !IsWeaponDropSpawnId(spawnId);
         }
 
         private static void AlignPickupRootToSurface(Transform pickupRoot, float surfaceY, float surfaceOffset)
@@ -2556,6 +2722,370 @@ namespace ShooterPrototype.Player
 
             RebuildSlotLookup();
 
+        }
+
+        private ZoneSpawnPlan BuildZoneSpawnPlan(PickupSpawnZone zone)
+        {
+            if (zone == null)
+            {
+                return default;
+            }
+
+            var seedBase = zone.BuildSpawnId(0);
+            var previousState = UnityEngine.Random.state;
+            UnityEngine.Random.InitState(PickupSpawnRandomPool.ComputeStableSeed($"{seedBase}_zone_plan"));
+            try
+            {
+                var maxWeapons = Mathf.Clamp(maxWeaponsPerZone, 0, zone.MaxWeaponSlots);
+                return new ZoneSpawnPlan
+                {
+                    activeWeaponCount = UnityEngine.Random.Range(0, maxWeapons + 1),
+                    spawnStandaloneAmmo = UnityEngine.Random.value < standaloneAmmoZoneChance,
+                    standaloneAmmoKind = randomPickupPool != null
+                        ? randomPickupPool.RollStandaloneAmmoKind(seedBase)
+                        : WeaponKind.AssaultRifle
+                };
+            }
+            finally
+            {
+                UnityEngine.Random.state = previousState;
+            }
+        }
+
+        private ZoneSpawnPlan GetZoneSpawnPlan(PickupSpawnZone zone)
+        {
+            if (zone == null)
+            {
+                return default;
+            }
+
+            if (!zoneSpawnPlans.TryGetValue(zone, out var plan))
+            {
+                plan = BuildZoneSpawnPlan(zone);
+                zoneSpawnPlans[zone] = plan;
+            }
+
+            return plan;
+        }
+
+        private bool ShouldSpawnSlot(PickupSpawnSlot slot)
+        {
+            if (slot == null || !slot.IsZoneSlot || slot.Zone == null)
+            {
+                return true;
+            }
+
+            if (PickupSpawnZone.IsStandaloneAmmoSpawnId(slot.spawnId))
+            {
+                return ShouldSpawnStandaloneAmmo(slot);
+            }
+
+            var plan = GetZoneSpawnPlan(slot.Zone);
+            return slot.ZoneSlotIndex >= 0 && slot.ZoneSlotIndex < plan.activeWeaponCount;
+        }
+
+        private bool ShouldSpawnStandaloneAmmo(PickupSpawnSlot slot)
+        {
+            if (slot == null || slot.Zone == null)
+            {
+                return false;
+            }
+
+            return GetZoneSpawnPlan(slot.Zone).spawnStandaloneAmmo;
+        }
+
+        private int RollPairedAmmoBoxCount(string weaponSpawnId)
+        {
+            var previousState = UnityEngine.Random.state;
+            UnityEngine.Random.InitState(PickupSpawnRandomPool.ComputeStableSeed($"{weaponSpawnId}_paired_boxes"));
+            try
+            {
+                return UnityEngine.Random.Range(1, AmmoCatalog.MaxPairedAmmoBoxesPerWeapon + 1);
+            }
+            finally
+            {
+                UnityEngine.Random.state = previousState;
+            }
+        }
+
+        private Vector3 ResolvePairedAmmoBoxOffset(int boxIndex)
+        {
+            return boxIndex == 0 ? pairedAmmoBoxOffsetA : pairedAmmoBoxOffsetB;
+        }
+
+        private Vector3 ResolveGroundedAmmoPosition(
+            Vector3 weaponSpawnPosition,
+            Quaternion weaponSpawnRotation,
+            Vector3 localOffset,
+            PickupSpawnZone zone)
+        {
+            var flatOffset = weaponSpawnRotation * new Vector3(localOffset.x, 0f, localOffset.z);
+            var candidate = weaponSpawnPosition + flatOffset;
+            if (zone != null)
+            {
+                return zone.ResolveGroundedWorldPosition(candidate, pickupYOffset);
+            }
+
+            return ResolveGroundedDropPosition(candidate, pickupYOffset);
+        }
+
+        private void TryAppendPairedAmmoRegistration(
+            List<RealtimeTransportClient.PickupSpawnRegistration> entries,
+            string weaponSpawnId,
+            in PickupItemDefinition weaponDefinition,
+            Vector3 weaponPosition,
+            Quaternion weaponRotation,
+            PickupSpawnZone zone)
+        {
+            if (entries == null || string.IsNullOrWhiteSpace(weaponSpawnId) || !weaponDefinition.IsValid)
+            {
+                return;
+            }
+
+            var weaponKind = WeaponCatalog.ResolveKindFromItemId(weaponDefinition.ResolvedItemId);
+            var ammoDefinition = randomPickupPool != null
+                ? randomPickupPool.BuildAmmoDefinition(weaponKind)
+                : default;
+            if (!ammoDefinition.IsValid)
+            {
+                return;
+            }
+
+            var boxCount = RollPairedAmmoBoxCount(weaponSpawnId);
+            for (var boxIndex = 0; boxIndex < boxCount; boxIndex++)
+            {
+                var ammoSpawnId = AmmoCatalog.GetPairedAmmoSpawnId(weaponSpawnId, boxIndex);
+                spawnedDefinitionsBySpawnId[ammoSpawnId] = ammoDefinition;
+
+                var ammoPosition = ResolveGroundedAmmoPosition(
+                    weaponPosition,
+                    weaponRotation,
+                    ResolvePairedAmmoBoxOffset(boxIndex),
+                    zone);
+                entries.Add(new RealtimeTransportClient.PickupSpawnRegistration
+                {
+                    spawnId = ammoSpawnId,
+                    pickupKind = PickupKindUtility.ToProtocol(PickupKind.Ammo),
+                    itemId = ammoDefinition.ResolvedItemId,
+                    weaponId = ammoDefinition.ResolvedItemId,
+                    amount = ammoDefinition.Amount,
+                    magAmmo = -1,
+                    x = ammoPosition.x,
+                    y = ammoPosition.y,
+                    z = ammoPosition.z,
+                    respawnDelaySeconds = respawnDelaySeconds
+                });
+            }
+        }
+
+        private void TrySpawnPairedAmmo(
+            string weaponSpawnId,
+            WeaponKind weaponKind,
+            Vector3 weaponSpawnPosition,
+            Quaternion weaponSpawnRotation,
+            Transform weaponSpawnAnchor,
+            PickupSpawnZone zone)
+        {
+            if (string.IsNullOrWhiteSpace(weaponSpawnId))
+            {
+                return;
+            }
+
+            var ammoDefinition = randomPickupPool != null
+                ? randomPickupPool.BuildAmmoDefinition(weaponKind)
+                : default;
+            if (!ammoDefinition.IsValid)
+            {
+                return;
+            }
+
+            pairedAmmoContextsByWeaponSpawnId[weaponSpawnId] = new PairedAmmoSpawnContext
+            {
+                zone = zone,
+                spawnAnchor = weaponSpawnAnchor,
+                weaponKind = weaponKind,
+                spawnPosition = weaponSpawnPosition,
+                spawnRotation = weaponSpawnRotation
+            };
+
+            var boxCount = RollPairedAmmoBoxCount(weaponSpawnId);
+            for (var boxIndex = 0; boxIndex < boxCount; boxIndex++)
+            {
+                var ammoSpawnId = AmmoCatalog.GetPairedAmmoSpawnId(weaponSpawnId, boxIndex);
+                spawnedDefinitionsBySpawnId[ammoSpawnId] = ammoDefinition;
+                SpawnPairedAmmoPickup(
+                    weaponSpawnId,
+                    ammoSpawnId,
+                    boxIndex,
+                    ammoDefinition,
+                    weaponSpawnPosition,
+                    weaponSpawnRotation,
+                    zone);
+            }
+        }
+
+        private void SpawnPairedAmmoPickup(
+            string weaponSpawnId,
+            string ammoSpawnId,
+            int boxIndex,
+            in PickupItemDefinition ammoDefinition,
+            Vector3 weaponSpawnPosition,
+            Quaternion weaponSpawnRotation,
+            PickupSpawnZone zone)
+        {
+            if (string.IsNullOrWhiteSpace(ammoSpawnId) || !ammoDefinition.IsValid)
+            {
+                return;
+            }
+
+            if (activePickupsBySpawnId.TryGetValue(ammoSpawnId, out var existing) && existing != null)
+            {
+                return;
+            }
+
+            var ammoPosition = ResolveGroundedAmmoPosition(
+                weaponSpawnPosition,
+                weaponSpawnRotation,
+                ResolvePairedAmmoBoxOffset(boxIndex),
+                zone);
+
+            if (serverPositionsBySpawnId.TryGetValue(ammoSpawnId, out var serverAmmoPosition))
+            {
+                ammoPosition = zone != null
+                    ? zone.ResolveGroundedWorldPosition(serverAmmoPosition, pickupYOffset)
+                    : ResolveGroundedDropPosition(serverAmmoPosition, pickupYOffset);
+            }
+
+            var ammoRotation = Quaternion.Euler(worldPickupEulerOffset);
+            var pickupRoot = new GameObject($"{ammoDefinition.ResolvedItemId}_Pickup");
+            pickupRoot.transform.SetPositionAndRotation(ammoPosition, ammoRotation);
+            pickupRoot.transform.localScale = worldPickupLocalScale;
+
+            var pickupVisual = PickupWorldVisualBuilder.InstantiateWorldVisual(
+                PickupKind.Ammo,
+                ammoDefinition.ResolveWorldSourcePrefab(),
+                pickupRoot.transform);
+            if (pickupVisual == null)
+            {
+                Destroy(pickupRoot);
+                return;
+            }
+
+            pickupVisual.name = "PickupVisual";
+            pickupVisual.transform.localPosition = Vector3.zero;
+            pickupVisual.transform.localRotation = Quaternion.identity;
+            PreparePickupVisual(pickupVisual);
+
+            var floorY = ammoPosition.y - pickupYOffset;
+            AlignPickupRootToSurface(pickupRoot.transform, floorY, ammoPickupGroundClearance);
+
+            var pickup = pickupRoot.AddComponent<WorldPickup>();
+            pickup.Initialize(this, null, ammoSpawnId, ammoDefinition);
+            activePickupsBySpawnId[ammoSpawnId] = pickup;
+
+            pairedAmmoContextsByWeaponSpawnId[weaponSpawnId] = new PairedAmmoSpawnContext
+            {
+                zone = zone,
+                weaponKind = WeaponCatalog.ResolveKindFromItemId(ammoDefinition.ResolvedItemId),
+                spawnPosition = weaponSpawnPosition,
+                spawnRotation = weaponSpawnRotation
+            };
+        }
+
+        private void DestroyPairedAmmoIfPresent(string weaponSpawnId)
+        {
+            if (string.IsNullOrWhiteSpace(weaponSpawnId))
+            {
+                return;
+            }
+
+            for (var boxIndex = 0; boxIndex < AmmoCatalog.MaxPairedAmmoBoxesPerWeapon; boxIndex++)
+            {
+                var ammoSpawnId = AmmoCatalog.GetPairedAmmoSpawnId(weaponSpawnId, boxIndex);
+                if (activePickupsBySpawnId.TryGetValue(ammoSpawnId, out var pickup) && pickup != null)
+                {
+                    DestroyPickupVisual(pickup);
+                }
+
+                spawnedDefinitionsBySpawnId.Remove(ammoSpawnId);
+            }
+        }
+
+        private void RespawnPairedAmmo(string weaponSpawnId, int boxIndex, bool forceResync)
+        {
+            if (string.IsNullOrWhiteSpace(weaponSpawnId) || boxIndex < 0)
+            {
+                return;
+            }
+
+            var ammoSpawnId = AmmoCatalog.GetPairedAmmoSpawnId(weaponSpawnId, boxIndex);
+            if (activePickupsBySpawnId.TryGetValue(ammoSpawnId, out var existing) && existing != null)
+            {
+                if (!forceResync && PickupMatchesCachedDefinition(existing, ammoSpawnId))
+                {
+                    return;
+                }
+
+                DestroyPickupVisual(existing);
+            }
+
+            if (!spawnedDefinitionsBySpawnId.TryGetValue(ammoSpawnId, out var ammoDefinition) || !ammoDefinition.IsValid)
+            {
+                if (spawnedDefinitionsBySpawnId.TryGetValue(weaponSpawnId, out var weaponDefinition) &&
+                    weaponDefinition.IsValid &&
+                    weaponDefinition.Kind == PickupKind.Weapon &&
+                    randomPickupPool != null)
+                {
+                    var weaponKind = WeaponCatalog.ResolveKindFromItemId(weaponDefinition.ResolvedItemId);
+                    ammoDefinition = randomPickupPool.BuildAmmoDefinition(weaponKind);
+                    spawnedDefinitionsBySpawnId[ammoSpawnId] = ammoDefinition;
+                }
+            }
+
+            if (!ammoDefinition.IsValid)
+            {
+                return;
+            }
+
+            if (!pairedAmmoContextsByWeaponSpawnId.TryGetValue(weaponSpawnId, out var context))
+            {
+                if (slotsBySpawnId.TryGetValue(weaponSpawnId, out var slot) &&
+                    slot != null &&
+                    TryResolveSlotSpawnPose(slot, out var spawnPosition, out var spawnRotation, out _))
+                {
+                    context = new PairedAmmoSpawnContext
+                    {
+                        zone = slot.Zone,
+                        weaponKind = WeaponCatalog.ResolveKindFromItemId(
+                            spawnedDefinitionsBySpawnId.TryGetValue(weaponSpawnId, out var weaponDef) && weaponDef.IsValid
+                                ? weaponDef.ResolvedItemId
+                                : string.Empty),
+                        spawnPosition = spawnPosition,
+                        spawnRotation = spawnRotation
+                    };
+                    pairedAmmoContextsByWeaponSpawnId[weaponSpawnId] = context;
+                }
+                else
+                {
+                    return;
+                }
+            }
+
+            SpawnPairedAmmoPickup(
+                weaponSpawnId,
+                ammoSpawnId,
+                boxIndex,
+                ammoDefinition,
+                context.spawnPosition,
+                context.spawnRotation,
+                context.zone);
+        }
+
+        private IEnumerator RespawnPairedAmmoAfterDelay(string weaponSpawnId, int boxIndex, float delaySeconds)
+        {
+            yield return new WaitForSeconds(Mathf.Max(0.01f, delaySeconds));
+            RespawnPairedAmmo(weaponSpawnId, boxIndex, true);
+            registeredWithServer = false;
         }
 
     }

@@ -339,7 +339,7 @@ MonoBehaviour:
   hasScope: 0
   adsCameraFov: 52
   adsMaxLookAngle: 40
-  adsLookSensitivityMultiplier: 1.55
+  adsLookSensitivityMultiplier: 1
   overrideAdsCameraPose: 1
   adsCameraLocalPosition: {x: 0.08, y: -0.035, z: 0.32}
   adsCameraLocalEuler: {x: 0.5, y: 0, z: 0}
@@ -349,7 +349,7 @@ MonoBehaviour:
   reloadPullClip: {fileID: 8300000, guid: d1d948c90b1e0764d9db08dd902dca17, type: 3}
   reloadInsertClip: {fileID: 8300000, guid: 04976a5a62ef5844093a77914798f37c, type: 3}
   remoteReloadClip: {fileID: 8300000, guid: 466dc9617ddf66e49860e6639479246c, type: 3}
-  shotVolume: 0.78
+  shotVolume: 0.42
   reloadPullVolume: 0.45
   reloadInsertVolume: 0.52
   reloadInsertNormalizedTime: 0.76

@@ -149,6 +149,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerWeaponLoadoutController.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerSpawnManager.cs" />
     <Compile Include="Assets\Scripts\Player\SyntySplitBodyPresentation.cs" />
+    <Compile Include="Assets\Scripts\Player\AmmoCatalog.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\WFX_BulletHoleDecal.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\PackInfo.cs" />
     <Compile Include="Assets\Scripts\Player\CharacterSelectionService.cs" />

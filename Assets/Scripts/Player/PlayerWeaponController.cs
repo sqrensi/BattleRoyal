@@ -1172,7 +1172,7 @@ namespace ShooterPrototype.Player
             reserveAmmo -= transferred;
             if (weaponLoadoutController != null && weaponLoadoutController.Loadout != null)
             {
-                weaponLoadoutController.Loadout.SetSpareAmmo(reserveAmmo);
+                weaponLoadoutController.Loadout.SetSpareAmmo(currentWeaponKind, reserveAmmo);
             }
 
             SyncLoadoutMagAmmo();

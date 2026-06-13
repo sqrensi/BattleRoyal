@@ -49,12 +49,11 @@ namespace ShooterPrototype.EditorTools
             var randomPool = serialized.FindProperty("randomPickupPool");
             randomPool.FindPropertyRelative("enabled").boolValue = true;
             var entries = randomPool.FindPropertyRelative("entries");
-            entries.arraySize = 5;
+            entries.arraySize = 4;
             SetRandomPoolEntry(entries.GetArrayElementAtIndex(0), PickupKind.Weapon, WeaponKind.AssaultRifle, assaultPrefab, "assault_rifle", 1, 1f);
             SetRandomPoolEntry(entries.GetArrayElementAtIndex(1), PickupKind.Weapon, WeaponKind.SniperRifle, sniperPrefab, "sniper_rifle", 1, 1f);
             SetRandomPoolEntry(entries.GetArrayElementAtIndex(2), PickupKind.Weapon, WeaponKind.Pistol, pistolPrefab, "pistol", 1, 1f);
             SetRandomPoolEntry(entries.GetArrayElementAtIndex(3), PickupKind.Weapon, WeaponKind.Mp7, mp7Prefab, "mp7", 1, 1f);
-            SetRandomPoolEntry(entries.GetArrayElementAtIndex(4), PickupKind.Ammo, WeaponKind.AssaultRifle, null, "ammo_pack", 30, 1f);
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
             manager.RebuildSpawnZonesFromRoot();
@@ -111,7 +110,8 @@ namespace ShooterPrototype.EditorTools
 
             var zone = zoneObject.AddComponent<PickupSpawnZone>();
             var serialized = new SerializedObject(zone);
-            serialized.FindProperty("pickupCount").intValue = 2;
+            serialized.FindProperty("maxWeaponSlots").intValue = 2;
+            serialized.FindProperty("maxStandaloneAmmoSlots").intValue = 1;
             serialized.ApplyModifiedPropertiesWithoutUndo();
             return zoneObject;
         }

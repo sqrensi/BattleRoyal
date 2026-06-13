@@ -15,7 +15,11 @@ namespace ShooterPrototype.Player
             bool bothHolstered,
             string droppedSpawnId,
             int activeMagAmmo = -1,
-            int activeReserveAmmo = -1)
+            int activeReserveAmmo = -1,
+            int assaultReserveAmmo = -1,
+            int sniperReserveAmmo = -1,
+            int pistolReserveAmmo = -1,
+            int mp7ReserveAmmo = -1)
         {
             HasWeaponLoadout = hasWeaponLoadout;
             Slot0Kind = slot0Kind;
@@ -27,6 +31,10 @@ namespace ShooterPrototype.Player
             DroppedSpawnId = droppedSpawnId ?? string.Empty;
             ActiveMagAmmo = activeMagAmmo;
             ActiveReserveAmmo = activeReserveAmmo;
+            AssaultReserveAmmo = assaultReserveAmmo;
+            SniperReserveAmmo = sniperReserveAmmo;
+            PistolReserveAmmo = pistolReserveAmmo;
+            Mp7ReserveAmmo = mp7ReserveAmmo;
         }
 
         public bool HasWeaponLoadout { get; }
@@ -38,8 +46,11 @@ namespace ShooterPrototype.Player
         public bool BothHolstered { get; }
         public string DroppedSpawnId { get; }
         public int ActiveMagAmmo { get; }
-
         public int ActiveReserveAmmo { get; }
+        public int AssaultReserveAmmo { get; }
+        public int SniperReserveAmmo { get; }
+        public int PistolReserveAmmo { get; }
+        public int Mp7ReserveAmmo { get; }
 
         public static WeaponLoadoutServerState None =>
             new WeaponLoadoutServerState(false, PlayerWeaponLoadout.EmptySlotKind, PlayerWeaponLoadout.EmptySlotKind,

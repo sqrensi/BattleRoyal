@@ -28,12 +28,18 @@ namespace ShooterPrototype.Player
         private bool bothHolstered;
         private int slot0MagAmmo = -1;
         private int slot1MagAmmo = -1;
-        private int spareAmmo;
+        private readonly int[] spareAmmoByKind = new int[WeaponKindUtility.MaxKindId + 1];
 
         public bool HasAnyWeapon => slot0.Occupied || slot1.Occupied;
         public int OccupiedCount => (slot0.Occupied ? 1 : 0) + (slot1.Occupied ? 1 : 0);
         public bool IsBothHolstered => bothHolstered;
         public int ActiveSlotIndex => activeSlotIndex;
+
+        public bool HasWeaponOfKind(WeaponKind kind)
+        {
+            return (slot0.Occupied && slot0.Kind == kind) ||
+                   (slot1.Occupied && slot1.Kind == kind);
+        }
 
         public bool IsSlotOccupied(int slotIndex) => GetSlot(slotIndex).Occupied;
 
@@ -67,21 +73,65 @@ namespace ShooterPrototype.Player
             }
         }
 
-        public int SpareAmmo => spareAmmo;
+        public int SpareAmmo => GetSpareAmmo(GetActiveWeaponKind());
+
+        public int GetSpareAmmo(WeaponKind kind)
+        {
+            var index = (int)WeaponKindUtility.ClampKind((int)kind);
+            return spareAmmoByKind[index];
+        }
+
+        public void SetSpareAmmo(WeaponKind kind, int ammo)
+        {
+            var index = (int)WeaponKindUtility.ClampKind((int)kind);
+            spareAmmoByKind[index] = Mathf.Clamp(ammo, 0, 999);
+        }
 
         public void SetSpareAmmo(int ammo)
         {
-            spareAmmo = Mathf.Clamp(ammo, 0, 999);
+            SetSpareAmmo(GetActiveWeaponKind(), ammo);
         }
 
-        public void AddSpareAmmo(int amount)
+        public void AddSpareAmmo(WeaponKind kind, int amount)
         {
             if (amount <= 0)
             {
                 return;
             }
 
-            SetSpareAmmo(spareAmmo + amount);
+            SetSpareAmmo(kind, GetSpareAmmo(kind) + amount);
+        }
+
+        public void AddSpareAmmo(int amount)
+        {
+            AddSpareAmmo(GetActiveWeaponKind(), amount);
+        }
+
+        public void ApplyServerSpareAmmo(
+            int assaultAmmo,
+            int sniperAmmo,
+            int pistolAmmo,
+            int mp7Ammo)
+        {
+            if (assaultAmmo >= 0)
+            {
+                SetSpareAmmo(WeaponKind.AssaultRifle, assaultAmmo);
+            }
+
+            if (sniperAmmo >= 0)
+            {
+                SetSpareAmmo(WeaponKind.SniperRifle, sniperAmmo);
+            }
+
+            if (pistolAmmo >= 0)
+            {
+                SetSpareAmmo(WeaponKind.Pistol, pistolAmmo);
+            }
+
+            if (mp7Ammo >= 0)
+            {
+                SetSpareAmmo(WeaponKind.Mp7, mp7Ammo);
+            }
         }
 
         public void ClearSlotMagAmmo(int slotIndex)
@@ -127,7 +177,10 @@ namespace ShooterPrototype.Player
             bothHolstered = true;
             slot0MagAmmo = -1;
             slot1MagAmmo = -1;
-            spareAmmo = 0;
+            for (var i = 0; i < spareAmmoByKind.Length; i++)
+            {
+                spareAmmoByKind[i] = 0;
+            }
         }
 
         public bool TrySeedFromMountedWeapon(WeaponKind kind, string itemId, bool holstered)
@@ -258,7 +311,11 @@ namespace ShooterPrototype.Player
             int activeSlot,
             bool holsteredBoth,
             int activeMagAmmo = -1,
-            int activeReserveAmmo = -1)
+            int activeReserveAmmo = -1,
+            int assaultReserveAmmo = -1,
+            int sniperReserveAmmo = -1,
+            int pistolReserveAmmo = -1,
+            int mp7ReserveAmmo = -1)
         {
             slot0 = BuildSlot(slot0Kind, slot0ItemId);
             slot1 = BuildSlot(slot1Kind, slot1ItemId);
@@ -281,13 +338,11 @@ namespace ShooterPrototype.Player
                 bothHolstered = true;
                 slot0MagAmmo = -1;
                 slot1MagAmmo = -1;
-                if (activeReserveAmmo >= 0)
-                {
-                    SetSpareAmmo(activeReserveAmmo);
-                }
-
+                ApplyServerSpareAmmo(assaultReserveAmmo, sniperReserveAmmo, pistolReserveAmmo, mp7ReserveAmmo);
                 return;
             }
+
+            ApplyServerSpareAmmo(assaultReserveAmmo, sniperReserveAmmo, pistolReserveAmmo, mp7ReserveAmmo);
 
             if (activeSlotIndex != 0 && activeSlotIndex != 1)
             {
@@ -301,7 +356,7 @@ namespace ShooterPrototype.Player
 
             if (activeReserveAmmo >= 0)
             {
-                SetSpareAmmo(activeReserveAmmo);
+                SetSpareAmmo(GetActiveWeaponKind(), activeReserveAmmo);
             }
 
             if (activeSlotIndex >= 0 && activeSlotIndex <= 1 && activeMagAmmo >= 0)

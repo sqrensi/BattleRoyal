@@ -25,7 +25,7 @@ namespace ShooterPrototype.Player
                     return context.WeaponLoadout != null
                         || (context.WeaponMount != null && !context.WeaponMount.HasMountedWeapon);
                 case PickupKind.Ammo:
-                    return CanPickupAmmo(context);
+                    return CanPickupAmmo(context, definition);
                 case PickupKind.Grenade:
                     return context.Health != null;
                 case PickupKind.Medkit:
@@ -116,9 +116,9 @@ namespace ShooterPrototype.Player
             return PickupApplyResult.Ok;
         }
 
-        private static bool CanPickupAmmo(in PlayerPickupContext context)
+        private static bool CanPickupAmmo(in PlayerPickupContext context, in PickupItemDefinition definition)
         {
-            return context.WeaponLoadout != null || context.WeaponController != null;
+            return AmmoCatalog.TryResolveKindFromItemId(definition.ResolvedItemId, out _);
         }
 
         private static PickupApplyResult TryApplyAmmo(
@@ -133,12 +133,19 @@ namespace ShooterPrototype.Player
             }
 
             var addedAmmo = Mathf.Max(1, definition.Amount);
+            if (!AmmoCatalog.TryResolveKindFromItemId(definition.ResolvedItemId, out var ammoKind))
+            {
+                return new PickupApplyResult(false, "unknown_ammo");
+            }
+
             if (context.WeaponLoadout != null)
             {
-                context.WeaponLoadout.Loadout.AddSpareAmmo(addedAmmo);
-                if (context.WeaponController != null)
+                context.WeaponLoadout.Loadout.AddSpareAmmo(ammoKind, addedAmmo);
+                if (context.WeaponController != null &&
+                    context.WeaponController.CurrentWeaponKind == ammoKind)
                 {
-                    context.WeaponController.SetReserveAmmo(context.WeaponLoadout.Loadout.SpareAmmo);
+                    context.WeaponController.SetReserveAmmo(
+                        context.WeaponLoadout.Loadout.GetSpareAmmo(ammoKind));
                 }
 
                 return PickupApplyResult.Ok;
@@ -149,7 +156,11 @@ namespace ShooterPrototype.Player
                 return new PickupApplyResult(false, "no_weapon");
             }
 
-            context.WeaponController.SetReserveAmmo(context.WeaponController.ReserveAmmo + addedAmmo);
+            if (context.WeaponController.CurrentWeaponKind == ammoKind)
+            {
+                context.WeaponController.SetReserveAmmo(context.WeaponController.ReserveAmmo + addedAmmo);
+            }
+
             return PickupApplyResult.Ok;
         }
 

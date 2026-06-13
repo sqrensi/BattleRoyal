@@ -284,6 +284,29 @@ namespace ShooterPrototype.Player
         public float AdsBlend => adsBlend;
         public bool IsAdsFullyOut => adsBlend <= 0.001f;
 
+        public float BaseCameraFov
+        {
+            get
+            {
+                ResolveLocalPlayerCamera();
+                if (baseCameraFov > 0.01f)
+                {
+                    return baseCameraFov;
+                }
+
+                return localPlayerCamera != null ? localPlayerCamera.fieldOfView : 75f;
+            }
+        }
+
+        public float CurrentCameraFov
+        {
+            get
+            {
+                ResolveLocalPlayerCamera();
+                return localPlayerCamera != null ? localPlayerCamera.fieldOfView : BaseCameraFov;
+            }
+        }
+
         public bool HasScopedWeapon => activeWeaponProfile != null && activeWeaponProfile.HasScope;
         public bool IsScopePresentationActive =>
             HasScopedWeapon &&

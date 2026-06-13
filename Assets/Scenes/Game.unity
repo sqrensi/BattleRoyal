@@ -17014,6 +17014,11 @@ MonoBehaviour:
   worldPickupLocalScale: {x: 1, y: 1, z: 1}
   pickupYOffset: 0.08
   weaponPickupGroundClearance: 0.06
+  pairedAmmoBoxOffsetA: {x: 0.42, y: 0, z: 0.28}
+  pairedAmmoBoxOffsetB: {x: 0.42, y: 0, z: -0.28}
+  ammoPickupGroundClearance: 0.04
+  maxWeaponsPerZone: 2
+  standaloneAmmoZoneChance: 0.22
   dropGroundMask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -17042,12 +17047,6 @@ MonoBehaviour:
       itemId: sniper_rifle
       amount: 0
       weight: 0
-    - kind: 1
-      weaponKind: 0
-      visualPrefab: {fileID: 1364968598790260, guid: 18ec3f4f140dca44cad65132c8fcc35e, type: 3}
-      itemId: 
-      amount: 0
-      weight: 0
     - kind: 0
       weaponKind: 2
       visualPrefab: {fileID: 1508934165754910, guid: 1621f1a6517996d499e288046c6054bc, type: 3}
@@ -17060,9 +17059,14 @@ MonoBehaviour:
       itemId: 
       amount: 0
       weight: 0
-    ammoVisualPrefab: {fileID: 1364968598790260, guid: 18ec3f4f140dca44cad65132c8fcc35e, type: 3}
-    ammoItemId: ammo_pack
-    ammoPickupAmount: 30
+    assaultAmmoPrefab: {fileID: 0}
+    sniperAmmoPrefab: {fileID: 0}
+    pistolAmmoPrefab: {fileID: 0}
+    mp7AmmoPrefab: {fileID: 0}
+  assaultAmmoPrefab: {fileID: 1364968598790260, guid: 18ec3f4f140dca44cad65132c8fcc35e, type: 3}
+  sniperAmmoPrefab: {fileID: 1114978994277142, guid: 617ad14b82f4de54e8b80e9a3288990f, type: 3}
+  pistolAmmoPrefab: {fileID: 1274483442161292, guid: 9a343161ba13ade44bfd75098cc0605e, type: 3}
+  mp7AmmoPrefab: {fileID: 1113005346653832, guid: d2030e1dd6e306449a4df92ccbf93938, type: 3}
   waitForServerPickupSync: 1
 --- !u!4 &550016058
 Transform:

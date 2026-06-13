@@ -29,7 +29,12 @@ namespace ShooterPrototype.Player
         [SerializeField] private float crouchCameraOffset = 0.38f;
 
         [Header("Look")]
+        [Tooltip("Base mouse sensitivity calibrated for Sensitivity Base FOV.")]
         [SerializeField] private float mouseSensitivity = 2.2f;
+        [SerializeField] private float sensitivityBaseFov = 75f;
+        [SerializeField] private bool scaleSensitivityByFieldOfView = true;
+        [Tooltip("Global multiplier applied to look sensitivity while aiming down sights.")]
+        [SerializeField] private float globalAdsSensitivityMultiplier = 1f;
         [SerializeField] private float maxLookAngle = 80f;
         [SerializeField] private float hipMaxLookAngle = 50f;
         [SerializeField] private float adsMaxLookAngle = 40f;
@@ -326,6 +331,11 @@ namespace ShooterPrototype.Player
             characterBottomOffset = standingCenterY - (standingHeight * 0.5f);
             isGrounded = EvaluateGroundedCached();
             defaultAdsMaxLookAngle = adsMaxLookAngle;
+            if (sensitivityBaseFov <= 0.01f && playerCamera != null)
+            {
+                sensitivityBaseFov = playerCamera.fieldOfView;
+            }
+
             CacheRestingCameraLocalTransform();
         }
 
@@ -515,7 +525,9 @@ namespace ShooterPrototype.Player
         private void TickLook()
         {
             var lookDelta = ReadLookInput();
-            var sensitivity = mouseSensitivity * ResolveAdsLookSensitivityMultiplier();
+            var sensitivity = mouseSensitivity *
+                              ResolveFieldOfViewSensitivityScale() *
+                              ResolveAdsLookSensitivityMultiplier();
             var mouseX = lookDelta.x * sensitivity;
             var mouseY = lookDelta.y * sensitivity;
 
@@ -563,10 +575,43 @@ namespace ShooterPrototype.Player
             recoilPitchOffset = Mathf.MoveTowards(recoilPitchOffset, 0f, manualRecoveryAmount);
         }
 
+        private float ResolveFieldOfViewSensitivityScale()
+        {
+            if (!scaleSensitivityByFieldOfView || playerCamera == null)
+            {
+                return 1f;
+            }
+
+            var baseFov = ResolveSensitivityBaseFov();
+            if (baseFov <= 0.01f)
+            {
+                return 1f;
+            }
+
+            return playerCamera.fieldOfView / baseFov;
+        }
+
+        private float ResolveSensitivityBaseFov()
+        {
+            if (weaponMount != null && weaponMount.BaseCameraFov > 0.01f)
+            {
+                return weaponMount.BaseCameraFov;
+            }
+
+            if (sensitivityBaseFov > 0.01f)
+            {
+                return sensitivityBaseFov;
+            }
+
+            return playerCamera != null ? playerCamera.fieldOfView : 75f;
+        }
+
         private float ResolveAdsLookSensitivityMultiplier()
         {
-            var multiplier = Mathf.Max(0.01f, adsLookSensitivityMultiplier);
-            if (Mathf.Approximately(multiplier, 1f))
+            var weaponMultiplier = Mathf.Max(0.01f, adsLookSensitivityMultiplier);
+            var globalMultiplier = Mathf.Max(0.01f, globalAdsSensitivityMultiplier);
+            var targetAdsMultiplier = weaponMultiplier * globalMultiplier;
+            if (Mathf.Approximately(targetAdsMultiplier, 1f))
             {
                 return 1f;
             }
@@ -576,7 +621,7 @@ namespace ShooterPrototype.Player
                 : ReadAimPressed() && !IsAimBlockedDuringMedkit()
                     ? 1f
                     : 0f;
-            return Mathf.Lerp(1f, multiplier, Mathf.Clamp01(adsBlend));
+            return Mathf.Lerp(1f, targetAdsMultiplier, Mathf.Clamp01(adsBlend));
         }
 
         public void ApplyRecoil(float pitchUpDegrees, float yawDegrees)

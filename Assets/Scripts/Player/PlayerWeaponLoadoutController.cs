@@ -231,7 +231,7 @@ namespace ShooterPrototype.Player
             if (slotIndex >= 0 && slotIndex <= 1 && loadout.IsSlotOccupied(slotIndex))
             {
                 loadout.SetSlotMagAmmo(slotIndex, weaponController.CurrentAmmo);
-                loadout.SetSpareAmmo(weaponController.ReserveAmmo);
+                loadout.SetSpareAmmo(loadout.GetSlot(slotIndex).Kind, weaponController.ReserveAmmo);
             }
         }
 
@@ -457,7 +457,7 @@ namespace ShooterPrototype.Player
         private void ApplyLocalDrop(int slotIndex, bool spawnWorldPickup = true)
         {
             weaponController?.CancelActiveReload();
-            DrainWeaponMagIntoSpare(slotIndex);
+            var droppedMagAmmo = ResolveDropMagAmmo(slotIndex);
             if (loadout == null || !loadout.TryRemoveSlot(slotIndex, out var removed))
             {
                 return;
@@ -465,7 +465,7 @@ namespace ShooterPrototype.Player
 
             if (spawnWorldPickup)
             {
-                SpawnDroppedPickup(removed);
+                SpawnDroppedPickup(removed, droppedMagAmmo);
             }
 
             if (!loadout.HasAnyWeapon)
@@ -491,7 +491,7 @@ namespace ShooterPrototype.Player
             presenceSync?.FlushLocalPose();
         }
 
-        private void SpawnDroppedPickup(PlayerWeaponLoadout.Slot removed)
+        private void SpawnDroppedPickup(PlayerWeaponLoadout.Slot removed, int magAmmo)
         {
             if (!removed.Occupied)
             {
@@ -516,7 +516,7 @@ namespace ShooterPrototype.Player
                 PickupKind.Weapon,
                 sourcePrefab,
                 removed.ItemId,
-                1).WithMagAmmo(0);
+                1).WithMagAmmo(Mathf.Clamp(magAmmo, 0, 999));
             var forward = dropOrigin != null ? dropOrigin.forward : transform.forward;
             var origin = dropOrigin != null ? dropOrigin.position : transform.position;
             Vector3 position;
@@ -665,30 +665,11 @@ namespace ShooterPrototype.Player
                 serverState.ActiveWeaponSlot,
                 serverState.BothHolstered,
                 serverState.ActiveMagAmmo,
-                serverState.ActiveReserveAmmo);
-        }
-
-        private int DrainWeaponMagIntoSpare(int slotIndex)
-        {
-            if (loadout == null || slotIndex < 0 || slotIndex > 1 || !loadout.IsSlotOccupied(slotIndex))
-            {
-                return 0;
-            }
-
-            var magAmmo = ResolveDropMagAmmo(slotIndex);
-            if (magAmmo > 0)
-            {
-                loadout.AddSpareAmmo(magAmmo);
-            }
-
-            loadout.SetSlotMagAmmo(slotIndex, 0);
-            if (weaponController != null && IsDropSlotCurrentlyWielded(slotIndex))
-            {
-                weaponController.SetCurrentAmmo(0);
-                weaponController.SetReserveAmmo(loadout.SpareAmmo);
-            }
-
-            return magAmmo;
+                serverState.ActiveReserveAmmo,
+                serverState.AssaultReserveAmmo,
+                serverState.SniperReserveAmmo,
+                serverState.PistolReserveAmmo,
+                serverState.Mp7ReserveAmmo);
         }
 
         private int ResolveDropMagAmmo(int slotIndex)

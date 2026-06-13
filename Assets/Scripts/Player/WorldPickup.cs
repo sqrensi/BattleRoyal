@@ -131,7 +131,7 @@ namespace ShooterPrototype.Player
                 owner = collectorOwner;
             }
 
-            owner?.NotifyPickupCollected(spawnPoint, Definition);
+            owner?.NotifyPickupCollected(spawnPoint, Definition, spawnId);
             Destroy(gameObject);
         }
     }

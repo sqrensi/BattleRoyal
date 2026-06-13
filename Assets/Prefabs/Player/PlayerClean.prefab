@@ -316,6 +316,10 @@ PrefabInstance:
       propertyPath: holsteredSpeedMultiplier
       value: 1.24
       objectReference: {fileID: 0}
+    - target: {fileID: 3177340306102640231, guid: bc9a6079647017a4c9931c852d09bfac, type: 3}
+      propertyPath: globalAdsSensitivityMultiplier
+      value: 1.3
+      objectReference: {fileID: 0}
     - target: {fileID: 3348203455039888989, guid: bc9a6079647017a4c9931c852d09bfac, type: 3}
       propertyPath: armNameContains
       value: Hand

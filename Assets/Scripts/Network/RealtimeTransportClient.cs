@@ -215,6 +215,10 @@ namespace ShooterPrototype.Network
             public string droppedSpawnId;
             public int magAmmo;
             public int reserveAmmo;
+            public int spareAmmoAssault = -1;
+            public int spareAmmoSniper = -1;
+            public int spareAmmoPistol = -1;
+            public int spareAmmoMp7 = -1;
         }
 
         [Serializable]
@@ -239,9 +243,11 @@ namespace ShooterPrototype.Network
             public int weaponPickupSeq;
             public int magAmmo;
             public int reserveAmmo;
+            public int spareAmmoAssault = -1;
+            public int spareAmmoSniper = -1;
+            public int spareAmmoPistol = -1;
+            public int spareAmmoMp7 = -1;
         }
-
-    [Serializable]
     private sealed class WeaponDropRequestMessage
     {
         public string type;
