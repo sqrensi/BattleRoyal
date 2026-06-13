@@ -354,7 +354,13 @@ namespace ShooterPrototype.Player
                 activeSlotIndex = slot0.Occupied ? 0 : 1;
             }
 
-            if (activeReserveAmmo >= 0)
+            var syncedPerKindAmmo =
+                assaultReserveAmmo >= 0 ||
+                sniperReserveAmmo >= 0 ||
+                pistolReserveAmmo >= 0 ||
+                mp7ReserveAmmo >= 0;
+
+            if (!syncedPerKindAmmo && activeReserveAmmo >= 0)
             {
                 SetSpareAmmo(GetActiveWeaponKind(), activeReserveAmmo);
             }

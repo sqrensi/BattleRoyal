@@ -257,7 +257,23 @@ namespace ShooterPrototype.Network
         public float x;
         public float y;
         public float z;
+        public int spareAmmoAssault = -1;
+        public int spareAmmoSniper = -1;
+        public int spareAmmoPistol = -1;
+        public int spareAmmoMp7 = -1;
     }
+
+        [Serializable]
+        private sealed class AmmoStateMessage
+        {
+            public string type;
+            public int spareAmmoAssault = -1;
+            public int spareAmmoSniper = -1;
+            public int spareAmmoPistol = -1;
+            public int spareAmmoMp7 = -1;
+            public int slot0MagAmmo = -1;
+            public int slot1MagAmmo = -1;
+        }
 
         [Serializable]
         public sealed class MedkitResultMessage
@@ -296,6 +312,57 @@ namespace ShooterPrototype.Network
         {
             public string type;
             public PickupSpawnRegistration[] spawns;
+        }
+
+        [Serializable]
+        private sealed class RegisterDamageZoneMessage
+        {
+            public string type;
+            public float centerX;
+            public float centerZ;
+            public float phase1CenterOffset;
+            public float phase2CenterOffset;
+            public float initialRadius;
+            public float phase1EndRadius;
+            public float finalRadius;
+            public float totalShrinkDurationSeconds;
+            public float phase1DurationSeconds;
+            public float phase2MoveDurationSeconds;
+            public float phase2DurationSeconds;
+            public float phase3ShrinkDurationSeconds;
+            public float damageMinPerSecond;
+            public float damageMaxPerSecond;
+            public float damageRampSeconds;
+        }
+
+        [Serializable]
+        public sealed class DamageZoneStateMessage
+        {
+            public string type;
+            public int phase;
+            public float centerX;
+            public float centerZ;
+            public float phase1CenterX;
+            public float phase1CenterZ;
+            public float phase2CenterX;
+            public float phase2CenterZ;
+            public float mapCenterX;
+            public float mapCenterZ;
+            public float initialRadius;
+            public float phase1EndRadius;
+            public float finalRadius;
+            public float totalShrinkDurationSeconds;
+            public float phase1DurationSeconds;
+            public float phase2MoveDurationSeconds;
+            public float phase2DurationSeconds;
+            public float phase3ShrinkDurationSeconds;
+            public float damageMinPerSecond;
+            public float damageMaxPerSecond;
+            public float damageRampSeconds;
+            public float radius;
+            public float damagePerSecond;
+            public float elapsedSeconds;
+            public long startedAtMs;
         }
 
         [Serializable]
@@ -527,6 +594,7 @@ namespace ShooterPrototype.Network
         public event Action<WeaponDropResultMessage> WeaponDropResultReceived;
         public event Action<MedkitResultMessage> MedkitResultReceived;
         public event Action<HealMessage> HealReceived;
+        public event Action<DamageZoneStateMessage> DamageZoneStateReceived;
 
         private void Awake()
         {
@@ -1161,6 +1229,41 @@ namespace ShooterPrototype.Network
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 
+        public void SendRegisterDamageZone(
+            float mapCenterX,
+            float mapCenterZ,
+            float phase1CenterOffset,
+            float phase2CenterOffset,
+            float initialRadius,
+            float phase1EndRadius,
+            float finalRadius,
+            float totalShrinkDurationSeconds,
+            float damageMinPerSecond,
+            float damageMaxPerSecond,
+            float damageRampSeconds)
+        {
+            if (!IsReady)
+            {
+                return;
+            }
+
+            _ = SendJsonAsync(new RegisterDamageZoneMessage
+            {
+                type = "register_damage_zone",
+                centerX = mapCenterX,
+                centerZ = mapCenterZ,
+                phase1CenterOffset = Mathf.Max(0f, phase1CenterOffset),
+                phase2CenterOffset = Mathf.Max(0f, phase2CenterOffset),
+                initialRadius = Mathf.Max(0f, initialRadius),
+                phase1EndRadius = Mathf.Max(0f, phase1EndRadius),
+                finalRadius = Mathf.Max(0f, finalRadius),
+                totalShrinkDurationSeconds = Mathf.Max(1f, totalShrinkDurationSeconds),
+                damageMinPerSecond = Mathf.Max(0f, damageMinPerSecond),
+                damageMaxPerSecond = Mathf.Max(0f, damageMaxPerSecond),
+                damageRampSeconds = Mathf.Max(1f, damageRampSeconds)
+            }, cts != null ? cts.Token : CancellationToken.None);
+        }
+
         public void SendPickupRequest(string spawnId)
         {
             if (!IsReady || string.IsNullOrWhiteSpace(spawnId))
@@ -1175,7 +1278,14 @@ namespace ShooterPrototype.Network
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 
-        public void SendWeaponDrop(int slotIndex, int magAmmo = -1, Vector3? dropPosition = null)
+        public void SendWeaponDrop(
+            int slotIndex,
+            int magAmmo = -1,
+            Vector3? dropPosition = null,
+            int spareAmmoAssault = -1,
+            int spareAmmoSniper = -1,
+            int spareAmmoPistol = -1,
+            int spareAmmoMp7 = -1)
         {
             if (!IsReady)
             {
@@ -1186,7 +1296,11 @@ namespace ShooterPrototype.Network
             {
                 type = "weapon_drop",
                 slotIndex = slotIndex,
-                magAmmo = magAmmo
+                magAmmo = magAmmo,
+                spareAmmoAssault = spareAmmoAssault,
+                spareAmmoSniper = spareAmmoSniper,
+                spareAmmoPistol = spareAmmoPistol,
+                spareAmmoMp7 = spareAmmoMp7
             };
             if (dropPosition.HasValue)
             {
@@ -1198,6 +1312,31 @@ namespace ShooterPrototype.Network
             }
 
             _ = SendJsonAsync(message, cts != null ? cts.Token : CancellationToken.None);
+        }
+
+        public void SendAmmoState(
+            int spareAmmoAssault,
+            int spareAmmoSniper,
+            int spareAmmoPistol,
+            int spareAmmoMp7,
+            int slot0MagAmmo = -1,
+            int slot1MagAmmo = -1)
+        {
+            if (!IsReady)
+            {
+                return;
+            }
+
+            _ = SendJsonAsync(new AmmoStateMessage
+            {
+                type = "ammo_state",
+                spareAmmoAssault = Mathf.Clamp(spareAmmoAssault, 0, 999),
+                spareAmmoSniper = Mathf.Clamp(spareAmmoSniper, 0, 999),
+                spareAmmoPistol = Mathf.Clamp(spareAmmoPistol, 0, 999),
+                spareAmmoMp7 = Mathf.Clamp(spareAmmoMp7, 0, 999),
+                slot0MagAmmo = Mathf.Clamp(slot0MagAmmo, -1, 999),
+                slot1MagAmmo = Mathf.Clamp(slot1MagAmmo, -1, 999)
+            }, cts != null ? cts.Token : CancellationToken.None);
         }
 
         public void SendMedkitUse()
@@ -1468,6 +1607,24 @@ namespace ShooterPrototype.Network
                 {
                     var message = healMessage;
                     EnqueueMainThreadAction(() => HealReceived?.Invoke(message));
+                    return;
+                }
+
+                DamageZoneStateMessage damageZoneStateMessage = null;
+                try
+                {
+                    damageZoneStateMessage = JsonUtility.FromJson<DamageZoneStateMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (damageZoneStateMessage != null &&
+                    string.Equals(damageZoneStateMessage.type, "zone_state", StringComparison.Ordinal))
+                {
+                    var message = damageZoneStateMessage;
+                    EnqueueMainThreadAction(() => DamageZoneStateReceived?.Invoke(message));
                     return;
                 }
 

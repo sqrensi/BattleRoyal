@@ -133,6 +133,17 @@ namespace ShooterPrototype.Player
             applyRightHand = false;
         }
 
+        public void RefreshWeaponHandBindings()
+        {
+            leftGripTarget = null;
+            rightGripTarget = null;
+            leftShoulderAnchor = null;
+            rightShoulderAnchor = null;
+            ResolveGripTargets();
+            ResolveShoulderAnchors();
+            SyncFirstPersonRigidHandIkMode();
+        }
+
         private void Awake()
         {
             weaponMount = GetComponent<PlayerWeaponMount>();
@@ -446,7 +457,8 @@ namespace ShooterPrototype.Player
                 }
             }
 
-            if (leftShoulderAnchor != null && rightShoulderAnchor != null)
+            if (leftShoulderAnchor != null && rightShoulderAnchor != null &&
+                leftShoulderAnchor && rightShoulderAnchor)
             {
                 return;
             }

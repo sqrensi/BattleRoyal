@@ -112,73 +112,191 @@ namespace ShooterPrototype.Player
             var buffer = new List<InventoryEntry>(8);
             CollectEntries(buffer);
 
-            var sb = new StringBuilder(96);
+            var loadout = GetComponent<PlayerWeaponLoadout>();
+            var sb = new StringBuilder(192);
             sb.AppendLine("Inventory:");
-            var loadoutController = GetComponent<PlayerWeaponLoadoutController>();
-            AppendWeaponLine(sb, weaponMount, holster, loadoutController != null ? loadoutController.Loadout : null);
+            AppendWeaponsSection(sb, loadout, weaponMount, holster);
+            AppendSpareAmmoSection(sb, loadout);
+            AppendItemsSection(sb, buffer);
 
-            if (buffer.Count == 0)
-            {
-                sb.Append("  (no items)");
-                return sb.ToString();
-            }
-
-            for (var i = 0; i < buffer.Count; i++)
-            {
-                sb.AppendLine();
-                sb.Append("  ");
-                sb.Append(FormatItemLabel(buffer[i].ItemId));
-                sb.Append(" x");
-                sb.Append(buffer[i].Count);
-            }
-
-            return sb.ToString();
+            return sb.ToString().TrimEnd();
         }
 
-        private static void AppendWeaponLine(
+        private static void AppendWeaponsSection(
             StringBuilder sb,
+            PlayerWeaponLoadout loadout,
             PlayerWeaponMount weaponMount,
-            PlayerWeaponHolsterController holster,
-            PlayerWeaponLoadout loadout)
+            PlayerWeaponHolsterController holster)
         {
-            if (weaponMount == null || !weaponMount.HasMountedWeapon)
+            sb.AppendLine("Weapons:");
+            if (loadout == null || !loadout.HasAnyWeapon)
             {
-                if (loadout != null && loadout.HasAnyWeapon)
+                sb.AppendLine("  none");
+                return;
+            }
+
+            var bothHolstered = loadout.IsBothHolstered ||
+                                holster != null && (holster.IsHolstered || holster.IsMedkitWeaponLocked);
+            var activeSlot = loadout.ActiveSlotIndex;
+            var hasOccupiedSlot = false;
+
+            for (var slotIndex = 0; slotIndex < PlayerWeaponLoadout.MaxSlots; slotIndex++)
+            {
+                var slot = loadout.GetSlot(slotIndex);
+                if (!slot.Occupied)
                 {
-                    var slot = loadout.GetSlot(loadout.ActiveSlotIndex);
-                    if (!slot.Occupied)
-                    {
-                        slot = loadout.IsSlotOccupied(0) ? loadout.GetSlot(0) : loadout.GetSlot(1);
-                    }
-
-                    sb.Append("  Weapon: ");
-                    sb.Append(string.IsNullOrWhiteSpace(slot.ItemId)
-                        ? WeaponCatalog.GetDefaultItemId(slot.Kind)
-                        : slot.ItemId);
-                    if (loadout.IsBothHolstered)
-                    {
-                        sb.Append(" (holstered)");
-                    }
-
-                    return;
+                    continue;
                 }
 
-                sb.Append("  Weapon: none");
-                return;
+                hasOccupiedSlot = true;
+                sb.Append("  ");
+                sb.Append(slotIndex + 1);
+                sb.Append(". ");
+                sb.Append(FormatWeaponItemLabel(slot.ItemId, slot.Kind));
+
+                if (!bothHolstered && activeSlot == slotIndex)
+                {
+                    sb.Append(" [active]");
+                }
+                else if (bothHolstered)
+                {
+                    sb.Append(" (holstered)");
+                }
+
+                if (weaponMount != null && weaponMount.HasMountedWeapon &&
+                    !bothHolstered && activeSlot == slotIndex)
+                {
+                    var mountedRoot = weaponMount.MountedWeaponRoot;
+                    if (mountedRoot != null &&
+                        !string.Equals(mountedRoot.name, slot.ItemId, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        sb.Append(" (");
+                        sb.Append(mountedRoot.name);
+                        sb.Append(')');
+                    }
+                }
+
+                sb.AppendLine();
             }
 
-            var weaponRoot = weaponMount.MountedWeaponRoot;
-            var label = weaponRoot != null ? weaponRoot.name : "Weapon";
-            if (holster != null && (holster.IsHolstered || holster.IsMedkitWeaponLocked))
+            if (!hasOccupiedSlot)
             {
-                sb.Append("  Weapon: ");
-                sb.Append(label);
-                sb.Append(" (holstered)");
+                sb.AppendLine("  none");
+            }
+        }
+
+        private static void AppendSpareAmmoSection(StringBuilder sb, PlayerWeaponLoadout loadout)
+        {
+            sb.AppendLine("Ammo:");
+            if (loadout == null)
+            {
+                sb.AppendLine("  --");
                 return;
             }
 
-            sb.Append("  Weapon: ");
-            sb.Append(label);
+            var hasAmmo = false;
+            for (var kindValue = 0; kindValue <= WeaponKindUtility.MaxKindId; kindValue++)
+            {
+                var kind = (WeaponKind)kindValue;
+                var spare = loadout.GetSpareAmmo(kind);
+                if (spare <= 0)
+                {
+                    continue;
+                }
+
+                hasAmmo = true;
+                sb.Append("  ");
+                sb.Append(FormatWeaponKindLabel(kind));
+                sb.Append(": ");
+                sb.Append(spare);
+                sb.AppendLine();
+            }
+
+            if (!hasAmmo)
+            {
+                sb.AppendLine("  none");
+            }
+        }
+
+        private static void AppendItemsSection(StringBuilder sb, List<InventoryEntry> entries)
+        {
+            sb.Append("Items:");
+            var hasItems = false;
+            for (var i = 0; i < entries.Count; i++)
+            {
+                if (IsAmmoInventoryEntry(entries[i].ItemId))
+                {
+                    continue;
+                }
+
+                if (!hasItems)
+                {
+                    sb.AppendLine();
+                    hasItems = true;
+                }
+
+                sb.Append("  ");
+                sb.Append(FormatItemLabel(entries[i].ItemId));
+                sb.Append(" x");
+                sb.Append(entries[i].Count);
+                sb.AppendLine();
+            }
+
+            if (!hasItems)
+            {
+                sb.AppendLine();
+                sb.AppendLine("  none");
+            }
+        }
+
+        private static bool IsAmmoInventoryEntry(string itemId)
+        {
+            if (string.IsNullOrWhiteSpace(itemId))
+            {
+                return false;
+            }
+
+            if (itemId == InventoryItemIds.Ammo)
+            {
+                return true;
+            }
+
+            return AmmoCatalog.TryResolveKindFromItemId(itemId, out _);
+        }
+
+        private static string FormatWeaponKindLabel(WeaponKind kind)
+        {
+            switch (kind)
+            {
+                case WeaponKind.SniperRifle:
+                    return "Sniper";
+                case WeaponKind.Pistol:
+                    return "Pistol";
+                case WeaponKind.Mp7:
+                    return "MP7";
+                default:
+                    return "Assault";
+            }
+        }
+
+        private static string FormatWeaponItemLabel(string itemId, WeaponKind kind)
+        {
+            if (!string.IsNullOrWhiteSpace(itemId))
+            {
+                var trimmed = itemId.Trim();
+                if (trimmed.EndsWith("_001", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    trimmed = trimmed.Substring(0, trimmed.Length - 4);
+                }
+
+                trimmed = trimmed.Replace('_', ' ');
+                if (trimmed.Length > 0)
+                {
+                    return char.ToUpper(trimmed[0]) + trimmed.Substring(1);
+                }
+            }
+
+            return FormatWeaponKindLabel(kind);
         }
 
         private void Awake()

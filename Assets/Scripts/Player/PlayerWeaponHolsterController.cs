@@ -317,6 +317,27 @@ namespace ShooterPrototype.Player
             ApplyTransitionPresentation(GetTransitionNormalized());
         }
 
+        public void SyncArmedPoseFromMountedWeapon()
+        {
+            if (weaponMount == null || !weaponMount.HasMountedWeapon)
+            {
+                return;
+            }
+
+            if (weaponMount.TryGetEquippedBaseLocalPose(
+                    out var basePosition,
+                    out var baseRotation,
+                    out var baseScale))
+            {
+                armedLocalPosition = basePosition;
+                armedLocalRotation = baseRotation;
+                armedLocalScale = baseScale;
+                return;
+            }
+
+            CaptureArmedLocalPose(useBasePose: true);
+        }
+
         public void ForceArmedState()
         {
             if (weaponMount == null || !weaponMount.HasMountedWeapon)
@@ -326,7 +347,7 @@ namespace ShooterPrototype.Player
 
             if (phase != HolsterPhase.Armed || armedLocalPosition == Vector3.zero)
             {
-                CaptureArmedLocalPose(useBasePose: phase == HolsterPhase.Armed);
+                SyncArmedPoseFromMountedWeapon();
             }
 
             transitionElapsed = 0f;
@@ -336,6 +357,7 @@ namespace ShooterPrototype.Player
             ShowWeaponLocally();
             AttachWeaponToAnchorImmediate(armedLocalPosition, armedLocalRotation, armedLocalScale);
             ApplyHolsteredPresentation(false);
+            handBinder?.RefreshWeaponHandBindings();
             handBinder?.SetHandIkEnabled(true);
             handBinder?.SyncFirstPersonRigidHandIkMode();
             phase = HolsterPhase.Armed;
@@ -366,6 +388,13 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            if (!IsLocalSprinting())
+            {
+                weaponMount.ApplyCameraLockedHipAnchorPose();
+            }
+
+            SyncArmedPoseFromMountedWeapon();
+            CaptureArmedLocalPose(useBasePose: true);
             CompleteHolsterTransitionImmediate();
         }
 
@@ -387,6 +416,7 @@ namespace ShooterPrototype.Player
                 weaponMount.ApplyCameraLockedHipAnchorPose();
             }
 
+            SyncArmedPoseFromMountedWeapon();
             CaptureArmedLocalPose(useBasePose: true);
             HideWeaponLocallyAt(
                 ResolveLoweredLocalPosition(),
@@ -503,6 +533,8 @@ namespace ShooterPrototype.Player
                 weaponMount.ApplyCameraLockedHipAnchorPose();
             }
 
+            SyncArmedPoseFromMountedWeapon();
+            handBinder?.RefreshWeaponHandBindings();
             ApplyHolsteredPresentation(false);
             weaponMount.SetHandAttachedWeaponActive(false);
             ShowWeaponLocally();
@@ -547,7 +579,9 @@ namespace ShooterPrototype.Player
             weaponMount.SetLocalHolstered(false);
             AttachWeaponToAnchorImmediate(armedLocalPosition, armedLocalRotation, armedLocalScale);
             ApplyHolsteredPresentation(false);
+            handBinder?.RefreshWeaponHandBindings();
             handBinder?.SetHandIkEnabled(true);
+            handBinder?.SyncFirstPersonRigidHandIkMode();
             phase = HolsterPhase.Armed;
             NotifyHolsterNetworkState();
         }

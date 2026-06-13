@@ -190,6 +190,22 @@ namespace ShooterPrototype.Player
             slotSwitchRoutine = null;
         }
 
+        public void PublishAmmoStateToServer()
+        {
+            if (loadout == null || !ShouldUseServerActions() || transportClient == null)
+            {
+                return;
+            }
+
+            transportClient.SendAmmoState(
+                loadout.GetSpareAmmo(WeaponKind.AssaultRifle),
+                loadout.GetSpareAmmo(WeaponKind.SniperRifle),
+                loadout.GetSpareAmmo(WeaponKind.Pistol),
+                loadout.GetSpareAmmo(WeaponKind.Mp7),
+                loadout.GetSlotMagAmmo(0),
+                loadout.GetSlotMagAmmo(1));
+        }
+
         public void RequestDropActiveWeapon()
         {
             if (loadout == null || !loadout.HasAnyWeapon)
@@ -207,8 +223,16 @@ namespace ShooterPrototype.Player
 
             if (ShouldUseServerActions())
             {
+                PublishAmmoStateToServer();
                 TryResolveDropPosition(out var dropPosition);
-                transportClient.SendWeaponDrop(slotIndex, ResolveDropMagAmmo(slotIndex), dropPosition);
+                transportClient.SendWeaponDrop(
+                    slotIndex,
+                    ResolveDropMagAmmo(slotIndex),
+                    dropPosition,
+                    loadout.GetSpareAmmo(WeaponKind.AssaultRifle),
+                    loadout.GetSpareAmmo(WeaponKind.SniperRifle),
+                    loadout.GetSpareAmmo(WeaponKind.Pistol),
+                    loadout.GetSpareAmmo(WeaponKind.Mp7));
                 return;
             }
 
@@ -222,17 +246,101 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var slotIndex = loadout.ActiveSlotIndex;
-            if (slotIndex < 0 || slotIndex > 1 || !loadout.IsSlotOccupied(slotIndex))
-            {
-                slotIndex = ResolveDropSlotIndex();
-            }
-
+            var slotIndex = ResolveEquippedSlotIndex();
             if (slotIndex >= 0 && slotIndex <= 1 && loadout.IsSlotOccupied(slotIndex))
             {
                 loadout.SetSlotMagAmmo(slotIndex, weaponController.CurrentAmmo);
-                loadout.SetSpareAmmo(loadout.GetSlot(slotIndex).Kind, weaponController.ReserveAmmo);
             }
+        }
+
+        public void SyncLoadoutSpareAmmoFromController()
+        {
+            if (loadout == null || weaponController == null)
+            {
+                return;
+            }
+
+            loadout.SetSpareAmmo(ResolveEquippedWeaponKind(), weaponController.ReserveAmmo);
+        }
+
+        public void SyncControllerAmmoFromLoadout()
+        {
+            if (loadout == null || weaponController == null || weaponMount == null || !weaponMount.HasMountedWeapon)
+            {
+                return;
+            }
+
+            var kind = ResolveEquippedWeaponKind();
+            if (weaponController.CurrentWeaponKind != kind)
+            {
+                return;
+            }
+
+            var slotIndex = ResolveEquippedSlotIndex();
+            var magAmmo = 0;
+            if (slotIndex >= 0 && slotIndex <= 1)
+            {
+                var slotMag = loadout.GetSlotMagAmmo(slotIndex);
+                magAmmo = slotMag >= 0 ? slotMag : 0;
+            }
+
+            weaponController.SetCurrentAmmo(magAmmo);
+            weaponController.SetReserveAmmo(loadout.GetSpareAmmo(kind));
+        }
+
+        public WeaponKind ResolveEquippedWeaponKind()
+        {
+            if (loadout == null)
+            {
+                return weaponController != null
+                    ? weaponController.CurrentWeaponKind
+                    : WeaponKind.AssaultRifle;
+            }
+
+            var slotIndex = ResolveEquippedSlotIndex();
+            if (slotIndex >= 0 && slotIndex <= 1)
+            {
+                return loadout.GetSlot(slotIndex).Kind;
+            }
+
+            if (weaponController != null && weaponMount != null && weaponMount.HasMountedWeapon)
+            {
+                return weaponController.CurrentWeaponKind;
+            }
+
+            return loadout.GetActiveWeaponKind();
+        }
+
+        private int ResolveEquippedSlotIndex()
+        {
+            if (loadout == null)
+            {
+                return -1;
+            }
+
+            var slotIndex = loadout.ActiveSlotIndex;
+            if (slotIndex >= 0 && slotIndex <= 1 && loadout.IsSlotOccupied(slotIndex))
+            {
+                return slotIndex;
+            }
+
+            return ResolveDropSlotIndex();
+        }
+
+        private WeaponProfile ResolveEquippedWeaponProfile()
+        {
+            if (weaponMount == null)
+            {
+                return null;
+            }
+
+            if (weaponMount.ActiveWeaponProfile != null)
+            {
+                return weaponMount.ActiveWeaponProfile;
+            }
+
+            var weaponRoot = weaponMount.MountedWeaponRoot;
+            return weaponRoot != null ? weaponRoot.GetComponent<WeaponProfile>() : null;
         }
 
         public void ApplyServerDrop(int slotIndex, in WeaponLoadoutServerState serverState)
@@ -255,12 +363,17 @@ namespace ShooterPrototype.Player
 
             if (ShouldAnimateServerWeaponChange(serverState))
             {
+                // Apply authoritative slot/ammo data immediately so a later ammo pickup
+                // cannot be overwritten when this holster/draw animation finishes.
+                ApplyServerLoadout(serverState);
+
                 if (slotSwitchRoutine != null)
                 {
                     StopCoroutine(slotSwitchRoutine);
                 }
 
-                slotSwitchRoutine = StartCoroutine(AnimateServerLoadoutSwitchRoutine(serverState));
+                var shouldDrawAfterSwitch = !serverState.BothHolstered;
+                slotSwitchRoutine = StartCoroutine(AnimateServerLoadoutSwitchRoutine(shouldDrawAfterSwitch));
                 return;
             }
 
@@ -274,17 +387,18 @@ namespace ShooterPrototype.Player
         /// </summary>
         public void ApplyServerAmmoPickup(in WeaponLoadoutServerState serverState)
         {
-            if (loadout == null || !serverState.HasWeaponLoadout)
+            if (loadout == null)
             {
                 return;
             }
 
-            ApplyServerLoadout(serverState);
+            loadout.ApplyServerSpareAmmo(
+                serverState.AssaultReserveAmmo,
+                serverState.SniperReserveAmmo,
+                serverState.PistolReserveAmmo,
+                serverState.Mp7ReserveAmmo);
 
-            if (weaponController != null)
-            {
-                weaponController.SetReserveAmmo(loadout.SpareAmmo);
-            }
+            SyncControllerAmmoFromLoadout();
 
             GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
         }
@@ -413,7 +527,7 @@ namespace ShooterPrototype.Player
             return currentKind != nextKind;
         }
 
-        private IEnumerator AnimateServerLoadoutSwitchRoutine(WeaponLoadoutServerState serverState)
+        private IEnumerator AnimateServerLoadoutSwitchRoutine(bool shouldDrawAfterSwitch)
         {
             loadout.SetBothHolstered(true);
             weaponHolster.BeginHolsterAll();
@@ -424,7 +538,6 @@ namespace ShooterPrototype.Player
                 yield return null;
             }
 
-            ApplyServerLoadout(serverState);
             if (!loadout.HasAnyWeapon)
             {
                 RefreshWeaponPresentationAfterServerChange();
@@ -437,7 +550,7 @@ namespace ShooterPrototype.Player
             weaponHolster?.PrepareEquippedWeaponForDraw();
             presenceSync?.FlushLocalPose();
 
-            if (!serverState.BothHolstered)
+            if (shouldDrawAfterSwitch)
             {
                 weaponHolster?.BeginDrawEquippedWeapon();
                 while (weaponHolster != null && weaponHolster.IsTransitioning)
@@ -450,7 +563,7 @@ namespace ShooterPrototype.Player
                 GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
             }
 
-            EnsureActiveWeaponEquipped(!serverState.BothHolstered);
+            EnsureActiveWeaponEquipped(shouldDrawAfterSwitch);
             slotSwitchRoutine = null;
         }
 
@@ -475,16 +588,12 @@ namespace ShooterPrototype.Player
                 {
                     weaponController.enabled = false;
                     weaponController.SetCurrentAmmo(0);
-                    weaponController.SetReserveAmmo(loadout.SpareAmmo);
+                    weaponController.SetReserveAmmo(0);
                 }
             }
             else
             {
                 RefreshWeaponPresentationAfterServerChange();
-                if (weaponController != null)
-                {
-                    weaponController.SetReserveAmmo(loadout.SpareAmmo);
-                }
             }
 
             GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
@@ -599,19 +708,20 @@ namespace ShooterPrototype.Player
 
             weaponMount.SetThirdPersonWeaponRenderersEnabled(true);
 
+            weaponHolster?.SyncArmedPoseFromMountedWeapon();
+            GetComponent<SyntyWeaponHandBinder>()?.RefreshWeaponHandBindings();
+
             if (weaponController != null)
             {
                 weaponController.enabled = true;
-                var magAmmo = loadout.GetSlotMagAmmo(equipSlotIndex);
-                if (magAmmo < 0)
+                var profile = ResolveEquippedWeaponProfile();
+                if (profile != null)
                 {
-                    magAmmo = 0;
+                    weaponController.ApplyWeaponProfile(profile, resetAmmo: false);
                 }
 
-                weaponController.ApplyWeaponProfile(weaponMount.ActiveWeaponProfile, resetAmmo: false);
-                weaponController.SetCurrentAmmo(magAmmo);
-                weaponController.SetReserveAmmo(loadout.SpareAmmo);
-                loadout.SetSlotMagAmmo(equipSlotIndex, magAmmo);
+                SyncControllerAmmoFromLoadout();
+                loadout.SetSlotMagAmmo(equipSlotIndex, weaponController.CurrentAmmo);
             }
 
             if (drawIfHolstered && weaponHolster != null &&

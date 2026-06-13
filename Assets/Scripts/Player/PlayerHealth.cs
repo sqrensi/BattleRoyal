@@ -62,6 +62,16 @@ namespace ShooterPrototype.Player
         public int DeathSequence => deathSequence;
         public Vector3 DeathFallDirection => deathFallDirection;
 
+        public void ApplyEnvironmentalDamage(float amount, Vector3 hitDirection)
+        {
+            if (networkMode || isDead || amount <= 0f)
+            {
+                return;
+            }
+
+            ApplyDamage(amount, string.Empty, hitDirection);
+        }
+
         public bool TryHeal(float amount)
         {
             if (isDead || amount <= 0f)

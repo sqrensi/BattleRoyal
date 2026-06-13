@@ -404,7 +404,7 @@ namespace ShooterPrototype.Player
                 message.activeWeaponSlot,
                 message.bothHolstered,
                 message.droppedSpawnId ?? string.Empty,
-                0,
+                -1,
                 message.reserveAmmo,
                 message.spareAmmoAssault,
                 message.spareAmmoSniper,

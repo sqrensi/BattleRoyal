@@ -240,7 +240,7 @@ namespace ShooterPrototype.UI
             inventoryPanelRect.anchorMin = new Vector2(0f, 0f);
             inventoryPanelRect.anchorMax = new Vector2(0f, 0f);
             inventoryPanelRect.pivot = new Vector2(0f, 0f);
-            inventoryPanelRect.sizeDelta = new Vector2(220f, 120f);
+            inventoryPanelRect.sizeDelta = new Vector2(240f, 180f);
             inventoryPanelRect.anchoredPosition = new Vector2(10f, 10f);
             var inventoryPanelImage = inventoryPanel.AddComponent<Image>();
             inventoryPanelImage.color = new Color(0f, 0f, 0f, 0.45f);
@@ -249,7 +249,7 @@ namespace ShooterPrototype.UI
             inventoryLabelRect.anchorMin = new Vector2(0f, 1f);
             inventoryLabelRect.anchorMax = new Vector2(1f, 1f);
             inventoryLabelRect.pivot = new Vector2(0f, 1f);
-            inventoryLabelRect.offsetMin = new Vector2(8f, -110f);
+            inventoryLabelRect.offsetMin = new Vector2(8f, -170f);
             inventoryLabelRect.offsetMax = new Vector2(-8f, -8f);
             inventoryText.alignment = TextAnchor.UpperLeft;
             inventoryText.fontSize = 14;
@@ -581,9 +581,25 @@ namespace ShooterPrototype.UI
 
             var weapon = local.GetComponent<ShooterPrototype.Player.PlayerWeaponController>();
             var loadout = local.GetComponent<ShooterPrototype.Player.PlayerWeaponLoadout>();
+            var loadoutController = local.GetComponent<ShooterPrototype.Player.PlayerWeaponLoadoutController>();
             var hasWeapon = loadout != null && loadout.HasAnyWeapon;
             var currentAmmo = weapon != null && weapon.enabled ? weapon.CurrentAmmo : 0;
-            var spareAmmo = loadout != null ? loadout.SpareAmmo : weapon != null ? weapon.ReserveAmmo : 0;
+            var spareAmmo = 0;
+            if (weapon != null && weapon.enabled)
+            {
+                spareAmmo = weapon.ReserveAmmo;
+            }
+            else if (loadout != null && hasWeapon)
+            {
+                var kind = loadoutController != null
+                    ? loadoutController.ResolveEquippedWeaponKind()
+                    : loadout.GetActiveWeaponKind();
+                spareAmmo = loadout.GetSpareAmmo(kind);
+            }
+            else if (weapon != null)
+            {
+                spareAmmo = weapon.ReserveAmmo;
+            }
             if (!hasWeapon && spareAmmo <= 0)
             {
                 ammoText.text = "Ammo: --/--";

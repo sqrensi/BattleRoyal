@@ -234,6 +234,7 @@ namespace ShooterPrototype.Player
             wallAvoidCheckDirty = true;
             MountWeaponFromPrefab();
             handBinder = handBinder != null ? handBinder : GetComponent<SyntyWeaponHandBinder>();
+            handBinder?.RefreshWeaponHandBindings();
             handBinder?.SyncFirstPersonRigidHandIkMode();
             GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
             return weaponInstance != null;
@@ -251,7 +252,10 @@ namespace ShooterPrototype.Player
             wallAvoidCheckDirty = true;
             MountWeaponFromPrefab(preserveAnchorPose: true);
             handBinder = handBinder != null ? handBinder : GetComponent<SyntyWeaponHandBinder>();
+            handBinder?.RefreshWeaponHandBindings();
             handBinder?.SyncFirstPersonRigidHandIkMode();
+            holsterController = holsterController != null ? holsterController : GetComponent<PlayerWeaponHolsterController>();
+            holsterController?.SyncArmedPoseFromMountedWeapon();
             GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
             return weaponInstance != null;
         }

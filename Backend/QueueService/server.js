@@ -59,6 +59,7 @@ const lastClientPosePosByTicket = new Map();
 const lastSnapshotDebugByOwner = new Map();
 const lastMatchSnapshotBroadcastAtMs = new Map();
 const matchPickupsByMatchId = new Map();
+const matchDamageZonesByMatchId = new Map();
 const droppedWeaponSeqByMatchId = new Map();
 const WEAPON_SLOT_EMPTY = 255;
 const WEAPON_KIND_MAX = 3;
@@ -70,12 +71,23 @@ const MEDKIT_USE_DURATION_SECONDS = Math.max(0.5, Number(process.env.MEDKIT_USE_
 const MEDKIT_HEAL_AMOUNT = Math.max(1, Number(process.env.MEDKIT_HEAL_AMOUNT) || 70);
 const MEDKIT_MAX_COUNT = Math.max(1, Math.min(99, Number(process.env.MEDKIT_MAX_COUNT) || 8));
 const MEDKIT_STARTING_COUNT = Math.max(0, Math.min(MEDKIT_MAX_COUNT, Number(process.env.MEDKIT_STARTING_COUNT) || 0));
+const ZONE_STATE_BROADCAST_INTERVAL_MS = Math.max(100, Number(process.env.ZONE_STATE_BROADCAST_INTERVAL_MS) || 500);
+const ZONE_DEFAULT_INITIAL_RADIUS = Math.max(10, Number(process.env.ZONE_INITIAL_RADIUS) || 220);
+const ZONE_DEFAULT_PHASE1_END_RADIUS = Math.max(5, Number(process.env.ZONE_PHASE1_END_RADIUS) || 100);
+const ZONE_DEFAULT_FINAL_RADIUS = Math.max(0, Number(process.env.ZONE_FINAL_RADIUS) || 0);
+const ZONE_DEFAULT_TOTAL_SHRINK_DURATION_SEC = Math.max(30, Number(process.env.ZONE_TOTAL_SHRINK_DURATION_SEC) || 180);
+const ZONE_DEFAULT_PHASE1_CENTER_OFFSET = Math.max(0, Number(process.env.ZONE_PHASE1_CENTER_OFFSET) || 10);
+const ZONE_DEFAULT_PHASE2_CENTER_OFFSET = Math.max(0, Number(process.env.ZONE_PHASE2_CENTER_OFFSET) || 40);
+const ZONE_DEFAULT_DAMAGE_MIN_DPS = Math.max(0, Number(process.env.ZONE_DAMAGE_MIN_DPS) || 0.5);
+const ZONE_DEFAULT_DAMAGE_MAX_DPS = Math.max(ZONE_DEFAULT_DAMAGE_MIN_DPS, Number(process.env.ZONE_DAMAGE_MAX_DPS) || 14);
+const ZONE_DEFAULT_DAMAGE_RAMP_SEC = Math.max(30, Number(process.env.ZONE_DAMAGE_RAMP_SEC) || 480);
 
 setInterval(() => {
   currentServerTick += 1;
   tickAllPlayerMovement();
   tickMedkitUses();
   tickPickupRespawns();
+  tickDamageZones();
   runMaintenanceSweep();
   broadcastRealtimeSnapshots();
 }, Math.max(1, Math.floor(1000 / SERVER_TICK_RATE)));
@@ -366,6 +378,11 @@ wsServer.on("connection", (socket) => {
         return;
       }
 
+      if (message.type === "register_damage_zone") {
+        handleWsRegisterDamageZone(socket, message);
+        return;
+      }
+
       if (message.type === "pickup") {
         handleWsPickup(socket, message);
         return;
@@ -373,6 +390,11 @@ wsServer.on("connection", (socket) => {
 
       if (message.type === "weapon_drop") {
         handleWsWeaponDrop(socket, message);
+        return;
+      }
+
+      if (message.type === "ammo_state") {
+        handleWsAmmoState(socket, message);
         return;
       }
 
@@ -592,6 +614,7 @@ function removeFromActiveMatch(ticketId) {
     if (activeMatch && activeMatch.matchId === session.matchId) {
       activeMatch = null;
     }
+    matchDamageZonesByMatchId.delete(session.matchId);
   }
 }
 
@@ -708,6 +731,7 @@ function handleWsJoin(socket, ticketId) {
     sendSnapshotToSocket(ticketId, socket);
     if (ticket.matchId) {
       sendPickupStateToSocket(socket, ticket.matchId);
+      sendZoneStateToSocket(socket, ticket.matchId);
     }
   } catch {
     safeWsClose(socket, 1011, "failed to send join ack");
@@ -941,6 +965,28 @@ function buildSpareAmmoPayload(presence) {
     spareAmmoPistol: getSpareAmmoForKind(presence, 2),
     spareAmmoMp7: getSpareAmmoForKind(presence, 3),
   };
+}
+
+function applyClientSpareAmmoPayload(presence, message) {
+  if (!presence || !message) {
+    return;
+  }
+
+  if (Number.isFinite(message.spareAmmoAssault) && message.spareAmmoAssault >= 0) {
+    setSpareAmmoForKind(presence, 0, message.spareAmmoAssault);
+  }
+
+  if (Number.isFinite(message.spareAmmoSniper) && message.spareAmmoSniper >= 0) {
+    setSpareAmmoForKind(presence, 1, message.spareAmmoSniper);
+  }
+
+  if (Number.isFinite(message.spareAmmoPistol) && message.spareAmmoPistol >= 0) {
+    setSpareAmmoForKind(presence, 2, message.spareAmmoPistol);
+  }
+
+  if (Number.isFinite(message.spareAmmoMp7) && message.spareAmmoMp7 >= 0) {
+    setSpareAmmoForKind(presence, 3, message.spareAmmoMp7);
+  }
 }
 
 function findFirstEmptyWeaponSlot(presence) {
@@ -1810,7 +1856,7 @@ function handleWsPickup(socket, message) {
 
     const newReserve = Math.min(999, getSpareAmmoForKind(presence, ammoKind) + amount);
     setSpareAmmoForKind(presence, ammoKind, newReserve);
-    pickedReserveAmmo = newReserve;
+    pickedReserveAmmo = getSpareAmmo(presence);
 
     let activeSlot = presence.activeWeaponSlot;
     if (activeSlot !== 0 && activeSlot !== 1) {
@@ -1954,6 +2000,37 @@ function sendWeaponDropResultToSocket(socket, success, reason, details) {
   }
 }
 
+function handleWsAmmoState(socket, message) {
+  const meta = wsMetaBySocket.get(socket);
+  if (!meta || !meta.ticketId) {
+    return;
+  }
+
+  const ticket = ticketsById.get(meta.ticketId);
+  if (!ticket || ticket.status !== "Matched" || !ticket.presence) {
+    return;
+  }
+
+  applyClientSpareAmmoPayload(ticket.presence, message);
+
+  const slot0MagAmmo = Number.isFinite(message.slot0MagAmmo)
+    ? Math.max(-1, Math.min(999, normalizeInt64(message.slot0MagAmmo, -1)))
+    : -1;
+  const slot1MagAmmo = Number.isFinite(message.slot1MagAmmo)
+    ? Math.max(-1, Math.min(999, normalizeInt64(message.slot1MagAmmo, -1)))
+    : -1;
+
+  if (slot0MagAmmo >= 0 && isWeaponSlotOccupied(ticket.presence.weaponSlot0Kind)) {
+    setWeaponSlotMagAmmo(ticket.presence, 0, slot0MagAmmo);
+  }
+
+  if (slot1MagAmmo >= 0 && isWeaponSlotOccupied(ticket.presence.weaponSlot1Kind)) {
+    setWeaponSlotMagAmmo(ticket.presence, 1, slot1MagAmmo);
+  }
+
+  touchMatchSession(ticket.matchId);
+}
+
 function handleWsWeaponDrop(socket, message) {
   const meta = wsMetaBySocket.get(socket);
   if (!meta || !meta.ticketId) {
@@ -1975,6 +2052,8 @@ function handleWsWeaponDrop(socket, message) {
     sendWeaponDropResultToSocket(socket, false, "dead");
     return;
   }
+
+  applyClientSpareAmmoPayload(presence, message);
 
   const slotIndex = resolveDropSlotIndex(presence, message && message.slotIndex);
   if (slotIndex < 0 || !isWeaponSlotOccupied(getWeaponSlotKind(presence, slotIndex))) {
@@ -2244,6 +2323,396 @@ function tickMedkitUses() {
     }
 
     completeMedkitUse(ticket);
+  }
+}
+
+function rollPhase1Center(mapCenterX, mapCenterZ, offsetRange) {
+  const offset = Math.max(0, normalizeNumber(offsetRange, 10));
+  return {
+    x: mapCenterX + (((Math.random() * 2) - 1) * offset),
+    z: mapCenterZ + (((Math.random() * 2) - 1) * offset)
+  };
+}
+
+function rollPhase2Center(mapCenterX, mapCenterZ, offsetRange) {
+  const offset = Math.max(0, normalizeNumber(offsetRange, ZONE_DEFAULT_PHASE2_CENTER_OFFSET));
+  return {
+    x: mapCenterX + (((Math.random() * 2) - 1) * offset),
+    z: mapCenterZ + (((Math.random() * 2) - 1) * offset)
+  };
+}
+
+function ensureMatchDamageZone(matchId) {
+  if (!matchId) {
+    return null;
+  }
+
+  if (!matchDamageZonesByMatchId.has(matchId)) {
+    const session = matchesById.get(matchId);
+    matchDamageZonesByMatchId.set(matchId, {
+      configured: false,
+      mapCenterX: normalizeNumber(process.env.ZONE_CENTER_X, 0),
+      mapCenterZ: normalizeNumber(process.env.ZONE_CENTER_Z, 0),
+      phase1CenterX: normalizeNumber(process.env.ZONE_CENTER_X, 0),
+      phase1CenterZ: normalizeNumber(process.env.ZONE_CENTER_Z, 0),
+      phase2CenterX: normalizeNumber(process.env.ZONE_CENTER_X, 0),
+      phase2CenterZ: normalizeNumber(process.env.ZONE_CENTER_Z, 0),
+      phase1CenterOffset: ZONE_DEFAULT_PHASE1_CENTER_OFFSET,
+      phase2CenterOffset: ZONE_DEFAULT_PHASE2_CENTER_OFFSET,
+      initialRadius: ZONE_DEFAULT_INITIAL_RADIUS,
+      phase1EndRadius: ZONE_DEFAULT_PHASE1_END_RADIUS,
+      finalRadius: ZONE_DEFAULT_FINAL_RADIUS,
+      totalShrinkDurationSeconds: ZONE_DEFAULT_TOTAL_SHRINK_DURATION_SEC,
+      damageMinPerSecond: ZONE_DEFAULT_DAMAGE_MIN_DPS,
+      damageMaxPerSecond: ZONE_DEFAULT_DAMAGE_MAX_DPS,
+      damageRampSeconds: ZONE_DEFAULT_DAMAGE_RAMP_SEC,
+      startedAtMs: session && session.startedAtMs > 0 ? session.startedAtMs : Date.now(),
+      lastBroadcastMs: 0
+    });
+  }
+
+  return matchDamageZonesByMatchId.get(matchId);
+}
+
+function smoothPhaseProgress(normalizedTime) {
+  const t = Math.min(1, Math.max(0, normalizedTime));
+  return t * t * (3 - 2 * t);
+}
+
+function computeZonePhaseProgress(elapsedSeconds, durationSeconds) {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0.001) {
+    return 1;
+  }
+
+  return smoothPhaseProgress(elapsedSeconds / durationSeconds);
+}
+
+function computeTwoPhaseDurations(initialRadius, phase1EndRadius, finalRadius, totalShrinkDurationSeconds) {
+  const totalDuration = Math.max(0.001, normalizeNumber(totalShrinkDurationSeconds, ZONE_DEFAULT_TOTAL_SHRINK_DURATION_SEC));
+  const totalRadiusDelta = Math.max(0.001, initialRadius - finalRadius);
+  const phase1RadiusDelta = Math.max(0, initialRadius - phase1EndRadius);
+  const phase2RadiusDelta = Math.max(0, phase1EndRadius - finalRadius);
+  const phase1DurationSeconds = Math.max(0.001, totalDuration * (phase1RadiusDelta / totalRadiusDelta));
+  const phase2DurationSeconds = Math.max(0.001, totalDuration * (phase2RadiusDelta / totalRadiusDelta));
+  return { phase1DurationSeconds, phase2DurationSeconds };
+}
+
+function resolveTotalShrinkDuration(message, zone) {
+  const totalFromMessage = normalizeNumber(message && message.totalShrinkDurationSeconds, 0);
+  if (totalFromMessage > 0.001) {
+    return Math.max(30, totalFromMessage);
+  }
+
+  const legacyPhase1 = normalizeNumber(message && message.phase1DurationSeconds, 0);
+  const legacyPhase2 = normalizeNumber(
+    message && (message.phase2MoveDurationSeconds || message.phase2DurationSeconds),
+    0
+  );
+  const legacyPhase3 = normalizeNumber(message && message.phase3ShrinkDurationSeconds, 0);
+  const legacyTotal = legacyPhase1 + legacyPhase2 + legacyPhase3;
+  if (legacyTotal > 0.001) {
+    return Math.max(30, legacyTotal);
+  }
+
+  return Math.max(30, normalizeNumber(zone && zone.totalShrinkDurationSeconds, ZONE_DEFAULT_TOTAL_SHRINK_DURATION_SEC));
+}
+
+function computeTwoPhaseZoneState(zone, elapsedSeconds) {
+  if (!zone) {
+    return { phase: 1, centerX: 0, centerZ: 0, radius: 0 };
+  }
+
+  const initialRadius = Math.max(0, normalizeNumber(zone.initialRadius, ZONE_DEFAULT_INITIAL_RADIUS));
+  const phase1EndRadius = Math.max(0, normalizeNumber(zone.phase1EndRadius, ZONE_DEFAULT_PHASE1_END_RADIUS));
+  const finalRadius = Math.max(0, normalizeNumber(zone.finalRadius, ZONE_DEFAULT_FINAL_RADIUS));
+  const totalShrinkDurationSeconds = Math.max(
+    30,
+    normalizeNumber(zone.totalShrinkDurationSeconds, ZONE_DEFAULT_TOTAL_SHRINK_DURATION_SEC)
+  );
+  const { phase1DurationSeconds, phase2DurationSeconds } = computeTwoPhaseDurations(
+    initialRadius,
+    phase1EndRadius,
+    finalRadius,
+    totalShrinkDurationSeconds
+  );
+  const phase1CenterX = normalizeNumber(zone.phase1CenterX, 0);
+  const phase1CenterZ = normalizeNumber(zone.phase1CenterZ, 0);
+  const phase2CenterX = normalizeNumber(zone.phase2CenterX, phase1CenterX);
+  const phase2CenterZ = normalizeNumber(zone.phase2CenterZ, phase1CenterZ);
+
+  if (elapsedSeconds <= phase1DurationSeconds) {
+    const progress = computeZonePhaseProgress(elapsedSeconds, phase1DurationSeconds);
+    const mapCenterX = normalizeNumber(zone.mapCenterX, phase1CenterX);
+    const mapCenterZ = normalizeNumber(zone.mapCenterZ, phase1CenterZ);
+    return {
+      phase: 1,
+      centerX: mapCenterX + ((phase1CenterX - mapCenterX) * progress),
+      centerZ: mapCenterZ + ((phase1CenterZ - mapCenterZ) * progress),
+      radius: initialRadius + ((phase1EndRadius - initialRadius) * progress)
+    };
+  }
+
+  const phase2Elapsed = elapsedSeconds - phase1DurationSeconds;
+  const progress2 = computeZonePhaseProgress(phase2Elapsed, phase2DurationSeconds);
+  return {
+    phase: 2,
+    centerX: phase1CenterX + ((phase2CenterX - phase1CenterX) * progress2),
+    centerZ: phase1CenterZ + ((phase2CenterZ - phase1CenterZ) * progress2),
+    radius: phase1EndRadius + ((finalRadius - phase1EndRadius) * progress2)
+  };
+}
+
+function computeZoneRadius(zone, elapsedSeconds) {
+  return computeTwoPhaseZoneState(zone, elapsedSeconds).radius;
+}
+
+function computeZoneDamagePerSecond(zone, elapsedSeconds) {
+  if (!zone) {
+    return 0;
+  }
+
+  const ramp = zone.damageRampSeconds <= 0.001
+    ? 1
+    : Math.min(1, Math.max(0, elapsedSeconds / zone.damageRampSeconds));
+  return zone.damageMinPerSecond + ((zone.damageMaxPerSecond - zone.damageMinPerSecond) * ramp);
+}
+
+function buildZoneStatePayload(matchId, zone, nowMs) {
+  const elapsedSeconds = Math.max(0, (nowMs - zone.startedAtMs) / 1000);
+  const liveState = computeTwoPhaseZoneState(zone, elapsedSeconds);
+  const damagePerSecond = computeZoneDamagePerSecond(zone, elapsedSeconds);
+  return {
+    type: "zone_state",
+    phase: liveState.phase,
+    centerX: liveState.centerX,
+    centerZ: liveState.centerZ,
+    phase1CenterX: zone.phase1CenterX,
+    phase1CenterZ: zone.phase1CenterZ,
+    phase2CenterX: zone.phase2CenterX,
+    phase2CenterZ: zone.phase2CenterZ,
+    mapCenterX: zone.mapCenterX,
+    mapCenterZ: zone.mapCenterZ,
+    initialRadius: zone.initialRadius,
+    phase1EndRadius: zone.phase1EndRadius,
+    finalRadius: zone.finalRadius,
+    totalShrinkDurationSeconds: zone.totalShrinkDurationSeconds,
+    damageMinPerSecond: zone.damageMinPerSecond,
+    damageMaxPerSecond: zone.damageMaxPerSecond,
+    damageRampSeconds: zone.damageRampSeconds,
+    radius: liveState.radius,
+    damagePerSecond,
+    elapsedSeconds,
+    startedAtMs: zone.startedAtMs
+  };
+}
+
+function sendZoneStateToSocket(socket, matchId) {
+  if (!socket || socket.readyState !== WebSocket.OPEN || !matchId) {
+    return;
+  }
+
+  const zone = ensureMatchDamageZone(matchId);
+  if (!zone || !zone.configured) {
+    return;
+  }
+
+  try {
+    socket.send(JSON.stringify(buildZoneStatePayload(matchId, zone, Date.now())));
+  } catch {
+    // ignored
+  }
+}
+
+function broadcastZoneState(matchId) {
+  if (!matchId) {
+    return;
+  }
+
+  const zone = ensureMatchDamageZone(matchId);
+  if (!zone || !zone.configured) {
+    return;
+  }
+
+  const payload = JSON.stringify(buildZoneStatePayload(matchId, zone, Date.now()));
+  for (const [ticketId, socket] of wsClientsByTicketId.entries()) {
+    const ticket = ticketsById.get(ticketId);
+    if (!ticket || ticket.status !== "Matched" || ticket.matchId !== matchId) {
+      continue;
+    }
+
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      continue;
+    }
+
+    try {
+      socket.send(payload);
+    } catch {
+      // ignored
+    }
+  }
+}
+
+function handleWsRegisterDamageZone(socket, message) {
+  const meta = wsMetaBySocket.get(socket);
+  if (!meta || !meta.ticketId) {
+    return;
+  }
+
+  const ticket = ticketsById.get(meta.ticketId);
+  if (!ticket || ticket.status !== "Matched" || !ticket.matchId) {
+    return;
+  }
+
+  const zone = ensureMatchDamageZone(ticket.matchId);
+  if (!zone || zone.configured) {
+    sendZoneStateToSocket(socket, ticket.matchId);
+    return;
+  }
+
+  zone.configured = true;
+  const mapCenterX = normalizeNumber(message.centerX, zone.mapCenterX);
+  const mapCenterZ = normalizeNumber(message.centerZ, zone.mapCenterZ);
+  zone.mapCenterX = mapCenterX;
+  zone.mapCenterZ = mapCenterZ;
+  zone.phase1CenterOffset = Math.max(0, normalizeNumber(message.phase1CenterOffset, ZONE_DEFAULT_PHASE1_CENTER_OFFSET));
+  zone.phase2CenterOffset = Math.max(0, normalizeNumber(message.phase2CenterOffset, ZONE_DEFAULT_PHASE2_CENTER_OFFSET));
+
+  const phase1Center = rollPhase1Center(mapCenterX, mapCenterZ, zone.phase1CenterOffset);
+  zone.phase1CenterX = phase1Center.x;
+  zone.phase1CenterZ = phase1Center.z;
+
+  zone.initialRadius = Math.max(10, normalizeNumber(message.initialRadius, zone.initialRadius));
+  zone.phase1EndRadius = Math.max(5, normalizeNumber(message.phase1EndRadius, zone.phase1EndRadius));
+  zone.finalRadius = Math.max(0, normalizeNumber(message.finalRadius, zone.finalRadius));
+  zone.totalShrinkDurationSeconds = resolveTotalShrinkDuration(message, zone);
+  zone.damageMinPerSecond = Math.max(0, normalizeNumber(message.damageMinPerSecond, zone.damageMinPerSecond));
+  zone.damageMaxPerSecond = Math.max(
+    zone.damageMinPerSecond,
+    normalizeNumber(message.damageMaxPerSecond, zone.damageMaxPerSecond)
+  );
+  zone.damageRampSeconds = Math.max(30, normalizeNumber(message.damageRampSeconds, zone.damageRampSeconds));
+
+  const phase2Center = rollPhase2Center(
+    mapCenterX,
+    mapCenterZ,
+    zone.phase2CenterOffset
+  );
+  zone.phase2CenterX = phase2Center.x;
+  zone.phase2CenterZ = phase2Center.z;
+
+  const session = matchesById.get(ticket.matchId);
+  if (session && session.startedAtMs > 0) {
+    zone.startedAtMs = session.startedAtMs;
+  }
+
+  zone.lastBroadcastMs = 0;
+  broadcastZoneState(ticket.matchId);
+  touchMatchSession(ticket.matchId);
+}
+
+function sendZoneDamageToSocket(socket, targetTicketId, damage, dirX, dirY, dirZ) {
+  if (!socket || socket.readyState !== WebSocket.OPEN || damage <= 0) {
+    return;
+  }
+
+  try {
+    socket.send(JSON.stringify({
+      type: "damage",
+      attackerTicketId: "zone",
+      targetTicketId,
+      damage,
+      dirX,
+      dirY,
+      dirZ
+    }));
+  } catch {
+    // ignored
+  }
+}
+
+function applyZoneDamageToTicket(ticket, damage, zone) {
+  if (!ticket || !ticket.presence || damage <= 0 || ticket.presence.isDead) {
+    return;
+  }
+
+  const targetPresence = ticket.presence;
+  const maxHealth = Number.isFinite(targetPresence.maxHealth) ? targetPresence.maxHealth : 100;
+  const currentHealth = Number.isFinite(targetPresence.health) ? targetPresence.health : maxHealth;
+  targetPresence.health = Math.max(0, currentHealth - damage);
+
+  let dirX = 0;
+  let dirY = 0;
+  let dirZ = 1;
+  if (zone && targetPresence.position) {
+    const px = normalizeNumber(targetPresence.position.x, 0);
+    const pz = normalizeNumber(targetPresence.position.z, 0);
+    const liveState = computeTwoPhaseZoneState(
+      zone,
+      Math.max(0, (Date.now() - zone.startedAtMs) / 1000)
+    );
+    const dx = liveState.centerX - px;
+    const dz = liveState.centerZ - pz;
+    const mag = Math.hypot(dx, dz);
+    if (mag > 0.0001) {
+      dirX = dx / mag;
+      dirZ = dz / mag;
+    }
+  }
+
+  if (targetPresence.health <= 0.001) {
+    targetPresence.isDead = true;
+    targetPresence.deathSeq = Math.max(0, normalizeInt64(targetPresence.deathSeq, 0)) + 1;
+    targetPresence.deathFallDirX = dirX;
+    targetPresence.deathFallDirY = dirY;
+    targetPresence.deathFallDirZ = dirZ;
+  }
+
+  const targetSocket = wsClientsByTicketId.get(ticket.ticketId);
+  sendZoneDamageToSocket(targetSocket, ticket.ticketId, damage, dirX, dirY, dirZ);
+}
+
+function tickDamageZones() {
+  const nowMs = Date.now();
+  const dt = 1 / SERVER_TICK_RATE;
+
+  for (const [matchId, zone] of matchDamageZonesByMatchId.entries()) {
+    const session = matchesById.get(matchId);
+    if (!session || session.state === "Ended" || !zone || !zone.configured) {
+      continue;
+    }
+
+    const elapsedSeconds = Math.max(0, (nowMs - zone.startedAtMs) / 1000);
+    const liveState = computeTwoPhaseZoneState(zone, elapsedSeconds);
+    const radius = liveState.radius;
+    const damagePerSecond = computeZoneDamagePerSecond(zone, elapsedSeconds);
+    const damage = damagePerSecond * dt;
+
+    if (damage > 0 && radius >= 0) {
+      for (const ticket of ticketsById.values()) {
+        if (!ticket || ticket.status !== "Matched" || ticket.matchId !== matchId || !ticket.presence) {
+          continue;
+        }
+
+        if (!ticket.presence.hasPose || ticket.presence.isDead || !ticket.presence.position) {
+          continue;
+        }
+
+        const px = normalizeNumber(ticket.presence.position.x, 0);
+        const pz = normalizeNumber(ticket.presence.position.z, 0);
+        const dx = px - liveState.centerX;
+        const dz = pz - liveState.centerZ;
+        if (Math.hypot(dx, dz) <= radius) {
+          continue;
+        }
+
+        applyZoneDamageToTicket(ticket, damage, zone);
+      }
+    }
+
+    if (nowMs - zone.lastBroadcastMs >= ZONE_STATE_BROADCAST_INTERVAL_MS) {
+      zone.lastBroadcastMs = nowMs;
+      broadcastZoneState(matchId);
+    }
   }
 }
 

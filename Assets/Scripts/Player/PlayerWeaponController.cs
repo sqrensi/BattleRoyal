@@ -1116,7 +1116,23 @@ namespace ShooterPrototype.Player
 
         private bool TryStartReload()
         {
-            if (isReloading || currentAmmo >= MagazineSize || reserveAmmo <= 0)
+            if (isReloading || currentAmmo >= MagazineSize)
+            {
+                return false;
+            }
+
+            if (weaponLoadoutController == null)
+            {
+                weaponLoadoutController = GetComponent<PlayerWeaponLoadoutController>();
+            }
+
+            if (weaponLoadoutController != null && weaponLoadoutController.Loadout != null)
+            {
+                var kind = weaponLoadoutController.ResolveEquippedWeaponKind();
+                reserveAmmo = weaponLoadoutController.Loadout.GetSpareAmmo(kind);
+            }
+
+            if (reserveAmmo <= 0)
             {
                 return false;
             }
@@ -1170,11 +1186,8 @@ namespace ShooterPrototype.Player
             var transferred = Mathf.Min(needed, reserveAmmo);
             currentAmmo += transferred;
             reserveAmmo -= transferred;
-            if (weaponLoadoutController != null && weaponLoadoutController.Loadout != null)
-            {
-                weaponLoadoutController.Loadout.SetSpareAmmo(currentWeaponKind, reserveAmmo);
-            }
-
+            weaponLoadoutController?.SyncLoadoutSpareAmmoFromController();
+            weaponLoadoutController?.PublishAmmoStateToServer();
             SyncLoadoutMagAmmo();
             isReloading = false;
             weaponMount?.SetLocalReloading(false);

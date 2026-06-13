@@ -128,6 +128,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark04.cs" />
     <Compile Include="Assets\Scripts\Player\ThreadArmRig.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\Spawner.cs" />
+    <Compile Include="Assets\Scripts\Player\DamageZoneMath.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\ChatController.cs" />
     <Compile Include="Assets\Scripts\Player\RemotePlayerShotEffects.cs" />
     <Compile Include="Assets\Scripts\Network\RealtimeTransportClient.cs" />
@@ -154,6 +155,7 @@
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\PackInfo.cs" />
     <Compile Include="Assets\Scripts\Player\CharacterSelectionService.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\CameraController.cs" />
+    <Compile Include="Assets\Scripts\Player\MatchDamageZoneController.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerNetworkIdentity.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\IndividualAnimationDisplay.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark03.cs" />

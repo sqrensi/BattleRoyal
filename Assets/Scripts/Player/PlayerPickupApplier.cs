@@ -142,10 +142,9 @@ namespace ShooterPrototype.Player
             {
                 context.WeaponLoadout.Loadout.AddSpareAmmo(ammoKind, addedAmmo);
                 if (context.WeaponController != null &&
-                    context.WeaponController.CurrentWeaponKind == ammoKind)
+                    context.WeaponLoadout.ResolveEquippedWeaponKind() == ammoKind)
                 {
-                    context.WeaponController.SetReserveAmmo(
-                        context.WeaponLoadout.Loadout.GetSpareAmmo(ammoKind));
+                    context.WeaponLoadout.SyncControllerAmmoFromLoadout();
                 }
 
                 return PickupApplyResult.Ok;
