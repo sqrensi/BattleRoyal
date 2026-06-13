@@ -50,6 +50,9 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
+            var clothingApplier = playerRoot.GetComponent<RemoteResourceClothingApplier>();
+            clothingApplier?.InvalidateBodyMeshCache();
+
             targetRenderer.sharedMesh = modelRenderer.sharedMesh;
             targetRenderer.sharedMaterials = modelRenderer.sharedMaterials;
             RebindSkinnedMeshToInstance(targetRenderer, modelRenderer, syntyVisual);
@@ -354,7 +357,7 @@ namespace ShooterPrototype.Player
             return visualRoot;
         }
 
-        private static SkinnedMeshRenderer FindPrimaryBodyRenderer(Transform root)
+        public static SkinnedMeshRenderer FindPrimaryBodyRenderer(Transform root)
         {
             if (root == null)
             {
@@ -400,7 +403,7 @@ namespace ShooterPrototype.Player
             return best;
         }
 
-        private static bool IsCharacterBodyRenderer(SkinnedMeshRenderer source)
+        public static bool IsCharacterBodyRenderer(SkinnedMeshRenderer source)
         {
             if (source == null || source.sharedMesh == null)
             {

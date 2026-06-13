@@ -11,12 +11,26 @@ namespace ShooterPrototype.Player
         [SerializeField] private bool applyOnAwake = true;
         [SerializeField] private RuntimeAnimatorController remoteAnimatorController;
 
+        private bool deferredClothingRefreshPending;
+
         private void Awake()
         {
             if (applyOnAwake)
             {
                 ApplyRemoteThirdPersonMode();
+                deferredClothingRefreshPending = true;
             }
+        }
+
+        private void Start()
+        {
+            if (!deferredClothingRefreshPending)
+            {
+                return;
+            }
+
+            deferredClothingRefreshPending = false;
+            RefreshRemoteResourceClothingAfterSkeletonReady();
         }
 
         public void RefreshRemoteWeaponPresentation()
@@ -192,6 +206,26 @@ namespace ShooterPrototype.Player
             }
 
             clothingApplier.ApplyToRemoteVisual(syntyVisual, forceReapply: true);
+        }
+
+        private void RefreshRemoteResourceClothingAfterSkeletonReady()
+        {
+            var thirdPersonBody = transform.Find("ThirdPersonBody");
+            if (thirdPersonBody == null)
+            {
+                return;
+            }
+
+            var syntyVisual = thirdPersonBody.Find("SyntyVisual");
+            if (syntyVisual == null)
+            {
+                return;
+            }
+
+            var animator = syntyVisual.GetComponent<Animator>();
+            animator?.Update(0f);
+
+            ApplyRemoteResourceClothing(thirdPersonBody);
         }
 
         private void WireRemoteHolsterAnimation(Transform thirdPersonBody)

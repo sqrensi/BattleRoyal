@@ -68,8 +68,8 @@ namespace ShooterPrototype.Player
         private static readonly Dictionary<int, Mesh> BodyWithoutFeetMeshCache =
             new Dictionary<int, Mesh>(8);
 
-        private static readonly Dictionary<int, Mesh> BodyWithoutHandsMeshCache =
-            new Dictionary<int, Mesh>(8);
+        private static readonly Dictionary<long, Mesh> BodyWithoutHandsMeshCache =
+            new Dictionary<long, Mesh>(8);
 
         [SerializeField] private bool applyOnRemote = true;
         [SerializeField] private bool hideBodyTorsoWhenClothed = true;
@@ -101,10 +101,17 @@ namespace ShooterPrototype.Player
         private bool warnedLegHideFailed;
         private bool warnedFootHideFailed;
         private bool warnedHandHideFailed;
+        private bool loggedHandBonesOnce;
 
         private SkinnedMeshRenderer bodyRendererWithHiddenParts;
         private Mesh originalBodyMeshBeforeHide;
         private readonly List<Renderer> lastAppliedGloveRenderers = new List<Renderer>(4);
+
+        public void InvalidateBodyMeshCache()
+        {
+            bodyRendererWithHiddenParts = null;
+            originalBodyMeshBeforeHide = null;
+        }
 
         public void ApplyToRemoteVisual(Transform syntyVisual, bool forceReapply = false)
         {
@@ -116,6 +123,9 @@ namespace ShooterPrototype.Player
             var existing = syntyVisual.Find(ClothingRootName);
             if (!forceReapply && existing != null)
             {
+                RefreshHiddenBodyParts(
+                    FindCharacterBodyRenderer(syntyVisual),
+                    hideHandsOnBody: true);
                 return;
             }
 
@@ -128,10 +138,11 @@ namespace ShooterPrototype.Player
                 warnedLegHideFailed = false;
                 warnedFootHideFailed = false;
                 warnedHandHideFailed = false;
+                loggedHandBonesOnce = false;
             }
 
             ClearExistingClothing(syntyVisual);
-            ApplyClothingToVisual(syntyVisual, forceReapply);
+            ApplyClothingToVisual(syntyVisual, hideHandsOnThirdPersonBody: true);
         }
 
         public void ApplyToLocalVisual(
@@ -162,16 +173,17 @@ namespace ShooterPrototype.Player
                 warnedLegHideFailed = false;
                 warnedFootHideFailed = false;
                 warnedHandHideFailed = false;
+                loggedHandBonesOnce = false;
             }
 
             ClearExistingClothing(syntyVisual);
             ClearFirstPersonGloves(armsPresenter);
 
-            ApplyClothingToVisual(syntyVisual, forceReapply);
+            ApplyClothingToVisual(syntyVisual, hideHandsOnThirdPersonBody: false);
             ApplyFirstPersonGloves(syntyVisual, armsPresenter);
         }
 
-        private bool ApplyClothingToVisual(Transform syntyVisual, bool forceReapply)
+        private bool ApplyClothingToVisual(Transform syntyVisual, bool hideHandsOnThirdPersonBody)
         {
             lastAppliedGloveRenderers.Clear();
             var bodyRenderer = FindCharacterBodyRenderer(syntyVisual);
@@ -197,7 +209,7 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            RefreshHiddenBodyParts(bodyRenderer);
+            RefreshHiddenBodyParts(bodyRenderer, hideHandsOnThirdPersonBody);
             return true;
         }
 
@@ -367,6 +379,7 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
+                LogHandBonesHiddenOnce(armsRenderer, "local first-person arms");
                 armsPresenter.RegisterGeneratedMesh(withoutHands);
                 armsRenderer.sharedMesh = withoutHands;
             }
@@ -499,7 +512,7 @@ namespace ShooterPrototype.Player
             armsPresenter.ClearFirstPersonGloveRenderers();
         }
 
-        private void RefreshHiddenBodyParts(SkinnedMeshRenderer bodyRenderer)
+        private void RefreshHiddenBodyParts(SkinnedMeshRenderer bodyRenderer, bool hideHandsOnBody)
         {
             if (bodyRenderer == null)
             {
@@ -558,7 +571,7 @@ namespace ShooterPrototype.Player
                 }
             }
 
-            if (hideBodyHandsWhenGloves && applyGloves && !string.IsNullOrWhiteSpace(glovesResourcePath))
+            if (hideHandsOnBody && hideBodyHandsWhenGloves && applyGloves && !string.IsNullOrWhiteSpace(glovesResourcePath))
             {
                 var withoutHands = GetOrCreateBodyWithoutHandsMesh(bodyRenderer, minHandHideBoneWeight);
                 if (withoutHands == null)
@@ -567,6 +580,7 @@ namespace ShooterPrototype.Player
                 }
                 else
                 {
+                    LogHandBonesHiddenOnce(bodyRenderer, "remote body");
                     workingMesh = withoutHands;
                     bodyRenderer.sharedMesh = workingMesh;
                 }
@@ -582,22 +596,46 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (bodyRendererWithHiddenParts == bodyRenderer && originalBodyMeshBeforeHide != null)
+            var currentMesh = bodyRenderer.sharedMesh;
+            if (IsRuntimeTrimmedBodyMesh(currentMesh))
+            {
+                if (originalBodyMeshBeforeHide != null && !IsRuntimeTrimmedBodyMesh(originalBodyMeshBeforeHide))
+                {
+                    bodyRenderer.sharedMesh = originalBodyMeshBeforeHide;
+                    currentMesh = originalBodyMeshBeforeHide;
+                }
+                else
+                {
+                    originalBodyMeshBeforeHide = null;
+                    bodyRendererWithHiddenParts = null;
+                    return;
+                }
+            }
+
+            if (bodyRendererWithHiddenParts == bodyRenderer &&
+                originalBodyMeshBeforeHide != null &&
+                !IsRuntimeTrimmedBodyMesh(originalBodyMeshBeforeHide))
             {
                 return;
             }
 
-            if (originalBodyMeshBeforeHide == null ||
-                bodyRendererWithHiddenParts != bodyRenderer)
+            if (!IsRuntimeTrimmedBodyMesh(currentMesh) &&
+                (originalBodyMeshBeforeHide == null || bodyRendererWithHiddenParts != bodyRenderer))
             {
-                originalBodyMeshBeforeHide = bodyRenderer.sharedMesh;
+                originalBodyMeshBeforeHide = currentMesh;
                 bodyRendererWithHiddenParts = bodyRenderer;
             }
         }
 
+        private static bool IsRuntimeTrimmedBodyMesh(Mesh mesh)
+        {
+            return mesh != null &&
+                   mesh.name.IndexOf("_Without", StringComparison.Ordinal) >= 0;
+        }
+
         private void HideBodyTorsoUnderClothing(SkinnedMeshRenderer bodyRenderer)
         {
-            RefreshHiddenBodyParts(bodyRenderer);
+            RefreshHiddenBodyParts(bodyRenderer, hideHandsOnBody: true);
         }
 
         private static Mesh GetOrCreateBodyWithoutTorsoMesh(
@@ -681,6 +719,8 @@ namespace ShooterPrototype.Player
             return trimmedMesh;
         }
 
+        private const int HandMeshTrimCacheVersion = 2;
+
         private static Mesh GetOrCreateBodyWithoutHandsMesh(
             SkinnedMeshRenderer bodyRenderer,
             float minHandBoneWeight)
@@ -691,7 +731,7 @@ namespace ShooterPrototype.Player
                 return null;
             }
 
-            var cacheKey = sourceMesh.GetInstanceID();
+            var cacheKey = BuildHandMeshCacheKey(sourceMesh);
             if (BodyWithoutHandsMeshCache.TryGetValue(cacheKey, out var cached) && cached != null)
             {
                 return cached;
@@ -706,6 +746,11 @@ namespace ShooterPrototype.Player
             }
 
             return trimmedMesh;
+        }
+
+        private static long BuildHandMeshCacheKey(Mesh sourceMesh)
+        {
+            return ((long)sourceMesh.GetInstanceID() << 8) | HandMeshTrimCacheVersion;
         }
 
         private void RestoreHiddenBodyTorso()
@@ -1962,17 +2007,30 @@ namespace ShooterPrototype.Player
             for (var i = 0; i < skinnedMeshes.Length; i++)
             {
                 var candidate = skinnedMeshes[i];
-                if (candidate == null ||
-                    candidate.sharedMesh == null ||
-                    IsClothingRenderer(candidate))
+                if (candidate == null || IsClothingRenderer(candidate))
                 {
                     continue;
                 }
 
-                var score = candidate.sharedMesh.vertexCount;
-                if (candidate.gameObject.name.StartsWith("Ch", StringComparison.Ordinal))
+                if (!CharacterModelApplier.IsCharacterBodyRenderer(candidate))
                 {
-                    score += 100000;
+                    continue;
+                }
+
+                var score = 0;
+                if (candidate.sharedMesh != null)
+                {
+                    score += candidate.sharedMesh.vertexCount;
+                }
+
+                if (candidate.gameObject.activeInHierarchy)
+                {
+                    score += 1000;
+                }
+
+                if (candidate.enabled)
+                {
+                    score += 500;
                 }
 
                 if (score <= bestScore)
@@ -2216,6 +2274,25 @@ namespace ShooterPrototype.Player
                 "[RemoteResourceClothingApplier] Could not hide body feet under boots. " +
                 "Enable Read/Write on the Ch36 body mesh import settings.",
                 bodyRenderer);
+        }
+
+        private void LogHandBonesHiddenOnce(SkinnedMeshRenderer renderer, string context)
+        {
+            if (loggedHandBonesOnce || renderer == null)
+            {
+                return;
+            }
+
+            loggedHandBonesOnce = true;
+            var bones = SyntyFirstPersonArmsMeshBuilder.CollectResolvedHandBoneNamesToHide(renderer.bones);
+            var tokens = string.Join(", ", SyntyFirstPersonArmsMeshBuilder.HandHideBoneNameTokens);
+            Debug.Log(
+                $"[RemoteResourceClothingApplier] Glove palm hide ({context}). " +
+                $"Matched rig bones ({bones.Count}): {string.Join(", ", bones)}. " +
+                $"Name tokens: {tokens}. " +
+                "Preserved forearm bones: ForeArm, LowerArm, Elbow. " +
+                $"Vertices stay when hand weight must exceed forearm weight; triangles at the wrist stay unless all 3 corners are palm.",
+                renderer);
         }
 
         private void WarnHandHideFailedOnce(SkinnedMeshRenderer bodyRenderer)

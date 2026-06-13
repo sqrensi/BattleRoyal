@@ -13,6 +13,12 @@ namespace ShooterPrototype.Player
 
     internal static class SyntyFirstPersonArmsMeshBuilder
     {
+        private enum TriangleCullMode
+        {
+            DropIfAnyVertexMarked,
+            DropIfAllVerticesMarked
+        }
+
         private static readonly string[] FullArmBoneNameTokens =
         {
             "Clavicle",
@@ -63,6 +69,28 @@ namespace ShooterPrototype.Player
             "Pinky",
             "Little"
         };
+
+        public static IReadOnlyList<string> HandHideBoneNameTokens => HandOnlyBoneNameTokens;
+
+        public static List<string> CollectResolvedHandBoneNamesToHide(IReadOnlyList<Transform> bones)
+        {
+            var names = new List<string>(8);
+            if (bones == null)
+            {
+                return names;
+            }
+
+            for (var i = 0; i < bones.Count; i++)
+            {
+                var bone = bones[i];
+                if (bone != null && IsHandBoneNameToHide(bone.name))
+                {
+                    names.Add(bone.name);
+                }
+            }
+
+            return names;
+        }
 
         public static Mesh ExtractArmsMesh(
             SkinnedMeshRenderer source,
@@ -484,6 +512,8 @@ namespace ShooterPrototype.Player
                 return null;
             }
 
+            var forearmBoneIndices = CollectForearmBoneIndicesToPreserve(source.bones);
+
             var mesh = source.sharedMesh;
             if (!mesh.isReadable)
             {
@@ -504,7 +534,11 @@ namespace ShooterPrototype.Player
             var vertexIsHand = new bool[vertices.Length];
             for (var i = 0; i < vertices.Length; i++)
             {
-                vertexIsHand[i] = IsHandWeighted(boneWeights[i], handBoneIndices, minHandBoneWeight);
+                vertexIsHand[i] = ShouldHidePalmVertex(
+                    boneWeights[i],
+                    handBoneIndices,
+                    forearmBoneIndices,
+                    minHandBoneWeight);
             }
 
             return BuildFilteredMesh(
@@ -513,7 +547,8 @@ namespace ShooterPrototype.Player
                 boneWeights,
                 vertexIsHand,
                 includeWhenMarked: false,
-                mesh.name + "_WithoutHands");
+                mesh.name + "_WithoutHands",
+                TriangleCullMode.DropIfAllVerticesMarked);
         }
 
         private static HashSet<int> CollectHandBoneIndicesToHide(IReadOnlyList<Transform> bones)
@@ -534,6 +569,88 @@ namespace ShooterPrototype.Player
             }
 
             return indices;
+        }
+
+        private static HashSet<int> CollectForearmBoneIndicesToPreserve(IReadOnlyList<Transform> bones)
+        {
+            var indices = new HashSet<int>();
+            if (bones == null)
+            {
+                return indices;
+            }
+
+            for (var i = 0; i < bones.Count; i++)
+            {
+                var bone = bones[i];
+                if (bone != null && IsForearmBoneName(bone.name))
+                {
+                    indices.Add(i);
+                }
+            }
+
+            return indices;
+        }
+
+        private static bool IsForearmBoneName(string boneName)
+        {
+            if (string.IsNullOrWhiteSpace(boneName))
+            {
+                return false;
+            }
+
+            var coreName = ExtractBoneCoreName(boneName);
+            if (coreName.IndexOf("Hand", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                coreName.IndexOf("Finger", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                coreName.IndexOf("Thumb", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return false;
+            }
+
+            return coreName.IndexOf("ForeArm", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   coreName.IndexOf("LowerArm", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   coreName.IndexOf("Elbow", System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool ShouldHidePalmVertex(
+            BoneWeight boneWeight,
+            HashSet<int> handBoneIndices,
+            HashSet<int> forearmBoneIndices,
+            float minHandBoneWeight)
+        {
+            var handWeight = SumBoneWeight(boneWeight, handBoneIndices);
+            if (handWeight < minHandBoneWeight)
+            {
+                return false;
+            }
+
+            var forearmWeight = SumBoneWeight(boneWeight, forearmBoneIndices);
+            return handWeight > forearmWeight;
+        }
+
+        private static float SumBoneWeight(BoneWeight boneWeight, HashSet<int> boneIndices)
+        {
+            var total = 0f;
+            if (boneIndices.Contains(boneWeight.boneIndex0))
+            {
+                total += boneWeight.weight0;
+            }
+
+            if (boneIndices.Contains(boneWeight.boneIndex1))
+            {
+                total += boneWeight.weight1;
+            }
+
+            if (boneIndices.Contains(boneWeight.boneIndex2))
+            {
+                total += boneWeight.weight2;
+            }
+
+            if (boneIndices.Contains(boneWeight.boneIndex3))
+            {
+                total += boneWeight.weight3;
+            }
+
+            return total;
         }
 
         private static bool IsHandBoneNameToHide(string boneName)
@@ -567,28 +684,7 @@ namespace ShooterPrototype.Player
 
         private static bool IsHandWeighted(BoneWeight boneWeight, HashSet<int> handBoneIndices, float minHandBoneWeight)
         {
-            var handWeight = 0f;
-            if (handBoneIndices.Contains(boneWeight.boneIndex0))
-            {
-                handWeight += boneWeight.weight0;
-            }
-
-            if (handBoneIndices.Contains(boneWeight.boneIndex1))
-            {
-                handWeight += boneWeight.weight1;
-            }
-
-            if (handBoneIndices.Contains(boneWeight.boneIndex2))
-            {
-                handWeight += boneWeight.weight2;
-            }
-
-            if (handBoneIndices.Contains(boneWeight.boneIndex3))
-            {
-                handWeight += boneWeight.weight3;
-            }
-
-            return handWeight >= minHandBoneWeight;
+            return SumBoneWeight(boneWeight, handBoneIndices) >= minHandBoneWeight;
         }
 
         private static HashSet<int> CollectFootBoneIndicesToHide(IReadOnlyList<Transform> bones)
@@ -829,7 +925,8 @@ namespace ShooterPrototype.Player
             BoneWeight[] boneWeights,
             bool[] vertexMask,
             bool includeWhenMarked,
-            string meshName)
+            string meshName,
+            TriangleCullMode triangleCullMode = TriangleCullMode.DropIfAnyVertexMarked)
         {
             var normals = mesh.normals;
             var tangents = mesh.tangents;
@@ -844,9 +941,7 @@ namespace ShooterPrototype.Player
                     var a = triangles[i];
                     var b = triangles[i + 1];
                     var c = triangles[i + 2];
-                    var keep = includeWhenMarked
-                        ? vertexMask[a] || vertexMask[b] || vertexMask[c]
-                        : !vertexMask[a] && !vertexMask[b] && !vertexMask[c];
+                    var keep = ShouldKeepTriangle(vertexMask, includeWhenMarked, triangleCullMode, a, b, c);
                     if (!keep)
                     {
                         continue;
@@ -933,6 +1028,27 @@ namespace ShooterPrototype.Player
             filteredMesh.SetTriangles(newTriangles, 0);
             filteredMesh.RecalculateBounds();
             return filteredMesh;
+        }
+
+        private static bool ShouldKeepTriangle(
+            bool[] vertexMask,
+            bool includeWhenMarked,
+            TriangleCullMode triangleCullMode,
+            int a,
+            int b,
+            int c)
+        {
+            if (includeWhenMarked)
+            {
+                return vertexMask[a] || vertexMask[b] || vertexMask[c];
+            }
+
+            if (triangleCullMode == TriangleCullMode.DropIfAllVerticesMarked)
+            {
+                return !(vertexMask[a] && vertexMask[b] && vertexMask[c]);
+            }
+
+            return !vertexMask[a] && !vertexMask[b] && !vertexMask[c];
         }
     }
 }
