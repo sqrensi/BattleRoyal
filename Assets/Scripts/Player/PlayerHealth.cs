@@ -53,6 +53,8 @@ namespace ShooterPrototype.Player
         private int deathSequence;
         private int lastNetworkDeathSeq = -1;
         private Coroutine simpleDeathFallRoutine;
+        private Coroutine deathFallMonitorRoutine;
+        private bool deathFallLandedNotified;
         private Vector3 deathFallBasePosition;
         private Vector3 deathFallDirection = Vector3.forward;
         private MatchPresenceSync presenceSync;
@@ -285,6 +287,10 @@ namespace ShooterPrototype.Player
             if (enableDeathFall)
             {
                 StartDeathFallPhysics();
+                if (eliminationMode && !networkMode)
+                {
+                    BeginDeathFallLandingMonitor();
+                }
             }
 
             if (startRespawn && !eliminationMode)
@@ -541,8 +547,96 @@ namespace ShooterPrototype.Player
             }
         }
 
+        private void BeginDeathFallLandingMonitor()
+        {
+            if (deathFallMonitorRoutine != null)
+            {
+                StopCoroutine(deathFallMonitorRoutine);
+            }
+
+            deathFallLandedNotified = false;
+            deathFallMonitorRoutine = StartCoroutine(MonitorDeathFallLandingRoutine());
+        }
+
+        private IEnumerator MonitorDeathFallLandingRoutine()
+        {
+            yield return new WaitForSecondsRealtime(0.2f);
+
+            var elapsed = 0f;
+            var settledFor = 0f;
+            const float settleHoldSeconds = 0.25f;
+            const float maxWaitSeconds = 8f;
+
+            while (isDead && elapsed < maxWaitSeconds)
+            {
+                elapsed += Time.deltaTime;
+                if (IsDeathBodySettled())
+                {
+                    settledFor += Time.deltaTime;
+                    if (settledFor >= settleHoldSeconds)
+                    {
+                        NotifyDeathFallLanded();
+                        break;
+                    }
+                }
+                else
+                {
+                    settledFor = 0f;
+                }
+
+                yield return null;
+            }
+
+            if (isDead && !deathFallLandedNotified)
+            {
+                NotifyDeathFallLanded();
+            }
+
+            deathFallMonitorRoutine = null;
+        }
+
+        private bool IsDeathBodySettled()
+        {
+            if (deathRigidbody == null || !deathRigidbody.gameObject.activeInHierarchy)
+            {
+                return IsDeathBodyGrounded();
+            }
+
+            return deathRigidbody.linearVelocity.sqrMagnitude <= 0.35f && IsDeathBodyGrounded();
+        }
+
+        private bool IsDeathBodyGrounded()
+        {
+            var probeOrigin = transform.position + Vector3.up * 0.35f;
+            return Physics.Raycast(
+                probeOrigin,
+                Vector3.down,
+                1.2f,
+                ~0,
+                QueryTriggerInteraction.Ignore);
+        }
+
+        private void NotifyDeathFallLanded()
+        {
+            if (deathFallLandedNotified || networkMode || !eliminationMode)
+            {
+                return;
+            }
+
+            deathFallLandedNotified = true;
+            TryBindRealtimeClient();
+            realtimeClient?.SendDeathFallLanded();
+            presenceSync?.FlushLocalPose();
+        }
+
         private void StopDeathFallPhysics()
         {
+            if (deathFallMonitorRoutine != null)
+            {
+                StopCoroutine(deathFallMonitorRoutine);
+                deathFallMonitorRoutine = null;
+            }
+
             if (simpleDeathFallRoutine != null)
             {
                 StopCoroutine(simpleDeathFallRoutine);

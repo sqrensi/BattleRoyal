@@ -74,6 +74,7 @@ namespace ShooterPrototype.Player
         private ProceduralLocomotionRig localLocomotionRig;
         private PlayerHealth localHealth;
         private PlayerMedkitController localMedkitController;
+        private MatchBattleRoyaleController battleRoyaleController;
         private string localCharacterModelName = string.Empty;
         private bool transportEventsSubscribed;
         private readonly Dictionary<string, RemoteAvatar> remoteAvatars = new Dictionary<string, RemoteAvatar>();
@@ -540,6 +541,11 @@ namespace ShooterPrototype.Player
         public void FlushLocalPose()
         {
             SendLocalPose(forceImmediate: true);
+        }
+
+        public void ResetSelfAuthoritativeReconcileCursor()
+        {
+            lastReconciledSelfAuthSampleTick = -1;
         }
 
         public void AcknowledgeWeaponPickupSeq(int weaponPickupSeq)
@@ -1133,6 +1139,16 @@ namespace ShooterPrototype.Player
             return Mathf.Max(backSeconds, backByTicks);
         }
 
+        private bool ShouldSuppressLocalPoseReconcile()
+        {
+            if (battleRoyaleController == null)
+            {
+                battleRoyaleController = FindFirstObjectByType<MatchBattleRoyaleController>();
+            }
+
+            return battleRoyaleController != null && battleRoyaleController.ShouldSuppressPoseReconcile;
+        }
+
         private void ApplySelfAuthoritativePose(RealtimeTransportClient.SelfAuthoritativePose selfPose)
         {
             if (selfPose == null || selfPose.position == null || localFpsController == null)
@@ -1160,6 +1176,11 @@ namespace ShooterPrototype.Player
             }
 
             if (!Application.isFocused)
+            {
+                return;
+            }
+
+            if (ShouldSuppressLocalPoseReconcile())
             {
                 return;
             }

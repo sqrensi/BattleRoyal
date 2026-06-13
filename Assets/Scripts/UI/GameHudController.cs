@@ -91,6 +91,7 @@ namespace ShooterPrototype.UI
 
             if (isGameScene)
             {
+                ResetMatchOverlay();
                 RefreshConnectionText();
                 RefreshPlayersText();
                 RefreshPingText();
@@ -169,6 +170,13 @@ namespace ShooterPrototype.UI
             }
         }
 
+        public void ResetMatchOverlay()
+        {
+            SetVictoryBanner(false);
+            SetMatchStatusMessage(string.Empty);
+            SetKillCount(0);
+        }
+
         public void RequestReturnToMenu(string reason)
         {
             if (returnToMenuRequested)
@@ -177,6 +185,7 @@ namespace ShooterPrototype.UI
             }
 
             returnToMenuRequested = true;
+            ResetMatchOverlay();
             networkLauncher?.DisconnectClient(reason ?? "match ended");
             StartCoroutine(LeaveMatchAndReturnRoutine());
         }
@@ -188,6 +197,7 @@ namespace ShooterPrototype.UI
                 backButton.interactable = false;
             }
 
+            ResetMatchOverlay();
             StartCoroutine(LeaveMatchAndReturnRoutine());
         }
 
@@ -619,6 +629,7 @@ namespace ShooterPrototype.UI
 
             realtimeClient?.Disconnect();
             networkLauncher?.DisconnectClient("Client returned to MainMenu.");
+            ResetMatchOverlay();
             SceneManager.LoadScene(mainMenuSceneName);
 
             if (backButton != null)

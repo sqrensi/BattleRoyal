@@ -419,6 +419,12 @@ namespace ShooterPrototype.Network
         }
 
         [Serializable]
+        private sealed class DeathFallLandedMessage
+        {
+            public string type;
+        }
+
+        [Serializable]
         private sealed class PlaneJumpMessage
         {
             public string type;
@@ -1449,6 +1455,19 @@ namespace ShooterPrototype.Network
             _ = SendJsonAsync(new PlaneLandedMessage
             {
                 type = "plane_landed"
+            }, cts != null ? cts.Token : CancellationToken.None);
+        }
+
+        public void SendDeathFallLanded()
+        {
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            _ = SendJsonAsync(new DeathFallLandedMessage
+            {
+                type = "death_fall_landed"
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 

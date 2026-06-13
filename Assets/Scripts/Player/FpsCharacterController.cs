@@ -192,6 +192,19 @@ namespace ShooterPrototype.Player
             externalHorizontalVelocity = Vector2.zero;
         }
 
+        public void ApplyLookOrientation(float yawDegrees, float pitchDegrees)
+        {
+            transform.rotation = Quaternion.Euler(0f, yawDegrees, 0f);
+            recoilPitchOffset = 0f;
+            var hipUpLimit = Mathf.Clamp(maxLookAngle, 1f, 89f);
+            var hipDownLimit = Mathf.Clamp(hipMaxLookAngle, 1f, 89f);
+            cameraPitch = Mathf.Clamp(pitchDegrees, -hipUpLimit, hipDownLimit);
+            if (cameraPivot != null)
+            {
+                cameraPivot.localRotation = Quaternion.Euler(cameraPitch + recoilPitchOffset, 0f, 0f);
+            }
+        }
+
         /// <summary>
         /// During medkit use: crouch allowed; WASD/jump cancel medkit — jump and move apply same frame after cancel.
         /// </summary>

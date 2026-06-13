@@ -85,11 +85,13 @@ const BR_LOBBY_COUNTDOWN_SECONDS = Math.max(3, toInt(process.env.BR_LOBBY_COUNTD
 const BR_PLANE_DURATION_SECONDS = Math.max(10, toInt(process.env.BR_PLANE_DURATION_SECONDS, 45));
 const BR_PLANE_ALTITUDE = Math.max(20, Number(process.env.BR_PLANE_ALTITUDE) || 120);
 const BR_PLANE_HALF_LENGTH = Math.max(100, Number(process.env.BR_PLANE_HALF_LENGTH) || 400);
+const BR_PLANE_START_RADIUS = Math.max(40, Number(process.env.BR_PLANE_START_RADIUS) || 120);
 const BR_PLANE_SPEED = Math.max(5, Number(process.env.BR_PLANE_SPEED) || 35);
 const BR_DEATH_DISCONNECT_SECONDS = Math.max(1, toInt(process.env.BR_DEATH_DISCONNECT_SECONDS, 5));
 const BR_WINNER_DISCONNECT_SECONDS = Math.max(3, toInt(process.env.BR_WINNER_DISCONNECT_SECONDS, 10));
 const BR_PLANE_AUTO_JUMP_SECONDS_BEFORE_END = Math.max(1, toInt(process.env.BR_PLANE_AUTO_JUMP_SECONDS_BEFORE_END, 5));
 const BR_DROP_MAX_DISTANCE_FROM_CENTER = Math.max(10, Number(process.env.BR_DROP_MAX_DISTANCE_FROM_CENTER) || 60);
+const BR_DEATH_FALL_LAND_TIMEOUT_SECONDS = Math.max(2, toInt(process.env.BR_DEATH_FALL_LAND_TIMEOUT_SECONDS, 8));
 const BR_MATCH_STATE_BROADCAST_MS = Math.max(100, toInt(process.env.BR_MATCH_STATE_BROADCAST_MS, 250));
 
 setInterval(() => {
@@ -429,6 +431,11 @@ wsServer.on("connection", (socket) => {
         return;
       }
 
+      if (message.type === "death_fall_landed") {
+        handleWsDeathFallLanded(socket);
+        return;
+      }
+
       if (message.type === "ping") {
         socket.send(JSON.stringify({
           type: "pong",
@@ -611,9 +618,9 @@ function createBattleRoyaleState() {
     winnerTicketId: "",
     mapCenterX: 0,
     mapCenterZ: 0,
-    planeStartX: -BR_PLANE_HALF_LENGTH,
+    planeStartX: -BR_PLANE_START_RADIUS,
     planeStartZ: 0,
-    planeEndX: BR_PLANE_HALF_LENGTH,
+    planeEndX: BR_PLANE_START_RADIUS,
     planeEndZ: 0,
     planeY: BR_PLANE_ALTITUDE,
     planeSpeed: BR_PLANE_SPEED,
@@ -625,6 +632,11 @@ function createBattleRoyaleState() {
     eliminatedTickets: new Set(),
     disconnectAtByTicket: new Map(),
     killCountByTicket: new Map(),
+    deathFallPendingTickets: new Set(),
+    deathFallPendingSinceByTicket: new Map(),
+    pendingWinnerTicketId: "",
+    planePathAngle: 0,
+    planePathInitialized: false,
     lastStateBroadcastMs: 0
   };
 }
@@ -1420,6 +1432,14 @@ function handleWsPose(socket, message) {
     presence.velocityZ = 0;
     presence.verticalVelocity = 0;
     positionBranch = "dead";
+  } else if (isBattleRoyaleParachuting(ticket)) {
+    presence.position = { x: position.x, y: position.y, z: position.z };
+    presence.yaw = yaw;
+    presence.isGrounded = isGrounded;
+    presence.velocityX = 0;
+    presence.velocityY = 0;
+    presence.velocityZ = 0;
+    positionBranch = "br_parachute";
   } else if (!inputAuth) {
     const clamped = clampPositionToMovement(presence, position, currentServerTick);
     presence.position = clamped;
@@ -2710,10 +2730,16 @@ function handleWsRegisterDamageZone(socket, message) {
   if (br) {
     br.mapCenterX = mapCenterX;
     br.mapCenterZ = mapCenterZ;
-    br.planeStartX = mapCenterX - BR_PLANE_HALF_LENGTH;
-    br.planeEndX = mapCenterX + BR_PLANE_HALF_LENGTH;
-    br.planeStartZ = mapCenterZ;
-    br.planeEndZ = mapCenterZ;
+    if (!br.planePathInitialized) {
+      br.planePathAngle = Math.random() * Math.PI * 2;
+      br.planePathInitialized = true;
+    }
+    const pathDx = Math.cos(br.planePathAngle);
+    const pathDz = Math.sin(br.planePathAngle);
+    br.planeStartX = mapCenterX + (pathDx * BR_PLANE_START_RADIUS);
+    br.planeStartZ = mapCenterZ + (pathDz * BR_PLANE_START_RADIUS);
+    br.planeEndX = mapCenterX - (pathDx * BR_PLANE_START_RADIUS);
+    br.planeEndZ = mapCenterZ - (pathDz * BR_PLANE_START_RADIUS);
     br.planeY = BR_PLANE_ALTITUDE;
     br.planeSpeed = BR_PLANE_SPEED;
   }
@@ -4103,6 +4129,21 @@ function tryRestoreAnyActiveMatch() {
   }
 }
 
+function isBattleRoyaleParachuting(ticket) {
+  if (!ticket || !ticket.matchId) {
+    return false;
+  }
+
+  const session = matchesById.get(ticket.matchId);
+  const br = session ? ensureBattleRoyaleState(session) : null;
+  if (!br) {
+    return false;
+  }
+
+  const ticketId = ticket.ticketId;
+  return br.jumpedTickets.has(ticketId) && !br.landedTickets.has(ticketId);
+}
+
 function isBattleRoyaleRespawnBlocked(ticket) {
   if (!ticket || !ticket.matchId) {
     return false;
@@ -4271,10 +4312,35 @@ function onBattleRoyalePlayerDied(ticket) {
   }
   br.aliveTickets.delete(ticketId);
   br.eliminatedTickets.add(ticketId);
+  br.deathFallPendingTickets.add(ticketId);
+  br.deathFallPendingSinceByTicket.set(ticketId, Date.now());
   br.disconnectAtByTicket.set(
     ticketId,
     Date.now() + (BR_DEATH_DISCONNECT_SECONDS * 1000)
   );
+  checkBattleRoyaleWinner(session, Date.now());
+  broadcastMatchState(session.matchId);
+}
+
+function handleWsDeathFallLanded(socket) {
+  const meta = wsMetaBySocket.get(socket);
+  if (!meta || !meta.ticketId) {
+    return;
+  }
+
+  const ticket = ticketsById.get(meta.ticketId);
+  if (!ticket || ticket.status !== "Matched" || !ticket.matchId) {
+    return;
+  }
+
+  const session = matchesById.get(ticket.matchId);
+  const br = ensureBattleRoyaleState(session);
+  if (!br || !br.eliminatedTickets.has(ticket.ticketId)) {
+    return;
+  }
+
+  br.deathFallPendingTickets.delete(ticket.ticketId);
+  br.deathFallPendingSinceByTicket.delete(ticket.ticketId);
   checkBattleRoyaleWinner(session, Date.now());
   broadcastMatchState(session.matchId);
 }
@@ -4290,12 +4356,19 @@ function checkBattleRoyaleWinner(session, nowMs) {
   }
 
   if (br.aliveTickets.size > 1) {
+    br.pendingWinnerTicketId = "";
     return;
   }
 
   const winnerTicketId = br.aliveTickets.size === 1
     ? Array.from(br.aliveTickets)[0]
     : "";
+  br.pendingWinnerTicketId = winnerTicketId;
+
+  if (br.deathFallPendingTickets.size > 0) {
+    return;
+  }
+
   startBattleRoyaleEnding(session, nowMs, winnerTicketId);
 }
 
@@ -4375,6 +4448,21 @@ function handleWsPlaneLanded(socket) {
   const ticket = ticketsById.get(meta.ticketId);
   if (!ticket || ticket.status !== "Matched" || !ticket.matchId) {
     return;
+  }
+
+  const input = ticket.inputState;
+  const presence = ticket.presence;
+  if (input && presence && Number.isFinite(input.clientX)) {
+    presence.position = {
+      x: normalizeNumber(input.clientX, presence.position?.x || 0),
+      y: normalizeNumber(input.clientY, presence.position?.y || 0),
+      z: normalizeNumber(input.clientZ, presence.position?.z || 0)
+    };
+    presence.isGrounded = true;
+    presence.velocityX = 0;
+    presence.velocityY = 0;
+    presence.velocityZ = 0;
+    presence.verticalVelocity = 0;
   }
 
   onBattleRoyalePlayerLanded(ticket);
@@ -4460,7 +4548,7 @@ function buildMatchStatePayload(session, ticketId) {
   }
 
   const hasLanded = ticketId ? br.landedTickets.has(ticketId) : false;
-  const inCombat = br.phase !== "ending" && (hasLanded || br.phase === "playing");
+  const inCombat = br.phase !== "ending" && hasLanded;
   const isLocalWinner = !!(ticketId && br.winnerTicketId && ticketId === br.winnerTicketId && br.phase === "ending");
   let winnerDisconnectSeconds = 0;
   if (isLocalWinner && br.disconnectAtByTicket.has(ticketId)) {
@@ -4575,6 +4663,12 @@ function forceBattleRoyaleDisconnect(ticketId, reason) {
         br.dropPositionsByTicket.delete(ticketId);
       }
       br.disconnectAtByTicket.delete(ticketId);
+      if (br.deathFallPendingTickets) {
+        br.deathFallPendingTickets.delete(ticketId);
+      }
+      if (br.deathFallPendingSinceByTicket) {
+        br.deathFallPendingSinceByTicket.delete(ticketId);
+      }
     }
     if (session) {
       session.ticketIds.delete(ticketId);
@@ -4644,6 +4738,12 @@ function handleBattleRoyalePlayerLeft(ticketId) {
     br.dropPositionsByTicket.delete(ticketId);
   }
   br.disconnectAtByTicket.delete(ticketId);
+  if (br.deathFallPendingTickets) {
+    br.deathFallPendingTickets.delete(ticketId);
+  }
+  if (br.deathFallPendingSinceByTicket) {
+    br.deathFallPendingSinceByTicket.delete(ticketId);
+  }
 
   if (wasAlive && (br.phase === "playing" || br.phase === "plane")) {
     checkBattleRoyaleWinner(session, Date.now());
@@ -4663,6 +4763,20 @@ function tickBattleRoyaleMatches(nowMs) {
     }
 
     syncBattleRoyalePresence(session, nowMs);
+
+    if (br.deathFallPendingSinceByTicket && br.deathFallPendingSinceByTicket.size > 0) {
+      const timeoutMs = BR_DEATH_FALL_LAND_TIMEOUT_SECONDS * 1000;
+      for (const [ticketId, pendingSinceMs] of br.deathFallPendingSinceByTicket.entries()) {
+        if (nowMs - pendingSinceMs >= timeoutMs) {
+          br.deathFallPendingTickets.delete(ticketId);
+          br.deathFallPendingSinceByTicket.delete(ticketId);
+        }
+      }
+
+      if (br.aliveTickets.size <= 1 && br.deathFallPendingTickets.size === 0) {
+        checkBattleRoyaleWinner(session, nowMs);
+      }
+    }
 
     if (br.phase === "countdown" && br.countdownEndsAtMs > 0 && nowMs >= br.countdownEndsAtMs) {
       startBattleRoyalePlane(session, nowMs);

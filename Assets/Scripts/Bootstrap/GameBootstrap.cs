@@ -196,6 +196,7 @@ namespace ShooterPrototype.Bootstrap
             var existing = FindFirstObjectByType<MatchBattleRoyaleController>();
             if (existing != null)
             {
+                existing.PrepareForNewMatch();
                 return;
             }
 
