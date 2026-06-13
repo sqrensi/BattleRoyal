@@ -79,7 +79,7 @@ namespace ShooterPrototype.Player
                 if (!context.WeaponLoadout.TryApplyLocalPickup(
                         definition.ResolvedItemId,
                         kind,
-                        definition.VisualPrefab,
+                        WeaponCatalog.GetWeaponPrefab(kind),
                         pickupMagAmmo))
                 {
                     return new PickupApplyResult(false, "equip_failed");
@@ -88,11 +88,16 @@ namespace ShooterPrototype.Player
                 return PickupApplyResult.Ok;
             }
 
+            var equipPrefab = WeaponCatalog.GetWeaponPrefab(
+                WeaponCatalog.ResolveKindFromItemId(definition.ResolvedItemId));
             if (context.WeaponMount == null ||
-                !context.WeaponMount.EquipWeapon(definition.VisualPrefab))
+                equipPrefab == null ||
+                !context.WeaponMount.EquipWeapon(equipPrefab))
             {
                 return new PickupApplyResult(false, "equip_failed");
             }
+
+            context.WeaponMount.SetThirdPersonWeaponRenderersEnabled(true);
 
             if (context.WeaponController != null)
             {
@@ -106,22 +111,14 @@ namespace ShooterPrototype.Player
                 context.WeaponHolster?.ForceArmedState();
             }
 
+            context.WeaponLoadout?.EnsureActiveWeaponEquipped(true);
+
             return PickupApplyResult.Ok;
         }
 
         private static bool CanPickupAmmo(in PlayerPickupContext context)
         {
-            if (context.WeaponLoadout == null || !context.WeaponLoadout.Loadout.HasAnyWeapon)
-            {
-                return context.WeaponMount != null && context.WeaponMount.HasMountedWeapon;
-            }
-
-            if (context.WeaponController == null)
-            {
-                return true;
-            }
-
-            return true;
+            return context.WeaponLoadout != null || context.WeaponController != null;
         }
 
         private static PickupApplyResult TryApplyAmmo(
@@ -135,22 +132,24 @@ namespace ShooterPrototype.Player
                 return PickupApplyResult.Ok;
             }
 
+            var addedAmmo = Mathf.Max(1, definition.Amount);
+            if (context.WeaponLoadout != null)
+            {
+                context.WeaponLoadout.Loadout.AddSpareAmmo(addedAmmo);
+                if (context.WeaponController != null)
+                {
+                    context.WeaponController.SetReserveAmmo(context.WeaponLoadout.Loadout.SpareAmmo);
+                }
+
+                return PickupApplyResult.Ok;
+            }
+
             if (context.WeaponController == null)
             {
                 return new PickupApplyResult(false, "no_weapon");
             }
 
-            var addedAmmo = Mathf.Max(1, definition.Amount);
-            if (context.WeaponLoadout != null)
-            {
-                context.WeaponLoadout.Loadout.AddSpareAmmo(addedAmmo);
-                context.WeaponController.SetReserveAmmo(context.WeaponLoadout.Loadout.SpareAmmo);
-            }
-            else
-            {
-                context.WeaponController.SetReserveAmmo(context.WeaponController.ReserveAmmo + addedAmmo);
-            }
-
+            context.WeaponController.SetReserveAmmo(context.WeaponController.ReserveAmmo + addedAmmo);
             return PickupApplyResult.Ok;
         }
 

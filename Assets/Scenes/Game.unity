@@ -17005,11 +17005,13 @@ MonoBehaviour:
   spawnSlots: []
   defaultPickupKind: 0
   defaultVisualPrefab: {fileID: 6405278687639400286, guid: c0b9a0ada3999914a8bce7552f3d83a3, type: 3}
+  defaultSniperWeaponPrefab: {fileID: 0}
   defaultItemId: 
   defaultAmount: 1
   worldPickupEulerOffset: {x: 0, y: 0, z: 90}
   worldPickupLocalScale: {x: 1, y: 1, z: 1}
   pickupYOffset: 0.08
+  weaponPickupGroundClearance: 0.06
   dropGroundMask:
     serializedVersion: 2
     m_Bits: 4294967295

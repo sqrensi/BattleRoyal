@@ -19,6 +19,7 @@ namespace ShooterPrototype.Network
         private int lastMeasuredPingMs = -1;
         private string currentMatchId = string.Empty;
         private int currentMatchPlayerCount;
+        private int sessionMatchedPlayerCount;
         private string currentTicketId = string.Empty;
         private string connectedServerAddress = string.Empty;
         private int connectedServerPort;
@@ -203,7 +204,8 @@ namespace ShooterPrototype.Network
         public void SetMatchContext(string matchId, int playerCount, string ticketId = null)
         {
             currentMatchId = string.IsNullOrWhiteSpace(matchId) ? string.Empty : matchId;
-            currentMatchPlayerCount = Mathf.Max(0, playerCount);
+            sessionMatchedPlayerCount = Mathf.Max(0, playerCount);
+            currentMatchPlayerCount = sessionMatchedPlayerCount;
             if (!string.IsNullOrWhiteSpace(ticketId))
             {
                 currentTicketId = ticketId;
@@ -212,13 +214,20 @@ namespace ShooterPrototype.Network
 
         public void SetCurrentMatchPlayerCount(int playerCount)
         {
-            currentMatchPlayerCount = Mathf.Max(0, playerCount);
+            var liveCount = Mathf.Max(0, playerCount);
+            if (sessionMatchedPlayerCount > 0)
+            {
+                liveCount = Mathf.Max(liveCount, sessionMatchedPlayerCount);
+            }
+
+            currentMatchPlayerCount = liveCount;
         }
 
         public void ClearMatchContext()
         {
             currentMatchId = string.Empty;
             currentMatchPlayerCount = 0;
+            sessionMatchedPlayerCount = 0;
             currentTicketId = string.Empty;
         }
 

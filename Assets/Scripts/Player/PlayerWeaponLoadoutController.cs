@@ -266,11 +266,22 @@ namespace ShooterPrototype.Player
 
             ApplyServerLoadout(serverState);
             RefreshWeaponPresentationAfterServerChange();
+            EnsureActiveWeaponEquipped(!serverState.BothHolstered);
         }
 
-        public bool TryApplyLocalPickup(string itemId, WeaponKind kind, GameObject visualPrefab, int magAmmo = -1)
+        public bool TryApplyLocalPickup(string itemId, WeaponKind kind, GameObject equipPrefab, int magAmmo = -1)
         {
-            if (loadout == null || visualPrefab == null)
+            if (loadout == null)
+            {
+                return false;
+            }
+
+            if (equipPrefab == null)
+            {
+                equipPrefab = WeaponCatalog.GetWeaponPrefab(kind);
+            }
+
+            if (equipPrefab == null)
             {
                 return false;
             }
@@ -311,8 +322,36 @@ namespace ShooterPrototype.Player
             }
 
             EquipActiveSlotWeapon(true);
+            EnsureActiveWeaponEquipped(true);
             GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
             return true;
+        }
+
+        public void EnsureActiveWeaponEquipped(bool drawWeapon = true)
+        {
+            if (loadout == null || !loadout.HasAnyWeapon || weaponMount == null)
+            {
+                return;
+            }
+
+            if (!weaponMount.HasMountedWeapon)
+            {
+                EquipActiveSlotWeapon(drawWeapon);
+            }
+
+            if (!weaponMount.HasMountedWeapon)
+            {
+                return;
+            }
+
+            weaponMount.SetThirdPersonWeaponRenderersEnabled(true);
+            if (drawWeapon && weaponHolster != null)
+            {
+                loadout.SetBothHolstered(false);
+                weaponHolster.ForceArmedState();
+            }
+
+            GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
         }
 
         private bool ShouldAnimateServerWeaponChange(in WeaponLoadoutServerState serverState)
@@ -391,6 +430,7 @@ namespace ShooterPrototype.Player
                 GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
             }
 
+            EnsureActiveWeaponEquipped(!serverState.BothHolstered);
             slotSwitchRoutine = null;
         }
 
@@ -444,15 +484,17 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var prefab = WeaponCatalog.GetWeaponPrefab(removed.Kind);
-            if (prefab == null)
+            var sourcePrefab = spawnManager.ResolveWeaponSourcePrefab(removed.Kind);
+            if (sourcePrefab == null)
             {
+                Debug.LogWarning(
+                    $"[WeaponLoadout] No source prefab for dropped {removed.Kind}.");
                 return;
             }
 
             var definition = PickupItemDefinition.Create(
                 PickupKind.Weapon,
-                prefab,
+                sourcePrefab,
                 removed.ItemId,
                 1).WithMagAmmo(0);
             var forward = dropOrigin != null ? dropOrigin.forward : transform.forward;
@@ -518,17 +560,24 @@ namespace ShooterPrototype.Player
                 equipSlotIndex = loadout.IsSlotOccupied(0) ? 0 : 1;
             }
 
-            var prefab = loadout.ResolvePrefabForSlot(equipSlotIndex);
+            var slot = loadout.GetSlot(equipSlotIndex);
+            var prefab = slot.Occupied ? WeaponCatalog.GetWeaponPrefab(slot.Kind) : null;
             if (prefab == null)
             {
                 weaponMount.UnequipWeapon();
+                Debug.LogWarning(
+                    $"[WeaponLoadout] No equip prefab for slot {equipSlotIndex} " +
+                    $"(kind={slot.Kind}).");
                 return;
             }
 
-            if (!weaponMount.ReplaceEquippedWeapon(prefab))
+            if (!weaponMount.ReplaceEquippedWeapon(prefab) && !weaponMount.EquipWeapon(prefab))
             {
+                Debug.LogWarning($"[WeaponLoadout] Failed to mount equip prefab '{prefab.name}'.");
                 return;
             }
+
+            weaponMount.SetThirdPersonWeaponRenderersEnabled(true);
 
             if (weaponController != null)
             {

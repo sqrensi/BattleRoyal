@@ -191,6 +191,12 @@ namespace ShooterPrototype.Player
 
             if (!message.success)
             {
+                if (!string.IsNullOrWhiteSpace(message.reason))
+                {
+                    Debug.LogWarning(
+                        $"[MatchPickupSync] Pickup rejected: {message.reason} spawn={message.spawnId}");
+                }
+
                 localPickupController?.HandlePickupRejected(message.spawnId, message.reason);
                 return;
             }
@@ -332,13 +338,13 @@ namespace ShooterPrototype.Player
             }
 
             var kind = WeaponCatalog.ResolveKindFromItemId(message.itemId);
-            var prefab = WeaponCatalog.GetWeaponPrefab(kind);
-            if (prefab == null)
+            var sourcePrefab = pickupSpawnManager.ResolveWeaponSourcePrefab(kind);
+            if (sourcePrefab == null)
             {
                 return;
             }
 
-            var definition = PickupItemDefinition.Create(PickupKind.Weapon, prefab, message.itemId, 1)
+            var definition = PickupItemDefinition.Create(PickupKind.Weapon, sourcePrefab, message.itemId, 1)
                 .WithMagAmmo(0);
             var position = new Vector3(message.x, message.y, message.z);
             pickupSpawnManager.EnsureDynamicSlot(message.droppedSpawnId, position, Vector3.forward, definition);

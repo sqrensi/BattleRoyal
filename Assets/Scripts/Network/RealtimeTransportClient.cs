@@ -409,6 +409,41 @@ namespace ShooterPrototype.Network
         }
 
         [SerializeField] private string websocketUrl = "ws://127.0.0.1:5051";
+        [SerializeField] private bool useBinaryPoses = true;
+        [SerializeField] private bool useDeltaPoseFilter = true;
+        [SerializeField] private float poseHeartbeatSeconds = 0.1f;
+        [SerializeField] private float posePositionEpsilon = 0.008f;
+        [SerializeField] private float poseYawEpsilon = 0.25f;
+        [SerializeField] private float poseAnimEpsilon = 0.02f;
+
+        public readonly struct NetworkStats
+        {
+            public NetworkStats(
+                int smoothedRoundTripMs,
+                float posesSentPerSecond,
+                float posesSkippedPerSecond,
+                float snapshotsPerSecond,
+                bool useBinaryPoses,
+                float poseHeartbeatSeconds,
+                int latestServerTick)
+            {
+                SmoothedRoundTripMs = smoothedRoundTripMs;
+                PosesSentPerSecond = posesSentPerSecond;
+                PosesSkippedPerSecond = posesSkippedPerSecond;
+                SnapshotsPerSecond = snapshotsPerSecond;
+                UseBinaryPoses = useBinaryPoses;
+                PoseHeartbeatSeconds = poseHeartbeatSeconds;
+                LatestServerTick = latestServerTick;
+            }
+
+            public int SmoothedRoundTripMs { get; }
+            public float PosesSentPerSecond { get; }
+            public float PosesSkippedPerSecond { get; }
+            public float SnapshotsPerSecond { get; }
+            public bool UseBinaryPoses { get; }
+            public float PoseHeartbeatSeconds { get; }
+            public int LatestServerTick { get; }
+        }
 
         private ClientWebSocket socket;
         private CancellationTokenSource cts;
@@ -417,12 +452,20 @@ namespace ShooterPrototype.Network
         private string connectedTicketId = string.Empty;
         private string pendingConnectTicketId = string.Empty;
         private bool isConnecting;
-        private bool hasJoinAck;
+        private volatile bool hasJoinAck;
         private float nextReconnectAllowedAt;
         private PoseMessage pendingPoseMessage;
+        private byte[] pendingPoseBinary;
         private int nextPoseSeq;
         private bool hasPendingPose;
         private bool poseSendLoopRunning;
+        private bool hasLastSentPose;
+        private float lastPoseSentUnscaledTime = -999f;
+        private PoseMessage lastSentPoseMessage;
+        private int posesSentCounter;
+        private int posesSkippedCounter;
+        private int snapshotsCounter;
+        private float networkStatsWindowStart = -1f;
         private float lastSendErrorLogAt;
         private float lastSnapshotDecodeErrorLogAt;
         private readonly object snapshotLock = new object();
@@ -442,8 +485,36 @@ namespace ShooterPrototype.Network
         public int SmoothedRoundTripMs => smoothedRoundTripMs;
         public float LastSnapshotReceivedUnscaledTime => lastSnapshotReceivedUnscaledTime;
         public int LatestServerTick { get; private set; }
-        public int LatestServerTickRate { get; private set; } = 128;
+        public int LatestServerTickRate { get; private set; } = 64;
+
+        public NetworkStats GetNetworkStats()
+        {
+            var now = Time.unscaledTime;
+            if (networkStatsWindowStart < 0f)
+            {
+                networkStatsWindowStart = now;
+            }
+
+            var elapsed = Mathf.Max(0.001f, now - networkStatsWindowStart);
+            var stats = new NetworkStats(
+                smoothedRoundTripMs,
+                posesSentCounter / elapsed,
+                posesSkippedCounter / elapsed,
+                snapshotsCounter / elapsed,
+                useBinaryPoses,
+                poseHeartbeatSeconds,
+                LatestServerTick);
+
+            posesSentCounter = 0;
+            posesSkippedCounter = 0;
+            snapshotsCounter = 0;
+            networkStatsWindowStart = now;
+            return stats;
+        }
+
         public event Action<DamageMessage> DamageReceived;
+        public event Action JoinAcknowledged;
+        public static RealtimeTransportClient Active { get; private set; }
         public event Action<PickupStateMessage> PickupStateReceived;
         public event Action<PickupEventMessage> PickupEventReceived;
         public event Action<PickupResultMessage> PickupResultReceived;
@@ -451,9 +522,48 @@ namespace ShooterPrototype.Network
         public event Action<MedkitResultMessage> MedkitResultReceived;
         public event Action<HealMessage> HealReceived;
 
+        private void Awake()
+        {
+            if (Active != null && Active != this)
+            {
+                Debug.LogWarning("[RealtimeTransportClient] Duplicate instance detected; keeping the first Active reference.");
+                return;
+            }
+
+            Active = this;
+        }
+
         private void Update()
         {
             ProcessMainThreadActions();
+        }
+
+        private void OnDestroy()
+        {
+            if (Active == this)
+            {
+                Active = null;
+            }
+
+            _ = DisconnectInternalAsync();
+        }
+
+        private void MarkJoinAcknowledged(string source)
+        {
+            if (hasJoinAck)
+            {
+                return;
+            }
+
+            hasJoinAck = true;
+            ResetPoseSendCache();
+            MovementNetworkDiagnostics.LogWsState(source, connectedTicketId, "ready=1");
+            JoinAcknowledged?.Invoke();
+        }
+
+        private void RequestJoinAcknowledgement(string source)
+        {
+            EnqueueMainThreadAction(() => MarkJoinAcknowledged(source));
         }
 
         private void EnqueueMainThreadAction(Action action)
@@ -526,13 +636,6 @@ namespace ShooterPrototype.Network
                 return;
             }
 
-            if (IsConnected &&
-                string.Equals(connectedTicketId, ticketId, StringComparison.Ordinal) &&
-                !IsReady)
-            {
-                return;
-            }
-
             if (isConnecting)
             {
                 return;
@@ -546,6 +649,13 @@ namespace ShooterPrototype.Network
         public void Disconnect()
         {
             _ = DisconnectInternalAsync();
+        }
+
+        public void ResetPoseSendCache()
+        {
+            hasLastSentPose = false;
+            lastPoseSentUnscaledTime = -999f;
+            lastSentPoseMessage = null;
         }
 
         public void SendPose(
@@ -582,7 +692,8 @@ namespace ShooterPrototype.Network
             int weaponSlot1Kind = 255,
             int activeWeaponSlot = 255,
             int activeWeaponMagAmmo = -1,
-            int weaponPickupSeq = 0)
+            int weaponPickupSeq = 0,
+            bool forceImmediate = false)
         {
             if (!IsConnected)
             {
@@ -641,11 +752,235 @@ namespace ShooterPrototype.Network
                 weaponPickupSeq = Math.Max(0, weaponPickupSeq),
                 poseSeq = ++nextPoseSeq
             };
+
+            if (!forceImmediate && useDeltaPoseFilter && !ShouldSendPose(pendingPoseMessage))
+            {
+                posesSkippedCounter++;
+                return;
+            }
+
+            pendingPoseBinary = null;
+            if (useBinaryPoses)
+            {
+                try
+                {
+                    pendingPoseBinary = RealtimePoseBinaryCodec.Encode(BuildPosePacket(pendingPoseMessage));
+                }
+                catch (Exception ex)
+                {
+                    if (Time.unscaledTime - lastSendErrorLogAt > 1f)
+                    {
+                        lastSendErrorLogAt = Time.unscaledTime;
+                        Debug.LogWarning($"[RealtimeTransportClient] Binary pose encode failed, using JSON: {ex.Message}");
+                    }
+                }
+            }
+
             hasPendingPose = true;
             if (!poseSendLoopRunning)
             {
                 _ = FlushLatestPoseLoopAsync();
             }
+        }
+
+        private static RealtimePosePacket BuildPosePacket(PoseMessage message)
+        {
+            return new RealtimePosePacket
+            {
+                PoseSeq = message.poseSeq,
+                CharacterModel = message.characterModel ?? string.Empty,
+                PosX = message.position?.x ?? 0f,
+                PosY = message.position?.y ?? 0f,
+                PosZ = message.position?.z ?? 0f,
+                Yaw = message.yaw,
+                LookPitch = message.lookPitch,
+                IsCrouching = message.isCrouching,
+                IsSprinting = message.isSprinting,
+                IsDead = message.isDead,
+                IsHolstered = message.isHolstered,
+                IsGrounded = message.isGrounded,
+                InputAuth = message.inputAuth,
+                JumpPressed = message.jumpPressed,
+                ShotHasEndPoint = message.shotHasEndPoint,
+                IsAiming = message.isAiming,
+                JumpState = message.jumpState,
+                WeaponKind = message.weaponKind,
+                WeaponSlot0Kind = message.weaponSlot0Kind,
+                WeaponSlot1Kind = message.weaponSlot1Kind,
+                ActiveWeaponSlot = message.activeWeaponSlot,
+                ActiveWeaponMagAmmo = message.activeWeaponMagAmmo,
+                WeaponPickupSeq = message.weaponPickupSeq,
+                ShotSeq = message.shotSeq,
+                ReloadSeq = message.reloadSeq,
+                HitPlayerSeq = message.hitPlayerSeq,
+                FootstepSeq = message.footstepSeq,
+                DeathSeq = message.deathSeq,
+                AnimSpeed = message.animSpeed,
+                AnimPhase = message.animPhase,
+                WallAvoidBlend = message.wallAvoidBlend,
+                MoveInputX = message.moveInputX,
+                MoveInputZ = message.moveInputZ,
+                DeathFallDirX = message.deathFallDirX,
+                DeathFallDirY = message.deathFallDirY,
+                DeathFallDirZ = message.deathFallDirZ,
+                ShotOriginX = message.shotOriginX,
+                ShotOriginY = message.shotOriginY,
+                ShotOriginZ = message.shotOriginZ,
+                ShotDirX = message.shotDirX,
+                ShotDirY = message.shotDirY,
+                ShotDirZ = message.shotDirZ,
+                ShotEndX = message.shotEndX,
+                ShotEndY = message.shotEndY,
+                ShotEndZ = message.shotEndZ
+            };
+        }
+
+        private bool ShouldSendPose(PoseMessage nextPose)
+        {
+            if (!hasLastSentPose || nextPose == null)
+            {
+                return true;
+            }
+
+            if (Time.unscaledTime - lastPoseSentUnscaledTime >= Mathf.Max(0.05f, poseHeartbeatSeconds))
+            {
+                return true;
+            }
+
+            if (nextPose.shotSeq != lastSentPoseMessage.shotSeq ||
+                nextPose.reloadSeq != lastSentPoseMessage.reloadSeq ||
+                nextPose.hitPlayerSeq != lastSentPoseMessage.hitPlayerSeq ||
+                nextPose.footstepSeq != lastSentPoseMessage.footstepSeq ||
+                nextPose.deathSeq != lastSentPoseMessage.deathSeq ||
+                nextPose.weaponPickupSeq != lastSentPoseMessage.weaponPickupSeq)
+            {
+                return true;
+            }
+
+            if (nextPose.isDead != lastSentPoseMessage.isDead ||
+                nextPose.isHolstered != lastSentPoseMessage.isHolstered ||
+                nextPose.isCrouching != lastSentPoseMessage.isCrouching ||
+                nextPose.isSprinting != lastSentPoseMessage.isSprinting ||
+                nextPose.isGrounded != lastSentPoseMessage.isGrounded ||
+                nextPose.inputAuth != lastSentPoseMessage.inputAuth ||
+                nextPose.jumpPressed != lastSentPoseMessage.jumpPressed ||
+                nextPose.jumpState != lastSentPoseMessage.jumpState ||
+                nextPose.weaponKind != lastSentPoseMessage.weaponKind ||
+                nextPose.weaponSlot0Kind != lastSentPoseMessage.weaponSlot0Kind ||
+                nextPose.weaponSlot1Kind != lastSentPoseMessage.weaponSlot1Kind ||
+                nextPose.activeWeaponSlot != lastSentPoseMessage.activeWeaponSlot ||
+                nextPose.activeWeaponMagAmmo != lastSentPoseMessage.activeWeaponMagAmmo ||
+                nextPose.shotHasEndPoint != lastSentPoseMessage.shotHasEndPoint)
+            {
+                return true;
+            }
+
+            if (!string.Equals(nextPose.characterModel, lastSentPoseMessage.characterModel, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            var lastPos = lastSentPoseMessage.position;
+            var nextPos = nextPose.position;
+            if (lastPos == null || nextPos == null)
+            {
+                return true;
+            }
+
+            if (Vector3.Distance(
+                    new Vector3(lastPos.x, lastPos.y, lastPos.z),
+                    new Vector3(nextPos.x, nextPos.y, nextPos.z)) > posePositionEpsilon)
+            {
+                return true;
+            }
+
+            if (Mathf.Abs(Mathf.DeltaAngle(lastSentPoseMessage.yaw, nextPose.yaw)) > poseYawEpsilon)
+            {
+                return true;
+            }
+
+            if (Mathf.Abs(lastSentPoseMessage.lookPitch - nextPose.lookPitch) > 0.5f ||
+                Mathf.Abs(lastSentPoseMessage.animSpeed - nextPose.animSpeed) > poseAnimEpsilon ||
+                Mathf.Abs(lastSentPoseMessage.animPhase - nextPose.animPhase) > poseAnimEpsilon ||
+                Mathf.Abs(lastSentPoseMessage.wallAvoidBlend - nextPose.wallAvoidBlend) > poseAnimEpsilon ||
+                Mathf.Abs(lastSentPoseMessage.moveInputX - nextPose.moveInputX) > 0.03f ||
+                Mathf.Abs(lastSentPoseMessage.moveInputZ - nextPose.moveInputZ) > 0.03f)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private void RememberSentPose(PoseMessage message)
+        {
+            lastSentPoseMessage = ClonePoseMessage(message);
+            hasLastSentPose = true;
+            lastPoseSentUnscaledTime = Time.unscaledTime;
+            posesSentCounter++;
+        }
+
+        private static PoseMessage ClonePoseMessage(PoseMessage source)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+
+            return new PoseMessage
+            {
+                type = source.type,
+                characterModel = source.characterModel,
+                position = source.position == null
+                    ? null
+                    : new PositionDto
+                    {
+                        x = source.position.x,
+                        y = source.position.y,
+                        z = source.position.z
+                    },
+                yaw = source.yaw,
+                lookPitch = source.lookPitch,
+                shotSeq = source.shotSeq,
+                reloadSeq = source.reloadSeq,
+                hitPlayerSeq = source.hitPlayerSeq,
+                footstepSeq = source.footstepSeq,
+                isCrouching = source.isCrouching,
+                isSprinting = source.isSprinting,
+                wallAvoidBlend = source.wallAvoidBlend,
+                isDead = source.isDead,
+                deathSeq = source.deathSeq,
+                deathFallDirX = source.deathFallDirX,
+                deathFallDirY = source.deathFallDirY,
+                deathFallDirZ = source.deathFallDirZ,
+                animSpeed = source.animSpeed,
+                isAiming = source.isAiming,
+                isHolstered = source.isHolstered,
+                isGrounded = source.isGrounded,
+                jumpState = source.jumpState,
+                animPhase = source.animPhase,
+                poseSeq = source.poseSeq,
+                moveInputX = source.moveInputX,
+                moveInputZ = source.moveInputZ,
+                jumpPressed = source.jumpPressed,
+                inputAuth = source.inputAuth,
+                shotOriginX = source.shotOriginX,
+                shotOriginY = source.shotOriginY,
+                shotOriginZ = source.shotOriginZ,
+                shotDirX = source.shotDirX,
+                shotDirY = source.shotDirY,
+                shotDirZ = source.shotDirZ,
+                shotEndX = source.shotEndX,
+                shotEndY = source.shotEndY,
+                shotEndZ = source.shotEndZ,
+                shotHasEndPoint = source.shotHasEndPoint,
+                weaponKind = source.weaponKind,
+                weaponSlot0Kind = source.weaponSlot0Kind,
+                weaponSlot1Kind = source.weaponSlot1Kind,
+                activeWeaponSlot = source.activeWeaponSlot,
+                activeWeaponMagAmmo = source.activeWeaponMagAmmo,
+                weaponPickupSeq = source.weaponPickupSeq
+            };
         }
 
         public bool TryGetLatestSnapshot(out RealtimeSnapshot snapshot)
@@ -665,7 +1000,7 @@ namespace ShooterPrototype.Network
 
         public void TickNetworkMeasurement(float intervalSeconds = 1f)
         {
-            if (!IsReady || socket == null || sendSemaphore == null)
+            if (!IsConnected || socket == null || sendSemaphore == null)
             {
                 return;
             }
@@ -708,7 +1043,7 @@ namespace ShooterPrototype.Network
 
         private async Task SendPingAsync(CancellationToken token)
         {
-            if (!IsReady || socket == null || sendSemaphore == null)
+            if (!IsConnected || socket == null || sendSemaphore == null)
             {
                 return;
             }
@@ -894,6 +1229,12 @@ namespace ShooterPrototype.Network
                 sendSemaphore = new SemaphoreSlim(1, 1);
                 socket = new ClientWebSocket();
                 hasJoinAck = false;
+                ResetPoseSendCache();
+                if (string.IsNullOrWhiteSpace(websocketUrl))
+                {
+                    throw new InvalidOperationException("Realtime websocket URL is not configured.");
+                }
+
                 await socket.ConnectAsync(new Uri(websocketUrl), cts.Token);
 
                 connectedTicketId = ticketId;
@@ -1158,11 +1499,24 @@ namespace ShooterPrototype.Network
                 var joined = JsonUtility.FromJson<JoinedMessage>(json);
                 if (joined != null &&
                     string.Equals(joined.type, "joined", StringComparison.Ordinal) &&
-                    !string.IsNullOrWhiteSpace(joined.ticketId) &&
-                    string.Equals(joined.ticketId, connectedTicketId, StringComparison.Ordinal))
+                    !string.IsNullOrWhiteSpace(joined.ticketId))
                 {
-                    hasJoinAck = true;
-                    MovementNetworkDiagnostics.LogWsState("joined", connectedTicketId, "ready=1");
+                    var ackTicketId = joined.ticketId.Trim();
+                    if (string.IsNullOrWhiteSpace(connectedTicketId))
+                    {
+                        connectedTicketId = ackTicketId;
+                    }
+
+                    if (string.Equals(ackTicketId, connectedTicketId, StringComparison.Ordinal))
+                    {
+                        hasJoinAck = true;
+                        ResetPoseSendCache();
+                        EnqueueMainThreadAction(() =>
+                        {
+                            MovementNetworkDiagnostics.LogWsState("joined", connectedTicketId, "ready=1");
+                            JoinAcknowledged?.Invoke();
+                        });
+                    }
                 }
                 return;
             }
@@ -1204,11 +1558,23 @@ namespace ShooterPrototype.Network
                 return;
             }
 
+            if (!hasJoinAck)
+            {
+                hasJoinAck = true;
+                ResetPoseSendCache();
+                EnqueueMainThreadAction(() =>
+                {
+                    MovementNetworkDiagnostics.LogWsState("joined-via-snapshot", connectedTicketId, "ready=1");
+                    JoinAcknowledged?.Invoke();
+                });
+            }
+
             lock (snapshotLock)
             {
                 latestSnapshot = snapshot;
                 hasLatestSnapshot = true;
                 lastSnapshotReceivedUnscaledTime = Time.unscaledTime;
+                snapshotsCounter++;
                 if (snapshot.serverTick > 0)
                 {
                     LatestServerTick = snapshot.serverTick;
@@ -1234,6 +1600,54 @@ namespace ShooterPrototype.Network
             }
 
             return rttMs > Mathf.Max(120, smoothedRoundTripMs * 2);
+        }
+
+        private async Task SendBinaryAsync(byte[] payload, CancellationToken token)
+        {
+            var targetSocket = socket;
+            var semaphore = sendSemaphore;
+            if (payload == null || payload.Length == 0 || targetSocket == null ||
+                targetSocket.State != WebSocketState.Open || semaphore == null)
+            {
+                return;
+            }
+
+            var segment = new ArraySegment<byte>(payload);
+            try
+            {
+                await semaphore.WaitAsync(token);
+            }
+            catch
+            {
+                return;
+            }
+
+            try
+            {
+                if (targetSocket.State == WebSocketState.Open)
+                {
+                    await targetSocket.SendAsync(segment, WebSocketMessageType.Binary, true, token);
+                }
+            }
+            catch
+            {
+                if (Time.unscaledTime - lastSendErrorLogAt > 1f)
+                {
+                    lastSendErrorLogAt = Time.unscaledTime;
+                    Debug.LogWarning("[RealtimeTransportClient] Binary send failed");
+                }
+            }
+            finally
+            {
+                try
+                {
+                    semaphore.Release();
+                }
+                catch
+                {
+                    // Socket teardown can dispose the semaphore while a send is finishing.
+                }
+            }
         }
 
         private async Task SendJsonAsync(object payload, CancellationToken token)
@@ -1299,8 +1713,20 @@ namespace ShooterPrototype.Network
                 while (hasPendingPose && socket != null && socket.State == WebSocketState.Open)
                 {
                     var msg = pendingPoseMessage;
+                    var binary = pendingPoseBinary;
                     hasPendingPose = false;
-                    await SendJsonAsync(msg, cts != null ? cts.Token : CancellationToken.None);
+                    pendingPoseBinary = null;
+
+                    if (binary != null && binary.Length > 0)
+                    {
+                        await SendBinaryAsync(binary, cts != null ? cts.Token : CancellationToken.None);
+                    }
+                    else
+                    {
+                        await SendJsonAsync(msg, cts != null ? cts.Token : CancellationToken.None);
+                    }
+
+                    RememberSentPose(msg);
                 }
             }
             catch
@@ -1367,10 +1793,15 @@ namespace ShooterPrototype.Network
                 pendingConnectTicketId = string.Empty;
             }
             hasJoinAck = false;
+            ResetPoseSendCache();
             MovementNetworkDiagnostics.LogWsState("disconnected", string.Empty, "snapshots_cleared=1");
             nextPoseSeq = 0;
             hasPendingPose = false;
+            pendingPoseBinary = null;
             poseSendLoopRunning = false;
+            hasLastSentPose = false;
+            lastPoseSentUnscaledTime = -999f;
+            lastSentPoseMessage = null;
             lock (snapshotLock)
             {
                 latestSnapshot = null;
@@ -1384,11 +1815,6 @@ namespace ShooterPrototype.Network
             }
 
             localCts?.Dispose();
-        }
-
-        private void OnDestroy()
-        {
-            _ = DisconnectInternalAsync();
         }
     }
 }

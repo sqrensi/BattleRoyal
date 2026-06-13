@@ -281,6 +281,11 @@ namespace ShooterPrototype.Player
                 bothHolstered = true;
                 slot0MagAmmo = -1;
                 slot1MagAmmo = -1;
+                if (activeReserveAmmo >= 0)
+                {
+                    SetSpareAmmo(activeReserveAmmo);
+                }
+
                 return;
             }
 

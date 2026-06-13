@@ -62,6 +62,7 @@ namespace ShooterPrototype.Bootstrap
             if (!Application.isBatchMode)
             {
                 EnsurePerformancePreset();
+                EnsureNetworkPerformanceMonitor();
             }
 
             if (networkLauncher == null)
@@ -195,6 +196,25 @@ namespace ShooterPrototype.Bootstrap
             if (performancePreset == null)
             {
                 performancePreset = gameObject.AddComponent<PerformancePresetController>();
+            }
+        }
+
+        private static void EnsureNetworkPerformanceMonitor()
+        {
+            if (NetworkPerformanceMonitor.Instance != null)
+            {
+                return;
+            }
+
+            var bootstrap = FindFirstObjectByType<GameBootstrap>();
+            if (bootstrap == null)
+            {
+                return;
+            }
+
+            if (bootstrap.GetComponent<NetworkPerformanceMonitor>() == null)
+            {
+                bootstrap.gameObject.AddComponent<NetworkPerformanceMonitor>();
             }
         }
     }

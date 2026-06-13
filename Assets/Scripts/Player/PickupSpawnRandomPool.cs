@@ -238,40 +238,29 @@ namespace ShooterPrototype.Player
                 visual = WeaponCatalog.GetWeaponPrefab(entry.weaponKind);
             }
 
+            var itemId = !string.IsNullOrWhiteSpace(entry.itemId)
+                ? entry.itemId.Trim()
+                : entry.kind == PickupKind.Weapon
+                    ? WeaponCatalog.GetDefaultItemId(entry.weaponKind)
+                    : visual != null ? visual.name : string.Empty;
+            var amount = entry.amount > 0 ? entry.amount : 1;
+
+            if (entry.kind == PickupKind.Weapon)
+            {
+                if (visual == null)
+                {
+                    return default;
+                }
+
+                return PickupItemDefinition.Create(PickupKind.Weapon, visual, itemId, amount).WithMagAmmo(0);
+            }
+
             if (visual == null)
             {
                 return default;
             }
 
-            var itemId = !string.IsNullOrWhiteSpace(entry.itemId)
-                ? entry.itemId.Trim()
-                : entry.kind == PickupKind.Weapon
-                    ? WeaponCatalog.GetDefaultItemId(entry.weaponKind)
-                    : visual.name;
-            var amount = entry.amount > 0 ? entry.amount : 1;
-            var definition = PickupItemDefinition.Create(entry.kind, visual, itemId, amount);
-            if (entry.kind == PickupKind.Weapon)
-            {
-                definition = definition.WithMagAmmo(0);
-            }
-
-            RegisterWeaponPrefab(definition);
-            return definition;
-        }
-
-        private static void RegisterWeaponPrefab(in PickupItemDefinition definition)
-        {
-            if (definition.Kind != PickupKind.Weapon || definition.VisualPrefab == null)
-            {
-                return;
-            }
-
-            var profile = definition.VisualPrefab.GetComponent<WeaponProfile>() ??
-                          definition.VisualPrefab.GetComponentInChildren<WeaponProfile>(true);
-            var kind = profile != null
-                ? profile.Kind
-                : WeaponCatalog.ResolveKindFromItemId(definition.ResolvedItemId);
-            WeaponCatalog.RegisterWeaponPrefab(kind, definition.VisualPrefab);
+            return PickupItemDefinition.Create(entry.kind, visual, itemId, amount);
         }
 
         private static bool IsWeaponLikePrefab(GameObject prefab)

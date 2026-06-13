@@ -66,6 +66,8 @@ namespace ShooterPrototype.Player
         private float networkMoveInputZ;
         private bool networkJumpPressed;
         private bool isGrounded;
+        private int groundedEvalFrame = -1;
+        private bool groundedEvalResult;
         private bool isCrouching;
         private bool isSprinting;
         private float recoilPitchOffset;
@@ -186,7 +188,11 @@ namespace ShooterPrototype.Player
             networkJumpPressed = false;
         }
 
-        public void ReconcileToServer(Vector3 authoritativePosition, float authoritativeYaw, int serverTick)
+        public void ReconcileToServer(
+            Vector3 authoritativePosition,
+            float authoritativeYaw,
+            int serverTick,
+            int roundTripMs = 0)
         {
             var localPos = transform.position;
             if (!Application.isFocused)
@@ -241,6 +247,24 @@ namespace ShooterPrototype.Player
 
             var delta = authoritativePosition - transform.position;
             var horizontalError = new Vector2(delta.x, delta.z).magnitude;
+            var moveInputMag = Mathf.Sqrt(
+                networkMoveInputX * networkMoveInputX +
+                networkMoveInputZ * networkMoveInputZ);
+            var latencySlack = Mathf.Max(
+                reconcileMinError * 2f,
+                Mathf.Max(30, roundTripMs) * 0.0045f);
+            if (moveInputMag > 0.08f && horizontalError <= latencySlack)
+            {
+                MovementNetworkDiagnostics.LogReconcile(
+                    localPos,
+                    authoritativePosition,
+                    horizontalError,
+                    serverTick,
+                    string.Empty,
+                    "latency_slack");
+                return;
+            }
+
             if (horizontalError >= reconcileSnapDistance)
             {
                 MovementNetworkDiagnostics.LogReconcile(
@@ -300,7 +324,7 @@ namespace ShooterPrototype.Player
             standingCenterY = characterController != null ? characterController.center.y : standingHeight * 0.5f;
             standingCameraLocalY = cameraPivot != null ? cameraPivot.localPosition.y : 1.6f;
             characterBottomOffset = standingCenterY - (standingHeight * 0.5f);
-            isGrounded = EvaluateGrounded();
+            isGrounded = EvaluateGroundedCached();
             defaultAdsMaxLookAngle = adsMaxLookAngle;
             CacheRestingCameraLocalTransform();
         }
@@ -378,7 +402,10 @@ namespace ShooterPrototype.Player
                 }
             }
 
-            LogMovementDiagnostics();
+            if (MovementNetworkDiagnostics.Enabled)
+            {
+                LogMovementDiagnostics();
+            }
         }
 
         private void OnApplicationFocus(bool hasFocus)
@@ -683,7 +710,7 @@ namespace ShooterPrototype.Player
             moveInputMagnitude = 0f;
             isSprinting = false;
 
-            isGrounded = EvaluateGrounded();
+            isGrounded = EvaluateGroundedCached();
             if (isGrounded && verticalVelocity < 0f)
             {
                 verticalVelocity = -1.5f;
@@ -692,7 +719,7 @@ namespace ShooterPrototype.Player
             verticalVelocity += gravity * Time.deltaTime;
             var velocity = Vector3.up * verticalVelocity;
             characterController.Move(velocity * Time.deltaTime);
-            isGrounded = EvaluateGrounded();
+            isGrounded = EvaluateGroundedCached(forceRefresh: true);
 
             var ccVelocity = characterController.velocity;
             horizontalSpeed = new Vector2(ccVelocity.x, ccVelocity.z).magnitude;
@@ -713,7 +740,7 @@ namespace ShooterPrototype.Player
 
             var moveDirection = BuildScaledMoveDirection(inputX, inputZ);
 
-            isGrounded = EvaluateGrounded();
+            isGrounded = EvaluateGroundedCached();
             if (isGrounded && verticalVelocity < 0f)
             {
                 verticalVelocity = -1.5f;
@@ -746,11 +773,23 @@ namespace ShooterPrototype.Player
             var velocity = moveDirection * (moveSpeed * speedMultiplier);
             velocity.y = verticalVelocity;
             characterController.Move(velocity * Time.deltaTime);
-            isGrounded = EvaluateGrounded();
+            isGrounded = EvaluateGroundedCached(forceRefresh: true);
 
             var ccVelocity = characterController.velocity;
             horizontalSpeed = new Vector2(ccVelocity.x, ccVelocity.z).magnitude;
             TryEmitFootstep();
+        }
+
+        private bool EvaluateGroundedCached(bool forceRefresh = false)
+        {
+            if (!forceRefresh && groundedEvalFrame == Time.frameCount)
+            {
+                return groundedEvalResult;
+            }
+
+            groundedEvalFrame = Time.frameCount;
+            groundedEvalResult = EvaluateGrounded();
+            return groundedEvalResult;
         }
 
         private Vector3 BuildScaledMoveDirection(float inputX, float inputZ)

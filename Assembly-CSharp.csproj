@@ -50,11 +50,13 @@
   <ItemGroup>
     <Compile Include="Assets\Scripts\Bootstrap\GameBootstrap.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextEventHandler.cs" />
+    <Compile Include="Assets\Scripts\Network\RealtimePoseBinaryCodec.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo_RandomDir.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\SpawnIdentifier.cs" />
     <Compile Include="Assets\Scripts\Player\CharacterModelApplier.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerBoneHitbox.cs" />
     <Compile Include="Assets\Scripts\Network\NetworkConfig.cs" />
+    <Compile Include="Assets\Scripts\Player\NetworkPerformanceMonitor.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\EnvMapAnimator.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerHitboxCleanup.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextSelector_A.cs" />
@@ -80,6 +82,7 @@
     <Compile Include="Assets\Scripts\Player\SyntyLocomotionDriver.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponController.cs" />
     <Compile Include="Assets\Scripts\Player\RemotePlayerEditorPreview.cs" />
+    <Compile Include="Assets\Scripts\Player\PickupGroundLayers.cs" />
     <Compile Include="Assets\Scripts\Player\MatchPickupSync.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_ExampleScript_01.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMPro_InstructionOverlay.cs" />
@@ -129,6 +132,7 @@
     <Compile Include="Assets\Scripts\Network\RealtimeTransportClient.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyWeaponHandBinder.cs" />
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_SimpleRotate.cs" />
+    <Compile Include="Assets\Scripts\Player\PickupWorldVisualBuilder.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\FollowCam.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponScopeOverlay.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponHolsterController.cs" />

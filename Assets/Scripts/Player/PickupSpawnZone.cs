@@ -5,7 +5,9 @@ namespace ShooterPrototype.Player
 {
     /// <summary>
     /// Floor area inside buildings where pickups spawn at random XZ inside the box.
-    /// Spawn height raycasts down from above the zone to the walkable surface.
+    /// Place the box collider bottom on the walkable floor of that level.
+    /// Spawn height raycasts down from above the zone and uses the first walkable
+    /// surface inside the zone vertical band (top of floor, not colliders below it).
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(BoxCollider))]
@@ -20,7 +22,9 @@ namespace ShooterPrototype.Player
         [SerializeField] private float minSeparation = 1.2f;
         [SerializeField] private float groundProbeHeight = 4f;
         [SerializeField] private float groundProbeDistance = 10f;
-        [SerializeField] private LayerMask groundMask = ~0;
+        [SerializeField] private LayerMask groundMask;
+
+        private static readonly RaycastHit[] RaycastHitBuffer = new RaycastHit[32];
 
         private BoxCollider zoneCollider;
         private readonly List<Transform> anchors = new List<Transform>();
@@ -112,34 +116,54 @@ namespace ShooterPrototype.Player
             return true;
         }
 
+        public Vector3 ResolveGroundedWorldPosition(Vector3 approximateWorldPosition, float yOffset)
+        {
+            EnsureCollider();
+            var bounds = GetSpawnBounds();
+            return new Vector3(
+                approximateWorldPosition.x,
+                ResolveSpawnSurfaceY(approximateWorldPosition, bounds, yOffset),
+                approximateWorldPosition.z);
+        }
+
         private float ResolveSpawnSurfaceY(Vector3 xzPoint, Bounds bounds, float yOffset)
         {
             var probeOrigin = new Vector3(xzPoint.x, bounds.max.y + groundProbeHeight, xzPoint.z);
-            var hits = Physics.RaycastAll(
+            var verticalSpan = Mathf.Max(0f, bounds.max.y - bounds.min.y);
+            var probeDistance = groundProbeHeight + groundProbeDistance + verticalSpan;
+            var hitCount = Physics.RaycastNonAlloc(
                 probeOrigin,
                 Vector3.down,
-                groundProbeDistance,
-                groundMask,
+                RaycastHitBuffer,
+                probeDistance,
+                PickupGroundLayers.SanitizeMask(groundMask),
                 QueryTriggerInteraction.Ignore);
-            if (hits == null || hits.Length == 0)
+            if (hitCount <= 0)
             {
-                return bounds.max.y + yOffset;
+                return bounds.min.y + yOffset;
             }
 
-            var bestY = float.MinValue;
             var maxDriftSqr = 2.25f;
-            for (var i = 0; i < hits.Length; i++)
+            var maxAboveZone = 0.25f;
+            var maxBelowZone = 0.1f;
+            var bandTop = bounds.max.y + maxAboveZone;
+            var bandBottom = bounds.min.y - maxBelowZone;
+
+            var closestDistance = float.MaxValue;
+            var closestY = float.MinValue;
+            var bestY = float.MinValue;
+            for (var i = 0; i < hitCount; i++)
             {
-                var hit = hits[i];
-                if (hit.normal.y < 0.5f)
+                var hit = RaycastHitBuffer[i];
+                if (!IsWalkableSpawnSurfaceHit(hit, xzPoint, bandBottom, bandTop, maxDriftSqr))
                 {
                     continue;
                 }
 
-                var driftSqr = (new Vector2(hit.point.x, hit.point.z) - new Vector2(xzPoint.x, xzPoint.z)).sqrMagnitude;
-                if (driftSqr > maxDriftSqr)
+                if (hit.distance < closestDistance)
                 {
-                    continue;
+                    closestDistance = hit.distance;
+                    closestY = hit.point.y;
                 }
 
                 if (hit.point.y > bestY)
@@ -148,12 +172,38 @@ namespace ShooterPrototype.Player
                 }
             }
 
+            if (closestY > float.MinValue)
+            {
+                return closestY + yOffset;
+            }
+
             if (bestY > float.MinValue)
             {
                 return bestY + yOffset;
             }
 
-            return bounds.max.y + yOffset;
+            return bounds.min.y + yOffset;
+        }
+
+        private static bool IsWalkableSpawnSurfaceHit(
+            RaycastHit hit,
+            Vector3 xzPoint,
+            float bandBottom,
+            float bandTop,
+            float maxDriftSqr)
+        {
+            if (hit.normal.y < 0.5f)
+            {
+                return false;
+            }
+
+            var driftSqr = (new Vector2(hit.point.x, hit.point.z) - new Vector2(xzPoint.x, xzPoint.z)).sqrMagnitude;
+            if (driftSqr > maxDriftSqr)
+            {
+                return false;
+            }
+
+            return hit.point.y >= bandBottom && hit.point.y <= bandTop;
         }
 
         private string ResolveLocalZoneKey()
@@ -273,6 +323,11 @@ namespace ShooterPrototype.Player
             }
 
             return true;
+        }
+
+        private void OnValidate()
+        {
+            groundMask = PickupGroundLayers.SanitizeMask(groundMask);
         }
 
         private void OnDrawGizmosSelected()

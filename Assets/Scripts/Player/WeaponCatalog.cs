@@ -44,9 +44,46 @@ namespace ShooterPrototype.Player
                 : WeaponKind.AssaultRifle;
         }
 
+        public static bool TryGetProfile(GameObject prefab, out WeaponProfile profile)
+        {
+            profile = null;
+            if (prefab == null)
+            {
+                return false;
+            }
+
+            profile = prefab.GetComponent<WeaponProfile>() ??
+                      prefab.GetComponentInChildren<WeaponProfile>(true);
+            return profile != null;
+        }
+
+        public static bool IsFullWeaponPrefab(GameObject prefab) => TryGetProfile(prefab, out _);
+
+        public static WeaponKind ResolveKindFromPrefab(GameObject prefab, string itemId = null)
+        {
+            if (TryGetProfile(prefab, out var profile))
+            {
+                return profile.Kind;
+            }
+
+            if (!string.IsNullOrWhiteSpace(itemId))
+            {
+                return ResolveKindFromItemId(itemId);
+            }
+
+            return prefab != null
+                ? ResolveKindFromItemId(prefab.name)
+                : WeaponKind.AssaultRifle;
+        }
+
+        public static GameObject ResolveEquipPrefab(string itemId)
+        {
+            return GetWeaponPrefab(ResolveKindFromItemId(itemId));
+        }
+
         public static void RegisterWeaponPrefab(WeaponKind kind, GameObject prefab)
         {
-            if (prefab == null)
+            if (!IsValidEquipPrefab(prefab, kind))
             {
                 return;
             }
@@ -67,14 +104,32 @@ namespace ShooterPrototype.Player
             switch (kind)
             {
                 case WeaponKind.SniperRifle:
-                    return sniperPrefabCache != null
-                        ? sniperPrefabCache
-                        : sniperPrefabCache = LoadAsset<GameObject>(SniperPrefabPath);
+                    if (IsValidEquipPrefab(sniperPrefabCache, WeaponKind.SniperRifle))
+                    {
+                        return sniperPrefabCache;
+                    }
+
+                    sniperPrefabCache = LoadAsset<GameObject>(SniperPrefabPath);
+                    return sniperPrefabCache;
                 default:
-                    return assaultPrefabCache != null
-                        ? assaultPrefabCache
-                        : assaultPrefabCache = LoadAsset<GameObject>(AssaultPrefabPath);
+                    if (IsValidEquipPrefab(assaultPrefabCache, WeaponKind.AssaultRifle))
+                    {
+                        return assaultPrefabCache;
+                    }
+
+                    assaultPrefabCache = LoadAsset<GameObject>(AssaultPrefabPath);
+                    return assaultPrefabCache;
             }
+        }
+
+        private static bool IsValidEquipPrefab(GameObject prefab, WeaponKind expectedKind)
+        {
+            if (!TryGetProfile(prefab, out var profile))
+            {
+                return false;
+            }
+
+            return profile.Kind == expectedKind;
         }
 
         public static string GetDefaultItemId(WeaponKind kind)

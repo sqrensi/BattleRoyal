@@ -482,10 +482,10 @@ namespace ShooterPrototype.Player
             {
                 if (weaponRoot == null)
                 {
-                    weaponRoot = FindWeaponModelUnderAttachTarget();
+                    weaponRoot = FindAnyWeaponModelUnderAttachTarget();
                     if (weaponRoot == null)
                     {
-                        weaponRoot = FindExistingWeaponModel(transform);
+                        weaponRoot = FindAnyExistingWeaponModel(transform);
                     }
                 }
 
@@ -513,14 +513,24 @@ namespace ShooterPrototype.Player
 
             if (weaponRoot == null)
             {
-                weaponRoot = FindWeaponModelUnderAttachTarget();
+                weaponRoot = FindWeaponModelUnderAttachTarget(networkWeaponKind);
                 if (weaponRoot == null && weaponPrefab != null)
                 {
                     SpawnWeaponOnTarget();
                 }
                 else if (weaponRoot == null)
                 {
-                    weaponRoot = FindExistingWeaponModel(transform);
+                    weaponRoot = FindExistingWeaponModel(transform, networkWeaponKind);
+                }
+            }
+            else if (!HandWeaponRootMatchesKind(networkWeaponKind))
+            {
+                Destroy(weaponRoot.gameObject);
+                weaponRoot = null;
+                hasHandPoseSnapshot = false;
+                if (weaponPrefab != null)
+                {
+                    SpawnWeaponOnTarget();
                 }
             }
 
@@ -734,7 +744,7 @@ namespace ShooterPrototype.Player
             weaponRoot.localScale = handPoseLocalScale;
         }
 
-        private Transform FindWeaponModelUnderAttachTarget()
+        private Transform FindAnyWeaponModelUnderAttachTarget()
         {
             if (attachTarget == null)
             {
@@ -752,6 +762,56 @@ namespace ShooterPrototype.Player
             }
 
             return null;
+        }
+
+        private Transform FindWeaponModelUnderAttachTarget(WeaponKind expectedKind)
+        {
+            if (attachTarget == null)
+            {
+                return null;
+            }
+
+            for (var i = 0; i < attachTarget.childCount; i++)
+            {
+                var child = attachTarget.GetChild(i);
+                if (child == null ||
+                    !string.Equals(child.name, "WeaponModel", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (TryGetWeaponRootKind(child, out var rootKind) && rootKind == expectedKind)
+                {
+                    return child;
+                }
+
+                Destroy(child.gameObject);
+            }
+
+            return null;
+        }
+
+        private static bool TryGetWeaponRootKind(Transform root, out WeaponKind kind)
+        {
+            kind = WeaponKind.AssaultRifle;
+            if (root == null)
+            {
+                return false;
+            }
+
+            var profile = root.GetComponentInChildren<WeaponProfile>(true);
+            if (profile == null)
+            {
+                return false;
+            }
+
+            kind = profile.Kind;
+            return true;
+        }
+
+        private bool HandWeaponRootMatchesKind(WeaponKind kind)
+        {
+            return TryGetWeaponRootKind(weaponRoot, out var rootKind) && rootKind == kind;
         }
 
         private RemoteAnimatorHolsterPresentation ResolveHolsterAnimation()
@@ -843,7 +903,7 @@ namespace ShooterPrototype.Player
             return weaponRoot != null;
         }
 
-        private static Transform FindExistingWeaponModel(Transform searchRoot)
+        private static Transform FindAnyExistingWeaponModel(Transform searchRoot)
         {
             if (searchRoot == null)
             {
@@ -859,6 +919,48 @@ namespace ShooterPrototype.Player
                 if (candidate == null ||
                     !string.Equals(candidate.name, "WeaponModel", StringComparison.Ordinal))
                 {
+                    continue;
+                }
+
+                fallback = candidate;
+                if (candidate.parent != null &&
+                    string.Equals(candidate.parent.name, "RemoteWeaponTarget", StringComparison.Ordinal))
+                {
+                    underTarget = candidate;
+                }
+            }
+
+            return underTarget != null ? underTarget : fallback;
+        }
+
+        private static Transform FindExistingWeaponModel(Transform searchRoot, WeaponKind expectedKind)
+        {
+            if (searchRoot == null)
+            {
+                return null;
+            }
+
+            Transform underTarget = null;
+            Transform fallback = null;
+            var all = searchRoot.GetComponentsInChildren<Transform>(true);
+            for (var i = 0; i < all.Length; i++)
+            {
+                var candidate = all[i];
+                if (candidate == null ||
+                    !string.Equals(candidate.name, "WeaponModel", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (!TryGetWeaponRootKind(candidate, out var rootKind))
+                {
+                    Destroy(candidate.gameObject);
+                    continue;
+                }
+
+                if (rootKind != expectedKind)
+                {
+                    Destroy(candidate.gameObject);
                     continue;
                 }
 
@@ -1106,10 +1208,10 @@ namespace ShooterPrototype.Player
 
             if (weaponRoot == null)
             {
-                weaponRoot = FindWeaponModelUnderAttachTarget();
+                weaponRoot = FindAnyWeaponModelUnderAttachTarget();
                 if (weaponRoot == null)
                 {
-                    weaponRoot = FindExistingWeaponModel(transform);
+                    weaponRoot = FindAnyExistingWeaponModel(transform);
                 }
             }
 
@@ -1354,7 +1456,10 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (networkWeaponKind != kind || weaponPrefab != prefab || weaponRoot == null)
+            if (networkWeaponKind != kind ||
+                weaponPrefab != prefab ||
+                weaponRoot == null ||
+                !HandWeaponRootMatchesKind(kind))
             {
                 networkWeaponKind = kind;
                 weaponPrefab = prefab;

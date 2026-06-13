@@ -524,7 +524,17 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            var count = networkLauncher != null ? networkLauncher.CurrentMatchPlayerCount : 0;
+            var count = 0;
+            var presenceSync = FindFirstObjectByType<ShooterPrototype.Player.MatchPresenceSync>();
+            if (presenceSync != null && presenceSync.LiveMatchPlayerCount > 0)
+            {
+                count = presenceSync.LiveMatchPlayerCount;
+            }
+            else if (networkLauncher != null)
+            {
+                count = networkLauncher.CurrentMatchPlayerCount;
+            }
+
             playersText.text = count > 0
                 ? $"Players in match: {count}"
                 : "Players in match: --";

@@ -105,12 +105,16 @@ namespace ShooterPrototype.Player
 
         private SkinnedMeshRenderer bodyRendererWithHiddenParts;
         private Mesh originalBodyMeshBeforeHide;
+        private int lastHiddenBodyStateHash;
+        private Mesh lastAppliedHiddenMesh;
         private readonly List<Renderer> lastAppliedGloveRenderers = new List<Renderer>(4);
 
         public void InvalidateBodyMeshCache()
         {
             bodyRendererWithHiddenParts = null;
             originalBodyMeshBeforeHide = null;
+            lastHiddenBodyStateHash = 0;
+            lastAppliedHiddenMesh = null;
         }
 
         public void ApplyToRemoteVisual(Transform syntyVisual, bool forceReapply = false)
@@ -123,9 +127,17 @@ namespace ShooterPrototype.Player
             var existing = syntyVisual.Find(ClothingRootName);
             if (!forceReapply && existing != null)
             {
-                RefreshHiddenBodyParts(
-                    FindCharacterBodyRenderer(syntyVisual),
-                    hideHandsOnBody: true);
+                var bodyRenderer = FindCharacterBodyRenderer(syntyVisual);
+                if (!NeedsHiddenBodyRefresh(bodyRenderer, hideHandsOnBody: true))
+                {
+                    return;
+                }
+
+                using (NetworkPerformanceMonitor.RefreshHiddenBodyMarker.Auto())
+                {
+                    RefreshHiddenBodyParts(bodyRenderer, hideHandsOnBody: true);
+                }
+
                 return;
             }
 
@@ -494,6 +506,11 @@ namespace ShooterPrototype.Player
             {
                 renderer.gameObject.AddComponent<FirstPersonGloveRendererMarker>();
             }
+
+            if (renderer is SkinnedMeshRenderer skinnedGloveRenderer)
+            {
+                skinnedGloveRenderer.updateWhenOffscreen = true;
+            }
         }
 
         private void ClearFirstPersonGloves(SyntyFirstPersonArmsPresenter armsPresenter)
@@ -515,6 +532,15 @@ namespace ShooterPrototype.Player
         private void RefreshHiddenBodyParts(SkinnedMeshRenderer bodyRenderer, bool hideHandsOnBody)
         {
             if (bodyRenderer == null)
+            {
+                return;
+            }
+
+            var stateHash = ComputeHiddenBodyStateHash(hideHandsOnBody);
+            if (bodyRendererWithHiddenParts == bodyRenderer &&
+                stateHash == lastHiddenBodyStateHash &&
+                lastAppliedHiddenMesh != null &&
+                bodyRenderer.sharedMesh == lastAppliedHiddenMesh)
             {
                 return;
             }
@@ -587,6 +613,63 @@ namespace ShooterPrototype.Player
             }
 
             bodyRendererWithHiddenParts = bodyRenderer;
+            lastHiddenBodyStateHash = stateHash;
+            lastAppliedHiddenMesh = bodyRenderer.sharedMesh;
+        }
+
+        private bool NeedsHiddenBodyRefresh(SkinnedMeshRenderer bodyRenderer, bool hideHandsOnBody)
+        {
+            if (bodyRenderer == null)
+            {
+                return false;
+            }
+
+            var stateHash = ComputeHiddenBodyStateHash(hideHandsOnBody);
+            return bodyRendererWithHiddenParts != bodyRenderer ||
+                   stateHash != lastHiddenBodyStateHash ||
+                   lastAppliedHiddenMesh == null ||
+                   bodyRenderer.sharedMesh != lastAppliedHiddenMesh;
+        }
+
+        private int ComputeHiddenBodyStateHash(bool hideHandsOnBody)
+        {
+            unchecked
+            {
+                var hash = 17;
+                hash = (hash * 31) + (hideBodyTorsoWhenClothed ? 1 : 0);
+                hash = (hash * 31) + (hideBodyLegsWhenPants ? 1 : 0);
+                hash = (hash * 31) + (hideBodyFeetWhenBoots ? 1 : 0);
+                hash = (hash * 31) + (hideBodyHandsWhenGloves ? 1 : 0);
+                hash = (hash * 31) + (applyPantsOnRemote ? 1 : 0);
+                hash = (hash * 31) + (applyBootsOnRemote ? 1 : 0);
+                hash = (hash * 31) + (applyGloves ? 1 : 0);
+                hash = (hash * 31) + (hideHandsOnBody ? 1 : 0);
+                hash = (hash * 31) + HashString(clothingResourcePath);
+                hash = (hash * 31) + HashString(pantsResourcePath);
+                hash = (hash * 31) + HashString(bootsResourcePath);
+                hash = (hash * 31) + HashString(glovesResourcePath);
+                return hash;
+            }
+        }
+
+        private static int HashString(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return 0;
+            }
+
+            unchecked
+            {
+                var hash = 23;
+                var trimmed = value.Trim();
+                for (var i = 0; i < trimmed.Length; i++)
+                {
+                    hash = (hash * 31) + trimmed[i];
+                }
+
+                return hash;
+            }
         }
 
         private void EnsureOriginalBodyMeshCached(SkinnedMeshRenderer bodyRenderer)
@@ -834,7 +917,7 @@ namespace ShooterPrototype.Player
                     renderer.sharedMaterial = clothingMaterial;
                 }
 
-                renderer.updateWhenOffscreen = true;
+                renderer.updateWhenOffscreen = false;
                 renderer.enabled = true;
                 if (snapToBodyHierarchy)
                 {

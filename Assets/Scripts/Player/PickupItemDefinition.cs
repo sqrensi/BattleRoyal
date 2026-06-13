@@ -30,7 +30,43 @@ namespace ShooterPrototype.Player
             }
         }
 
-        public bool IsValid => visualPrefab != null && !string.IsNullOrWhiteSpace(ResolvedItemId);
+        public bool IsValid
+        {
+            get
+            {
+                if (kind == PickupKind.Weapon)
+                {
+                    return !string.IsNullOrWhiteSpace(ResolvedItemId) &&
+                           (visualPrefab != null || ResolveEquipPrefab() != null);
+                }
+
+                return visualPrefab != null && !string.IsNullOrWhiteSpace(ResolvedItemId);
+            }
+        }
+
+        /// <summary>
+        /// Source prefab for world spawn (weapons are stripped to mesh at spawn time).
+        /// Equip always uses <see cref="WeaponCatalog"/>.
+        /// </summary>
+        public GameObject ResolveWorldSourcePrefab()
+        {
+            if (kind == PickupKind.Weapon)
+            {
+                return visualPrefab != null ? visualPrefab : ResolveEquipPrefab();
+            }
+
+            return visualPrefab;
+        }
+
+        public GameObject ResolveEquipPrefab()
+        {
+            if (kind == PickupKind.Weapon)
+            {
+                return WeaponCatalog.ResolveEquipPrefab(ResolvedItemId);
+            }
+
+            return null;
+        }
 
         public static PickupItemDefinition Create(
             PickupKind pickupKind,
@@ -70,6 +106,29 @@ namespace ShooterPrototype.Player
                 amount = amount,
                 magAmmo = magAmmo
             };
+        }
+
+        public PickupItemDefinition WithWorldVisual(GameObject worldVisual)
+        {
+            return new PickupItemDefinition
+            {
+                kind = kind,
+                visualPrefab = worldVisual,
+                itemId = itemId,
+                amount = amount,
+                magAmmo = magAmmo
+            };
+        }
+
+        public void RegisterWeaponSourcePrefab(GameObject sourcePrefab, string itemId = null)
+        {
+            if (!WeaponCatalog.IsFullWeaponPrefab(sourcePrefab))
+            {
+                return;
+            }
+
+            var kind = WeaponCatalog.ResolveKindFromPrefab(sourcePrefab, itemId);
+            WeaponCatalog.RegisterWeaponPrefab(kind, sourcePrefab);
         }
     }
 

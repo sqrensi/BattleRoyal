@@ -69,7 +69,7 @@ namespace ShooterPrototype.Player
 
 
             [FormerlySerializedAs("weaponPrefabOverride")]
-
+            [Tooltip("Original weapon prefab for this spawn. World spawn keeps mesh only.")]
             [SerializeField] private GameObject pickupVisualOverride;
 
             [SerializeField] private PickupKind pickupKindOverride = PickupKind.Weapon;
@@ -87,14 +87,26 @@ namespace ShooterPrototype.Player
                 var visual = pickupVisualOverride != null
                     ? pickupVisualOverride
                     : fallbackDefault.VisualPrefab;
-                if (visual == null)
-                {
-                    return default;
-                }
 
                 var itemId = !string.IsNullOrWhiteSpace(itemIdOverride)
                     ? itemIdOverride
                     : ResolveImplicitItemId(pickupKindOverride, visual, fallbackDefault);
+                if (string.IsNullOrWhiteSpace(itemId))
+                {
+                    return default;
+                }
+
+                if (visual == null && pickupKindOverride == PickupKind.Weapon)
+                {
+                    var kind = WeaponCatalog.ResolveKindFromItemId(itemId);
+                    visual = WeaponCatalog.GetWeaponPrefab(kind);
+                }
+
+                if (visual == null && pickupKindOverride != PickupKind.Weapon)
+                {
+                    return default;
+                }
+
                 var amount = amountOverride > 0 ? amountOverride : fallbackDefault.Amount;
                 var definition = PickupItemDefinition.Create(pickupKindOverride, visual, itemId, amount);
                 if (magAmmoOverride >= 0)
@@ -106,7 +118,6 @@ namespace ShooterPrototype.Player
                     definition = definition.WithMagAmmo(0);
                 }
 
-                RegisterWeaponPrefab(definition);
                 return definition;
             }
 
@@ -115,29 +126,31 @@ namespace ShooterPrototype.Player
                 GameObject visual,
                 in PickupItemDefinition fallbackDefault)
             {
-                if (pickupKind == PickupKind.Weapon && visual != null)
+                if (pickupKind == PickupKind.Weapon)
                 {
-                    return visual.name;
+                    if (!string.IsNullOrWhiteSpace(fallbackDefault.ResolvedItemId))
+                    {
+                        return fallbackDefault.ResolvedItemId;
+                    }
+
+                    var profile = visual != null
+                        ? visual.GetComponent<WeaponProfile>() ??
+                          visual.GetComponentInChildren<WeaponProfile>(true)
+                        : null;
+                    if (profile != null)
+                    {
+                        return WeaponCatalog.GetDefaultItemId(profile.Kind);
+                    }
+                }
+
+                if (visual != null && pickupKind == PickupKind.Weapon)
+                {
+                    return WeaponCatalog.GetDefaultItemId(WeaponCatalog.ResolveKindFromPrefab(visual));
                 }
 
                 return pickupKind == fallbackDefault.Kind
                     ? fallbackDefault.ResolvedItemId
                     : PickupKindUtility.ToProtocol(pickupKind);
-            }
-
-            private static void RegisterWeaponPrefab(in PickupItemDefinition definition)
-            {
-                if (definition.Kind != PickupKind.Weapon || definition.VisualPrefab == null)
-                {
-                    return;
-                }
-
-                var profile = definition.VisualPrefab.GetComponent<WeaponProfile>() ??
-                              definition.VisualPrefab.GetComponentInChildren<WeaponProfile>(true);
-                var kind = profile != null
-                    ? profile.Kind
-                    : WeaponCatalog.ResolveKindFromItemId(definition.ResolvedItemId);
-                WeaponCatalog.RegisterWeaponPrefab(kind, definition.VisualPrefab);
             }
 
             public void ConfigureWeaponDrop(GameObject visualPrefab, string itemId, int magAmmo = -1)
@@ -202,8 +215,12 @@ namespace ShooterPrototype.Player
         [SerializeField] private PickupKind defaultPickupKind = PickupKind.Weapon;
 
         [FormerlySerializedAs("defaultWeaponPrefab")]
-
+        [Tooltip("Original assault rifle prefab. Spawned in the world as mesh-only.")]
         [SerializeField] private GameObject defaultVisualPrefab;
+
+        [FormerlySerializedAs("defaultSniperWorldVisualPrefab")]
+        [Tooltip("Optional original sniper prefab override. Falls back to WeaponCatalog.")]
+        [SerializeField] private GameObject defaultSniperWeaponPrefab;
 
         [SerializeField] private string defaultItemId;
 
@@ -219,8 +236,11 @@ namespace ShooterPrototype.Player
 
         [SerializeField] private float pickupYOffset = 0.12f;
 
+        [Tooltip("Extra clearance when aligning weapon pickup meshes to the floor by renderer bounds.")]
+        [SerializeField] private float weaponPickupGroundClearance = 0.06f;
+
         [Header("Weapon Drop Placement")]
-        [SerializeField] private LayerMask dropGroundMask = ~0;
+        [SerializeField] private LayerMask dropGroundMask;
         [SerializeField] private float dropGroundProbeHeight = 3f;
         [SerializeField] private float dropGroundProbeDistance = 6f;
         [SerializeField] private LayerMask dropWallMask = ~0;
@@ -260,6 +280,12 @@ namespace ShooterPrototype.Player
 
             new Dictionary<string, Vector3>(StringComparer.Ordinal);
 
+        private readonly Dictionary<string, Vector3> resolvedSpawnPositionsBySpawnId =
+
+            new Dictionary<string, Vector3>(StringComparer.Ordinal);
+
+        private static readonly RaycastHit[] DropGroundRaycastBuffer = new RaycastHit[32];
+
         private bool registeredWithServer;
 
         [SerializeField] private bool waitForServerPickupSync = true;
@@ -269,6 +295,8 @@ namespace ShooterPrototype.Player
         private void Awake()
 
         {
+
+            dropGroundMask = PickupGroundLayers.SanitizeMask(dropGroundMask);
 
             if (GetComponent<MatchPickupSync>() == null)
 
@@ -902,7 +930,10 @@ namespace ShooterPrototype.Player
 
             }
 
-            RebuildSpawnSlotsFromScene();
+            if (spawnSlots == null || spawnSlots.Count == 0)
+            {
+                RebuildSpawnSlotsFromScene();
+            }
 
             EnsureSlotZoneBindings();
 
@@ -1042,7 +1073,10 @@ namespace ShooterPrototype.Player
 
 
 
-            RebuildSpawnSlotsFromScene();
+            if (spawnSlots == null || spawnSlots.Count == 0)
+            {
+                RebuildSpawnSlotsFromScene();
+            }
 
             EnsureSlotZoneBindings();
 
@@ -1069,7 +1103,10 @@ namespace ShooterPrototype.Player
                     : spawn.weaponId;
                 var kind = PickupKindUtility.FromProtocol(spawn.pickupKind);
                 var magAmmo = spawn.magAmmo;
-                var definition = ResolveDefinitionFromProtocol(
+                slotsBySpawnId.TryGetValue(spawn.spawnId, out var slot);
+                var definition = ResolveDefinitionForServerSpawn(
+                    slot,
+                    spawn.spawnId,
                     kind,
                     itemId,
                     spawn.amount > 0 ? spawn.amount : 1,
@@ -1077,10 +1114,6 @@ namespace ShooterPrototype.Player
                 if (definition.IsValid)
                 {
                     spawnedDefinitionsBySpawnId[spawn.spawnId] = definition;
-                    if (slotsBySpawnId.TryGetValue(spawn.spawnId, out var slot) && slot != null)
-                    {
-                        slot.ConfigureFromDefinition(definition);
-                    }
                 }
 
                 if (TryReadServerPosition(spawn, out var serverPosition))
@@ -1436,6 +1469,15 @@ namespace ShooterPrototype.Player
 
             }
 
+            definition = EnsureWeaponSourcePrefab(definition);
+            if (definition.ResolveWorldSourcePrefab() == null)
+            {
+                Debug.LogWarning(
+                    $"[PickupSpawnManager] Missing weapon source prefab for '{definition.ResolvedItemId}' " +
+                    $"(spawn '{slot.spawnId}'). Assign defaults on PickupSpawnManager or WeaponCatalog.");
+                return;
+            }
+
 
 
             spawnedDefinitionsBySpawnId[slot.spawnId] = definition;
@@ -1466,9 +1508,17 @@ namespace ShooterPrototype.Player
 
 
 
-            var pickupVisual = Instantiate(definition.VisualPrefab, pickupRoot.transform);
-
-            pickupVisual.SetActive(true);
+            var pickupVisual = PickupWorldVisualBuilder.InstantiateWorldVisual(
+                definition.Kind,
+                definition.ResolveWorldSourcePrefab(),
+                pickupRoot.transform);
+            if (pickupVisual == null)
+            {
+                Destroy(pickupRoot);
+                Debug.LogWarning(
+                    $"[PickupSpawnManager] Failed to build pickup visual for '{definition.ResolvedItemId}'.");
+                return;
+            }
 
             pickupVisual.name = "PickupVisual";
 
@@ -1480,7 +1530,12 @@ namespace ShooterPrototype.Player
 
             PreparePickupVisual(pickupVisual);
 
-
+            if (definition.Kind == PickupKind.Weapon)
+            {
+                var floorY = spawnPosition.y - pickupYOffset;
+                AlignPickupRootToSurface(pickupRoot.transform, floorY, weaponPickupGroundClearance);
+                spawnAnchor.SetPositionAndRotation(pickupRoot.transform.position, spawnRotation);
+            }
 
             var pickup = pickupRoot.AddComponent<WorldPickup>();
 
@@ -1632,8 +1687,93 @@ namespace ShooterPrototype.Player
 
             }
 
-            return definition;
+            return EnsureWeaponSourcePrefab(definition);
 
+        }
+
+        public GameObject ResolveWeaponSourcePrefab(WeaponKind kind)
+        {
+            switch (kind)
+            {
+                case WeaponKind.SniperRifle:
+                    return defaultSniperWeaponPrefab != null
+                        ? defaultSniperWeaponPrefab
+                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.SniperRifle);
+                default:
+                    return defaultVisualPrefab != null
+                        ? defaultVisualPrefab
+                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.AssaultRifle);
+            }
+        }
+
+        private PickupItemDefinition EnsureWeaponSourcePrefab(in PickupItemDefinition definition)
+        {
+            if (definition.Kind != PickupKind.Weapon)
+            {
+                return definition;
+            }
+
+            if (string.IsNullOrWhiteSpace(definition.ResolvedItemId) && definition.VisualPrefab == null)
+            {
+                return definition;
+            }
+
+            if (definition.VisualPrefab != null)
+            {
+                definition.RegisterWeaponSourcePrefab(definition.VisualPrefab, definition.ResolvedItemId);
+                return definition;
+            }
+
+            var kind = WeaponCatalog.ResolveKindFromItemId(definition.ResolvedItemId);
+            var sourcePrefab = ResolveWeaponSourcePrefab(kind);
+            if (sourcePrefab == null)
+            {
+                return definition;
+            }
+
+            var updated = definition.WithWorldVisual(sourcePrefab);
+            updated.RegisterWeaponSourcePrefab(sourcePrefab, definition.ResolvedItemId);
+            return updated;
+        }
+
+        private PickupItemDefinition ResolveDefinitionForServerSpawn(
+            PickupSpawnSlot slot,
+            string spawnId,
+            PickupKind kind,
+            string itemId,
+            int amount,
+            int magAmmo)
+        {
+            if (slot != null)
+            {
+                var fromScene = ResolveSpawnedDefinition(slot);
+                if (fromScene.IsValid && fromScene.Kind == kind &&
+                    (string.IsNullOrWhiteSpace(itemId) ||
+                     string.Equals(fromScene.ResolvedItemId, itemId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    if (magAmmo >= 0 && fromScene.Kind == PickupKind.Weapon)
+                    {
+                        return fromScene.WithMagAmmo(magAmmo);
+                    }
+
+                    return fromScene;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(spawnId) &&
+                spawnedDefinitionsBySpawnId.TryGetValue(spawnId, out var cached) &&
+                cached.IsValid &&
+                cached.Kind == kind)
+            {
+                if (magAmmo >= 0 && cached.Kind == PickupKind.Weapon)
+                {
+                    return cached.WithMagAmmo(magAmmo);
+                }
+
+                return cached;
+            }
+
+            return ResolveDefinitionFromProtocol(kind, itemId, amount, magAmmo);
         }
 
 
@@ -1642,11 +1782,13 @@ namespace ShooterPrototype.Player
 
         {
 
-            return slot != null
+            var definition = slot != null
 
                 ? slot.ResolveDefinition(ResolveDefaultPickupDefinition())
 
                 : ResolveDefaultPickupDefinition();
+
+            return EnsureWeaponSourcePrefab(definition);
 
         }
 
@@ -1700,7 +1842,7 @@ namespace ShooterPrototype.Player
 
                 {
 
-                    return rolled;
+                    return EnsureWeaponSourcePrefab(rolled);
 
                 }
 
@@ -1734,9 +1876,21 @@ namespace ShooterPrototype.Player
                 if (!string.IsNullOrWhiteSpace(slot.spawnId) &&
                     serverPositionsBySpawnId.TryGetValue(slot.spawnId, out var serverPosition))
                 {
-                    spawnPosition = ResolveGroundedDropPosition(
+                    spawnPosition = slot.Zone.ResolveGroundedWorldPosition(
                         serverPosition,
                         ResolvePickupSurfaceOffset(slot.spawnId));
+                    spawnRotation = Quaternion.Euler(worldPickupEulerOffset);
+                    spawnAnchor = slot.Zone.GetOrCreateAnchor(slot.ZoneSlotIndex);
+                    spawnAnchor.SetPositionAndRotation(spawnPosition, spawnRotation);
+                    slot.spawnPoint = spawnAnchor;
+                    CacheResolvedSpawnPosition(slot.spawnId, spawnPosition);
+                    return true;
+                }
+
+                if (!string.IsNullOrWhiteSpace(slot.spawnId) &&
+                    resolvedSpawnPositionsBySpawnId.TryGetValue(slot.spawnId, out var cachedSpawnPosition))
+                {
+                    spawnPosition = cachedSpawnPosition;
                     spawnRotation = Quaternion.Euler(worldPickupEulerOffset);
                     spawnAnchor = slot.Zone.GetOrCreateAnchor(slot.ZoneSlotIndex);
                     spawnAnchor.SetPositionAndRotation(spawnPosition, spawnRotation);
@@ -1760,6 +1914,7 @@ namespace ShooterPrototype.Player
                 spawnAnchor = slot.Zone.GetOrCreateAnchor(slot.ZoneSlotIndex);
                 spawnAnchor.SetPositionAndRotation(spawnPosition, spawnRotation);
                 slot.spawnPoint = spawnAnchor;
+                CacheResolvedSpawnPosition(slot.spawnId, spawnPosition);
                 return true;
             }
 
@@ -1778,6 +1933,11 @@ namespace ShooterPrototype.Player
             }
             spawnRotation = slot.spawnPoint.rotation * Quaternion.Euler(worldPickupEulerOffset);
             spawnAnchor = slot.spawnPoint;
+            if (!string.IsNullOrWhiteSpace(slot.spawnId))
+            {
+                CacheResolvedSpawnPosition(slot.spawnId, spawnPosition);
+            }
+
             return true;
         }
 
@@ -1824,23 +1984,29 @@ namespace ShooterPrototype.Player
         {
             var probeOrigin = approximatePosition + Vector3.up * dropGroundProbeHeight;
             var maxDistance = dropGroundProbeHeight + dropGroundProbeDistance;
-            var hits = Physics.RaycastAll(
+            var hitCount = Physics.RaycastNonAlloc(
                 probeOrigin,
                 Vector3.down,
+                DropGroundRaycastBuffer,
                 maxDistance,
-                dropGroundMask,
+                PickupGroundLayers.SanitizeMask(dropGroundMask),
                 QueryTriggerInteraction.Ignore);
-            if (hits == null || hits.Length == 0)
+            if (hitCount <= 0)
             {
                 return approximatePosition + Vector3.up * Mathf.Max(0.01f, surfaceOffset);
             }
 
+            var maxDriftSqr = 2.25f;
+            var bandTop = approximatePosition.y + 0.35f;
+            var bandBottom = approximatePosition.y - 2.5f;
+
+            var closestDistance = float.MaxValue;
+            var closestPoint = approximatePosition;
             var bestY = float.MinValue;
             var bestPoint = approximatePosition;
-            var maxDriftSqr = 2.25f;
-            for (var i = 0; i < hits.Length; i++)
+            for (var i = 0; i < hitCount; i++)
             {
-                var hit = hits[i];
+                var hit = DropGroundRaycastBuffer[i];
                 if (hit.normal.y < 0.5f)
                 {
                     continue;
@@ -1852,11 +2018,27 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
+                if (hit.point.y > bandTop || hit.point.y < bandBottom)
+                {
+                    continue;
+                }
+
+                if (hit.distance < closestDistance)
+                {
+                    closestDistance = hit.distance;
+                    closestPoint = hit.point;
+                }
+
                 if (hit.point.y > bestY)
                 {
                     bestY = hit.point.y;
                     bestPoint = hit.point;
                 }
+            }
+
+            if (closestDistance < float.MaxValue)
+            {
+                return closestPoint + Vector3.up * Mathf.Max(0.01f, surfaceOffset);
             }
 
             if (bestY > float.MinValue)
@@ -1874,7 +2056,7 @@ namespace ShooterPrototype.Player
 
         private List<Vector3> BuildDeterministicAvoidPositions(PickupSpawnSlot slot)
         {
-            var positions = new List<Vector3>(4);
+            var positions = CollectActiveZonePositions(slot?.Zone, slot?.spawnId);
             if (slot?.Zone == null || slot.ZoneSlotIndex <= 0 || spawnSlots == null)
             {
                 return positions;
@@ -1891,21 +2073,23 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
-                var priorAvoid = BuildDeterministicAvoidPositions(other);
-                if (other.Zone.TryResolveSpawnPose(
-                        other.spawnId,
-                        other.ZoneSlotIndex,
-                        pickupYOffset,
-                        worldPickupEulerOffset,
-                        priorAvoid,
-                        out var otherPosition,
-                        out _))
+                if (resolvedSpawnPositionsBySpawnId.TryGetValue(other.spawnId, out var cachedPosition))
                 {
-                    positions.Add(otherPosition);
+                    positions.Add(cachedPosition);
                 }
             }
 
             return positions;
+        }
+
+        private void CacheResolvedSpawnPosition(string spawnId, Vector3 position)
+        {
+            if (string.IsNullOrWhiteSpace(spawnId))
+            {
+                return;
+            }
+
+            resolvedSpawnPositionsBySpawnId[spawnId.Trim()] = position;
         }
 
         private static bool TryReadServerPosition(
@@ -1941,11 +2125,12 @@ namespace ShooterPrototype.Player
             if (slot.IsZoneSlot && slot.Zone != null)
             {
                 var anchor = slot.Zone.GetOrCreateAnchor(Mathf.Max(0, slot.ZoneSlotIndex));
-                worldPosition = ResolveGroundedDropPosition(
+                worldPosition = slot.Zone.ResolveGroundedWorldPosition(
                     worldPosition,
                     ResolvePickupSurfaceOffset(spawnId));
                 anchor.position = worldPosition;
                 slot.spawnPoint = anchor;
+                CacheResolvedSpawnPosition(spawnId, worldPosition);
                 return;
             }
 
@@ -1957,10 +2142,19 @@ namespace ShooterPrototype.Player
             {
                 slot.spawnPoint.position = worldPosition;
             }
+
+            CacheResolvedSpawnPosition(spawnId, worldPosition);
         }
 
         private Vector3 ResolveRegistrationPosition(PickupSpawnSlot slot)
         {
+            if (slot != null &&
+                !string.IsNullOrWhiteSpace(slot.spawnId) &&
+                resolvedSpawnPositionsBySpawnId.TryGetValue(slot.spawnId, out var cachedPosition))
+            {
+                return cachedPosition;
+            }
+
             if (slot != null &&
                 !string.IsNullOrWhiteSpace(slot.spawnId) &&
                 activePickupsBySpawnId.TryGetValue(slot.spawnId, out var activePickup) &&
@@ -2073,20 +2267,20 @@ namespace ShooterPrototype.Player
                 case PickupKind.Weapon:
                 {
                     var weaponKind = WeaponCatalog.ResolveKindFromItemId(resolvedItemId);
-                    var visual = WeaponCatalog.GetWeaponPrefab(weaponKind);
-                    if (visual == null)
-                    {
-                        return default;
-                    }
-
                     if (string.IsNullOrWhiteSpace(resolvedItemId))
                     {
                         resolvedItemId = WeaponCatalog.GetDefaultItemId(weaponKind);
                     }
 
+                    if (WeaponCatalog.GetWeaponPrefab(weaponKind) == null)
+                    {
+                        return default;
+                    }
+
+                    var sourcePrefab = ResolveWeaponSourcePrefab(weaponKind);
                     var definition = PickupItemDefinition.Create(
                         PickupKind.Weapon,
-                        visual,
+                        sourcePrefab,
                         resolvedItemId,
                         resolvedAmount);
                     return definition.WithMagAmmo(magAmmo >= 0 ? magAmmo : 0);
@@ -2123,6 +2317,35 @@ namespace ShooterPrototype.Player
         {
             return !string.IsNullOrWhiteSpace(spawnId) &&
                    spawnId.StartsWith("drop_", StringComparison.Ordinal);
+        }
+
+        private static void AlignPickupRootToSurface(Transform pickupRoot, float surfaceY, float surfaceOffset)
+        {
+            if (pickupRoot == null)
+            {
+                return;
+            }
+
+            var renderers = pickupRoot.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0)
+            {
+                var position = pickupRoot.position;
+                pickupRoot.position = new Vector3(position.x, surfaceY + surfaceOffset, position.z);
+                return;
+            }
+
+            var bounds = renderers[0].bounds;
+            for (var i = 1; i < renderers.Length; i++)
+            {
+                bounds.Encapsulate(renderers[i].bounds);
+            }
+
+            var desiredMinY = surfaceY + surfaceOffset;
+            var lift = desiredMinY - bounds.min.y;
+            if (Mathf.Abs(lift) > 0.001f)
+            {
+                pickupRoot.position += Vector3.up * lift;
+            }
         }
 
         private static void PreparePickupVisual(GameObject pickupVisual)

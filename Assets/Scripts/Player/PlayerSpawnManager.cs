@@ -99,6 +99,11 @@ namespace ShooterPrototype.Player
             var existingLocalPlayer = FindObjectOfType<LocalPlayerMarker>();
             if (existingLocalPlayer != null)
             {
+                if (enableMatchPresenceSync)
+                {
+                    AttachPresenceSync(existingLocalPlayer.gameObject);
+                }
+
                 return;
             }
 

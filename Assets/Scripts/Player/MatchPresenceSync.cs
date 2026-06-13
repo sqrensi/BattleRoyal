@@ -8,7 +8,7 @@ namespace ShooterPrototype.Player
 {
     public sealed class MatchPresenceSync : MonoBehaviour
     {
-        [SerializeField] private int syncTickRate = 128;
+        [SerializeField] private int syncTickRate = 64;
         [Header("Remote locomotion smoothing")]
         [SerializeField] private float remoteAnimSpeedSmoothTime = 0.12f;
         [SerializeField] private float remoteAnimStopSmoothTime = 0.05f;
@@ -53,12 +53,13 @@ namespace ShooterPrototype.Player
         private Coroutine syncCoroutine;
         private double latestServerTimeSeconds;
         private double latestServerTimeReceiptRealtimeSeconds;
-        private double latestServerTickRate = 128.0;
+        private double latestServerTickRate = 64.0;
         private double smoothedServerTimeSeconds;
         private double smoothedClockLastRealtimeSeconds;
         private bool hasSmoothedServerClock;
         private float lastSnapshotReceivedAt;
         private int lastAppliedServerTick = -1;
+        private int lastReconciledSelfAuthSampleTick = -1;
         private int lastSnapshotBinaryVersion;
         private float lastConnectRequestAt = -10f;
         private float wsJoinGraceUntilRealtime = -1f;
@@ -74,7 +75,22 @@ namespace ShooterPrototype.Player
         private PlayerHealth localHealth;
         private PlayerMedkitController localMedkitController;
         private string localCharacterModelName = string.Empty;
+        private bool transportEventsSubscribed;
         private readonly Dictionary<string, RemoteAvatar> remoteAvatars = new Dictionary<string, RemoteAvatar>();
+
+        public int LiveMatchPlayerCount
+        {
+            get
+            {
+                var fromRemotes = realtimeClient != null && realtimeClient.IsReady
+                    ? remoteAvatars.Count + 1
+                    : 0;
+                var fromLauncher = networkLauncher != null
+                    ? networkLauncher.CurrentMatchPlayerCount
+                    : 0;
+                return Mathf.Max(fromRemotes, fromLauncher);
+            }
+        }
 
         private sealed class RemoteAvatar
         {
@@ -111,6 +127,11 @@ namespace ShooterPrototype.Player
             public bool HadWeapon;
             public int LastAppliedStateTick = -1;
             public string AppliedCharacterModelName;
+            public RemoteWeaponPresentation RemoteWeapon;
+            public RemoteLookPitchPosture RemotePitchPosture;
+            public RemoteMedkitPresentation RemoteMedkit;
+            public RemotePlayerShotEffects RemoteShotEffects;
+            public PlayerAudioController RemoteAudio;
             public readonly List<PresenceSnapshot> Snapshots = new List<PresenceSnapshot>();
         }
 
@@ -144,6 +165,7 @@ namespace ShooterPrototype.Player
             remotePlayerPrefab = remotePrefab;
             lastSnapshotReceivedAt = Time.unscaledTime;
             lastAppliedServerTick = -1;
+            lastReconciledSelfAuthSampleTick = -1;
             hasSmoothedServerClock = false;
             smoothedServerTimeSeconds = 0.0;
             smoothedClockLastRealtimeSeconds = 0.0;
@@ -165,7 +187,39 @@ namespace ShooterPrototype.Player
             localCharacterModelName = CharacterSelectionService.GetSelectedModelName(charactersResourcesFolder);
             wsJoinGraceUntilRealtime = Time.unscaledTime + wsJoinGraceSeconds;
             SyncLocalWeaponLoadoutFromMount();
-            SendLocalPose();
+            SubscribeTransportEvents();
+            if (realtimeClient != null && realtimeClient.IsReady)
+            {
+                SendLocalPose(forceImmediate: true);
+            }
+        }
+
+        private void SubscribeTransportEvents()
+        {
+            if (transportEventsSubscribed || realtimeClient == null)
+            {
+                return;
+            }
+
+            realtimeClient.JoinAcknowledged += HandleTransportJoinAcknowledged;
+            transportEventsSubscribed = true;
+        }
+
+        private void UnsubscribeTransportEvents()
+        {
+            if (!transportEventsSubscribed || realtimeClient == null)
+            {
+                transportEventsSubscribed = false;
+                return;
+            }
+
+            realtimeClient.JoinAcknowledged -= HandleTransportJoinAcknowledged;
+            transportEventsSubscribed = false;
+        }
+
+        private void HandleTransportJoinAcknowledged()
+        {
+            SendLocalPose(forceImmediate: true);
         }
 
         private void OnEnable()
@@ -178,6 +232,8 @@ namespace ShooterPrototype.Player
 
         private void OnDisable()
         {
+            UnsubscribeTransportEvents();
+
             if (syncCoroutine != null)
             {
                 StopCoroutine(syncCoroutine);
@@ -189,7 +245,10 @@ namespace ShooterPrototype.Player
 
         private void Update()
         {
-            PollLatestSnapshot();
+            using (NetworkPerformanceMonitor.PollSnapshotMarker.Auto())
+            {
+                PollLatestSnapshot();
+            }
 
             if (remoteAvatars.Count == 0)
             {
@@ -368,12 +427,11 @@ namespace ShooterPrototype.Player
                 avatar.LocomotionRig.SetNetworkLookPitch(avatar.NetworkLookPitch);
             }
 
-            var remoteWeapon = avatar.Root.GetComponent<RemoteWeaponPresentation>();
+            var remoteWeapon = avatar.RemoteWeapon;
             remoteWeapon?.SetNetworkLookPitch(avatar.NetworkLookPitch);
             remoteWeapon?.SetNetworkCrouchState(avatar.NetworkCrouching);
 
-            var remotePitchPosture = avatar.Root.GetComponent<RemoteLookPitchPosture>();
-            remotePitchPosture?.SetNetworkLookPitch(avatar.NetworkLookPitch);
+            avatar.RemotePitchPosture?.SetNetworkLookPitch(avatar.NetworkLookPitch);
         }
 
         private static void ResolveRemoteMoveInput(
@@ -481,7 +539,7 @@ namespace ShooterPrototype.Player
 
         public void FlushLocalPose()
         {
-            SendLocalPose();
+            SendLocalPose(forceImmediate: true);
         }
 
         public void AcknowledgeWeaponPickupSeq(int weaponPickupSeq)
@@ -632,7 +690,7 @@ namespace ShooterPrototype.Player
             return (WeaponKind)Mathf.Clamp(player.weaponKind, 0, 1);
         }
 
-        private void SendLocalPose()
+        private void SendLocalPose(bool forceImmediate = false)
         {
             if (realtimeClient == null ||
                 networkLauncher == null ||
@@ -720,55 +778,62 @@ namespace ShooterPrototype.Player
                 localCharacterModelName = CharacterSelectionService.GetSelectedModelName(charactersResourcesFolder);
             }
 
-            realtimeClient.SendPose(
-                currentPos,
-                currentYaw,
-                localCharacterModelName,
-                lookPitch,
-                shotSeq,
-                reloadSeq,
-                hitPlayerSeq,
-                footstepSeq,
-                isCrouching,
-                isSprinting,
-                wallAvoidBlend,
-                isDead,
-                deathSeq,
-                deathFallDirection,
-                false,
-                isHolstered,
-                animSpeed,
-                animGrounded,
-                animJumpState,
-                animPhase,
-                moveInputX,
-                moveInputZ,
-                jumpPressed,
-                inputAuth,
-                shotOrigin,
-                shotDirection,
-                shotEndPoint,
-                shotHasEndPoint,
-                weaponKind,
-                weaponSlot0Kind,
-                weaponSlot1Kind,
-                activeWeaponSlot,
-                activeWeaponMagAmmo,
-                localWeaponPickupSeq);
+            using (NetworkPerformanceMonitor.SendLocalPoseMarker.Auto())
+            {
+                realtimeClient.SendPose(
+                    currentPos,
+                    currentYaw,
+                    localCharacterModelName,
+                    lookPitch,
+                    shotSeq,
+                    reloadSeq,
+                    hitPlayerSeq,
+                    footstepSeq,
+                    isCrouching,
+                    isSprinting,
+                    wallAvoidBlend,
+                    isDead,
+                    deathSeq,
+                    deathFallDirection,
+                    false,
+                    isHolstered,
+                    animSpeed,
+                    animGrounded,
+                    animJumpState,
+                    animPhase,
+                    moveInputX,
+                    moveInputZ,
+                    jumpPressed,
+                    inputAuth,
+                    shotOrigin,
+                    shotDirection,
+                    shotEndPoint,
+                    shotHasEndPoint,
+                    weaponKind,
+                    weaponSlot0Kind,
+                    weaponSlot1Kind,
+                    activeWeaponSlot,
+                    activeWeaponMagAmmo,
+                    localWeaponPickupSeq,
+                    forceImmediate);
+            }
 
-            MovementNetworkDiagnostics.LogPoseSend(
-                currentPos,
-                moveInputX,
-                moveInputZ,
-                inputAuth,
-                isDead,
-                weaponSlot0Kind,
-                weaponSlot1Kind);
+            if (MovementNetworkDiagnostics.Enabled)
+            {
+                MovementNetworkDiagnostics.LogPoseSend(
+                    currentPos,
+                    moveInputX,
+                    moveInputZ,
+                    inputAuth,
+                    isDead,
+                    weaponSlot0Kind,
+                    weaponSlot1Kind);
+            }
         }
 
         public void SendLocalPoseImmediate()
         {
-            SendLocalPose();
+            SendLocalPose(forceImmediate: true);
         }
 
         private IEnumerator SyncRoutine()
@@ -783,6 +848,10 @@ namespace ShooterPrototype.Player
                     var wrongTicketConnected = realtimeClient.IsConnected &&
                         !string.Equals(realtimeClient.ConnectedTicketId, localTicketId, StringComparison.Ordinal);
                     var pastJoinGrace = Time.unscaledTime >= wsJoinGraceUntilRealtime;
+                    var stuckWithoutJoinAck = pastJoinGrace &&
+                        realtimeClient.IsConnected &&
+                        !realtimeClient.IsReady &&
+                        string.Equals(realtimeClient.ConnectedTicketId, localTicketId, StringComparison.Ordinal);
                     var snapshotSilentTooLong = pastJoinGrace &&
                         Application.isFocused &&
                         realtimeClient.IsReady &&
@@ -791,7 +860,7 @@ namespace ShooterPrototype.Player
                             realtimeClient.LastSnapshotReceivedUnscaledTime)) >
                         Mathf.Max(1f, snapshotSilenceReconnectSeconds);
 
-                    if (wrongTicketConnected || snapshotSilentTooLong)
+                    if (wrongTicketConnected || stuckWithoutJoinAck || snapshotSilentTooLong)
                     {
                         realtimeClient.Disconnect();
                         wsJoinGraceUntilRealtime = Time.unscaledTime + wsJoinGraceSeconds;
@@ -799,7 +868,8 @@ namespace ShooterPrototype.Player
 
                     var needsConnect = !realtimeClient.IsReady &&
                         !realtimeClient.IsConnecting &&
-                        (!realtimeClient.IsConnected ||
+                        (stuckWithoutJoinAck ||
+                         !realtimeClient.IsConnected ||
                          !string.Equals(realtimeClient.ConnectedTicketId, localTicketId, StringComparison.Ordinal));
                     if (needsConnect &&
                         (Time.unscaledTime - lastConnectRequestAt) > wsReconnectIntervalSeconds)
@@ -839,6 +909,7 @@ namespace ShooterPrototype.Player
             {
                 lastSnapshotReceivedAt = Time.unscaledTime;
                 lastSnapshotBinaryVersion = snapshot.binaryVersion;
+                ApplyRemotePresence(snapshot.players);
                 ApplyRemotePresenceEvents(snapshot.players);
                 ApplyLocalMedkitFromSnapshot(snapshot.players);
                 ApplyRemoteWeaponPresence(snapshot.players);
@@ -871,7 +942,7 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
-                var remoteWeapon = avatar.Root.GetComponent<RemoteWeaponPresentation>();
+                var remoteWeapon = avatar.RemoteWeapon;
                 if (remoteWeapon == null)
                 {
                     continue;
@@ -898,7 +969,7 @@ namespace ShooterPrototype.Player
                     remoteWeapon.SetHolstered(p.isHolstered);
                 }
 
-                ApplyRemoteWeaponEffects(avatar.Root, ResolveRemoteActiveWeaponKind(p));
+                ApplyRemoteWeaponEffects(avatar, ResolveRemoteActiveWeaponKind(p));
                 MaybeStopRemoteReloadOnWeaponInterrupt(avatar, p);
             }
         }
@@ -1066,16 +1137,20 @@ namespace ShooterPrototype.Player
         {
             if (selfPose == null || selfPose.position == null || localFpsController == null)
             {
-                MovementNetworkDiagnostics.LogSnapshotSelfAuth(
-                    false,
-                    transform.position,
-                    Vector3.zero,
-                    lastAppliedServerTick,
-                    lastSnapshotBinaryVersion,
-                    0,
-                    realtimeClient != null
-                        ? Time.unscaledTime - realtimeClient.LastSnapshotReceivedUnscaledTime
-                        : -1f);
+                if (MovementNetworkDiagnostics.Enabled)
+                {
+                    MovementNetworkDiagnostics.LogSnapshotSelfAuth(
+                        false,
+                        transform.position,
+                        Vector3.zero,
+                        lastAppliedServerTick,
+                        lastSnapshotBinaryVersion,
+                        0,
+                        realtimeClient != null
+                            ? Time.unscaledTime - realtimeClient.LastSnapshotReceivedUnscaledTime
+                            : -1f);
+                }
+
                 return;
             }
 
@@ -1089,19 +1164,32 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var serverPos = new Vector3(selfPose.position.x, selfPose.position.y, selfPose.position.z);
-            MovementNetworkDiagnostics.LogSnapshotSelfAuth(
-                true,
-                transform.position,
-                serverPos,
-                selfPose.sampleTick,
-                lastSnapshotBinaryVersion,
-                0,
-                realtimeClient != null
-                    ? Time.unscaledTime - realtimeClient.LastSnapshotReceivedUnscaledTime
-                    : -1f);
+            if (selfPose.sampleTick > 0 && selfPose.sampleTick <= lastReconciledSelfAuthSampleTick)
+            {
+                return;
+            }
 
-            localFpsController.ReconcileToServer(serverPos, selfPose.yaw, selfPose.sampleTick);
+            var serverPos = new Vector3(selfPose.position.x, selfPose.position.y, selfPose.position.z);
+            if (MovementNetworkDiagnostics.Enabled)
+            {
+                MovementNetworkDiagnostics.LogSnapshotSelfAuth(
+                    true,
+                    transform.position,
+                    serverPos,
+                    selfPose.sampleTick,
+                    lastSnapshotBinaryVersion,
+                    0,
+                    realtimeClient != null
+                        ? Time.unscaledTime - realtimeClient.LastSnapshotReceivedUnscaledTime
+                        : -1f);
+            }
+
+            var roundTripMs = realtimeClient != null ? realtimeClient.SmoothedRoundTripMs : 0;
+            localFpsController.ReconcileToServer(serverPos, selfPose.yaw, selfPose.sampleTick, roundTripMs);
+            if (selfPose.sampleTick > 0)
+            {
+                lastReconciledSelfAuthSampleTick = selfPose.sampleTick;
+            }
         }
 
         private void IngestPlayerStateSamples(RemoteAvatar avatar, RealtimeTransportClient.RealtimePlayerState player)
@@ -1225,7 +1313,7 @@ namespace ShooterPrototype.Player
                     IngestPlayerStateSamples(avatar, p);
                     ApplyRemoteCharacterModel(avatar, p.characterModel);
 
-                    var remoteWeapon = avatar.Root.GetComponent<RemoteWeaponPresentation>();
+                    var remoteWeapon = avatar.RemoteWeapon;
                     remoteWeapon?.SetNetworkLookPitch(p.lookPitch);
                     remoteWeapon?.SetNetworkCrouchState(p.isCrouching);
                     if (ShouldApplyRemoteLoadout(p))
@@ -1249,11 +1337,11 @@ namespace ShooterPrototype.Player
                         remoteWeapon?.SetHolstered(p.isHolstered);
                     }
 
-                    ApplyRemoteWeaponEffects(avatar.Root, ResolveRemoteActiveWeaponKind(p));
+                    ApplyRemoteWeaponEffects(avatar, ResolveRemoteActiveWeaponKind(p));
                     MaybeStopRemoteReloadOnWeaponInterrupt(avatar, p);
-                    avatar.Root.GetComponent<RemoteMedkitPresentation>()?.SetNetworkMedkitState(p.isUsingMedkit);
+                    avatar.RemoteMedkit?.SetNetworkMedkitState(p.isUsingMedkit);
 
-                    avatar.Root.GetComponent<RemoteLookPitchPosture>()?.SetNetworkLookPitch(p.lookPitch);
+                    avatar.RemotePitchPosture?.SetNetworkLookPitch(p.lookPitch);
 
                     ApplyRemotePresenceEventsForAvatar(avatar, p);
 
@@ -1363,7 +1451,7 @@ namespace ShooterPrototype.Player
 
             // Keep CharacterController enabled on remote avatars so they are hittable by raycasts.
 
-            return new RemoteAvatar
+            var avatar = new RemoteAvatar
             {
                 Root = root,
                 LocomotionRig = locomotionRig,
@@ -1376,6 +1464,22 @@ namespace ShooterPrototype.Player
                 HadWeapon = false,
                 WasHolstered = true
             };
+            CacheRemoteAvatarComponents(avatar);
+            return avatar;
+        }
+
+        private static void CacheRemoteAvatarComponents(RemoteAvatar avatar)
+        {
+            if (avatar?.Root == null)
+            {
+                return;
+            }
+
+            avatar.RemoteWeapon = avatar.Root.GetComponent<RemoteWeaponPresentation>();
+            avatar.RemotePitchPosture = avatar.Root.GetComponent<RemoteLookPitchPosture>();
+            avatar.RemoteMedkit = avatar.Root.GetComponent<RemoteMedkitPresentation>();
+            avatar.RemoteShotEffects = avatar.Root.GetComponent<RemotePlayerShotEffects>();
+            avatar.RemoteAudio = avatar.Root.GetComponent<PlayerAudioController>();
         }
 
         private void ApplyRemoteCharacterModel(RemoteAvatar avatar, string modelName)
@@ -1399,6 +1503,7 @@ namespace ShooterPrototype.Player
             if (CharacterModelApplier.TryApplyToPlayer(avatar.Root, modelAsset))
             {
                 avatar.AppliedCharacterModelName = modelName;
+                CacheRemoteAvatarComponents(avatar);
             }
         }
 
@@ -1443,15 +1548,16 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var shotEffects = avatar.Root.GetComponent<RemotePlayerShotEffects>();
+            var shotEffects = avatar.RemoteShotEffects;
             if (shotEffects == null)
             {
                 shotEffects = avatar.Root.AddComponent<RemotePlayerShotEffects>();
+                avatar.RemoteShotEffects = shotEffects;
             }
 
             if (shotEffects != null && localWeaponController != null)
             {
-                ApplyRemoteWeaponEffects(avatar.Root, (WeaponKind)Mathf.Clamp(playerState.weaponKind, 0, 1));
+                ApplyRemoteWeaponEffects(avatar, (WeaponKind)Mathf.Clamp(playerState.weaponKind, 0, 1));
             }
 
             EnsureRemoteAudio(avatar.Root);
@@ -1574,11 +1680,21 @@ namespace ShooterPrototype.Player
                               (!hasWeaponNow && avatar.HadWeapon);
             if (interrupted)
             {
-                avatar.Root.GetComponent<RemotePlayerShotEffects>()?.StopRemoteReload();
+                avatar.RemoteShotEffects?.StopRemoteReload();
             }
 
             avatar.WasHolstered = holsteredNow;
             avatar.HadWeapon = hasWeaponNow;
+        }
+
+        private static void ApplyRemoteWeaponEffects(RemoteAvatar avatar, WeaponKind weaponKind)
+        {
+            if (avatar == null)
+            {
+                return;
+            }
+
+            ApplyRemoteWeaponEffects(avatar.RemoteWeapon, avatar.RemoteShotEffects, weaponKind);
         }
 
         private static void ApplyRemoteWeaponEffects(GameObject remoteRoot, WeaponKind weaponKind)
@@ -1588,8 +1704,17 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var remoteWeapon = remoteRoot.GetComponent<RemoteWeaponPresentation>();
-            var shotEffects = remoteRoot.GetComponent<RemotePlayerShotEffects>();
+            ApplyRemoteWeaponEffects(
+                remoteRoot.GetComponent<RemoteWeaponPresentation>(),
+                remoteRoot.GetComponent<RemotePlayerShotEffects>(),
+                weaponKind);
+        }
+
+        private static void ApplyRemoteWeaponEffects(
+            RemoteWeaponPresentation remoteWeapon,
+            RemotePlayerShotEffects shotEffects,
+            WeaponKind weaponKind)
+        {
             if (shotEffects == null)
             {
                 return;
@@ -1617,7 +1742,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var shotEffects = avatar.Root.GetComponent<RemotePlayerShotEffects>();
+            var shotEffects = avatar.RemoteShotEffects;
             shotEffects?.PlayRemoteReload(shotEffects != null ? shotEffects.ReloadDurationSeconds : 1.8f);
 
             avatar.LastAppliedReloadSeq = playerState.reloadSeq;
@@ -1635,7 +1760,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            avatar.Root.GetComponent<RemotePlayerShotEffects>()?.PlayRemoteHitPlayer();
+            avatar.RemoteShotEffects?.PlayRemoteHitPlayer();
             avatar.LastAppliedHitPlayerSeq = playerState.hitPlayerSeq;
         }
 
@@ -1651,7 +1776,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var audio = avatar.Root.GetComponent<PlayerAudioController>();
+            var audio = avatar.RemoteAudio;
             var maxReplay = playerState.isSprinting ? 6 : 3;
             var count = Mathf.Clamp(playerState.footstepSeq - avatar.LastAppliedFootstepSeq, 1, maxReplay);
             for (var i = 0; i < count; i++)
@@ -1749,7 +1874,9 @@ namespace ShooterPrototype.Player
             var current = rendererTransform;
             while (current != null)
             {
-                if (string.Equals(current.name, "WeaponModel", System.StringComparison.Ordinal))
+                if (string.Equals(current.name, "WeaponModel", System.StringComparison.Ordinal) ||
+                    string.Equals(current.name, "BackWeaponModel0", System.StringComparison.Ordinal) ||
+                    string.Equals(current.name, "BackWeaponModel1", System.StringComparison.Ordinal))
                 {
                     return true;
                 }
@@ -1787,6 +1914,7 @@ namespace ShooterPrototype.Player
 
             remoteAvatars.Clear();
             lastAppliedServerTick = -1;
+            lastReconciledSelfAuthSampleTick = -1;
         }
 
         private double ResolveSnapshotTimeSeconds(RealtimeTransportClient.RealtimePlayerState playerState)

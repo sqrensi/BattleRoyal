@@ -157,6 +157,16 @@ namespace ShooterPrototype.Player
         private bool holsterTransitionActive;
         private float wallAvoidBlend;
         private float wallAvoidBlendVelocity;
+        private float cachedWallAvoidTargetBlend;
+        private bool wallAvoidCheckDirty = true;
+        private bool lastWallAvoidAimHeld;
+        private bool lastWallAvoidHolstered;
+        private bool lastWallAvoidWeaponMounted;
+        private Vector3 lastWallCheckCameraPosition;
+        private Quaternion lastWallCheckCameraRotation;
+        private const float WallCheckCameraMoveEpsilon = 0.02f;
+        private const float WallCheckCameraRotateEpsilon = 0.5f;
+        private const float WallCheckSettleBlendEpsilon = 0.02f;
         private FpsCharacterController fpsController;
         private Camera localPlayerCamera;
         private float baseCameraFov = -1f;
@@ -210,7 +220,7 @@ namespace ShooterPrototype.Player
 
         public bool EquipWeapon(GameObject prefab)
         {
-            if (prefab == null || useNetworkState)
+            if (prefab == null || useNetworkState || !WeaponCatalog.IsFullWeaponPrefab(prefab))
             {
                 return false;
             }
@@ -221,6 +231,7 @@ namespace ShooterPrototype.Player
             }
 
             weaponPrefab = prefab;
+            wallAvoidCheckDirty = true;
             MountWeaponFromPrefab();
             handBinder = handBinder != null ? handBinder : GetComponent<SyntyWeaponHandBinder>();
             handBinder?.SyncFirstPersonRigidHandIkMode();
@@ -230,13 +241,14 @@ namespace ShooterPrototype.Player
 
         public bool ReplaceEquippedWeapon(GameObject prefab)
         {
-            if (prefab == null || useNetworkState)
+            if (prefab == null || useNetworkState || !WeaponCatalog.IsFullWeaponPrefab(prefab))
             {
                 return false;
             }
 
             UnequipWeaponInternal();
             weaponPrefab = prefab;
+            wallAvoidCheckDirty = true;
             MountWeaponFromPrefab(preserveAnchorPose: true);
             handBinder = handBinder != null ? handBinder : GetComponent<SyntyWeaponHandBinder>();
             handBinder?.SyncFirstPersonRigidHandIkMode();
@@ -264,6 +276,8 @@ namespace ShooterPrototype.Player
             }
 
             weaponPrefab = null;
+            cachedWallAvoidTargetBlend = 0f;
+            wallAvoidCheckDirty = true;
             ApplyWeaponProfile(null);
         }
 
@@ -574,6 +588,7 @@ namespace ShooterPrototype.Player
         public void SetLocalHolstered(bool holstered)
         {
             localHolstered = holstered;
+            wallAvoidCheckDirty = true;
             if (holstered)
             {
                 adsBlend = 0f;
@@ -760,7 +775,7 @@ namespace ShooterPrototype.Player
 
                 var wallTargetBlend = useNetworkState
                     ? Mathf.Clamp01(networkWallAvoidBlend)
-                    : ComputeWallAvoidanceTargetBlend();
+                    : ResolveWallAvoidanceTargetBlend(localAimHeld);
 
                 var sprintPitchFollowScale = 1f - Mathf.Clamp01(sprintBlend);
                 var cameraWorldRotation = cameraPivot != null
@@ -1219,6 +1234,22 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
+            var profile = adopted.GetComponent<WeaponProfile>() ??
+                          adopted.GetComponentInChildren<WeaponProfile>(true);
+            if (profile == null)
+            {
+                DestroyWeaponModelObject(adopted);
+                return false;
+            }
+
+            if (weaponPrefab != null &&
+                WeaponCatalog.TryGetProfile(weaponPrefab, out var expectedProfile) &&
+                expectedProfile.Kind != profile.Kind)
+            {
+                DestroyWeaponModelObject(adopted);
+                return false;
+            }
+
             weaponInstance = adopted;
             baseLocalPosition = weaponInstance.transform.localPosition;
             baseLocalRotation = weaponInstance.transform.localRotation;
@@ -1638,18 +1669,76 @@ namespace ShooterPrototype.Player
             targetAnchorLocalRotation *= avoidRotation;
         }
 
-        private float ComputeWallAvoidanceTargetBlend()
+        private float ResolveWallAvoidanceTargetBlend(bool localAimHeld)
         {
             if (!enableWeaponCollisionAvoidance ||
                 (localPlayerWallAvoidanceOnly && useNetworkState) ||
                 cameraPivot == null)
             {
+                cachedWallAvoidTargetBlend = 0f;
                 return 0f;
             }
 
-            return wallCheckMode == WeaponWallCheckMode.CameraRay
+            var weaponMounted = weaponInstance != null;
+            if (!weaponMounted || localHolstered)
+            {
+                cachedWallAvoidTargetBlend = 0f;
+                wallAvoidCheckDirty = true;
+                return 0f;
+            }
+
+            if (!ShouldRefreshWallAvoidanceQuery(localAimHeld, weaponMounted))
+            {
+                return cachedWallAvoidTargetBlend;
+            }
+
+            cachedWallAvoidTargetBlend = wallCheckMode == WeaponWallCheckMode.CameraRay
                 ? ComputeCameraRayWallAvoidBlend()
                 : ComputeWeaponCapsuleWallAvoidBlend();
+            lastWallCheckCameraPosition = cameraPivot.position;
+            lastWallCheckCameraRotation = cameraPivot.rotation;
+            lastWallAvoidAimHeld = localAimHeld;
+            lastWallAvoidHolstered = localHolstered;
+            lastWallAvoidWeaponMounted = weaponMounted;
+            wallAvoidCheckDirty = false;
+            return cachedWallAvoidTargetBlend;
+        }
+
+        private bool ShouldRefreshWallAvoidanceQuery(bool localAimHeld, bool weaponMounted)
+        {
+            if (wallAvoidCheckDirty)
+            {
+                return true;
+            }
+
+            if (localAimHeld != lastWallAvoidAimHeld ||
+                localHolstered != lastWallAvoidHolstered ||
+                weaponMounted != lastWallAvoidWeaponMounted)
+            {
+                return true;
+            }
+
+            if (cameraPivot != null)
+            {
+                if (Vector3.Distance(cameraPivot.position, lastWallCheckCameraPosition) > WallCheckCameraMoveEpsilon)
+                {
+                    return true;
+                }
+
+                if (Quaternion.Angle(cameraPivot.rotation, lastWallCheckCameraRotation) > WallCheckCameraRotateEpsilon)
+                {
+                    return true;
+                }
+            }
+
+            if (localAimHeld ||
+                cachedWallAvoidTargetBlend > WallCheckSettleBlendEpsilon ||
+                wallAvoidBlend > WallCheckSettleBlendEpsilon)
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private float ComputeCameraRayWallAvoidBlend()

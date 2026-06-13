@@ -14,10 +14,11 @@ const MATCH_BATCH_WINDOW_SECONDS = Math.max(0, toInt(process.env.MATCH_BATCH_WIN
 const PRESENCE_TIMEOUT_SECONDS = Math.max(2, toInt(process.env.PRESENCE_TIMEOUT_SECONDS, 5));
 const MATCH_CONNECT_GRACE_SECONDS = Math.max(5, toInt(process.env.MATCH_CONNECT_GRACE_SECONDS, 45));
 const QUEUED_TICKET_TTL_SECONDS = Math.max(5, toInt(process.env.QUEUED_TICKET_TTL_SECONDS, Math.max(MATCH_TIMEOUT_SECONDS, 20)));
-const SERVER_TICK_RATE = Math.max(10, toInt(process.env.SERVER_TICK_RATE, 128));
+const SERVER_TICK_RATE = Math.max(10, toInt(process.env.SERVER_TICK_RATE, 64));
 const REALTIME_WS_PORT = toInt(process.env.REALTIME_WS_PORT, 5051);
-const DEBUG_REALTIME = (process.env.DEBUG_REALTIME || "1") !== "0";
-const DEBUG_MOVEMENT = (process.env.DEBUG_MOVEMENT || "1") !== "0";
+const DEBUG_REALTIME = (process.env.DEBUG_REALTIME || "0") !== "0";
+const DEBUG_MOVEMENT = (process.env.DEBUG_MOVEMENT || "0") !== "0";
+const USE_BINARY_POSES = (process.env.USE_BINARY_POSES || "1") !== "0";
 const POSE_HISTORY_KEEP_MS = Math.max(200, toInt(process.env.POSE_HISTORY_KEEP_MS, 500));
 const SNAPSHOT_HISTORY_SAMPLES = Math.max(4, toInt(process.env.SNAPSHOT_HISTORY_SAMPLES, 16));
 const USE_BINARY_SNAPSHOTS = (process.env.USE_BINARY_SNAPSHOTS || "1") !== "0";
@@ -306,6 +307,23 @@ wsServer.on("connection", (socket) => {
   wsMetaBySocket.set(socket, { ticketId: "" });
 
   socket.on("message", (raw) => {
+    if (Buffer.isBuffer(raw) && raw.length >= 4 &&
+        raw[0] === 0x52 && raw[1] === 0x54 && raw[2] === 0x50 && raw[3] === 0x31) {
+      try {
+        const poseMessage = decodeBinaryPose(raw);
+        if (poseMessage) {
+          handleWsPose(socket, poseMessage);
+        } else if (DEBUG_REALTIME) {
+          console.warn(`[rt][pose-binary-decode-null] len=${raw.length}`);
+        }
+      } catch (err) {
+        if (DEBUG_REALTIME) {
+          console.error("[rt][pose-binary-decode-fail]", err);
+        }
+      }
+      return;
+    }
+
     let message;
     try {
       message = JSON.parse(raw.toString("utf8"));
@@ -896,6 +914,141 @@ function createDroppedWeaponSpawn(matchId, ticketId, position, yaw, itemId, magA
   return spawnId;
 }
 
+function readPoseBufferF32(buffer, offset) {
+  return buffer.readFloatLE(offset);
+}
+
+function readPoseBufferI16(buffer, offset) {
+  return buffer.readInt16LE(offset);
+}
+
+function readPoseBufferU16(buffer, offset) {
+  return buffer.readUInt16LE(offset);
+}
+
+function readPoseBufferI32(buffer, offset) {
+  return buffer.readInt32LE(offset);
+}
+
+function readPoseBufferU32(buffer, offset) {
+  return buffer.readUInt32LE(offset);
+}
+
+function decodeBinaryPose(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) {
+    return null;
+  }
+
+  if (buffer[0] !== 0x52 || buffer[1] !== 0x54 || buffer[2] !== 0x50 || buffer[3] !== 0x31) {
+    return null;
+  }
+
+  const version = buffer[4];
+  if (version !== 1) {
+    return null;
+  }
+
+  let offset = 5;
+  const poseSeq = readPoseBufferI32(buffer, offset);
+  offset += 4;
+  const modelLen = buffer[offset];
+  offset += 1;
+  if (offset + modelLen > buffer.length) {
+    return null;
+  }
+
+  const characterModel = modelLen > 0 ? buffer.toString("utf8", offset, offset + modelLen) : "";
+  offset += modelLen;
+
+  const minSize = offset + 121;
+  if (buffer.length < minSize) {
+    return null;
+  }
+
+  const x = readPoseBufferF32(buffer, offset); offset += 4;
+  const y = readPoseBufferF32(buffer, offset); offset += 4;
+  const z = readPoseBufferF32(buffer, offset); offset += 4;
+  const yaw = readPoseBufferF32(buffer, offset); offset += 4;
+  const lookPitch = readPoseBufferF32(buffer, offset); offset += 4;
+  const flags = readPoseBufferU16(buffer, offset); offset += 2;
+  const jumpState = buffer[offset]; offset += 1;
+  const weaponKind = buffer[offset]; offset += 1;
+  const weaponSlot0Kind = buffer[offset]; offset += 1;
+  const weaponSlot1Kind = buffer[offset]; offset += 1;
+  const activeWeaponSlot = buffer[offset]; offset += 1;
+  const activeWeaponMagAmmo = readPoseBufferI16(buffer, offset); offset += 2;
+  const weaponPickupSeq = readPoseBufferU32(buffer, offset); offset += 4;
+  const shotSeq = readPoseBufferU32(buffer, offset); offset += 4;
+  const reloadSeq = readPoseBufferU32(buffer, offset); offset += 4;
+  const hitPlayerSeq = readPoseBufferU32(buffer, offset); offset += 4;
+  const footstepSeq = readPoseBufferU32(buffer, offset); offset += 4;
+  const deathSeq = readPoseBufferU32(buffer, offset); offset += 4;
+  const animSpeed = readPoseBufferF32(buffer, offset); offset += 4;
+  const animPhase = readPoseBufferF32(buffer, offset); offset += 4;
+  const wallAvoidBlend = readPoseBufferF32(buffer, offset); offset += 4;
+  const moveInputX = readPoseBufferF32(buffer, offset); offset += 4;
+  const moveInputZ = readPoseBufferF32(buffer, offset); offset += 4;
+  const deathFallDirX = readPoseBufferF32(buffer, offset); offset += 4;
+  const deathFallDirY = readPoseBufferF32(buffer, offset); offset += 4;
+  const deathFallDirZ = readPoseBufferF32(buffer, offset); offset += 4;
+  const shotOriginX = readPoseBufferF32(buffer, offset); offset += 4;
+  const shotOriginY = readPoseBufferF32(buffer, offset); offset += 4;
+  const shotOriginZ = readPoseBufferF32(buffer, offset); offset += 4;
+  const shotDirX = readPoseBufferF32(buffer, offset); offset += 4;
+  const shotDirY = readPoseBufferF32(buffer, offset); offset += 4;
+  const shotDirZ = readPoseBufferF32(buffer, offset); offset += 4;
+  const shotEndX = readPoseBufferF32(buffer, offset); offset += 4;
+  const shotEndY = readPoseBufferF32(buffer, offset); offset += 4;
+  const shotEndZ = readPoseBufferF32(buffer, offset); offset += 4;
+
+  return {
+    type: "pose",
+    poseSeq,
+    characterModel,
+    position: { x, y, z },
+    yaw,
+    lookPitch,
+    isCrouching: (flags & 1) !== 0,
+    isSprinting: (flags & 2) !== 0,
+    isDead: (flags & 4) !== 0,
+    isHolstered: (flags & 8) !== 0,
+    isGrounded: (flags & 16) !== 0,
+    inputAuth: (flags & 32) !== 0,
+    jumpPressed: (flags & 64) !== 0,
+    shotHasEndPoint: (flags & 128) !== 0,
+    isAiming: (flags & 256) !== 0,
+    jumpState,
+    weaponKind,
+    weaponSlot0Kind,
+    weaponSlot1Kind,
+    activeWeaponSlot,
+    activeWeaponMagAmmo,
+    weaponPickupSeq,
+    shotSeq,
+    reloadSeq,
+    hitPlayerSeq,
+    footstepSeq,
+    deathSeq,
+    animSpeed,
+    animPhase,
+    wallAvoidBlend,
+    moveInputX,
+    moveInputZ,
+    deathFallDirX,
+    deathFallDirY,
+    deathFallDirZ,
+    shotOriginX,
+    shotOriginY,
+    shotOriginZ,
+    shotDirX,
+    shotDirY,
+    shotDirZ,
+    shotEndX,
+    shotEndY,
+    shotEndZ
+  };
+}
+
 function handleWsPose(socket, message) {
   const meta = wsMetaBySocket.get(socket);
   if (!meta || !meta.ticketId) {
@@ -1083,6 +1236,7 @@ function handleWsPose(socket, message) {
   presence.animPhase = animPhase;
   presence.sampleTimeMs = serverSampleTimeMs;
   presence.serverSampleTimeMs = serverSampleTimeMs;
+  presence.sampleTick = currentServerTick;
   presence.lastSeenMs = serverSampleTimeMs;
 
   if (DEBUG_REALTIME) {
@@ -1151,6 +1305,9 @@ function handleWsPose(socket, message) {
     poseTelemetry.lastPoseSeq = poseSeq;
   }
   touchMatchSession(ticket.matchId);
+  if (positionBranch === "first_pose" && ticket.matchId) {
+    broadcastMatchSnapshots(ticket.matchId);
+  }
 }
 
 function normalizeShotEvent(message) {
@@ -1463,13 +1620,6 @@ function handleWsPickup(socket, message) {
     return;
   }
 
-  if (pickupKind === "ammo" &&
-    !isWeaponSlotOccupied(presence.weaponSlot0Kind) &&
-    !isWeaponSlotOccupied(presence.weaponSlot1Kind)) {
-    sendPickupResultToSocket(socket, false, "no_weapon");
-    return;
-  }
-
   const pos = presence.position;
   const dx = pos.x - spawn.x;
   const dz = pos.z - spawn.z;
@@ -1541,6 +1691,10 @@ function handleWsPickup(socket, message) {
     presence.weaponPickupSeq = weaponPickupSeq;
     syncWeaponPresenceFlags(presence);
   } else if (pickupKind === "ammo") {
+    const newReserve = Math.min(999, getSpareAmmo(presence) + amount);
+    setSpareAmmo(presence, newReserve);
+    pickedReserveAmmo = newReserve;
+
     let activeSlot = presence.activeWeaponSlot;
     if (activeSlot !== 0 && activeSlot !== 1) {
       if (isWeaponSlotOccupied(presence.weaponSlot0Kind)) {
@@ -1548,22 +1702,22 @@ function handleWsPickup(socket, message) {
       } else if (isWeaponSlotOccupied(presence.weaponSlot1Kind)) {
         activeSlot = 1;
       } else {
-        sendPickupResultToSocket(socket, false, "no_weapon");
-        return;
+        activeSlot = -1;
       }
     }
 
-    const activeKind = activeSlot === 0 ? presence.weaponSlot0Kind : presence.weaponSlot1Kind;
-    if (!isWeaponSlotOccupied(activeKind)) {
-      sendPickupResultToSocket(socket, false, "no_weapon");
-      return;
+    if (activeSlot === 0 || activeSlot === 1) {
+      const activeKind = activeSlot === 0 ? presence.weaponSlot0Kind : presence.weaponSlot1Kind;
+      if (isWeaponSlotOccupied(activeKind)) {
+        presence.activeWeaponSlot = activeSlot;
+        pickedMagAmmo = Math.max(0, getWeaponSlotMagAmmo(presence, activeSlot));
+      } else {
+        pickedMagAmmo = -1;
+      }
+    } else {
+      pickedMagAmmo = -1;
     }
 
-    const newReserve = Math.min(999, getSpareAmmo(presence) + amount);
-    setSpareAmmo(presence, newReserve);
-    presence.activeWeaponSlot = activeSlot;
-    pickedMagAmmo = Math.max(0, getWeaponSlotMagAmmo(presence, activeSlot));
-    pickedReserveAmmo = newReserve;
     weaponPickupSeq = Math.max(0, normalizeInt64(presence.weaponPickupSeq, 0));
     syncWeaponPresenceFlags(presence);
   } else if (pickupKind === "medkit") {
@@ -2291,7 +2445,12 @@ function clampPositionToMovement(prevPresence, nextPosition, sampleTick) {
 
   const prevTick = prevPresence.sampleTick || (sampleTick - 1);
   const dtTicks = Math.max(1, sampleTick - prevTick);
-  const dtSec = dtTicks / SERVER_TICK_RATE;
+  const tickDtSec = dtTicks / SERVER_TICK_RATE;
+  const lastMs = prevPresence.serverSampleTimeMs || prevPresence.sampleTimeMs || 0;
+  const wallDtSec = lastMs > 0
+    ? Math.max(1 / SERVER_TICK_RATE, (Date.now() - lastMs) / 1000)
+    : tickDtSec;
+  const dtSec = Math.max(tickDtSec, wallDtSec);
   const maxHorizStep = MAX_PLAYER_SPEED * dtSec * 1.35;
   const dx = nextPosition.x - prevPresence.position.x;
   const dz = nextPosition.z - prevPresence.position.z;
