@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using ShooterPrototype.Network;
 using ShooterPrototype.UI;
 using UnityEngine;
@@ -12,11 +13,15 @@ namespace ShooterPrototype.Player
     [DisallowMultipleComponent]
     public sealed class MatchBattleRoyaleController : MonoBehaviour
     {
+        private const string PlanePrefabAssetPath = "Assets/Prefabs/Plane/Plane.prefab";
+        private const string PlanePrefabResourcesPath = "Prefabs/Plane/Plane";
+        private const string PlaneLoopClipResourcesPath = "Sounds/2";
         private enum LocalDropState
         {
             None,
             OnPlane,
-            Jumping,
+            Falling,
+            Gliding,
             InCombat
         }
 
@@ -28,8 +33,11 @@ namespace ShooterPrototype.Player
         [SerializeField] private float planeOrbitYaw = 200f;
         [SerializeField] private float planeOrbitPitch = 18f;
         [SerializeField] private float planeOrbitSensitivity = 0.925f;
+        [SerializeField] private float planeColliderRestoreDistance = 28f;
 
         [Header("Drop")]
+        [SerializeField] private float freeFallGravity = -24f;
+        [SerializeField] private float freeFallTerminalSpeed = 52f;
         [SerializeField] private float dropDescentSpeed = 13f;
         [SerializeField] private float dropGlideSpeed = 10f;
         [SerializeField] private float dropSteerRate = 5f;
@@ -39,6 +47,20 @@ namespace ShooterPrototype.Player
         [SerializeField] private float dropGroundProbeMaxDistance = 600f;
         [SerializeField] private float dropPoseFlushInterval = 0.08f;
         [SerializeField] private float dropLandingReconcileSuppressSeconds = 8f;
+        [SerializeField] private float autoParachuteHeightAboveGround = 32f;
+        [SerializeField] private float minFreeFallSecondsBeforeParachute = 1f;
+
+        [Header("Audio")]
+        [SerializeField] private AudioClip planeLoopClip;
+        [SerializeField] private AudioClip windLoopClip;
+        [SerializeField] private float planeLoopVolume = 0.55f;
+        [SerializeField] private float planeLoopMinDistance = 8f;
+        [SerializeField] private float planeLoopMaxDistance = 58f;
+        [SerializeField] private float planeLoopDepartFadeExponent = 2.4f;
+        [SerializeField] private float windLoopVolume = 0.65f;
+        [SerializeField] private float windGlideVolume = 0.38f;
+        [SerializeField] private float windFreeFallPitch = 1f;
+        [SerializeField] private float windGlidePitch = 0.82f;
 
         private RealtimeTransportClient transportClient;
         private GameHudController gameHud;
@@ -62,6 +84,7 @@ namespace ShooterPrototype.Player
         private bool isOnPlane;
         private bool hasJumpedLocally;
         private bool hasLandedLocally;
+        private bool parachuteDeployed;
         private RealtimeTransportClient.MatchStateMessage lastState;
 
         private Vector3 planePathStart;
@@ -74,14 +97,42 @@ namespace ShooterPrototype.Player
         private float nextDropPoseFlushRealtime;
         private float dropReconcileSuppressUntil;
         private float dropStartedRealtime;
+        private float fallVerticalVelocity;
+        private readonly List<Collider> cachedPlaneColliders = new List<Collider>();
+        private bool planeCollidersSuppressed;
         private Coroutine landingRoutine;
+        private bool planeDeparting;
+        private AudioSource planeLoopSource;
+        private AudioSource windLoopSource;
+        private PlayerAudioController localAudioController;
 
-        public bool IsLocalParachuting => localDropState == LocalDropState.Jumping;
-        public bool ShouldSuppressPoseReconcile => Time.unscaledTime < dropReconcileSuppressUntil;
+        public bool IsLocalParachuting =>
+            localDropState == LocalDropState.Falling || localDropState == LocalDropState.Gliding;
+        public bool IsLocalOnPlane =>
+            isOnPlane && localDropState == LocalDropState.OnPlane;
+        public bool IsPlanePhaseActive =>
+            currentPhase == "plane" && planeInstance != null;
+        public Transform PlaneTransform =>
+            planeInstance != null ? planeInstance.transform : null;
+        public bool ShouldSuppressPoseReconcile =>
+            IsLocalOnPlane || Time.unscaledTime < dropReconcileSuppressUntil;
 
         public void PrepareForNewMatch()
         {
             ResetForNewMatch();
+        }
+
+        public void ConfigurePlanePrefab(GameObject prefab)
+        {
+            if (prefab != null)
+            {
+                planePrefab = prefab;
+            }
+        }
+
+        private void Awake()
+        {
+            EnsurePlanePrefabAssigned();
         }
 
         private void OnEnable()
@@ -100,6 +151,10 @@ namespace ShooterPrototype.Player
             isOnPlane = false;
             hasJumpedLocally = false;
             hasLandedLocally = false;
+            parachuteDeployed = false;
+            planeDeparting = false;
+            cachedPlaneColliders.Clear();
+            planeCollidersSuppressed = false;
             dropReconcileSuppressUntil = 0f;
             lastState = null;
             gameHud?.ResetMatchOverlay();
@@ -139,27 +194,51 @@ namespace ShooterPrototype.Player
             if (isOnPlane && !hasJumpedLocally && lastState != null)
             {
                 UpdatePlaneOrbitCameraInput();
-                if (ReadJumpPressed() || lastState.forceJump)
+                if (lastState.forceJump || lastState.useForcedDrop)
+                {
+                    BeginFallFromPlane(lastState, forcedExtract: true);
+                }
+                else if (ReadJumpPressed())
                 {
                     RequestJumpFromPlane(lastState);
                 }
             }
 
-            if (localDropState == LocalDropState.Jumping)
+            if (localDropState == LocalDropState.Falling)
             {
-                UpdateDropMotion();
+                UpdateFallingMotion();
+                TryRestorePlaneCollidersAfterDrop();
+                TryDeployParachute();
+                TryAutoDeployParachute();
                 TryCompleteLanding();
             }
+
+            if (localDropState == LocalDropState.Gliding)
+            {
+                UpdateGlidingMotion();
+                TryRestorePlaneCollidersAfterDrop();
+                TryCompleteLanding();
+            }
+
+            UpdatePlaneLoopAttenuation();
         }
 
         private void LateUpdate()
         {
-            if (!isOnPlane || planeInstance == null || !planeTimingInitialized)
+            if (planeInstance == null || !planeTimingInitialized)
             {
                 return;
             }
 
-            SyncPlaneMotion();
+            if (isOnPlane || planeDeparting)
+            {
+                SyncPlaneMotion();
+            }
+
+            if (planeDeparting)
+            {
+                TryRetireDepartingPlane();
+            }
         }
 
         private void EnsureLocalPlayer()
@@ -185,6 +264,7 @@ namespace ShooterPrototype.Player
             playerIdentity = marker.GetComponent<PlayerNetworkIdentity>();
             presenceSync = marker.GetComponent<MatchPresenceSync>();
             playerCamera = marker.GetComponentInChildren<Camera>(true);
+            localAudioController = marker.GetComponent<PlayerAudioController>();
             playerHealth?.SetEliminationMode(true);
         }
 
@@ -250,7 +330,8 @@ namespace ShooterPrototype.Player
             }
 
             if ((message.hasLanded || message.inCombat) &&
-                localDropState != LocalDropState.Jumping)
+                localDropState != LocalDropState.Falling &&
+                localDropState != LocalDropState.Gliding)
             {
                 hasLandedLocally = true;
                 localDropState = LocalDropState.InCombat;
@@ -265,6 +346,7 @@ namespace ShooterPrototype.Player
             if (currentPhase == "plane" && isOnPlane)
             {
                 InitializePlaneTiming(message);
+                SoftResyncPlaneTiming(message);
             }
 
             RefreshHud(message);
@@ -324,9 +406,20 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (localDropState == LocalDropState.Jumping || hasJumpedLocally)
+            if (localDropState == LocalDropState.Gliding || (hasJumpedLocally && parachuteDeployed))
             {
-                gameHud.SetMatchStatusMessage("Прыжок: вращайте камерой и WASD, выберите место посадки");
+                gameHud.SetMatchStatusMessage("Планирование: камера + WASD, выберите место посадки");
+                return;
+            }
+
+            if (localDropState == LocalDropState.Falling || (hasJumpedLocally && !parachuteDeployed))
+            {
+                gameHud.SetMatchStatusMessage("[F] — парашют (авто-раскрытие на малой высоте)");
+                return;
+            }
+
+            if (hasJumpedLocally)
+            {
                 return;
             }
 
@@ -387,7 +480,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (localDropState == LocalDropState.Jumping)
+            if (localDropState == LocalDropState.Falling || localDropState == LocalDropState.Gliding)
             {
                 return;
             }
@@ -419,22 +512,22 @@ namespace ShooterPrototype.Player
                     }
                     else if (!hasJumpedLocally && message.hasJumped)
                     {
-                        ExecuteJumpFromPlane(message);
+                        BeginFallFromPlane(message, forcedExtract: false);
                     }
                     break;
                 case "playing":
-                    if (isOnPlane && !hasJumpedLocally)
+                    if (localDropState == LocalDropState.OnPlane)
                     {
-                        ExecuteJumpFromPlane(message);
+                        BeginFallFromPlane(message, forcedExtract: true);
                     }
-                    else
+                    else if (!hasJumpedLocally)
                     {
                         ExitPlaneIfNeeded();
                     }
 
-                    fpsController?.SetMovementLocked(false);
-                    if (localDropState != LocalDropState.Jumping)
+                    if (localDropState != LocalDropState.Falling && localDropState != LocalDropState.Gliding)
                     {
+                        fpsController?.SetMovementLocked(false);
                         EnableLocalCombat(message);
                     }
                     break;
@@ -489,7 +582,10 @@ namespace ShooterPrototype.Player
 
             localDropState = LocalDropState.OnPlane;
             isOnPlane = true;
+            hasJumpedLocally = false;
+            parachuteDeployed = false;
             fpsController?.SetMovementLocked(true);
+            fpsController?.SetServerReconciliationSuspended(true);
             viewPresentation?.SetForceThirdPersonBody(true);
 
             if (characterController != null)
@@ -513,6 +609,8 @@ namespace ShooterPrototype.Player
             localPlayer.localRotation = Quaternion.identity;
             InitializePlaneTiming(message);
             SyncPlaneMotion();
+            presenceSync?.FlushLocalPose();
+            StartPlaneLoopAudio();
         }
 
         private void RequestJumpFromPlane(RealtimeTransportClient.MatchStateMessage message)
@@ -522,56 +620,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            transportClient?.SendPlaneJump();
-            ExecuteJumpFromPlane(message);
-        }
-
-        private void ExecuteJumpFromPlane(RealtimeTransportClient.MatchStateMessage message)
-        {
-            if (localPlayer == null || hasJumpedLocally)
-            {
-                return;
-            }
-
-            hasJumpedLocally = true;
-            isOnPlane = false;
-            localDropState = LocalDropState.Jumping;
-
-            jumpPlaneForward = ResolveJumpLookForward();
-            dropHorizontalVelocity = jumpPlaneForward * dropGlideSpeed;
-            dropStartedRealtime = Time.realtimeSinceStartup;
-            dropReconcileSuppressUntil = Time.unscaledTime + 600f;
-
-            var jumpOrigin = ResolveJumpOrigin(message);
-            localPlayer.SetParent(null, true);
-            localPlayer.position = jumpOrigin;
-            ApplyPlayerLookFromPlaneCamera();
-
-            viewPresentation?.SetForceThirdPersonBody(false);
-
-            if (characterController != null)
-            {
-                characterController.enabled = true;
-            }
-
-            if (playerCamera != null)
-            {
-                playerCamera.enabled = true;
-            }
-
-            if (planeCamera != null)
-            {
-                planeCamera.enabled = false;
-            }
-
-            fpsController?.SetServerReconciliationSuspended(true);
-            fpsController?.SetMovementLocked(true);
-            fpsController?.ClearExternalLaunchVelocity();
-            nextDropPoseFlushRealtime = Time.unscaledTime;
-            presenceSync?.FlushLocalPose();
-            CleanupPlane();
-
-            RefreshHud(message);
+            BeginFallFromPlane(message, forcedExtract: false);
         }
 
         private Vector3 ResolveJumpLookForward()
@@ -645,13 +694,8 @@ namespace ShooterPrototype.Player
             return forward.normalized;
         }
 
-        private Vector3 ResolveJumpOrigin(RealtimeTransportClient.MatchStateMessage message)
+        private Vector3 ResolveJumpOrigin()
         {
-            if (message != null && message.useForcedDrop)
-            {
-                return new Vector3(message.dropPosX, message.planeY - 1.5f, message.dropPosZ);
-            }
-
             if (planeSeat != null)
             {
                 return planeSeat.position + Vector3.down * 1.5f;
@@ -659,10 +703,249 @@ namespace ShooterPrototype.Player
 
             if (planeInstance != null)
             {
-                return planeInstance.transform.position + Vector3.down * 1.5f;
+                return planeInstance.transform.TransformPoint(planeSeatLocalOffset) + Vector3.down * 1.5f;
             }
 
             return localPlayer.position;
+        }
+
+        private void CachePlaneColliders()
+        {
+            cachedPlaneColliders.Clear();
+            if (planeInstance == null)
+            {
+                return;
+            }
+
+            var colliders = planeInstance.GetComponentsInChildren<Collider>(true);
+            for (var i = 0; i < colliders.Length; i++)
+            {
+                var collider = colliders[i];
+                if (collider != null)
+                {
+                    cachedPlaneColliders.Add(collider);
+                }
+            }
+        }
+
+        private void SetPlaneCollidersEnabled(bool enabled)
+        {
+            if (cachedPlaneColliders.Count == 0)
+            {
+                CachePlaneColliders();
+            }
+
+            for (var i = 0; i < cachedPlaneColliders.Count; i++)
+            {
+                var collider = cachedPlaneColliders[i];
+                if (collider != null)
+                {
+                    collider.enabled = enabled;
+                }
+            }
+
+            planeCollidersSuppressed = !enabled;
+        }
+
+        private void TryRestorePlaneCollidersAfterDrop()
+        {
+            if (!planeCollidersSuppressed || planeInstance == null || localPlayer == null)
+            {
+                return;
+            }
+
+            var distance = Vector3.Distance(localPlayer.position, planeInstance.transform.position);
+            if (distance >= Mathf.Max(12f, planeColliderRestoreDistance))
+            {
+                SetPlaneCollidersEnabled(true);
+            }
+        }
+
+        private bool IsPlaneCollider(Collider collider)
+        {
+            if (collider == null || planeInstance == null)
+            {
+                return false;
+            }
+
+            var hitTransform = collider.transform;
+            return hitTransform == planeInstance.transform || hitTransform.IsChildOf(planeInstance.transform);
+        }
+
+        private void PlacePlayerAtPlaneRearExit()
+        {
+            if (localPlayer == null || planeInstance == null)
+            {
+                return;
+            }
+
+            var exitLocal = planeSeatLocalOffset + new Vector3(0f, -1.25f, -3.5f);
+            localPlayer.position = planeInstance.transform.TransformPoint(exitLocal);
+
+            var planeForward = planeInstance.transform.forward;
+            planeForward.y = 0f;
+            if (planeForward.sqrMagnitude > 0.001f)
+            {
+                localPlayer.rotation = Quaternion.LookRotation(planeForward.normalized, Vector3.up);
+            }
+        }
+
+        private void BeginFallFromPlane(RealtimeTransportClient.MatchStateMessage message, bool forcedExtract)
+        {
+            if (localPlayer == null || hasJumpedLocally)
+            {
+                return;
+            }
+
+            hasJumpedLocally = true;
+            isOnPlane = false;
+            localDropState = LocalDropState.Falling;
+            parachuteDeployed = false;
+            planeDeparting = true;
+            fallVerticalVelocity = 0f;
+            dropHorizontalVelocity = Vector3.zero;
+            dropStartedRealtime = Time.realtimeSinceStartup;
+            dropReconcileSuppressUntil = Time.unscaledTime + 600f;
+
+            if (forcedExtract)
+            {
+                SnapPlaneToRouteEnd();
+            }
+
+            if (localPlayer.parent != null)
+            {
+                localPlayer.SetParent(null, true);
+            }
+
+            if (forcedExtract)
+            {
+                PlacePlayerAtPlaneRearExit();
+                jumpPlaneForward = ResolveJumpPlaneForward();
+            }
+            else
+            {
+                localPlayer.position = ResolveJumpOrigin();
+                ApplyPlayerLookFromPlaneCamera();
+                jumpPlaneForward = ResolveJumpLookForward();
+            }
+
+            SetPlaneCollidersEnabled(false);
+
+            viewPresentation?.SetForceThirdPersonBody(false);
+
+            if (characterController != null)
+            {
+                characterController.enabled = true;
+            }
+
+            if (playerCamera != null)
+            {
+                playerCamera.enabled = true;
+            }
+
+            if (planeCamera != null)
+            {
+                planeCamera.enabled = false;
+                Destroy(planeCamera.gameObject);
+                planeCamera = null;
+            }
+
+            transportClient?.SendPlaneJump();
+            localAudioController?.PlayPlaneJump();
+            StartWindLoopAudio(isGliding: false);
+            fpsController?.SetServerReconciliationSuspended(true);
+            fpsController?.SetMovementLocked(true);
+            fpsController?.ClearExternalLaunchVelocity();
+            nextDropPoseFlushRealtime = Time.unscaledTime;
+            presenceSync?.FlushLocalPose();
+            RefreshHud(message ?? lastState);
+        }
+
+        private void TryDeployParachute()
+        {
+            if (localDropState != LocalDropState.Falling || parachuteDeployed)
+            {
+                return;
+            }
+
+            if (Time.realtimeSinceStartup - dropStartedRealtime < Mathf.Max(0.1f, minFreeFallSecondsBeforeParachute))
+            {
+                return;
+            }
+
+            if (!ReadParachutePressed())
+            {
+                return;
+            }
+
+            DeployParachute();
+        }
+
+        private void TryAutoDeployParachute()
+        {
+            if (localDropState != LocalDropState.Falling || parachuteDeployed)
+            {
+                return;
+            }
+
+            if (TryGetDropGroundClearance(out var clearance, out _))
+            {
+                if (clearance <= Mathf.Max(8f, autoParachuteHeightAboveGround))
+                {
+                    DeployParachute();
+                }
+
+                return;
+            }
+
+            var referenceAltitude = lastState != null && lastState.planeY > 1f
+                ? lastState.planeY
+                : planePathStart.y;
+            if (referenceAltitude > 1f &&
+                GetFeetAltitude() <= referenceAltitude - Mathf.Max(8f, autoParachuteHeightAboveGround))
+            {
+                DeployParachute();
+            }
+        }
+
+        private void DeployParachute()
+        {
+            if (localDropState != LocalDropState.Falling || parachuteDeployed)
+            {
+                return;
+            }
+
+            parachuteDeployed = true;
+            localDropState = LocalDropState.Gliding;
+            jumpPlaneForward = GetDropLookForward();
+            dropHorizontalVelocity = jumpPlaneForward * dropGlideSpeed;
+            if (fallVerticalVelocity < -dropDescentSpeed)
+            {
+                fallVerticalVelocity = -dropDescentSpeed;
+            }
+
+            ApplyWindLoopProfile(isGliding: true);
+            localAudioController?.PlayParachuteOpen();
+            presenceSync?.FlushLocalPose();
+            RefreshHud(lastState);
+        }
+
+        private void UpdateFallingMotion()
+        {
+            if (localPlayer == null || characterController == null || !characterController.enabled)
+            {
+                return;
+            }
+
+            fallVerticalVelocity += freeFallGravity * Time.deltaTime;
+            fallVerticalVelocity = Mathf.Max(fallVerticalVelocity, -Mathf.Max(4f, freeFallTerminalSpeed));
+            characterController.Move(Vector3.up * (fallVerticalVelocity * Time.deltaTime));
+
+            if (Time.unscaledTime >= nextDropPoseFlushRealtime)
+            {
+                nextDropPoseFlushRealtime = Time.unscaledTime + Mathf.Max(0.05f, dropPoseFlushInterval);
+                presenceSync?.FlushLocalPose();
+            }
         }
 
         private void TryCompleteLanding()
@@ -710,6 +993,8 @@ namespace ShooterPrototype.Player
 
             hasLandedLocally = true;
             localDropState = LocalDropState.InCombat;
+            StopWindLoopAudio();
+            localAudioController?.PlayLand(true);
             dropReconcileSuppressUntil = Time.unscaledTime + Mathf.Max(2f, dropLandingReconcileSuppressSeconds);
             fpsController.ClearExternalLaunchVelocity();
             fpsController.SetMovementLocked(false);
@@ -729,7 +1014,7 @@ namespace ShooterPrototype.Player
             landingRoutine = null;
         }
 
-        private void UpdateDropMotion()
+        private void UpdateGlidingMotion()
         {
             if (localPlayer == null || characterController == null || !characterController.enabled)
             {
@@ -846,20 +1131,32 @@ namespace ShooterPrototype.Player
             }
 
             var origin = new Vector3(localPlayer.position.x, GetFeetAltitude() + 0.35f, localPlayer.position.z);
-            if (!Physics.Raycast(
-                    origin,
-                    Vector3.down,
-                    out var hit,
-                    Mathf.Max(2f, dropGroundProbeMaxDistance),
-                    ~0,
-                    QueryTriggerInteraction.Ignore))
+            var hits = Physics.RaycastAll(
+                origin,
+                Vector3.down,
+                Mathf.Max(2f, dropGroundProbeMaxDistance),
+                ~0,
+                QueryTriggerInteraction.Ignore);
+            if (hits == null || hits.Length == 0)
             {
                 return false;
             }
 
-            groundPoint = hit.point;
-            clearance = GetFeetAltitude() - hit.point.y;
-            return true;
+            Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            for (var i = 0; i < hits.Length; i++)
+            {
+                var hit = hits[i];
+                if (planeInstance != null && IsPlaneCollider(hit.collider))
+                {
+                    continue;
+                }
+
+                groundPoint = hit.point;
+                clearance = GetFeetAltitude() - hit.point.y;
+                return true;
+            }
+
+            return false;
         }
 
         private float GetFeetAltitude()
@@ -891,6 +1188,7 @@ namespace ShooterPrototype.Player
                 localPlayer.SetParent(null, true);
             }
 
+            fpsController?.SetMovementLocked(false);
             isOnPlane = false;
             viewPresentation?.SetForceThirdPersonBody(false);
 
@@ -907,6 +1205,8 @@ namespace ShooterPrototype.Player
             if (planeCamera != null)
             {
                 planeCamera.enabled = false;
+                Destroy(planeCamera.gameObject);
+                planeCamera = null;
             }
 
             CleanupPlane();
@@ -921,12 +1221,12 @@ namespace ShooterPrototype.Player
 
             if (planePrefab == null)
             {
-                planePrefab = Resources.Load<GameObject>("Plane/Plane");
+                EnsurePlanePrefabAssigned();
             }
 
             if (planePrefab == null)
             {
-                Debug.LogWarning("[MatchBattleRoyale] Plane prefab is not assigned.");
+                Debug.LogWarning($"[MatchBattleRoyale] Plane prefab is missing. Expected {PlanePrefabAssetPath}.");
                 return;
             }
 
@@ -935,6 +1235,8 @@ namespace ShooterPrototype.Player
             planeSeat = new GameObject("PlaneSeat").transform;
             planeSeat.SetParent(planeInstance.transform, false);
             planeSeat.localPosition = planeSeatLocalOffset;
+            CachePlaneColliders();
+            SetPlaneCollidersEnabled(false);
             InitializePlaneTiming(message);
         }
 
@@ -956,6 +1258,7 @@ namespace ShooterPrototype.Player
             localDropState = LocalDropState.None;
             hasJumpedLocally = false;
             hasLandedLocally = false;
+            parachuteDeployed = false;
         }
 
         private void InitializePlaneTiming(RealtimeTransportClient.MatchStateMessage message)
@@ -984,6 +1287,38 @@ namespace ShooterPrototype.Player
             planeTimingInitialized = true;
         }
 
+        private void SoftResyncPlaneTiming(RealtimeTransportClient.MatchStateMessage message)
+        {
+            if (!planeTimingInitialized || message == null || message.planeEndsAtMs <= message.planeStartedAtMs)
+            {
+                return;
+            }
+
+            var serverNowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var serverElapsedSec = Mathf.Max(
+                0f,
+                (serverNowMs - message.planeStartedAtMs) / 1000f);
+            var serverProgress = Mathf.Clamp01(serverElapsedSec / planePathDurationSeconds);
+            var localProgress = Mathf.Clamp01(
+                (Time.realtimeSinceStartup - planeLocalStartRealtime) / planePathDurationSeconds);
+            var progressError = serverProgress - localProgress;
+            if (Mathf.Abs(progressError) > 0.02f)
+            {
+                planeLocalStartRealtime += progressError * planePathDurationSeconds * 0.35f;
+            }
+        }
+
+        private void SnapPlaneToRouteEnd()
+        {
+            if (!planeTimingInitialized || planePathDurationSeconds <= 0.001f)
+            {
+                return;
+            }
+
+            planeLocalStartRealtime = Time.realtimeSinceStartup - planePathDurationSeconds;
+            ApplyPlaneMotionAtProgress(1f);
+        }
+
         private void SyncPlaneMotion()
         {
             if (planeInstance == null || !planeTimingInitialized)
@@ -993,6 +1328,18 @@ namespace ShooterPrototype.Player
 
             var elapsed = Time.realtimeSinceStartup - planeLocalStartRealtime;
             var progress = Mathf.Clamp01(elapsed / planePathDurationSeconds);
+            ApplyPlaneMotionAtProgress(progress);
+            UpdatePlaneOrbitCamera();
+        }
+
+        private void ApplyPlaneMotionAtProgress(float progress)
+        {
+            if (planeInstance == null)
+            {
+                return;
+            }
+
+            progress = Mathf.Clamp01(progress);
             var position = Vector3.Lerp(planePathStart, planePathEnd, progress);
 
             var direction = planePathEnd - planePathStart;
@@ -1002,7 +1349,206 @@ namespace ShooterPrototype.Player
                 : planeInstance.transform.rotation;
 
             planeInstance.transform.SetPositionAndRotation(position, rotation);
-            UpdatePlaneOrbitCamera();
+        }
+
+        private void CleanupPlane()
+        {
+            StopWindLoopAudio();
+            planeDeparting = false;
+            RetireDepartingPlane();
+            planeTimingInitialized = false;
+            dropHorizontalVelocity = Vector3.zero;
+
+            if (planeCamera != null)
+            {
+                Destroy(planeCamera.gameObject);
+                planeCamera = null;
+            }
+
+            planeSeat = null;
+        }
+
+        private void RetireDepartingPlane()
+        {
+            if (planeLoopSource != null)
+            {
+                planeLoopSource.Stop();
+            }
+
+            if (planeInstance != null)
+            {
+                Destroy(planeInstance);
+                planeInstance = null;
+            }
+
+            planeLoopSource = null;
+            cachedPlaneColliders.Clear();
+            planeCollidersSuppressed = false;
+            planeSeat = null;
+        }
+
+        private void TryRetireDepartingPlane()
+        {
+            if (planeInstance == null || localPlayer == null)
+            {
+                return;
+            }
+
+            var elapsed = Time.realtimeSinceStartup - planeLocalStartRealtime;
+            var progress = Mathf.Clamp01(elapsed / planePathDurationSeconds);
+            var distance = Vector3.Distance(localPlayer.position, planeInstance.transform.position);
+            var retireDistance = Mathf.Max(planeLoopMinDistance + 1f, planeLoopMaxDistance * 0.9f);
+            if (progress >= 1f && distance >= retireDistance)
+            {
+                planeDeparting = false;
+                RetireDepartingPlane();
+            }
+        }
+
+        private void EnsurePlaneLoopClip()
+        {
+            if (planeLoopClip == null)
+            {
+                planeLoopClip = Resources.Load<AudioClip>(PlaneLoopClipResourcesPath);
+            }
+        }
+
+        private void EnsureWindLoopClip()
+        {
+            if (windLoopClip == null)
+            {
+                windLoopClip = Resources.Load<AudioClip>("Sounds/1");
+            }
+        }
+
+        private void StartPlaneLoopAudio()
+        {
+            EnsurePlaneLoopClip();
+            if (planeLoopClip == null || planeInstance == null)
+            {
+                return;
+            }
+
+            if (planeLoopSource == null)
+            {
+                var audioObject = new GameObject("PlaneLoopAudio");
+                audioObject.transform.SetParent(planeInstance.transform, false);
+                planeLoopSource = audioObject.AddComponent<AudioSource>();
+                planeLoopSource.playOnAwake = false;
+                planeLoopSource.loop = true;
+                planeLoopSource.spatialBlend = 1f;
+                planeLoopSource.rolloffMode = AudioRolloffMode.Logarithmic;
+                planeLoopSource.minDistance = Mathf.Max(1f, planeLoopMinDistance);
+                planeLoopSource.maxDistance = Mathf.Max(
+                    planeLoopSource.minDistance + 1f,
+                    planeLoopMaxDistance);
+                planeLoopSource.dopplerLevel = 0.2f;
+                planeLoopSource.spread = 55f;
+            }
+
+            ApplyPlaneLoopVolume();
+            planeLoopSource.clip = planeLoopClip;
+            planeLoopSource.pitch = 1f;
+            if (!planeLoopSource.isPlaying)
+            {
+                planeLoopSource.Play();
+            }
+        }
+
+        private void UpdatePlaneLoopAttenuation()
+        {
+            if (planeLoopSource == null || !planeLoopSource.isPlaying)
+            {
+                return;
+            }
+
+            ApplyPlaneLoopVolume();
+        }
+
+        private void ApplyPlaneLoopVolume()
+        {
+            if (planeLoopSource == null)
+            {
+                return;
+            }
+
+            var volume = Mathf.Clamp01(planeLoopVolume);
+            if (!isOnPlane && localPlayer != null)
+            {
+                var distance = Vector3.Distance(localPlayer.position, planeLoopSource.transform.position);
+                var fade = 1f - Mathf.Clamp01(
+                    Mathf.InverseLerp(planeLoopMinDistance, planeLoopMaxDistance, distance));
+                fade = Mathf.Pow(Mathf.Max(0f, fade), Mathf.Max(1f, planeLoopDepartFadeExponent));
+                volume *= fade;
+            }
+
+            planeLoopSource.volume = volume;
+        }
+
+        private void StartWindLoopAudio(bool isGliding)
+        {
+            EnsureWindLoopClip();
+            if (windLoopClip == null)
+            {
+                Debug.LogWarning("[MatchBattleRoyale] Wind clip is missing at Resources/Sounds/1.");
+                return;
+            }
+
+            if (windLoopSource == null)
+            {
+                var audioObject = new GameObject("WindLoopAudio");
+                audioObject.transform.SetParent(transform, false);
+                windLoopSource = audioObject.AddComponent<AudioSource>();
+                windLoopSource.playOnAwake = false;
+                windLoopSource.loop = true;
+                windLoopSource.spatialBlend = 0f;
+                windLoopSource.dopplerLevel = 0f;
+                windLoopSource.priority = 32;
+            }
+
+            windLoopSource.clip = windLoopClip;
+            ApplyWindLoopProfile(isGliding);
+            if (!windLoopSource.isPlaying)
+            {
+                windLoopSource.Play();
+            }
+        }
+
+        private void ApplyWindLoopProfile(bool isGliding)
+        {
+            if (windLoopSource == null)
+            {
+                return;
+            }
+
+            windLoopSource.volume = Mathf.Clamp01(isGliding ? windGlideVolume : windLoopVolume);
+            windLoopSource.pitch = Mathf.Clamp(isGliding ? windGlidePitch : windFreeFallPitch, 0.25f, 2f);
+        }
+
+        private void StopWindLoopAudio()
+        {
+            if (windLoopSource == null)
+            {
+                return;
+            }
+
+            windLoopSource.Stop();
+        }
+
+        private void EnsurePlanePrefabAssigned()
+        {
+            if (planePrefab != null)
+            {
+                return;
+            }
+
+#if UNITY_EDITOR
+            planePrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(PlanePrefabAssetPath);
+#endif
+            if (planePrefab == null)
+            {
+                planePrefab = Resources.Load<GameObject>(PlanePrefabResourcesPath);
+            }
         }
 
         private void UpdatePlaneOrbitCameraInput()
@@ -1061,26 +1607,17 @@ namespace ShooterPrototype.Player
             planeCamera.depth = playerCamera != null ? playerCamera.depth + 1f : 1f;
         }
 
-        private void CleanupPlane()
+        private static bool ReadJumpPressed()
         {
-            if (planeCamera != null)
-            {
-                Destroy(planeCamera.gameObject);
-                planeCamera = null;
-            }
-
-            if (planeInstance != null)
-            {
-                Destroy(planeInstance);
-                planeInstance = null;
-            }
-
-            planeSeat = null;
-            planeTimingInitialized = false;
-            dropHorizontalVelocity = Vector3.zero;
+#if ENABLE_INPUT_SYSTEM
+            var keyboard = Keyboard.current;
+            return keyboard != null && keyboard.fKey.wasPressedThisFrame;
+#else
+            return Input.GetKeyDown(KeyCode.F);
+#endif
         }
 
-        private static bool ReadJumpPressed()
+        private static bool ReadParachutePressed()
         {
 #if ENABLE_INPUT_SYSTEM
             var keyboard = Keyboard.current;

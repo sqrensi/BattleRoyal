@@ -13,7 +13,8 @@ namespace ShooterPrototype.Player
         [SerializeField] private string itemId;
         [SerializeField] private int amount = 1;
         [SerializeField] private int magAmmo = -1;
-        [SerializeField] private float pickupVerticalHalfHeight = 3f;
+        [SerializeField] private float pickupVerticalHalfHeight = 1.2f;
+        [SerializeField] private LayerMask pickupLineOfSightMask = ~0;
 
         private PickupSpawnManager owner;
         private Transform spawnPoint;
@@ -90,12 +91,19 @@ namespace ShooterPrototype.Player
             }
 
             var center = transform.position;
-            var horizontalOffset = playerPosition - center;
-            if (Mathf.Abs(horizontalOffset.y) > pickupVerticalHalfHeight + 0.35f)
+            var playerFeetY = playerPosition.y - 0.35f;
+            var verticalDelta = Mathf.Abs(center.y - playerFeetY);
+            if (verticalDelta > pickupVerticalHalfHeight)
             {
                 return false;
             }
 
+            if (!HasPickupLineOfSight(lookOrigin, center))
+            {
+                return false;
+            }
+
+            var horizontalOffset = playerPosition - center;
             horizontalOffset.y = 0f;
             distanceSqr = horizontalOffset.sqrMagnitude;
             if (maxRadius > 0.01f && distanceSqr > maxRadius * maxRadius)
@@ -122,6 +130,33 @@ namespace ShooterPrototype.Player
 
             var facing = Vector3.Dot(lookForward.normalized, toPickup.normalized);
             return facing >= minFacingDot;
+        }
+
+        private bool HasPickupLineOfSight(Vector3 lookOrigin, Vector3 center)
+        {
+            var target = center + Vector3.up * 0.25f;
+            var toTarget = target - lookOrigin;
+            var distance = toTarget.magnitude;
+            if (distance <= 0.05f)
+            {
+                return true;
+            }
+
+            if (!Physics.Raycast(
+                    lookOrigin,
+                    toTarget / distance,
+                    out var hit,
+                    distance,
+                    pickupLineOfSightMask,
+                    QueryTriggerInteraction.Ignore))
+            {
+                return true;
+            }
+
+            return hit.collider != null &&
+                   (hit.collider.transform == transform ||
+                    hit.collider.transform.IsChildOf(transform) ||
+                    hit.collider.GetComponentInParent<WorldPickup>() == this);
         }
 
         public void Collect(PickupSpawnManager collectorOwner)

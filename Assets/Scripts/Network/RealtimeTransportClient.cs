@@ -398,6 +398,8 @@ namespace ShooterPrototype.Network
             public float planePosX;
             public float planePosY;
             public float planePosZ;
+            public int planeSpawnIndex = -1;
+            public int planeSpawnSlotCount = 12;
             public string localTicketId;
             public int localKillCount;
             public bool isLocalWinner;
@@ -410,6 +412,13 @@ namespace ShooterPrototype.Network
             public string type;
             public string ticketId;
             public string reason;
+        }
+
+        [Serializable]
+        public sealed class PlayerLandMessage
+        {
+            public string type;
+            public string ticketId;
         }
 
         [Serializable]
@@ -662,6 +671,7 @@ namespace ShooterPrototype.Network
         public event Action<DamageZoneStateMessage> DamageZoneStateReceived;
         public event Action<MatchStateMessage> MatchStateReceived;
         public event Action<MatchDisconnectMessage> MatchDisconnectReceived;
+        public event Action<PlayerLandMessage> PlayerLandReceived;
 
         private void Awake()
         {
@@ -1471,6 +1481,20 @@ namespace ShooterPrototype.Network
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 
+        public void SendPlayerLand()
+        {
+            if (!IsConnected)
+            {
+                return;
+            }
+
+            _ = SendJsonAsync(new PlayerLandMessage
+            {
+                type = "player_land",
+                ticketId = connectedTicketId
+            }, cts != null ? cts.Token : CancellationToken.None);
+        }
+
         private async Task ConnectInternalAsync(string ticketId)
         {
             try
@@ -1767,6 +1791,24 @@ namespace ShooterPrototype.Network
                 {
                     var message = matchDisconnectMessage;
                     EnqueueMainThreadAction(() => MatchDisconnectReceived?.Invoke(message));
+                    return;
+                }
+
+                PlayerLandMessage playerLandMessage = null;
+                try
+                {
+                    playerLandMessage = JsonUtility.FromJson<PlayerLandMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (playerLandMessage != null &&
+                    string.Equals(playerLandMessage.type, "player_land", StringComparison.Ordinal))
+                {
+                    var message = playerLandMessage;
+                    EnqueueMainThreadAction(() => PlayerLandReceived?.Invoke(message));
                     return;
                 }
 

@@ -35,6 +35,7 @@ namespace ShooterPrototype.Player
         [SerializeField] private float remoteRotationLerpSpeed = 34f;
         [SerializeField] private float remoteHorizontalSmoothTime = 0.055f;
         [SerializeField] private float remoteVerticalSmoothTime = 0.05f;
+        [SerializeField] private float remotePlaneLocalLerpSpeed = 18f;
         [SerializeField] private float remoteDirectFollowDistance = 0f;
         [SerializeField] private float remoteMissingGraceSeconds = 1.25f;
         [SerializeField] private float teleportSnapDistance = 4f;
@@ -133,6 +134,9 @@ namespace ShooterPrototype.Player
             public RemoteMedkitPresentation RemoteMedkit;
             public RemotePlayerShotEffects RemoteShotEffects;
             public PlayerAudioController RemoteAudio;
+            public bool PlaneRiding;
+            public bool HasSmoothedPlaneLocalPosition;
+            public Vector3 SmoothedPlaneLocalPosition;
             public readonly List<PresenceSnapshot> Snapshots = new List<PresenceSnapshot>();
         }
 
@@ -203,6 +207,7 @@ namespace ShooterPrototype.Player
             }
 
             realtimeClient.JoinAcknowledged += HandleTransportJoinAcknowledged;
+            realtimeClient.PlayerLandReceived += HandleRemotePlayerLand;
             transportEventsSubscribed = true;
         }
 
@@ -215,12 +220,33 @@ namespace ShooterPrototype.Player
             }
 
             realtimeClient.JoinAcknowledged -= HandleTransportJoinAcknowledged;
+            realtimeClient.PlayerLandReceived -= HandleRemotePlayerLand;
             transportEventsSubscribed = false;
         }
 
         private void HandleTransportJoinAcknowledged()
         {
             SendLocalPose(forceImmediate: true);
+        }
+
+        private void HandleRemotePlayerLand(RealtimeTransportClient.PlayerLandMessage message)
+        {
+            if (message == null || string.IsNullOrWhiteSpace(message.ticketId))
+            {
+                return;
+            }
+
+            if (string.Equals(message.ticketId, localTicketId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!remoteAvatars.TryGetValue(message.ticketId, out var avatar))
+            {
+                return;
+            }
+
+            avatar.RemoteAudio?.PlayLand(false);
         }
 
         private void OnEnable()
@@ -313,6 +339,11 @@ namespace ShooterPrototype.Player
             }
 
             var rootTransform = avatar.Root.transform;
+            if (TryApplyRemotePlaneRidingTransform(avatar, rootTransform, targetPosition, targetYaw))
+            {
+                return;
+            }
+
             var currentPosition = rootTransform.position;
             var distance = Vector3.Distance(currentPosition, targetPosition);
             if (distance >= teleportSnapDistance)
@@ -362,6 +393,89 @@ namespace ShooterPrototype.Player
             var currentYaw = rootTransform.eulerAngles.y;
             var nextYaw = Mathf.LerpAngle(currentYaw, targetYaw, Time.deltaTime * remoteRotationLerpSpeed);
             rootTransform.rotation = Quaternion.Euler(0f, nextYaw, 0f);
+        }
+
+        private bool TryApplyRemotePlaneRidingTransform(
+            RemoteAvatar avatar,
+            Transform rootTransform,
+            Vector3 targetPosition,
+            float targetYaw)
+        {
+            if (battleRoyaleController == null)
+            {
+                battleRoyaleController = FindFirstObjectByType<MatchBattleRoyaleController>();
+            }
+
+            var planeTransform = battleRoyaleController != null
+                ? battleRoyaleController.PlaneTransform
+                : null;
+            var planePhaseActive = battleRoyaleController != null &&
+                                   battleRoyaleController.IsPlanePhaseActive;
+
+            if (!planePhaseActive || planeTransform == null)
+            {
+                if (avatar.PlaneRiding)
+                {
+                    rootTransform.SetParent(null, true);
+                    avatar.PlaneRiding = false;
+                    avatar.HasSmoothedPlaneLocalPosition = false;
+                }
+
+                return false;
+            }
+
+            if (avatar.Health != null && avatar.Health.IsDead)
+            {
+                if (avatar.PlaneRiding)
+                {
+                    rootTransform.SetParent(null, true);
+                    avatar.PlaneRiding = false;
+                    avatar.HasSmoothedPlaneLocalPosition = false;
+                }
+
+                return false;
+            }
+
+            var verticalOffset = targetPosition.y - planeTransform.position.y;
+            if (verticalOffset < -4f || verticalOffset > 14f)
+            {
+                if (avatar.PlaneRiding)
+                {
+                    rootTransform.SetParent(null, true);
+                    avatar.PlaneRiding = false;
+                    avatar.HasSmoothedPlaneLocalPosition = false;
+                }
+
+                return false;
+            }
+
+            if (!avatar.PlaneRiding)
+            {
+                rootTransform.SetParent(planeTransform, true);
+                avatar.PlaneRiding = true;
+                avatar.HasSmoothedPlaneLocalPosition = false;
+            }
+
+            var targetLocal = planeTransform.InverseTransformPoint(targetPosition);
+            if (!avatar.HasSmoothedPlaneLocalPosition)
+            {
+                avatar.SmoothedPlaneLocalPosition = targetLocal;
+                avatar.HasSmoothedPlaneLocalPosition = true;
+            }
+            else
+            {
+                var blend = Mathf.Clamp01(Time.deltaTime * Mathf.Max(4f, remotePlaneLocalLerpSpeed));
+                avatar.SmoothedPlaneLocalPosition = Vector3.Lerp(
+                    avatar.SmoothedPlaneLocalPosition,
+                    targetLocal,
+                    blend);
+            }
+
+            rootTransform.localPosition = avatar.SmoothedPlaneLocalPosition;
+            rootTransform.rotation = Quaternion.Euler(0f, targetYaw, 0f);
+            avatar.HorizontalSmoothVelocity = Vector2.zero;
+            avatar.VerticalSmoothVelocity = 0f;
+            return true;
         }
 
         private void DriveRemoteLocomotion(RemoteAvatar avatar, InterpolatedPose pose)

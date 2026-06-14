@@ -85,11 +85,11 @@ const BR_LOBBY_COUNTDOWN_SECONDS = Math.max(3, toInt(process.env.BR_LOBBY_COUNTD
 const BR_PLANE_DURATION_SECONDS = Math.max(10, toInt(process.env.BR_PLANE_DURATION_SECONDS, 45));
 const BR_PLANE_ALTITUDE = Math.max(20, Number(process.env.BR_PLANE_ALTITUDE) || 120);
 const BR_PLANE_HALF_LENGTH = Math.max(100, Number(process.env.BR_PLANE_HALF_LENGTH) || 400);
-const BR_PLANE_START_RADIUS = Math.max(40, Number(process.env.BR_PLANE_START_RADIUS) || 120);
-const BR_PLANE_SPEED = Math.max(5, Number(process.env.BR_PLANE_SPEED) || 35);
+const BR_PLANE_START_RADIUS = Math.max(40, Number(process.env.BR_PLANE_START_RADIUS) || 60);
+const BR_PLANE_SPEED = Math.max(5, Number(process.env.BR_PLANE_SPEED) || 80);
 const BR_DEATH_DISCONNECT_SECONDS = Math.max(1, toInt(process.env.BR_DEATH_DISCONNECT_SECONDS, 5));
 const BR_WINNER_DISCONNECT_SECONDS = Math.max(3, toInt(process.env.BR_WINNER_DISCONNECT_SECONDS, 10));
-const BR_PLANE_AUTO_JUMP_SECONDS_BEFORE_END = Math.max(1, toInt(process.env.BR_PLANE_AUTO_JUMP_SECONDS_BEFORE_END, 5));
+const BR_PLANE_SPAWN_SLOTS = Math.max(1, toInt(process.env.BR_PLANE_SPAWN_SLOTS, 12));
 const BR_DROP_MAX_DISTANCE_FROM_CENTER = Math.max(10, Number(process.env.BR_DROP_MAX_DISTANCE_FROM_CENTER) || 60);
 const BR_DEATH_FALL_LAND_TIMEOUT_SECONDS = Math.max(2, toInt(process.env.BR_DEATH_FALL_LAND_TIMEOUT_SECONDS, 8));
 const BR_MATCH_STATE_BROADCAST_MS = Math.max(100, toInt(process.env.BR_MATCH_STATE_BROADCAST_MS, 250));
@@ -431,6 +431,11 @@ wsServer.on("connection", (socket) => {
         return;
       }
 
+      if (message.type === "player_land") {
+        handleWsPlayerLand(socket);
+        return;
+      }
+
       if (message.type === "death_fall_landed") {
         handleWsDeathFallLanded(socket);
         return;
@@ -627,6 +632,7 @@ function createBattleRoyaleState() {
     connectedTickets: new Set(),
     aliveTickets: new Set(),
     jumpedTickets: new Set(),
+    voluntaryJumpTickets: new Set(),
     landedTickets: new Set(),
     dropPositionsByTicket: new Map(),
     eliminatedTickets: new Set(),
@@ -637,6 +643,7 @@ function createBattleRoyaleState() {
     pendingWinnerTicketId: "",
     planePathAngle: 0,
     planePathInitialized: false,
+    planeSpawnIndexByTicket: new Map(),
     lastStateBroadcastMs: 0
   };
 }
@@ -1432,6 +1439,14 @@ function handleWsPose(socket, message) {
     presence.velocityZ = 0;
     presence.verticalVelocity = 0;
     positionBranch = "dead";
+  } else if (isBattleRoyaleOnPlane(ticket)) {
+    presence.position = { x: position.x, y: position.y, z: position.z };
+    presence.yaw = yaw;
+    presence.isGrounded = isGrounded;
+    presence.velocityX = 0;
+    presence.velocityY = 0;
+    presence.velocityZ = 0;
+    positionBranch = "br_on_plane";
   } else if (isBattleRoyaleParachuting(ticket)) {
     presence.position = { x: position.x, y: position.y, z: position.z };
     presence.yaw = yaw;
@@ -2734,14 +2749,7 @@ function handleWsRegisterDamageZone(socket, message) {
       br.planePathAngle = Math.random() * Math.PI * 2;
       br.planePathInitialized = true;
     }
-    const pathDx = Math.cos(br.planePathAngle);
-    const pathDz = Math.sin(br.planePathAngle);
-    br.planeStartX = mapCenterX + (pathDx * BR_PLANE_START_RADIUS);
-    br.planeStartZ = mapCenterZ + (pathDz * BR_PLANE_START_RADIUS);
-    br.planeEndX = mapCenterX - (pathDx * BR_PLANE_START_RADIUS);
-    br.planeEndZ = mapCenterZ - (pathDz * BR_PLANE_START_RADIUS);
-    br.planeY = BR_PLANE_ALTITUDE;
-    br.planeSpeed = BR_PLANE_SPEED;
+    updateBattleRoyalePlaneRoute(br, mapCenterX, mapCenterZ);
   }
 
   zone.lastBroadcastMs = 0;
@@ -4129,6 +4137,20 @@ function tryRestoreAnyActiveMatch() {
   }
 }
 
+function isBattleRoyaleOnPlane(ticket) {
+  if (!ticket || !ticket.matchId) {
+    return false;
+  }
+
+  const session = matchesById.get(ticket.matchId);
+  const br = session ? ensureBattleRoyaleState(session) : null;
+  if (!br || br.phase !== "plane") {
+    return false;
+  }
+
+  return !br.jumpedTickets.has(ticket.ticketId);
+}
+
 function isBattleRoyaleParachuting(ticket) {
   if (!ticket || !ticket.matchId) {
     return false;
@@ -4230,6 +4252,35 @@ function maybeStartBattleRoyaleCountdown(session) {
   broadcastMatchState(session.matchId);
 }
 
+function assignBattleRoyalePlaneSpawns(session) {
+  const br = ensureBattleRoyaleState(session);
+  if (!br || !session) {
+    return;
+  }
+
+  if (!br.planeSpawnIndexByTicket) {
+    br.planeSpawnIndexByTicket = new Map();
+  }
+
+  br.planeSpawnIndexByTicket.clear();
+  const liveTickets = Array.from(session.ticketIds)
+    .filter((ticketId) => br.connectedTickets.has(ticketId))
+    .sort();
+
+  for (let i = 0; i < liveTickets.length; i++) {
+    br.planeSpawnIndexByTicket.set(liveTickets[i], i % BR_PLANE_SPAWN_SLOTS);
+  }
+}
+
+function computeBattleRoyalePlaneDurationSeconds(br) {
+  const dx = Number(br.planeEndX) - Number(br.planeStartX);
+  const dz = Number(br.planeEndZ) - Number(br.planeStartZ);
+  const pathLength = Math.max(1, Math.hypot(dx, dz));
+  const speed = Math.max(5, Number(br.planeSpeed) || BR_PLANE_SPEED);
+  const travelSeconds = pathLength / speed;
+  return Math.max(12, Math.min(BR_PLANE_DURATION_SECONDS, travelSeconds));
+}
+
 function startBattleRoyalePlane(session, nowMs) {
   const br = ensureBattleRoyaleState(session);
   if (!br) {
@@ -4238,7 +4289,11 @@ function startBattleRoyalePlane(session, nowMs) {
 
   br.phase = "plane";
   br.planeStartedAtMs = nowMs;
-  br.planeEndsAtMs = nowMs + (BR_PLANE_DURATION_SECONDS * 1000);
+  const planeDurationSeconds = computeBattleRoyalePlaneDurationSeconds(br);
+  br.planeEndsAtMs = nowMs + (planeDurationSeconds * 1000);
+  br.voluntaryJumpTickets = new Set();
+  br.dropPositionsByTicket = new Map();
+  assignBattleRoyalePlaneSpawns(session);
   broadcastMatchState(session.matchId);
 }
 
@@ -4372,13 +4427,95 @@ function checkBattleRoyaleWinner(session, nowMs) {
   startBattleRoyaleEnding(session, nowMs, winnerTicketId);
 }
 
-function rollDropPositionNearMapCenter(centerX, centerZ, maxDistance) {
-  const angle = Math.random() * Math.PI * 2;
-  const radius = Math.random() * Math.max(1, maxDistance);
+function computeMapSquareEdgePoint(centerX, centerZ, dirX, dirZ, halfEdge) {
+  const edge = Math.max(1, Number(halfEdge) || BR_DROP_MAX_DISTANCE_FROM_CENTER);
+  const len = Math.hypot(dirX, dirZ);
+  if (len < 1e-6) {
+    return { x: centerX + edge, z: centerZ };
+  }
+
+  const ux = dirX / len;
+  const uz = dirZ / len;
+  let t = Infinity;
+  if (ux > 1e-6) {
+    t = Math.min(t, edge / ux);
+  }
+  if (ux < -1e-6) {
+    t = Math.min(t, -edge / ux);
+  }
+  if (uz > 1e-6) {
+    t = Math.min(t, edge / uz);
+  }
+  if (uz < -1e-6) {
+    t = Math.min(t, -edge / uz);
+  }
+  if (!Number.isFinite(t) || t < 0) {
+    t = edge;
+  }
+
   return {
-    x: centerX + (Math.cos(angle) * radius),
-    z: centerZ + (Math.sin(angle) * radius)
+    x: centerX + (ux * t),
+    z: centerZ + (uz * t)
   };
+}
+
+function clampPositionToMapSquare(x, z, centerX, centerZ, halfEdge) {
+  const edge = Math.max(1, Number(halfEdge) || BR_DROP_MAX_DISTANCE_FROM_CENTER);
+  return {
+    x: Math.max(centerX - edge, Math.min(centerX + edge, x)),
+    z: Math.max(centerZ - edge, Math.min(centerZ + edge, z))
+  };
+}
+
+function updateBattleRoyalePlaneRoute(br, mapCenterX, mapCenterZ) {
+  const halfEdge = BR_DROP_MAX_DISTANCE_FROM_CENTER;
+  if (!br.planePathInitialized) {
+    br.planePathAngle = Math.random() * Math.PI * 2;
+    br.planePathInitialized = true;
+  }
+
+  const pathDx = Math.cos(br.planePathAngle);
+  const pathDz = Math.sin(br.planePathAngle);
+  const start = computeMapSquareEdgePoint(mapCenterX, mapCenterZ, -pathDx, -pathDz, halfEdge);
+  const end = computeMapSquareEdgePoint(mapCenterX, mapCenterZ, pathDx, pathDz, halfEdge);
+  br.planeStartX = start.x;
+  br.planeStartZ = start.z;
+  br.planeEndX = end.x;
+  br.planeEndZ = end.z;
+  br.planeY = BR_PLANE_ALTITUDE;
+  br.planeSpeed = BR_PLANE_SPEED;
+}
+
+function rollAutoDropPositionAtPlaneRouteEnd(br, ticketId) {
+  const centerX = Number(br.mapCenterX) || 0;
+  const centerZ = Number(br.mapCenterZ) || 0;
+  const endX = Number(br.planeEndX) || 0;
+  const endZ = Number(br.planeEndZ) || 0;
+  const startX = Number(br.planeStartX) || 0;
+  const startZ = Number(br.planeStartZ) || 0;
+  const pathDx = endX - startX;
+  const pathDz = endZ - startZ;
+  const pathLength = Math.max(1, Math.hypot(pathDx, pathDz));
+  const dirX = pathDx / pathLength;
+  const dirZ = pathDz / pathLength;
+  const perpX = -dirZ;
+  const perpZ = dirX;
+
+  const mapEdgeEnd = computeMapSquareEdgePoint(centerX, centerZ, dirX, dirZ, BR_DROP_MAX_DISTANCE_FROM_CENTER);
+  const spawnIndex = br.planeSpawnIndexByTicket && ticketId
+    ? (br.planeSpawnIndexByTicket.get(ticketId) ?? 0)
+    : 0;
+  const spawnCount = Math.max(1, BR_PLANE_SPAWN_SLOTS);
+  const lateralStep = 3.25;
+  const lateralOffset = (spawnIndex - ((spawnCount - 1) * 0.5)) * lateralStep;
+  const alongJitter = (Math.random() - 0.5) * 2.5;
+  const lateralJitter = (Math.random() - 0.5) * 1.0;
+
+  const raw = {
+    x: mapEdgeEnd.x + (perpX * (lateralOffset + lateralJitter)) + (dirX * alongJitter),
+    z: mapEdgeEnd.z + (perpZ * (lateralOffset + lateralJitter)) + (dirZ * alongJitter)
+  };
+  return clampPositionToMapSquare(raw.x, raw.z, centerX, centerZ, BR_DROP_MAX_DISTANCE_FROM_CENTER);
 }
 
 function ensureAutoDropPosition(br, ticketId) {
@@ -4387,24 +4524,29 @@ function ensureAutoDropPosition(br, ticketId) {
   }
 
   if (!br.dropPositionsByTicket.has(ticketId)) {
-    const drop = rollDropPositionNearMapCenter(
-      br.mapCenterX,
-      br.mapCenterZ,
-      BR_DROP_MAX_DISTANCE_FROM_CENTER
-    );
+    const drop = rollAutoDropPositionAtPlaneRouteEnd(br, ticketId);
     br.dropPositionsByTicket.set(ticketId, drop);
   }
 
   return br.dropPositionsByTicket.get(ticketId);
 }
 
+function hasPlaneReachedRouteEnd(br, nowMs) {
+  return !!(br &&
+    br.planeEndsAtMs > br.planeStartedAtMs &&
+    nowMs >= br.planeEndsAtMs);
+}
+
 function shouldForcePlaneJump(br, nowMs, ticketId) {
-  if (!br || br.phase !== "plane" || !ticketId || br.jumpedTickets.has(ticketId)) {
+  if (!br || !ticketId || !hasPlaneReachedRouteEnd(br, nowMs)) {
     return false;
   }
 
-  return br.planeEndsAtMs > br.planeStartedAtMs &&
-    nowMs >= (br.planeEndsAtMs - (BR_PLANE_AUTO_JUMP_SECONDS_BEFORE_END * 1000));
+  if (br.voluntaryJumpTickets && br.voluntaryJumpTickets.has(ticketId)) {
+    return false;
+  }
+
+  return br.phase === "plane" && !br.jumpedTickets.has(ticketId);
 }
 
 function onBattleRoyalePlayerLanded(ticket) {
@@ -4466,6 +4608,54 @@ function handleWsPlaneLanded(socket) {
   }
 
   onBattleRoyalePlayerLanded(ticket);
+  broadcastPlayerLand(ticket.matchId, ticket.ticketId);
+}
+
+function handleWsPlayerLand(socket) {
+  const meta = wsMetaBySocket.get(socket);
+  if (!meta || !meta.ticketId) {
+    return;
+  }
+
+  const ticket = ticketsById.get(meta.ticketId);
+  if (!ticket || ticket.status !== "Matched" || !ticket.matchId) {
+    return;
+  }
+
+  broadcastPlayerLand(ticket.matchId, ticket.ticketId);
+}
+
+function broadcastPlayerLand(matchId, landedTicketId) {
+  if (!matchId || !landedTicketId) {
+    return;
+  }
+
+  const session = matchesById.get(matchId);
+  if (!session) {
+    return;
+  }
+
+  const payload = JSON.stringify({
+    type: "player_land",
+    ticketId: landedTicketId
+  });
+
+  for (const ticketId of session.ticketIds) {
+    if (ticketId === landedTicketId) {
+      continue;
+    }
+
+    const socket = wsClientsByTicketId.get(ticketId);
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      continue;
+    }
+
+    try {
+      socket.send(payload);
+    } catch {
+      // ignored
+    }
+  }
 }
 
 function handleWsPlaneJump(socket) {
@@ -4486,6 +4676,10 @@ function handleWsPlaneJump(socket) {
   }
 
   br.jumpedTickets.add(ticket.ticketId);
+  if (!br.voluntaryJumpTickets) {
+    br.voluntaryJumpTickets = new Set();
+  }
+  br.voluntaryJumpTickets.add(ticket.ticketId);
   broadcastMatchState(session.matchId);
 }
 
@@ -4521,6 +4715,8 @@ function buildMatchStatePayload(session, ticketId) {
       planePosX: 0,
       planePosY: BR_PLANE_ALTITUDE,
       planePosZ: 0,
+      planeSpawnIndex: -1,
+      planeSpawnSlotCount: BR_PLANE_SPAWN_SLOTS,
       localTicketId: ticketId || ""
     };
   }
@@ -4537,14 +4733,19 @@ function buildMatchStatePayload(session, ticketId) {
   const planePosZ = br.planeStartZ + ((br.planeEndZ - br.planeStartZ) * planeT);
 
   const forceJump = shouldForcePlaneJump(br, nowMs, ticketId);
+  const voluntaryJump = !!(ticketId && br.voluntaryJumpTickets && br.voluntaryJumpTickets.has(ticketId));
   let dropPosX = 0;
   let dropPosZ = 0;
   let useForcedDrop = false;
-  if (forceJump && ticketId) {
-    const drop = ensureAutoDropPosition(br, ticketId);
-    dropPosX = drop.x;
-    dropPosZ = drop.z;
-    useForcedDrop = true;
+  if (ticketId && !voluntaryJump) {
+    const stillOnPlane = br.phase === "plane" && !br.jumpedTickets.has(ticketId);
+    const missedJumpAfterPlane = br.phase === "playing" &&
+      br.jumpedTickets.has(ticketId) &&
+      !br.landedTickets.has(ticketId);
+    const mustAutoExtract = (forceJump && stillOnPlane) || missedJumpAfterPlane;
+    if (mustAutoExtract) {
+      useForcedDrop = true;
+    }
   }
 
   const hasLanded = ticketId ? br.landedTickets.has(ticketId) : false;
@@ -4591,6 +4792,10 @@ function buildMatchStatePayload(session, ticketId) {
     planePosX,
     planePosY: br.planeY,
     planePosZ,
+    planeSpawnIndex: ticketId && br.planeSpawnIndexByTicket
+      ? (br.planeSpawnIndexByTicket.get(ticketId) ?? 0)
+      : 0,
+    planeSpawnSlotCount: BR_PLANE_SPAWN_SLOTS,
     localTicketId: ticketId || ""
   };
 }
@@ -4782,8 +4987,11 @@ function tickBattleRoyaleMatches(nowMs) {
       startBattleRoyalePlane(session, nowMs);
     }
 
-    if (br.phase === "plane" && br.planeEndsAtMs > 0 && nowMs >= br.planeEndsAtMs) {
+    if (br.phase === "plane" && hasPlaneReachedRouteEnd(br, nowMs)) {
       for (const ticketId of br.connectedTickets) {
+        if (br.voluntaryJumpTickets && br.voluntaryJumpTickets.has(ticketId)) {
+          continue;
+        }
         if (!br.jumpedTickets.has(ticketId)) {
           br.jumpedTickets.add(ticketId);
         }

@@ -1,3 +1,4 @@
+using ShooterPrototype.Bootstrap;
 using ShooterPrototype.Player;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -35,6 +36,14 @@ namespace ShooterPrototype.Editor
                 var serialized = new SerializedObject(controller);
                 serialized.FindProperty("planePrefab").objectReferenceValue = planePrefab;
                 serialized.ApplyModifiedPropertiesWithoutUndo();
+
+                var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
+                if (bootstrap != null)
+                {
+                    var bootstrapSerialized = new SerializedObject(bootstrap);
+                    bootstrapSerialized.FindProperty("battleRoyalePlanePrefab").objectReferenceValue = planePrefab;
+                    bootstrapSerialized.ApplyModifiedPropertiesWithoutUndo();
+                }
             }
 
             EditorSceneManager.MarkSceneDirty(scene);

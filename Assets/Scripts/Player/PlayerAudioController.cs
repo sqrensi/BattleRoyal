@@ -10,6 +10,9 @@ namespace ShooterPrototype.Player
         [SerializeField] private AudioClip[] sprintFootstepClips;
         [SerializeField] private AudioClip[] remoteFootstepClips;
         [SerializeField] private AudioClip jumpClip;
+        [SerializeField] private AudioClip planeJumpClip;
+        [SerializeField] private AudioClip landClip;
+        [SerializeField] private AudioClip parachuteOpenClip;
         [SerializeField] private AudioClip shotClip;
         [SerializeField] private AudioClip reloadPullClip;
         [SerializeField] private AudioClip reloadInsertClip;
@@ -25,6 +28,12 @@ namespace ShooterPrototype.Player
         [SerializeField] private float sprintFootstepVolumeMultiplier = 1.12f;
         [Range(0f, 1f)]
         [SerializeField] private float jumpVolume = 0.5f;
+        [Range(0f, 1f)]
+        [SerializeField] private float planeJumpVolume = 0.62f;
+        [Range(0f, 1f)]
+        [SerializeField] private float landVolume = 0.48f;
+        [Range(0f, 1f)]
+        [SerializeField] private float parachuteOpenVolume = 0.58f;
         [Range(0f, 1f)]
         [SerializeField] private float shotVolume = 0.8f;
         [Range(0f, 1f)]
@@ -57,6 +66,25 @@ namespace ShooterPrototype.Player
             nearSource = CreateSource("AudioNear", defaultMaxDistance);
             shotSource = CreateSource("AudioShot", shotMaxDistance);
             reloadSource = CreateSource("AudioReload", defaultMaxDistance);
+            EnsureDefaultClips();
+        }
+
+        private void EnsureDefaultClips()
+        {
+            if (planeJumpClip == null)
+            {
+                planeJumpClip = Resources.Load<AudioClip>("BRAudio/PlaneJump");
+            }
+
+            if (landClip == null)
+            {
+                landClip = Resources.Load<AudioClip>("Sounds/3");
+            }
+
+            if (parachuteOpenClip == null)
+            {
+                parachuteOpenClip = Resources.Load<AudioClip>("Sounds/4");
+            }
         }
 
         public void PlayFootstep(bool isLocal, bool isSprinting = false)
@@ -79,6 +107,22 @@ namespace ShooterPrototype.Player
         public void PlayJump(bool isLocal)
         {
             PlayClip(nearSource, jumpClip, jumpVolume, isLocal, defaultMaxDistance);
+        }
+
+        public void PlayPlaneJump()
+        {
+            var clip = planeJumpClip != null ? planeJumpClip : jumpClip;
+            PlayClip(nearSource, clip, planeJumpVolume, true, defaultMaxDistance);
+        }
+
+        public void PlayLand(bool isLocal)
+        {
+            PlayClip(nearSource, landClip, landVolume, isLocal, defaultMaxDistance);
+        }
+
+        public void PlayParachuteOpen()
+        {
+            PlayClip(nearSource, parachuteOpenClip, parachuteOpenVolume, true, defaultMaxDistance);
         }
 
         public void PlayShot(bool isLocal, in WeaponAudioOverrides overrides = default)
@@ -138,6 +182,9 @@ namespace ShooterPrototype.Player
             sprintFootstepClips = source.sprintFootstepClips;
             remoteFootstepClips = source.remoteFootstepClips;
             jumpClip = source.jumpClip;
+            planeJumpClip = source.planeJumpClip;
+            landClip = source.landClip;
+            parachuteOpenClip = source.parachuteOpenClip;
             shotClip = source.shotClip;
             reloadPullClip = source.reloadPullClip;
             reloadInsertClip = source.reloadInsertClip;
@@ -147,6 +194,9 @@ namespace ShooterPrototype.Player
             footstepVolume = source.footstepVolume;
             sprintFootstepVolumeMultiplier = source.sprintFootstepVolumeMultiplier;
             jumpVolume = source.jumpVolume;
+            planeJumpVolume = source.planeJumpVolume;
+            landVolume = source.landVolume;
+            parachuteOpenVolume = source.parachuteOpenVolume;
             shotVolume = source.shotVolume;
             reloadPullVolume = source.reloadPullVolume;
             reloadInsertVolume = source.reloadInsertVolume;

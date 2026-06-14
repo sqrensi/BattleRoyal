@@ -23,6 +23,7 @@ namespace ShooterPrototype.Bootstrap
         [SerializeField] private bool createRuntimePlayerSpawnManager = true;
         [SerializeField] private string mainMenuSceneName = "MainMenu";
         [SerializeField] private string gameSceneName = "Game";
+        [SerializeField] private GameObject battleRoyalePlanePrefab;
 
         private bool initialized;
         private QueueApiClient queueApiClient;
@@ -38,6 +39,14 @@ namespace ShooterPrototype.Bootstrap
                 Destroy(gameObject);
                 return;
             }
+
+#if UNITY_EDITOR
+            if (battleRoyalePlanePrefab == null)
+            {
+                battleRoyalePlanePrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                    "Assets/Prefabs/Plane/Plane.prefab");
+            }
+#endif
 
             instance = this;
 
@@ -196,12 +205,21 @@ namespace ShooterPrototype.Bootstrap
             var existing = FindFirstObjectByType<MatchBattleRoyaleController>();
             if (existing != null)
             {
+                if (battleRoyalePlanePrefab != null)
+                {
+                    existing.ConfigurePlanePrefab(battleRoyalePlanePrefab);
+                }
+
                 existing.PrepareForNewMatch();
                 return;
             }
 
             var controllerObject = new GameObject("MatchBattleRoyale");
-            controllerObject.AddComponent<MatchBattleRoyaleController>();
+            var controller = controllerObject.AddComponent<MatchBattleRoyaleController>();
+            if (battleRoyalePlanePrefab != null)
+            {
+                controller.ConfigurePlanePrefab(battleRoyalePlanePrefab);
+            }
         }
 
         private void EnsurePerformancePreset()

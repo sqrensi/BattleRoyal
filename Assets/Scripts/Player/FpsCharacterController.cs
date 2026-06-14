@@ -120,6 +120,7 @@ namespace ShooterPrototype.Player
 
         public bool IsGrounded => isGrounded;
         public bool IsMovementLocked => movementLocked;
+
         public bool IsMedkitUseMovementMode => medkitUseMovementMode;
         public bool IsCrouching => isCrouching;
         public bool IsSprinting => isSprinting;
