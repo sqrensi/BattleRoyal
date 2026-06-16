@@ -1,5 +1,36 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!1 &43546253010643899
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4087697939069253321}
+  m_Layer: 0
+  m_Name: face
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4087697939069253321
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 43546253010643899}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 1.411, z: 0.02}
+  m_LocalScale: {x: 0.44968104, y: 0.44968104, z: 0.44968104}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2016227403361805815}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &672314228623673864
 GameObject:
   m_ObjectHideFlags: 0
@@ -1385,6 +1416,37 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ShooterPrototype.Player.PlayerBoneHitbox
   hitZone: 3
+--- !u!1 &6718247054870604616
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7843428564300498799}
+  m_Layer: 0
+  m_Name: hair
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7843428564300498799
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6718247054870604616}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 1.405, z: 0.002}
+  m_LocalScale: {x: 0.73981524, y: 0.73981524, z: 0.73981524}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2016227403361805815}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &7330375766676716844
 GameObject:
   m_ObjectHideFlags: 0
@@ -1763,6 +1825,12 @@ PrefabInstance:
     m_RemovedGameObjects:
     - {fileID: 4941077688027282738, guid: dc0216bb95f205842b2047a8e89fddec, type: 3}
     m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: 1685871027639137889, guid: dc0216bb95f205842b2047a8e89fddec, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 4087697939069253321}
+    - targetCorrespondingSourceObject: {fileID: 1685871027639137889, guid: dc0216bb95f205842b2047a8e89fddec, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 7843428564300498799}
     - targetCorrespondingSourceObject: {fileID: 2824969800711879161, guid: dc0216bb95f205842b2047a8e89fddec, type: 3}
       insertIndex: -1
       addedObject: {fileID: 4938128065078093788}
@@ -1896,6 +1964,11 @@ Transform:
 --- !u!4 &1966062114606670953 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 1717742775065098239, guid: dc0216bb95f205842b2047a8e89fddec, type: 3}
+  m_PrefabInstance: {fileID: 909303677062501270}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &2016227403361805815 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 1685871027639137889, guid: dc0216bb95f205842b2047a8e89fddec, type: 3}
   m_PrefabInstance: {fileID: 909303677062501270}
   m_PrefabAsset: {fileID: 0}
 --- !u!4 &2196848327331575403 stripped
@@ -2174,6 +2247,8 @@ MonoBehaviour:
   attachTarget: {fileID: 5062842464355578656}
   defaultWeaponPrefabPath: Assets/Prefabs/AK-47/rifle_001.prefab
   sniperWeaponPrefabPath: Assets/Prefabs/Sniper/sniper_rifle_001.prefab
+  pistolWeaponPrefabPath: Assets/Prefabs/Pistol/pistol_001.prefab
+  mp7WeaponPrefabPath: Assets/Prefabs/mp7/mp7.prefab
   attachTargetName: RemoteWeaponTarget
   rightHandBoneName: Hand_R
   alignGripToAttachTarget: 0
@@ -2185,6 +2260,8 @@ MonoBehaviour:
   defaultAttachLocalEuler: {x: -42.105, y: 202.324, z: -107.611}
   backHolsterTarget: {fileID: 0}
   backHolsterTargetName: BackWeaponTarget
+  backHolsterTargetSecondary: {fileID: 0}
+  backHolsterTargetSecondaryName: BackWeaponTarget2
   enablePostureLeanCompensation: 1
   postureLeanCompensation: 0.65
   postureLeanSmoothTime: 0.12
@@ -2194,6 +2271,8 @@ MonoBehaviour:
   lookPitchSmoothTime: 0.1
   crouchPitchCompensation: 30
   crouchPitchSmoothTime: 0.12
+  weaponSwapIdleSeconds: 0.12
+  remoteSniperScaleMultiplier: 0.5882353
 --- !u!114 &7739855048516434974
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -42,9 +42,9 @@ namespace ShooterPrototype.UI
             }
         }
 
-        public static Sprite GetSkinIcon(string iconFileName)
+        public static Sprite GetSkinIcon(string pictureResourcePath)
         {
-            return LoadSprite(iconFileName);
+            return LoadSpriteFromResources(pictureResourcePath);
         }
 
         public static void ClearCache()
@@ -68,6 +68,40 @@ namespace ShooterPrototype.UI
                 default:
                     return null;
             }
+        }
+
+        private static Sprite LoadSpriteFromResources(string resourcePath)
+        {
+            if (string.IsNullOrWhiteSpace(resourcePath))
+            {
+                return null;
+            }
+
+            if (SpriteCache.TryGetValue(resourcePath, out var cached))
+            {
+                return cached;
+            }
+
+            var sprite = Resources.Load<Sprite>(resourcePath);
+            if (sprite != null)
+            {
+                SpriteCache[resourcePath] = sprite;
+                return sprite;
+            }
+
+            var texture = Resources.Load<Texture2D>(resourcePath);
+            if (texture == null)
+            {
+                return null;
+            }
+
+            sprite = Sprite.Create(
+                texture,
+                new Rect(0f, 0f, texture.width, texture.height),
+                new Vector2(0.5f, 0.5f),
+                100f);
+            SpriteCache[resourcePath] = sprite;
+            return sprite;
         }
 
         private static Sprite LoadSprite(string fileName)

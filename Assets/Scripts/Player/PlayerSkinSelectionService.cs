@@ -18,67 +18,38 @@ namespace ShooterPrototype.Player
         public PlayerSkinDefinition(
             string id,
             string displayName,
-            string meshResourcePath,
+            string prefabResourcePath,
             string materialResourcePath,
-            string iconFileName = "")
+            string pictureResourcePath = "")
         {
             Id = id ?? string.Empty;
             DisplayName = displayName ?? string.Empty;
-            MeshResourcePath = meshResourcePath ?? string.Empty;
+            PrefabResourcePath = prefabResourcePath ?? string.Empty;
             MaterialResourcePath = materialResourcePath ?? string.Empty;
-            IconFileName = iconFileName ?? string.Empty;
+            PictureResourcePath = pictureResourcePath ?? string.Empty;
         }
 
         public string Id { get; }
         public string DisplayName { get; }
-        public string MeshResourcePath { get; }
+        public string PrefabResourcePath { get; }
         public string MaterialResourcePath { get; }
-        public string IconFileName { get; }
-        public bool IsValid => !string.IsNullOrWhiteSpace(MeshResourcePath);
+        public string PictureResourcePath { get; }
+        [Obsolete("Use PrefabResourcePath.")]
+        public string MeshResourcePath => PrefabResourcePath;
+
+        [Obsolete("Use PictureResourcePath.")]
+        public string IconFileName => PictureResourcePath;
+
+        public bool IsValid => !string.IsNullOrWhiteSpace(PrefabResourcePath);
     }
 
     public static class PlayerSkinSelectionService
     {
         private const string PrefKeyPrefix = "player_skin_";
         private const string LegacyUnequippedSkinId = "__none__";
+        private const int MaxVariantProbeCount = 32;
 
-        private static readonly PlayerSkinDefinition DefaultShirt =
-            new PlayerSkinDefinition("default_shirt", "Футболка", "1", "tshirt", "clothes_tshirt.png");
-
-        private static readonly PlayerSkinDefinition DefaultPants =
-            new PlayerSkinDefinition("default_pants", "Штаны", "2", "pants", "clothes_pants.png");
-
-        private static readonly PlayerSkinDefinition DefaultBoots =
-            new PlayerSkinDefinition("default_boots", "Ботинки", "3", "feets", "clothes_shoes.png");
-
-        private static readonly PlayerSkinDefinition DefaultGloves =
-            new PlayerSkinDefinition("default_gloves", "Перчатки", "4", "gloves", "clothes_gloves.png");
-
-        private static readonly Dictionary<PlayerSkinSlot, List<PlayerSkinDefinition>> Catalog =
-            new Dictionary<PlayerSkinSlot, List<PlayerSkinDefinition>>
-            {
-                {
-                    PlayerSkinSlot.Shirt,
-                    new List<PlayerSkinDefinition> { DefaultShirt }
-                },
-                {
-                    PlayerSkinSlot.Pants,
-                    new List<PlayerSkinDefinition> { DefaultPants }
-                },
-                {
-                    PlayerSkinSlot.Boots,
-                    new List<PlayerSkinDefinition> { DefaultBoots }
-                },
-                {
-                    PlayerSkinSlot.Gloves,
-                    new List<PlayerSkinDefinition> { DefaultGloves }
-                }
-            };
-
-        public static IReadOnlyList<PlayerSkinDefinition> GetOptions(PlayerSkinSlot slot)
-        {
-            return Catalog.TryGetValue(slot, out var options) ? options : Array.Empty<PlayerSkinDefinition>();
-        }
+        private static readonly Dictionary<PlayerSkinSlot, List<PlayerSkinDefinition>> Catalog = BuildCatalog();
 
         private static readonly PlayerSkinSlot[] OwnedItemDisplayOrder =
         {
@@ -87,6 +58,11 @@ namespace ShooterPrototype.Player
             PlayerSkinSlot.Shirt,
             PlayerSkinSlot.Boots
         };
+
+        public static IReadOnlyList<PlayerSkinDefinition> GetOptions(PlayerSkinSlot slot)
+        {
+            return Catalog.TryGetValue(slot, out var options) ? options : Array.Empty<PlayerSkinDefinition>();
+        }
 
         public static IReadOnlyList<PlayerSkinDefinition> GetOwnedItems()
         {
@@ -137,7 +113,7 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            var savedId = PlayerPrefs.GetString(BuildPrefKey(slot), string.Empty);
+            var savedId = NormalizeSavedSkinId(PlayerPrefs.GetString(BuildPrefKey(slot), string.Empty));
             if (string.IsNullOrWhiteSpace(savedId) ||
                 string.Equals(savedId, LegacyUnequippedSkinId, StringComparison.OrdinalIgnoreCase))
             {
@@ -199,7 +175,7 @@ namespace ShooterPrototype.Player
                 return options[0];
             }
 
-            var currentId = PlayerPrefs.GetString(BuildPrefKey(slot), string.Empty);
+            var currentId = NormalizeSavedSkinId(PlayerPrefs.GetString(BuildPrefKey(slot), string.Empty));
             var currentIndex = -1;
             for (var i = 0; i < options.Count; i++)
             {
@@ -281,17 +257,110 @@ namespace ShooterPrototype.Player
             clothingApplier.ApplyToRemoteVisual(syntyVisual, forceReapply);
         }
 
+        private static Dictionary<PlayerSkinSlot, List<PlayerSkinDefinition>> BuildCatalog()
+        {
+            var catalog = new Dictionary<PlayerSkinSlot, List<PlayerSkinDefinition>>();
+            foreach (PlayerSkinSlot slot in Enum.GetValues(typeof(PlayerSkinSlot)))
+            {
+                var category = PlayerSkinResourcePaths.GetCategoryFolder(slot);
+                catalog[slot] = DiscoverSkinsForCategory(slot, category);
+            }
+
+            return catalog;
+        }
+
+        private static List<PlayerSkinDefinition> DiscoverSkinsForCategory(PlayerSkinSlot slot, string categoryFolder)
+        {
+            var results = new List<PlayerSkinDefinition>(4);
+            if (string.IsNullOrWhiteSpace(categoryFolder))
+            {
+                return results;
+            }
+
+            var displayBase = GetDefaultDisplayName(slot);
+            for (var i = 1; i <= MaxVariantProbeCount; i++)
+            {
+                var variantId = i.ToString("000");
+                var prefabPath = PlayerSkinResourcePaths.BuildPrefabPath(categoryFolder, variantId);
+                if (Resources.Load<GameObject>(prefabPath) == null)
+                {
+                    continue;
+                }
+
+                var skinId = PlayerSkinResourcePaths.BuildSkinId(categoryFolder, variantId);
+                var displayName = results.Count == 0 ? displayBase : $"{displayBase} {variantId}";
+                results.Add(new PlayerSkinDefinition(
+                    skinId,
+                    displayName,
+                    prefabPath,
+                    PlayerSkinResourcePaths.BuildMaterialPath(categoryFolder, variantId),
+                    PlayerSkinResourcePaths.BuildPicturePath(categoryFolder, variantId)));
+            }
+
+            if (results.Count == 0)
+            {
+                const string fallbackVariant = "001";
+                results.Add(new PlayerSkinDefinition(
+                    PlayerSkinResourcePaths.BuildSkinId(categoryFolder, fallbackVariant),
+                    displayBase,
+                    PlayerSkinResourcePaths.BuildPrefabPath(categoryFolder, fallbackVariant),
+                    PlayerSkinResourcePaths.BuildMaterialPath(categoryFolder, fallbackVariant),
+                    PlayerSkinResourcePaths.BuildPicturePath(categoryFolder, fallbackVariant)));
+            }
+
+            return results;
+        }
+
+        private static string GetDefaultDisplayName(PlayerSkinSlot slot)
+        {
+            switch (slot)
+            {
+                case PlayerSkinSlot.Shirt:
+                    return "Футболка";
+                case PlayerSkinSlot.Pants:
+                    return "Штаны";
+                case PlayerSkinSlot.Boots:
+                    return "Ботинки";
+                case PlayerSkinSlot.Gloves:
+                    return "Перчатки";
+                default:
+                    return "Скин";
+            }
+        }
+
         private static void ResolveSkinPaths(PlayerSkinSlot slot, out string meshPath, out string materialPath)
         {
             if (TryGetAppliedSkin(slot, out var definition) && definition.IsValid)
             {
-                meshPath = definition.MeshResourcePath;
+                meshPath = definition.PrefabResourcePath;
                 materialPath = definition.MaterialResourcePath;
                 return;
             }
 
             meshPath = string.Empty;
             materialPath = string.Empty;
+        }
+
+        private static string NormalizeSavedSkinId(string savedId)
+        {
+            if (string.IsNullOrWhiteSpace(savedId))
+            {
+                return savedId;
+            }
+
+            switch (savedId.Trim().ToLowerInvariant())
+            {
+                case "default_shirt":
+                    return PlayerSkinResourcePaths.BuildSkinId("tshirts", "001");
+                case "default_pants":
+                    return PlayerSkinResourcePaths.BuildSkinId("pants", "001");
+                case "default_boots":
+                    return PlayerSkinResourcePaths.BuildSkinId("shoes", "001");
+                case "default_gloves":
+                    return PlayerSkinResourcePaths.BuildSkinId("gloves", "001");
+                default:
+                    return savedId.Trim();
+            }
         }
 
         private static string BuildPrefKey(PlayerSkinSlot slot)

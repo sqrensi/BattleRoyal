@@ -81,23 +81,23 @@ namespace ShooterPrototype.Player
         [SerializeField] private bool applyOnRemote = true;
         [SerializeField] private bool hideBodyTorsoWhenClothed = true;
         [SerializeField] private float minTorsoHideBoneWeight = 0.35f;
-        [SerializeField] private string clothingResourcePath = "1";
-        [SerializeField] private string clothingMaterialResourcePath = "tshirt";
+        [SerializeField] private string clothingResourcePath = "Skins/tshirts/001/prefab";
+        [SerializeField] private string clothingMaterialResourcePath = "Skins/tshirts/001/material";
         [SerializeField] private bool applyPantsOnRemote = true;
         [SerializeField] private bool hideBodyLegsWhenPants = true;
         [SerializeField] private float minLegHideBoneWeight = 0.35f;
-        [SerializeField] private string pantsResourcePath = "2";
-        [SerializeField] private string pantsMaterialResourcePath = "pants";
+        [SerializeField] private string pantsResourcePath = "Skins/pants/001/prefab";
+        [SerializeField] private string pantsMaterialResourcePath = "Skins/pants/001/material";
         [SerializeField] private bool applyBootsOnRemote = true;
         [SerializeField] private bool hideBodyFeetWhenBoots = true;
         [SerializeField] private float minFootHideBoneWeight = 0.35f;
-        [SerializeField] private string bootsResourcePath = "3";
-        [SerializeField] private string bootsMaterialResourcePath = "feets";
+        [SerializeField] private string bootsResourcePath = "Skins/shoes/001/prefab";
+        [SerializeField] private string bootsMaterialResourcePath = "Skins/shoes/001/material";
         [SerializeField] private bool applyGloves = true;
         [SerializeField] private bool hideBodyHandsWhenGloves = true;
         [SerializeField] private float minHandHideBoneWeight = 0.35f;
-        [SerializeField] private string glovesResourcePath = "4";
-        [SerializeField] private string glovesMaterialResourcePath = "gloves";
+        [SerializeField] private string glovesResourcePath = "Skins/gloves/001/prefab";
+        [SerializeField] private string glovesMaterialResourcePath = "Skins/gloves/001/material";
         [Tooltip("Skinned clothing should stay at zero offset. Non-zero values break sleeve alignment.")]
         [SerializeField] private Vector3 clothingLocalOffset = Vector3.zero;
 

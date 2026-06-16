@@ -303,7 +303,7 @@ namespace ShooterPrototype.UI
             var iconImage = iconObject.AddComponent<Image>();
             iconImage.preserveAspect = true;
             iconImage.raycastTarget = false;
-            iconImage.sprite = InventoryIconCatalog.GetSkinIcon(item.IconFileName);
+            iconImage.sprite = InventoryIconCatalog.GetSkinIcon(item.PictureResourcePath);
 
             var labelObject = new GameObject("Label", typeof(RectTransform));
             labelObject.transform.SetParent(slotObject.transform, false);

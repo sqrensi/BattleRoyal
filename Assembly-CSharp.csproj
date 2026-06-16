@@ -118,6 +118,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerBoneHitboxRig.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\ShaderPropAnimator.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerInventory.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerSkinResourcePaths.cs" />
     <Compile Include="Assets\Scripts\Player\MatchBattleRoyaleController.cs" />
     <Compile Include="Assets\Scripts\Player\InventoryItemIds.cs" />
     <Compile Include="Assets\FarlandSkies\Demo\Scripts\Player\FPSWalkerEnhanced.cs" />

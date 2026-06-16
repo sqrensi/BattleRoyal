@@ -9,9 +9,6 @@ namespace ShooterPrototype.EditorTools
 {
     public static class ClothingIconGenerator
     {
-        private const string OutputFolder = "Assets/Resources/Pictures";
-        private const string VersionFilePath = "Assets/Resources/Pictures/clothes_icons.version";
-        private const string ExpectedVersion = "4";
         private const int IconSize = 512;
         private const float CaptureWorldOffset = -250f;
 
@@ -19,9 +16,9 @@ namespace ShooterPrototype.EditorTools
 
         private struct CaptureEntry
         {
-            public string MeshResourcePath;
+            public string PrefabResourcePath;
             public string MaterialResourcePath;
-            public string OutputFileName;
+            public string OutputAssetPath;
             public Vector3 RotationEuler;
             public float OrthoPadding;
         }
@@ -30,33 +27,33 @@ namespace ShooterPrototype.EditorTools
         {
             new CaptureEntry
             {
-                MeshResourcePath = "4",
-                MaterialResourcePath = "gloves",
-                OutputFileName = "clothes_gloves.png",
+                PrefabResourcePath = "Skins/gloves/001/prefab",
+                MaterialResourcePath = "Skins/gloves/001/material",
+                OutputAssetPath = "Assets/Resources/Skins/gloves/001/picture.png",
                 RotationEuler = new Vector3(-18f, 165f, 0f),
                 OrthoPadding = 1.16f
             },
             new CaptureEntry
             {
-                MeshResourcePath = "2",
-                MaterialResourcePath = "pants",
-                OutputFileName = "clothes_pants.png",
+                PrefabResourcePath = "Skins/pants/001/prefab",
+                MaterialResourcePath = "Skins/pants/001/material",
+                OutputAssetPath = "Assets/Resources/Skins/pants/001/picture.png",
                 RotationEuler = new Vector3(-12f, 180f, 0f),
                 OrthoPadding = 1.12f
             },
             new CaptureEntry
             {
-                MeshResourcePath = "1",
-                MaterialResourcePath = "tshirt",
-                OutputFileName = "clothes_tshirt.png",
+                PrefabResourcePath = "Skins/tshirts/001/prefab",
+                MaterialResourcePath = "Skins/tshirts/001/material",
+                OutputAssetPath = "Assets/Resources/Skins/tshirts/001/picture.png",
                 RotationEuler = new Vector3(-10f, 180f, 0f),
                 OrthoPadding = 1.12f
             },
             new CaptureEntry
             {
-                MeshResourcePath = "3",
-                MaterialResourcePath = "feets",
-                OutputFileName = "clothes_shoes.png",
+                PrefabResourcePath = "Skins/shoes/001/prefab",
+                MaterialResourcePath = "Skins/shoes/001/material",
+                OutputAssetPath = "Assets/Resources/Skins/shoes/001/picture.png",
                 RotationEuler = new Vector3(18f, 210f, 0f),
                 OrthoPadding = 1.18f
             }
@@ -65,49 +62,20 @@ namespace ShooterPrototype.EditorTools
         [MenuItem("Shooter Prototype/UI/Generate Clothing Inventory Icons")]
         public static void GenerateFromMenu()
         {
-            GenerateAll(force: true);
-        }
-
-        [InitializeOnLoad]
-        private static class MissingIconBootstrap
-        {
-            static MissingIconBootstrap()
-            {
-                EditorApplication.delayCall += TryGenerateMissingIcons;
-            }
-
-            private static void TryGenerateMissingIcons()
-            {
-                if (EditorApplication.isPlayingOrWillChangePlaymode)
-                {
-                    return;
-                }
-
-                if (ShouldRegenerate())
-                {
-                    GenerateAll(force: true);
-                }
-            }
+            GenerateAll();
         }
 
         public static void GenerateAllBatch()
         {
-            GenerateAll(force: true);
+            GenerateAll();
             if (Application.isBatchMode)
             {
                 EditorApplication.Exit(0);
             }
         }
 
-        public static void GenerateAll(bool force = false)
+        public static void GenerateAll()
         {
-            if (!force && !ShouldRegenerate())
-            {
-                return;
-            }
-
-            Directory.CreateDirectory(OutputFolder);
-
             var captureRoot = new GameObject("ClothingIconCaptureRoot");
             captureRoot.hideFlags = HideFlags.HideAndDontSave;
             captureRoot.transform.position = new Vector3(0f, CaptureWorldOffset, 0f);
@@ -143,8 +111,6 @@ namespace ShooterPrototype.EditorTools
                 {
                     GenerateIcon(camera, captureRoot.transform, Entries[i]);
                 }
-
-                File.WriteAllText(VersionFilePath, ExpectedVersion);
             }
             finally
             {
@@ -155,40 +121,15 @@ namespace ShooterPrototype.EditorTools
 
             ShooterPrototype.UI.InventoryIconCatalog.ClearCache();
             AssetDatabase.Refresh();
-            Debug.Log("[ClothingIconGenerator] Generated clothing inventory icons in Resources/Pictures.");
-        }
-
-        private static bool ShouldRegenerate()
-        {
-            if (!File.Exists(VersionFilePath))
-            {
-                return true;
-            }
-
-            var version = File.ReadAllText(VersionFilePath).Trim();
-            if (!string.Equals(version, ExpectedVersion, System.StringComparison.Ordinal))
-            {
-                return true;
-            }
-
-            for (var i = 0; i < Entries.Length; i++)
-            {
-                var outputPath = Path.Combine(OutputFolder, Entries[i].OutputFileName);
-                if (!File.Exists(outputPath))
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            Debug.Log("[ClothingIconGenerator] Generated clothing inventory pictures in Resources/Skins.");
         }
 
         private static void GenerateIcon(Camera camera, Transform captureRoot, CaptureEntry entry)
         {
-            var meshPrefab = Resources.Load<GameObject>(entry.MeshResourcePath);
+            var meshPrefab = Resources.Load<GameObject>(entry.PrefabResourcePath);
             if (meshPrefab == null)
             {
-                Debug.LogError($"[ClothingIconGenerator] Mesh not found at Resources/{entry.MeshResourcePath}");
+                Debug.LogError($"[ClothingIconGenerator] Prefab not found at Resources/{entry.PrefabResourcePath}");
                 return;
             }
 
@@ -197,6 +138,12 @@ namespace ShooterPrototype.EditorTools
             {
                 Debug.LogError($"[ClothingIconGenerator] Material not found at Resources/{entry.MaterialResourcePath}");
                 return;
+            }
+
+            var outputDirectory = Path.GetDirectoryName(entry.OutputAssetPath);
+            if (!string.IsNullOrWhiteSpace(outputDirectory))
+            {
+                Directory.CreateDirectory(outputDirectory);
             }
 
             var instance = Object.Instantiate(meshPrefab, captureRoot);
@@ -208,7 +155,7 @@ namespace ShooterPrototype.EditorTools
             var captureMeshRoot = BuildCaptureMeshRoot(instance, material);
             if (captureMeshRoot == null)
             {
-                Debug.LogError($"[ClothingIconGenerator] Could not build capture mesh for {entry.OutputFileName}");
+                Debug.LogError($"[ClothingIconGenerator] Could not build capture mesh for {entry.OutputAssetPath}");
                 Object.DestroyImmediate(instance);
                 return;
             }
@@ -219,7 +166,7 @@ namespace ShooterPrototype.EditorTools
             var bounds = CalculateBounds(captureMeshRoot);
             if (bounds.size.sqrMagnitude <= 0.0001f)
             {
-                Debug.LogError($"[ClothingIconGenerator] Empty bounds for {entry.OutputFileName}");
+                Debug.LogError($"[ClothingIconGenerator] Empty bounds for {entry.OutputAssetPath}");
                 Object.DestroyImmediate(instance);
                 return;
             }
@@ -227,7 +174,7 @@ namespace ShooterPrototype.EditorTools
             FrameCamera(camera, bounds, entry.OrthoPadding);
             camera.Render();
 
-            SaveRenderTexture(camera.targetTexture, Path.Combine(OutputFolder, entry.OutputFileName));
+            SaveRenderTexture(camera.targetTexture, entry.OutputAssetPath);
             Object.DestroyImmediate(instance);
         }
 
@@ -281,27 +228,27 @@ namespace ShooterPrototype.EditorTools
                 addedAny = true;
             }
 
-            if (addedAny)
-            {
-                return captureRoot;
-            }
-
             var staticRenderers = source.GetComponentsInChildren<MeshRenderer>(true);
             for (var i = 0; i < staticRenderers.Length; i++)
             {
                 var meshRenderer = staticRenderers[i];
+                if (meshRenderer == null)
+                {
+                    continue;
+                }
+
                 var meshFilter = meshRenderer.GetComponent<MeshFilter>();
                 if (meshFilter == null || meshFilter.sharedMesh == null)
                 {
                     continue;
                 }
 
-                var meshObject = Object.Instantiate(meshRenderer.gameObject, captureRoot.transform);
+                var meshObject = Object.Instantiate(meshRenderer.gameObject, captureRoot.transform, true);
                 meshObject.hideFlags = HideFlags.HideAndDontSave;
-                var clonedRenderer = meshObject.GetComponent<MeshRenderer>();
-                if (clonedRenderer != null)
+                var cloneRenderer = meshObject.GetComponent<MeshRenderer>();
+                if (cloneRenderer != null)
                 {
-                    clonedRenderer.sharedMaterial = sourceMaterial;
+                    cloneRenderer.sharedMaterial = sourceMaterial;
                 }
 
                 addedAny = true;
@@ -316,12 +263,7 @@ namespace ShooterPrototype.EditorTools
             for (var i = 0; i < renderers.Length; i++)
             {
                 var renderer = renderers[i];
-                if (renderer == null)
-                {
-                    continue;
-                }
-
-                if (keepRoot != null && renderer.transform.IsChildOf(keepRoot))
+                if (renderer == null || renderer.transform.IsChildOf(keepRoot))
                 {
                     continue;
                 }
@@ -330,49 +272,57 @@ namespace ShooterPrototype.EditorTools
             }
         }
 
-        private static void FrameCamera(Camera camera, Bounds bounds, float padding)
-        {
-            var center = bounds.center;
-            camera.transform.SetPositionAndRotation(
-                center + new Vector3(0f, 0f, -8f),
-                Quaternion.identity);
-            camera.transform.LookAt(center, Vector3.up);
-            camera.orthographicSize = Mathf.Max(bounds.extents.x, bounds.extents.y, bounds.extents.z * 0.35f) * padding;
-        }
-
         private static Bounds CalculateBounds(GameObject root)
         {
             var renderers = root.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length == 0)
+            var hasBounds = false;
+            var bounds = new Bounds();
+            for (var i = 0; i < renderers.Length; i++)
             {
-                return new Bounds(root.transform.position, Vector3.zero);
-            }
+                var renderer = renderers[i];
+                if (renderer == null || !renderer.enabled)
+                {
+                    continue;
+                }
 
-            var bounds = renderers[0].bounds;
-            for (var i = 1; i < renderers.Length; i++)
-            {
-                bounds.Encapsulate(renderers[i].bounds);
+                if (!hasBounds)
+                {
+                    bounds = renderer.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(renderer.bounds);
+                }
             }
 
             return bounds;
         }
 
-        private static void SaveRenderTexture(RenderTexture source, string assetPath)
+        private static void FrameCamera(Camera camera, Bounds bounds, float padding)
         {
-            var previousActive = RenderTexture.active;
-            var readable = RenderTexture.GetTemporary(IconSize, IconSize, 24, RenderTextureFormat.ARGB32);
-            Graphics.Blit(source, readable);
-            RenderTexture.active = readable;
+            var center = bounds.center;
+            var extents = bounds.extents;
+            var radius = Mathf.Max(extents.x, extents.y, extents.z) * padding;
+            camera.transform.position = center + new Vector3(0f, 0f, -10f);
+            camera.transform.rotation = Quaternion.identity;
+            camera.orthographicSize = radius;
+        }
 
-            var texture = new Texture2D(IconSize, IconSize, TextureFormat.RGBA32, false);
-            texture.ReadPixels(new Rect(0f, 0f, IconSize, IconSize), 0, 0);
+        private static void SaveRenderTexture(RenderTexture renderTexture, string assetPath)
+        {
+            var previous = RenderTexture.active;
+            RenderTexture.active = renderTexture;
+
+            var texture = new Texture2D(renderTexture.width, renderTexture.height, TextureFormat.RGBA32, false);
+            texture.ReadPixels(new Rect(0f, 0f, renderTexture.width, renderTexture.height), 0, 0);
             texture.Apply(false, false);
 
-            RenderTexture.active = previousActive;
-            RenderTexture.ReleaseTemporary(readable);
+            RenderTexture.active = previous;
 
-            File.WriteAllBytes(assetPath, texture.EncodeToPNG());
+            var png = texture.EncodeToPNG();
             Object.DestroyImmediate(texture);
+            File.WriteAllBytes(assetPath, png);
         }
     }
 }
