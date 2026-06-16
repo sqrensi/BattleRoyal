@@ -1,6 +1,7 @@
 using ShooterPrototype.Player;
 using TMPro;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 namespace ShooterPrototype.UI
@@ -47,7 +48,7 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            var canvas = FindFirstObjectByType<Canvas>();
+            var canvas = ResolveMenuCanvas(controller);
             if (canvas == null)
             {
                 return;
@@ -94,7 +95,7 @@ namespace ShooterPrototype.UI
                 inventoryPanel = controller.gameObject.AddComponent<MainMenuInventoryPanel>();
             }
 
-            var canvas = FindFirstObjectByType<Canvas>();
+            var canvas = ResolveMenuCanvas(controller);
             if (canvas != null)
             {
                 inventoryPanel.Build(canvas.GetComponent<RectTransform>());
@@ -193,6 +194,62 @@ namespace ShooterPrototype.UI
             backButtonGroup.alpha = 0f;
             backButtonGroup.interactable = false;
             backButtonGroup.blocksRaycasts = false;
+        }
+
+        private static Canvas ResolveMenuCanvas(MainMenuController controller)
+        {
+            if (controller == null)
+            {
+                return null;
+            }
+
+            if (controller.StartButton != null)
+            {
+                var startCanvas = controller.StartButton.GetComponentInParent<Canvas>();
+                if (IsMenuCanvas(startCanvas))
+                {
+                    return startCanvas;
+                }
+            }
+
+            if (controller.StatusText != null)
+            {
+                var statusCanvas = controller.StatusText.GetComponentInParent<Canvas>();
+                if (IsMenuCanvas(statusCanvas))
+                {
+                    return statusCanvas;
+                }
+            }
+
+            var scene = SceneManager.GetActiveScene();
+            if (!scene.IsValid())
+            {
+                return null;
+            }
+
+            var roots = scene.GetRootGameObjects();
+            for (var i = 0; i < roots.Length; i++)
+            {
+                var canvases = roots[i].GetComponentsInChildren<Canvas>(true);
+                for (var j = 0; j < canvases.Length; j++)
+                {
+                    if (IsMenuCanvas(canvases[j]))
+                    {
+                        return canvases[j];
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IsMenuCanvas(Canvas canvas)
+        {
+            return canvas != null &&
+                   !string.Equals(
+                       canvas.gameObject.name,
+                       GameHudController.RuntimeCanvasObjectName,
+                       System.StringComparison.Ordinal);
         }
 
         private static MainMenuUiSoundController EnsureUiSound(MainMenuController controller)

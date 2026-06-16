@@ -1,4 +1,6 @@
+using ShooterPrototype.Network;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
@@ -8,6 +10,7 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuAmbienceController : MonoBehaviour
     {
+        private const string MainMenuSceneName = "MainMenu";
         private const string MutePrefKey = "client_audio_muted";
 
         [Header("Resources")]
@@ -30,7 +33,7 @@ namespace ShooterPrototype.UI
 
         private void OnEnable()
         {
-            StartAmbience();
+            RefreshAmbienceForActiveScene();
         }
 
         private void OnDisable()
@@ -40,10 +43,45 @@ namespace ShooterPrototype.UI
 
         private void Update()
         {
+            if (!ShouldPlayAmbience())
+            {
+                return;
+            }
+
             if (ReadToggleMutePressed())
             {
                 ToggleMute();
             }
+        }
+
+        private void RefreshAmbienceForActiveScene()
+        {
+            if (ShouldPlayAmbience())
+            {
+                StartAmbience();
+            }
+            else
+            {
+                StopAmbience();
+            }
+        }
+
+        private bool ShouldPlayAmbience()
+        {
+            if (Application.isBatchMode)
+            {
+                return false;
+            }
+
+            var launcher = FindFirstObjectByType<NetworkLauncher>();
+            if (launcher != null && launcher.IsMockServerRunning && !launcher.IsClientConnected)
+            {
+                return false;
+            }
+
+            var scene = SceneManager.GetActiveScene();
+            return scene.IsValid() &&
+                   string.Equals(scene.name, MainMenuSceneName, System.StringComparison.Ordinal);
         }
 
         private void EnsureSources()
@@ -145,6 +183,11 @@ namespace ShooterPrototype.UI
 
         private void ApplyMuteState()
         {
+            if (!ShouldPlayAmbience())
+            {
+                return;
+            }
+
             AudioListener.volume = isMuted ? 0f : 1f;
         }
 

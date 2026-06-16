@@ -16,6 +16,7 @@ namespace ShooterPrototype.UI
     public sealed class GameHudController : MonoBehaviour
     {
         private const string CanvasObjectName = "RuntimeGameHudCanvas";
+        public const string RuntimeCanvasObjectName = CanvasObjectName;
         private const string MutePrefKey = "client_audio_muted";
         private const int CornerStatsLayoutVersion = 2;
 
