@@ -398,19 +398,16 @@ namespace ShooterPrototype.UI
                 return whiteSprite;
             }
 
-            whiteSprite = Resources.GetBuiltinResource<Sprite>("UISprite.psd");
-            if (whiteSprite != null)
-            {
-                return whiteSprite;
-            }
-
-            var texture = new Texture2D(1, 1, TextureFormat.RGBA32, false)
+            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
             {
                 hideFlags = HideFlags.HideAndDontSave
             };
             texture.SetPixel(0, 0, Color.white);
+            texture.SetPixel(1, 0, Color.white);
+            texture.SetPixel(0, 1, Color.white);
+            texture.SetPixel(1, 1, Color.white);
             texture.Apply(false, false);
-            whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 1f, 1f), new Vector2(0.5f, 0.5f));
+            whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 100f);
             return whiteSprite;
         }
 

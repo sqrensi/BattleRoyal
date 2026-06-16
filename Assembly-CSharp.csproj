@@ -52,6 +52,7 @@
     <Compile Include="Assets\Scripts\Bootstrap\GameBootstrap.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextEventHandler.cs" />
     <Compile Include="Assets\Scripts\Network\RealtimePoseBinaryCodec.cs" />
+    <Compile Include="Assets\FarlandSkies\Demo\Scripts\Player\SmoothMouseLook.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo_RandomDir.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\SpawnIdentifier.cs" />
     <Compile Include="Assets\Scripts\Player\CharacterModelApplier.cs" />
@@ -86,6 +87,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerWeaponController.cs" />
     <Compile Include="Assets\Scripts\Player\RemotePlayerEditorPreview.cs" />
     <Compile Include="Assets\Scripts\Player\PickupGroundLayers.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuAmbienceController.cs" />
     <Compile Include="Assets\Scripts\Player\MatchPickupSync.cs" />
     <Compile Include="Assets\Scripts\Player\WaterLayers.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_ExampleScript_01.cs" />
@@ -107,6 +109,7 @@
     <Compile Include="Assets\Scripts\Player\FpsCharacterController.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexZoom.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\WFX_LightFlicker.cs" />
+    <Compile Include="Assets\FarlandSkies\Demo\Scripts\Skybox\SkyboxRotator.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextSelector_B.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\SkewTextExample.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\WarpTextExample.cs" />
@@ -116,6 +119,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerInventory.cs" />
     <Compile Include="Assets\Scripts\Player\MatchBattleRoyaleController.cs" />
     <Compile Include="Assets\Scripts\Player\InventoryItemIds.cs" />
+    <Compile Include="Assets\FarlandSkies\Demo\Scripts\Player\FPSWalkerEnhanced.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponCatalog.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextInfoDebugTool.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteResourceClothingApplier.cs" />
@@ -125,6 +129,7 @@
     <Compile Include="Assets\Scripts\UI\MainMenuController.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexShakeA.cs" />
     <Compile Include="Assets\Scripts\UI\PlayerInventoryPanelController.cs" />
+    <Compile Include="Assets\Scripts\Player\MainMenuPlayerPreview.cs" />
     <Compile Include="Assets\Scripts\Player\PickupSpawnRandomPool.cs" />
     <Compile Include="Assets\Scripts\Player\ProceduralLocomotionRig.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteMedkitPresentation.cs" />
@@ -158,6 +163,7 @@
     <Compile Include="Assets\Scripts\Player\SyntySplitBodyPresentation.cs" />
     <Compile Include="Assets\Scripts\Player\AmmoCatalog.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\WFX_BulletHoleDecal.cs" />
+    <Compile Include="Assets\FarlandSkies\Demo\Scripts\Skybox\SkyboxChanger.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\PackInfo.cs" />
     <Compile Include="Assets\Scripts\Player\CharacterSelectionService.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\CameraController.cs" />
@@ -194,9 +200,11 @@
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\CharacterItemEvent.cs" />
     <Compile Include="Assets\Scripts\UI\InventorySlotView.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerAudioController.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuCameraMotion.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TextMeshProFloatingText.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_Demo_RandomDir.cs" />
     <Compile Include="Assets\Scripts\Player\PickupApplyRules.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerSkinSelectionService.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponLoadoutServerState.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyHandAttachedWeaponMount.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Spawn System\CFX_SpawnSystem.cs" />
@@ -238,6 +246,7 @@
     <None Include="Assets\TextMesh Pro\Resources\LineBreaking Leading Characters.txt" />
     <None Include="Assets\JMO Assets\WarFX\Shaders\WFX_S AlphaBlend Scroll.shader" />
     <None Include="Assets\TextMesh Pro\Shaders\TMPro_Properties.cginc" />
+    <None Include="Assets\SimpleSky\ReadMe.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMPro_Surface.cginc" />
     <None Include="Assets\ithappy\Weapons_FREE\Render_Pipeline_Convert\Documentation.txt" />
     <None Include="Assets\TextMesh Pro\Resources\LineBreaking Following Characters.txt" />

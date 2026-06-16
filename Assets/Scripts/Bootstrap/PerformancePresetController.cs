@@ -2,6 +2,9 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 using QualityShadowResolution = UnityEngine.ShadowResolution;
 using QualityShadowsMode = UnityEngine.ShadowQuality;
 
@@ -141,6 +144,28 @@ namespace ShooterPrototype.Bootstrap
         private void OnDisable()
         {
             SceneManager.sceneLoaded -= HandleSceneLoaded;
+        }
+
+        private void Update()
+        {
+            if (Application.isBatchMode)
+            {
+                return;
+            }
+
+            if (ReadToggleGraphicsPresetPressed())
+            {
+                ToggleMaxPerformance();
+            }
+        }
+
+        private static bool ReadToggleGraphicsPresetPressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return Keyboard.current != null && Keyboard.current.f7Key.wasPressedThisFrame;
+#else
+            return Input.GetKeyDown(KeyCode.F7);
+#endif
         }
 
         private void OnValidate()

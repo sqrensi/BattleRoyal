@@ -42,8 +42,6 @@ namespace ShooterPrototype.UI
         private readonly List<InventoryDisplayKey> itemDisplayOrder = new List<InventoryDisplayKey>(12);
         private readonly List<InventorySlotView> floorItemViews = new List<InventorySlotView>(8);
         private Transform floorItemsRow;
-        private Text hintText;
-
         private InventorySlotView dragSourceView;
         private InventoryDragPayload activeDragPayload;
         private bool isDragging;
@@ -180,19 +178,10 @@ namespace ShooterPrototype.UI
             title.fontSize = 18;
             title.alignment = TextAnchor.MiddleLeft;
 
-            hintText = CreateLabel(panel, "Hint", new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f));
-            hintText.rectTransform.offsetMin = new Vector2(16f, 8f);
-            hintText.rectTransform.offsetMax = new Vector2(-16f, 28f);
-            hintText.fontSize = 11;
-            hintText.color = new Color(0.82f, 0.82f, 0.82f, 1f);
-            hintText.alignment = TextAnchor.MiddleCenter;
-            hintText.text =
-                "На полу: двойной ЛКМ или перетащить | ПКМ / перетащить на пол — выброс | Предметы: общая зона | Оружие: слоты 1–2";
-
             var columns = CreateRect("Columns", panel);
             columns.anchorMin = new Vector2(0f, 0f);
             columns.anchorMax = new Vector2(1f, 1f);
-            columns.offsetMin = new Vector2(12f, 36f);
+            columns.offsetMin = new Vector2(12f, 12f);
             columns.offsetMax = new Vector2(-12f, -40f);
 
             var floorColumn = BuildZoneColumn(columns, "На полу", 0f, 0.34f);
@@ -200,7 +189,7 @@ namespace ShooterPrototype.UI
             var weaponsColumn = BuildZoneColumn(columns, "Оружие", 0.65f, 1f);
 
             floorAreaView = CreateAreaSlot(floorColumn, InventorySlotKind.FloorArea, ConfigureFloorArea);
-            floorAreaView.SetPresentation(string.Empty, "Выброс / пол", new Color(0.14f, 0.12f, 0.1f, 0.32f), default);
+            floorAreaView.SetAreaTint(new Color(0.14f, 0.12f, 0.1f, 0.32f));
             floorItemsRow = CreateRect("FloorItemsRow", floorColumn);
             var floorItemsRect = floorItemsRow as RectTransform;
             floorItemsRect.anchorMin = new Vector2(0f, 0f);
@@ -209,7 +198,7 @@ namespace ShooterPrototype.UI
             floorItemsRect.offsetMax = new Vector2(-8f, -28f);
 
             inventoryAreaView = CreateAreaSlot(itemsColumn, InventorySlotKind.InventoryArea, ConfigureInventoryArea);
-            inventoryAreaView.SetPresentation(string.Empty, "Перетащите сюда", new Color(0.1f, 0.12f, 0.16f, 0.32f), default);
+            inventoryAreaView.SetAreaTint(new Color(0.1f, 0.12f, 0.16f, 0.32f));
             inventoryItemsRow = CreateRect("InventoryItemsRow", itemsColumn);
             var inventoryItemsRect = inventoryItemsRow as RectTransform;
             inventoryItemsRect.anchorMin = new Vector2(0f, 0f);
@@ -218,7 +207,7 @@ namespace ShooterPrototype.UI
             inventoryItemsRect.offsetMax = new Vector2(-8f, -8f);
 
             weaponAreaView = CreateAreaSlot(weaponsColumn, InventorySlotKind.WeaponArea, ConfigureWeaponArea);
-            weaponAreaView.SetPresentation(string.Empty, "Слоты оружия", new Color(0.1f, 0.14f, 0.11f, 0.32f), default);
+            weaponAreaView.SetAreaTint(new Color(0.1f, 0.14f, 0.11f, 0.32f));
             BuildWeaponSlots(weaponsColumn);
 
             BindAllSlots(this);

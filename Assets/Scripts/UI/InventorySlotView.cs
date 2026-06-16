@@ -98,6 +98,26 @@ namespace ShooterPrototype.UI
             allowDrag = false;
         }
 
+        public void SetAreaTint(Color tint)
+        {
+            payload = default;
+            ApplyTint(tint);
+            if (iconImage != null)
+            {
+                iconImage.enabled = false;
+            }
+
+            if (titleLabel != null)
+            {
+                titleLabel.text = string.Empty;
+            }
+
+            if (countLabel != null)
+            {
+                countLabel.text = string.Empty;
+            }
+        }
+
         public void SetPresentation(string title, string subtitle, Color tint, in InventoryDragPayload dragPayload)
         {
             payload = dragPayload;

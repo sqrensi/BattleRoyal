@@ -117,6 +117,26 @@ namespace ShooterPrototype.Player
             lastAppliedHiddenMesh = null;
         }
 
+        public void ConfigureSkinPaths(
+            string shirtMeshPath,
+            string shirtMaterialPath,
+            string pantsMeshPath,
+            string pantsMaterialPath,
+            string bootsMeshPath,
+            string bootsMaterialPath,
+            string glovesMeshPath,
+            string glovesMaterialPath)
+        {
+            clothingResourcePath = shirtMeshPath ?? string.Empty;
+            clothingMaterialResourcePath = shirtMaterialPath ?? string.Empty;
+            pantsResourcePath = pantsMeshPath ?? string.Empty;
+            pantsMaterialResourcePath = pantsMaterialPath ?? string.Empty;
+            bootsResourcePath = bootsMeshPath ?? string.Empty;
+            bootsMaterialResourcePath = bootsMaterialPath ?? string.Empty;
+            glovesResourcePath = glovesMeshPath ?? string.Empty;
+            glovesMaterialResourcePath = glovesMaterialPath ?? string.Empty;
+        }
+
         public void ApplyToRemoteVisual(Transform syntyVisual, bool forceReapply = false)
         {
             if (!applyOnRemote || syntyVisual == null)

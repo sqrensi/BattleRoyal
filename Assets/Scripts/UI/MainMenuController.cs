@@ -64,6 +64,10 @@ namespace ShooterPrototype.UI
             SetStatus(idleStatusText);
             SetStartButtonState(isQueueing: false, interactable: true);
             RefreshSelectedCharacterLabel();
+            EnsurePlayerPreview();
+            RefreshPlayerPreview();
+            EnsureAmbience();
+            EnsureCameraMotion();
         }
 
         private void OnEnable()
@@ -81,6 +85,7 @@ namespace ShooterPrototype.UI
             SetStatus(idleStatusText);
             SetStartButtonState(isQueueing: false, interactable: true);
             RefreshSelectedCharacterLabel();
+            RefreshPlayerPreview();
         }
 
         private void OnDisable()
@@ -107,6 +112,7 @@ namespace ShooterPrototype.UI
             var selection = CharacterSelectionService.SelectNextModel(charactersResourcesFolder);
             var displayName = selection.ModelAsset != null ? selection.DisplayName : "Default";
             RefreshSelectedCharacterLabel(displayName);
+            RefreshPlayerPreview();
         }
 
         public void OnStartPressed()
@@ -365,6 +371,39 @@ namespace ShooterPrototype.UI
             }
 
             selectedCharacterText.text = $"Персонаж: {resolvedName}";
+        }
+
+        private void EnsurePlayerPreview()
+        {
+            if (GetComponent<MainMenuPlayerPreview>() == null)
+            {
+                gameObject.AddComponent<MainMenuPlayerPreview>();
+            }
+        }
+
+        private void RefreshPlayerPreview()
+        {
+            var preview = GetComponent<MainMenuPlayerPreview>();
+            if (preview != null)
+            {
+                preview.Refresh();
+            }
+        }
+
+        private void EnsureAmbience()
+        {
+            if (GetComponent<MainMenuAmbienceController>() == null)
+            {
+                gameObject.AddComponent<MainMenuAmbienceController>();
+            }
+        }
+
+        private void EnsureCameraMotion()
+        {
+            if (GetComponent<MainMenuCameraMotion>() == null)
+            {
+                gameObject.AddComponent<MainMenuCameraMotion>();
+            }
         }
 
         private static string BuildLocalPlayerId()

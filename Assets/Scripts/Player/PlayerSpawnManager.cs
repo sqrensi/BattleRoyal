@@ -31,6 +31,11 @@ namespace ShooterPrototype.Player
             gameSceneName = string.IsNullOrWhiteSpace(targetGameSceneName) ? "Game" : targetGameSceneName;
         }
 
+        public GameObject GetRemotePlayerPrefabForPreview()
+        {
+            return remotePlayerPrefab;
+        }
+
         public void HandleSceneLoaded(Scene scene)
         {
             if (scene.name != gameSceneName)
@@ -186,6 +191,8 @@ namespace ShooterPrototype.Player
                 CharacterModelApplier.TryApplyToPlayer(instance, selectedModel.ModelAsset);
             }
 
+            ApplySelectedSkinsToPlayer(instance);
+
             if (enableMatchPresenceSync)
             {
                 AttachPresenceSync(instance);
@@ -219,6 +226,11 @@ namespace ShooterPrototype.Player
 
             var weaponHolster = player.GetComponent<PlayerWeaponHolsterController>();
             weaponHolster?.BeginHolsterAllImmediate();
+        }
+
+        private static void ApplySelectedSkinsToPlayer(GameObject player)
+        {
+            PlayerSkinSelectionService.ApplyToPlayer(player, forceReapply: true);
         }
 
         private void AttachPresenceSync(GameObject localPlayer)
