@@ -376,7 +376,6 @@ namespace ShooterPrototype.Player
             var reason = message.reason ?? string.Empty;
             if (reason == "winner")
             {
-                gameHud?.SetVictoryBanner(false);
                 gameHud?.SetMatchStatusMessage("Возврат в меню...");
             }
             else if (reason == "eliminated")

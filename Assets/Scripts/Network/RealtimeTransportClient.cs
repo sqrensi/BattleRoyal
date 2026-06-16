@@ -685,6 +685,7 @@ namespace ShooterPrototype.Network
         private bool hasLatestSnapshot;
         private float lastPingSentUnscaledTime = -10f;
         private int smoothedRoundTripMs = -1;
+        private int lastRoundTripMs = -1;
         private float lastSnapshotReceivedUnscaledTime;
         private Coroutine pingCoroutine;
         private readonly object mainThreadActionsLock = new object();
@@ -695,6 +696,7 @@ namespace ShooterPrototype.Network
         public bool IsReady => IsConnected && hasJoinAck;
         public string ConnectedTicketId => connectedTicketId;
         public int SmoothedRoundTripMs => smoothedRoundTripMs;
+        public int LastRoundTripMs => lastRoundTripMs;
         public float LastSnapshotReceivedUnscaledTime => lastSnapshotReceivedUnscaledTime;
         public int LatestServerTick { get; private set; }
         public int LatestServerTickRate { get; private set; } = 64;
@@ -1986,13 +1988,14 @@ namespace ShooterPrototype.Network
                         return;
                     }
 
+                    lastRoundTripMs = rttMs;
                     if (smoothedRoundTripMs <= 0)
                     {
                         smoothedRoundTripMs = rttMs;
                     }
                     else
                     {
-                        smoothedRoundTripMs = Mathf.RoundToInt(Mathf.Lerp(smoothedRoundTripMs, rttMs, 0.25f));
+                        smoothedRoundTripMs = Mathf.RoundToInt(Mathf.Lerp(smoothedRoundTripMs, rttMs, 0.45f));
                     }
 
                     return;

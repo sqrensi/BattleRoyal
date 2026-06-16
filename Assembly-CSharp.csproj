@@ -68,6 +68,7 @@
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_Demo_RotateCamera.cs" />
     <Compile Include="Assets\Scripts\Player\WorldPickup.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteLeftHandIkBinder.cs" />
+    <Compile Include="Assets\Scripts\UI\CombatHudController.cs" />
     <Compile Include="Assets\Scripts\Player\PickupSpawnManager.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerPickupContext.cs" />
     <Compile Include="Assets\Scripts\Network\RealtimeSnapshotBinaryCodec.cs" />

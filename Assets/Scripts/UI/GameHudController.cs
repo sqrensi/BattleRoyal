@@ -7,6 +7,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 #if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 #endif
 
@@ -23,10 +24,16 @@ namespace ShooterPrototype.UI
         private string mainMenuSceneName = "MainMenu";
 
         private Canvas canvas;
+        private GameObject topBarPanel;
+        private bool topBarVisible;
+        private CombatHudController combatHud;
         private Text connectionText;
         private Text playersText;
         private Text pingText;
         private Text fpsText;
+        private Text cornerStatsText;
+        private int displayPingMs = -1;
+        private string displayPingLabel = "--";
         private Text ammoText;
         private Text healthText;
         private Text medkitText;
@@ -50,7 +57,7 @@ namespace ShooterPrototype.UI
             var hud = FindFirstObjectByType<GameHudController>();
             if (hud != null && hud.legacyInventoryPanel != null)
             {
-                hud.legacyInventoryPanel.SetActive(visible);
+                hud.legacyInventoryPanel.SetActive(false);
             }
         }
         private int consecutivePingFailures;
@@ -79,7 +86,55 @@ namespace ShooterPrototype.UI
             LoadMuteState();
             RefreshPerfButtonVisuals();
             RefreshConnectionText();
+            SetTopBarVisible(false);
             SetActiveForScene(false);
+        }
+
+        private void Update()
+        {
+            if (canvas == null || !canvas.gameObject.activeSelf)
+            {
+                return;
+            }
+
+            if (ReadToggleTopBarPressed())
+            {
+                SetTopBarVisible(!topBarVisible);
+            }
+
+            if (ReadToggleMutePressed())
+            {
+                HandleMutePressed();
+            }
+
+            RefreshCornerStats();
+        }
+
+        private static bool ReadToggleMutePressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return Keyboard.current != null && Keyboard.current.f8Key.wasPressedThisFrame;
+#else
+            return Input.GetKeyDown(KeyCode.F8);
+#endif
+        }
+
+        private static bool ReadToggleTopBarPressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return Keyboard.current != null && Keyboard.current.f1Key.wasPressedThisFrame;
+#else
+            return Input.GetKeyDown(KeyCode.F1);
+#endif
+        }
+
+        private void SetTopBarVisible(bool visible)
+        {
+            topBarVisible = visible;
+            if (topBarPanel != null)
+            {
+                topBarPanel.SetActive(visible);
+            }
         }
 
         public void SetActiveForScene(bool isGameScene)
@@ -106,10 +161,13 @@ namespace ShooterPrototype.UI
                 RefreshPlayersText();
                 RefreshPingText();
                 EnsurePingRefreshRunning();
+                SetTopBarVisible(topBarVisible);
+                combatHud?.SetActiveForScene(true);
             }
             else
             {
                 StopPingRefresh();
+                combatHud?.SetActiveForScene(false);
             }
         }
 
@@ -272,10 +330,34 @@ namespace ShooterPrototype.UI
 
                 EnsureEventSystemExists();
                 BuildHudLayout(canvas.gameObject);
+                EnsureCombatHud();
+            }
+
+            if (canvas != null && cornerStatsText == null)
+            {
+                BuildCornerStatsPanel(canvas.transform);
+            }
+
+            if (canvas != null)
+            {
+                EnsureMatchOverlayElements(canvas.transform);
             }
 
             EnsureEventSystemExists();
-            EnsurePerformancePresetButton();
+        }
+
+        private void EnsureCombatHud()
+        {
+            if (combatHud == null)
+            {
+                combatHud = GetComponent<CombatHudController>();
+                if (combatHud == null)
+                {
+                    combatHud = gameObject.AddComponent<CombatHudController>();
+                }
+            }
+
+            combatHud.EnsureOnCanvas(canvas);
         }
 
         private void BuildHudLayout(GameObject rootCanvasObject)
@@ -296,6 +378,7 @@ namespace ShooterPrototype.UI
             }
 
             var panelObject = new GameObject("TopBar");
+            topBarPanel = panelObject;
             panelObject.transform.SetParent(rootCanvasObject.transform, false);
 
             var panelRect = panelObject.AddComponent<RectTransform>();
@@ -340,55 +423,9 @@ namespace ShooterPrototype.UI
             inventoryText.fontSize = 14;
             inventoryText.horizontalOverflow = HorizontalWrapMode.Wrap;
             inventoryText.verticalOverflow = VerticalWrapMode.Overflow;
+            inventoryPanel.SetActive(false);
 
-            var matchStatusObject = new GameObject("MatchStatusText");
-            matchStatusObject.transform.SetParent(rootCanvasObject.transform, false);
-            var matchStatusRect = matchStatusObject.AddComponent<RectTransform>();
-            matchStatusRect.anchorMin = new Vector2(0.5f, 0.5f);
-            matchStatusRect.anchorMax = new Vector2(0.5f, 0.5f);
-            matchStatusRect.pivot = new Vector2(0.5f, 0.5f);
-            matchStatusRect.sizeDelta = new Vector2(640f, 48f);
-            matchStatusRect.anchoredPosition = new Vector2(0f, 120f);
-            matchStatusText = matchStatusObject.AddComponent<Text>();
-            matchStatusText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            matchStatusText.fontSize = 24;
-            matchStatusText.alignment = TextAnchor.MiddleCenter;
-            matchStatusText.color = Color.white;
-            matchStatusText.text = string.Empty;
-            matchStatusObject.SetActive(false);
-
-            var victoryBannerObject = new GameObject("VictoryBannerText");
-            victoryBannerObject.transform.SetParent(rootCanvasObject.transform, false);
-            var victoryBannerRect = victoryBannerObject.AddComponent<RectTransform>();
-            victoryBannerRect.anchorMin = new Vector2(0.5f, 0.5f);
-            victoryBannerRect.anchorMax = new Vector2(0.5f, 0.5f);
-            victoryBannerRect.pivot = new Vector2(0.5f, 0.5f);
-            victoryBannerRect.sizeDelta = new Vector2(720f, 96f);
-            victoryBannerRect.anchoredPosition = new Vector2(0f, 40f);
-            victoryBannerText = victoryBannerObject.AddComponent<Text>();
-            victoryBannerText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            victoryBannerText.fontSize = 64;
-            victoryBannerText.fontStyle = FontStyle.Bold;
-            victoryBannerText.alignment = TextAnchor.MiddleCenter;
-            victoryBannerText.color = new Color(1f, 0.84f, 0.2f, 1f);
-            victoryBannerText.text = string.Empty;
-            victoryBannerObject.SetActive(false);
-
-            var victorySubtitleObject = new GameObject("VictorySubtitleText");
-            victorySubtitleObject.transform.SetParent(rootCanvasObject.transform, false);
-            var victorySubtitleRect = victorySubtitleObject.AddComponent<RectTransform>();
-            victorySubtitleRect.anchorMin = new Vector2(0.5f, 0.5f);
-            victorySubtitleRect.anchorMax = new Vector2(0.5f, 0.5f);
-            victorySubtitleRect.pivot = new Vector2(0.5f, 0.5f);
-            victorySubtitleRect.sizeDelta = new Vector2(640f, 36f);
-            victorySubtitleRect.anchoredPosition = new Vector2(0f, -24f);
-            victorySubtitleText = victorySubtitleObject.AddComponent<Text>();
-            victorySubtitleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            victorySubtitleText.fontSize = 20;
-            victorySubtitleText.alignment = TextAnchor.MiddleCenter;
-            victorySubtitleText.color = Color.white;
-            victorySubtitleText.text = string.Empty;
-            victorySubtitleObject.SetActive(false);
+            EnsureMatchOverlayElements(rootCanvasObject.transform);
 
             var buttonObject = new GameObject("BackButton");
             buttonObject.transform.SetParent(panelObject.transform, false);
@@ -437,44 +474,112 @@ namespace ShooterPrototype.UI
             muteLabelRect.offsetMax = Vector2.zero;
             muteButtonLabel.alignment = TextAnchor.MiddleCenter;
             RefreshMuteButtonText();
+
+            BuildCornerStatsPanel(rootCanvasObject.transform);
+        }
+
+        private void EnsureMatchOverlayElements(Transform root)
+        {
+            if (matchStatusText == null)
+            {
+                var matchStatusObject = new GameObject("MatchStatusText");
+                matchStatusObject.transform.SetParent(root, false);
+                var matchStatusRect = matchStatusObject.AddComponent<RectTransform>();
+                matchStatusRect.anchorMin = new Vector2(0.5f, 0.5f);
+                matchStatusRect.anchorMax = new Vector2(0.5f, 0.5f);
+                matchStatusRect.pivot = new Vector2(0.5f, 0.5f);
+                matchStatusRect.sizeDelta = new Vector2(640f, 48f);
+                matchStatusRect.anchoredPosition = new Vector2(0f, 120f);
+                matchStatusText = matchStatusObject.AddComponent<Text>();
+                matchStatusText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                matchStatusText.fontSize = 24;
+                matchStatusText.alignment = TextAnchor.MiddleCenter;
+                matchStatusText.color = Color.white;
+                matchStatusText.text = string.Empty;
+                matchStatusObject.SetActive(false);
+            }
+
+            if (victoryBannerText == null)
+            {
+                var victoryBannerObject = new GameObject("VictoryBannerText");
+                victoryBannerObject.transform.SetParent(root, false);
+                var victoryBannerRect = victoryBannerObject.AddComponent<RectTransform>();
+                victoryBannerRect.anchorMin = new Vector2(0.5f, 0.5f);
+                victoryBannerRect.anchorMax = new Vector2(0.5f, 0.5f);
+                victoryBannerRect.pivot = new Vector2(0.5f, 0.5f);
+                victoryBannerRect.sizeDelta = new Vector2(720f, 96f);
+                victoryBannerRect.anchoredPosition = new Vector2(0f, 40f);
+                victoryBannerText = victoryBannerObject.AddComponent<Text>();
+                victoryBannerText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                victoryBannerText.fontSize = 64;
+                victoryBannerText.fontStyle = FontStyle.Bold;
+                victoryBannerText.alignment = TextAnchor.MiddleCenter;
+                victoryBannerText.color = new Color(1f, 0.84f, 0.2f, 1f);
+                victoryBannerText.text = string.Empty;
+                victoryBannerObject.SetActive(false);
+            }
+
+            if (victorySubtitleText == null)
+            {
+                var victorySubtitleObject = new GameObject("VictorySubtitleText");
+                victorySubtitleObject.transform.SetParent(root, false);
+                var victorySubtitleRect = victorySubtitleObject.AddComponent<RectTransform>();
+                victorySubtitleRect.anchorMin = new Vector2(0.5f, 0.5f);
+                victorySubtitleRect.anchorMax = new Vector2(0.5f, 0.5f);
+                victorySubtitleRect.pivot = new Vector2(0.5f, 0.5f);
+                victorySubtitleRect.sizeDelta = new Vector2(640f, 36f);
+                victorySubtitleRect.anchoredPosition = new Vector2(0f, -24f);
+                victorySubtitleText = victorySubtitleObject.AddComponent<Text>();
+                victorySubtitleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                victorySubtitleText.fontSize = 20;
+                victorySubtitleText.alignment = TextAnchor.MiddleCenter;
+                victorySubtitleText.color = Color.white;
+                victorySubtitleText.text = string.Empty;
+                victorySubtitleObject.SetActive(false);
+            }
+        }
+
+        private void BuildCornerStatsPanel(Transform root)
+        {
+            if (cornerStatsText != null)
+            {
+                return;
+            }
+
+            var panelObject = new GameObject("CornerStatsPanel");
+            panelObject.transform.SetParent(root, false);
+
+            var panelRect = panelObject.AddComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(1f, 1f);
+            panelRect.anchorMax = new Vector2(1f, 1f);
+            panelRect.pivot = new Vector2(1f, 1f);
+            panelRect.sizeDelta = new Vector2(132f, 52f);
+            panelRect.anchoredPosition = new Vector2(-10f, -10f);
+
+            var panelImage = panelObject.AddComponent<Image>();
+            panelImage.color = new Color(0f, 0f, 0f, 0.42f);
+            panelImage.raycastTarget = false;
+
+            cornerStatsText = CreateLabel(panelObject.transform, "CornerStatsText", new Vector2(8f, -8f), "FPS: --\nPing: -- ms");
+            var labelRect = cornerStatsText.rectTransform;
+            labelRect.anchorMin = new Vector2(0f, 1f);
+            labelRect.anchorMax = new Vector2(1f, 1f);
+            labelRect.pivot = new Vector2(0f, 1f);
+            labelRect.sizeDelta = new Vector2(-16f, 40f);
+            labelRect.anchoredPosition = new Vector2(8f, -8f);
+            cornerStatsText.fontSize = 14;
+            cornerStatsText.alignment = TextAnchor.UpperLeft;
+            cornerStatsText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            cornerStatsText.verticalOverflow = VerticalWrapMode.Overflow;
         }
 
         private void EnsurePerformancePresetButton()
         {
-            if (perfButton != null || canvas == null)
+            if (perfButton != null)
             {
+                perfButton.gameObject.SetActive(false);
                 return;
             }
-
-            var topBar = canvas.transform.Find("TopBar");
-            if (topBar == null)
-            {
-                return;
-            }
-
-            var perfObject = new GameObject("PerfButton");
-            perfObject.transform.SetParent(topBar, false);
-
-            var perfRect = perfObject.AddComponent<RectTransform>();
-            perfRect.anchorMin = new Vector2(1f, 0.5f);
-            perfRect.anchorMax = new Vector2(1f, 0.5f);
-            perfRect.pivot = new Vector2(1f, 0.5f);
-            perfRect.sizeDelta = new Vector2(170f, 36f);
-            perfRect.anchoredPosition = new Vector2(-370f, 0f);
-
-            perfButtonImage = perfObject.AddComponent<Image>();
-            perfButtonImage.color = new Color(0.15f, 0.15f, 0.15f, 0.95f);
-
-            perfButton = perfObject.AddComponent<Button>();
-            perfButton.onClick.AddListener(HandlePerfPressed);
-            perfButtonLabel = CreateLabel(perfObject.transform, "Label", Vector2.zero, "");
-            var perfLabelRect = perfButtonLabel.rectTransform;
-            perfLabelRect.anchorMin = Vector2.zero;
-            perfLabelRect.anchorMax = Vector2.one;
-            perfLabelRect.offsetMin = Vector2.zero;
-            perfLabelRect.offsetMax = Vector2.zero;
-            perfButtonLabel.alignment = TextAnchor.MiddleCenter;
-            RefreshPerfButtonVisuals();
         }
 
         private Text CreateLabel(Transform parent, string objectName, Vector2 anchoredPosition, string textValue)
@@ -513,18 +618,74 @@ namespace ShooterPrototype.UI
 
         private void RefreshPingText()
         {
+            ResolveDisplayPing(out displayPingMs, out displayPingLabel);
             if (pingText == null)
             {
                 return;
             }
 
-            if (networkLauncher != null && networkLauncher.IsClientConnected && networkLauncher.LastConnectLatencyMs > 0)
+            if (!Application.isFocused)
             {
-                pingText.text = $"Ping: {networkLauncher.LastConnectLatencyMs} ms (connect)";
+                pingText.text = "Ping: paused (unfocused)";
                 return;
             }
 
-            pingText.text = "Ping: -- ms";
+            pingText.text = displayPingMs > 0
+                ? $"Ping: {displayPingMs} ms{displayPingLabel}"
+                : "Ping: -- ms";
+        }
+
+        private void ResolveDisplayPing(out int pingMs, out string suffix)
+        {
+            pingMs = -1;
+            suffix = string.Empty;
+
+            var realtimeClient = FindFirstObjectByType<RealtimeTransportClient>();
+            if (realtimeClient != null && realtimeClient.IsReady)
+            {
+                var wsPing = realtimeClient.LastRoundTripMs > 0
+                    ? realtimeClient.LastRoundTripMs
+                    : realtimeClient.SmoothedRoundTripMs;
+                if (wsPing > 0)
+                {
+                    pingMs = wsPing;
+                    return;
+                }
+            }
+
+            if (networkLauncher != null && networkLauncher.IsClientConnected && networkLauncher.LastMeasuredPingMs > 0)
+            {
+                pingMs = networkLauncher.LastMeasuredPingMs;
+                suffix = " (tcp)";
+            }
+        }
+
+        private void RefreshCornerStats()
+        {
+            if (cornerStatsText == null)
+            {
+                return;
+            }
+
+            var dt = Time.unscaledDeltaTime;
+            if (dt > 0.00001f)
+            {
+                var currentFps = 1f / dt;
+                fpsSmoothed = fpsSmoothed <= 0f
+                    ? currentFps
+                    : Mathf.Lerp(fpsSmoothed, currentFps, 0.15f);
+            }
+
+            if (!Application.isFocused)
+            {
+                cornerStatsText.text = $"FPS: {Mathf.RoundToInt(fpsSmoothed)}\nPing: paused";
+                return;
+            }
+
+            var pingLine = displayPingMs > 0
+                ? $"Ping: {displayPingMs} ms"
+                : "Ping: -- ms";
+            cornerStatsText.text = $"FPS: {Mathf.RoundToInt(fpsSmoothed)}\n{pingLine}";
         }
 
         private void EnsurePingRefreshRunning()
@@ -553,40 +714,30 @@ namespace ShooterPrototype.UI
                 if (pingText != null && !Application.isFocused)
                 {
                     pingText.text = "Ping: paused (unfocused)";
+                    displayPingMs = -1;
+                    displayPingLabel = string.Empty;
                     consecutivePingFailures = 0;
                     RefreshFpsText();
                     yield return new WaitForSecondsRealtime(1f);
                     continue;
                 }
 
-                var realtimeClient = FindObjectOfType<RealtimeTransportClient>();
-                var wsPing = realtimeClient != null && realtimeClient.IsReady
-                    ? realtimeClient.SmoothedRoundTripMs
-                    : -1;
-
+                ResolveDisplayPing(out displayPingMs, out displayPingLabel);
                 if (pingText != null)
                 {
-                    if (wsPing > 0)
-                    {
-                        pingText.text = $"Ping: {wsPing} ms";
-                    }
-                    else if (networkLauncher != null && networkLauncher.LastMeasuredPingMs > 0)
-                    {
-                        pingText.text = $"Ping: {networkLauncher.LastMeasuredPingMs} ms (tcp)";
-                    }
-                    else
-                    {
-                        pingText.text = "Ping: -- ms";
-                    }
+                    pingText.text = displayPingMs > 0
+                        ? $"Ping: {displayPingMs} ms{displayPingLabel}"
+                        : "Ping: -- ms";
                 }
 
+                var realtimeClient = FindFirstObjectByType<RealtimeTransportClient>();
                 if (networkLauncher != null && networkLauncher.IsClientConnected)
                 {
                     var snapshotFresh = realtimeClient != null &&
                                           realtimeClient.IsReady &&
                                           realtimeClient.LastSnapshotReceivedUnscaledTime > 0f &&
                                           (Time.unscaledTime - realtimeClient.LastSnapshotReceivedUnscaledTime) < 2f;
-                    if (wsPing > 0 || snapshotFresh)
+                    if (displayPingMs > 0 || snapshotFresh)
                     {
                         consecutivePingFailures = 0;
                     }
@@ -694,10 +845,14 @@ namespace ShooterPrototype.UI
                 : Mathf.Lerp(fpsSmoothed, currentFps, 0.15f);
 
             fpsText.text = $"FPS: {Mathf.RoundToInt(fpsSmoothed)}";
+            if (!topBarVisible)
+            {
+                return;
+            }
+
             RefreshAmmoText();
             RefreshHealthText();
             RefreshMedkitText();
-            RefreshInventoryText();
         }
 
         private void RefreshAmmoText()

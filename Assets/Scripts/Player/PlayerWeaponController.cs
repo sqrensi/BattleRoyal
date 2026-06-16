@@ -316,6 +316,11 @@ namespace ShooterPrototype.Player
         {
             TryResolveRuntimeMuzzle();
 
+            if (ReadReloadPressed())
+            {
+                TryStartReload();
+            }
+
             if (PlayerInventoryPanelController.IsOpen)
             {
                 return;
@@ -347,11 +352,6 @@ namespace ShooterPrototype.Player
             if (weaponHolster != null && !weaponHolster.IsWeaponReady)
             {
                 return;
-            }
-
-            if (ReadReloadPressed())
-            {
-                TryStartReload();
             }
 
             // Reload input has priority over fire cadence: pressing reload while shooting

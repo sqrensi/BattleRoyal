@@ -15,7 +15,7 @@ namespace ShooterPrototype.Player
         public static readonly ProfilerMarker PollSnapshotMarker = new ProfilerMarker("Match.PollSnapshot");
         public static readonly ProfilerMarker RefreshHiddenBodyMarker = new ProfilerMarker("Clothing.RefreshHiddenBody");
 
-        [SerializeField] private bool showOverlay = true;
+        [SerializeField] private bool showOverlay = false;
         [SerializeField] private KeyCode toggleKey = KeyCode.F3;
         [SerializeField] private RealtimeTransportClient transportClient;
 
@@ -47,11 +47,6 @@ namespace ShooterPrototype.Player
         {
             var unscaledDelta = Mathf.Max(0.0001f, Time.unscaledDeltaTime);
             fpsSmoothed = Mathf.Lerp(fpsSmoothed, 1f / unscaledDelta, 0.08f);
-
-            if (WasTogglePressed())
-            {
-                showOverlay = !showOverlay;
-            }
 
             if (transportClient == null && Time.unscaledTime >= nextTransportLookupAt)
             {

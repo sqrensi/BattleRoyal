@@ -62,6 +62,7 @@ namespace ShooterPrototype.Player
         public float MaxHealth => Mathf.Max(1f, maxHealth);
         public float CurrentHealth => Mathf.Clamp(currentHealth, 0f, MaxHealth);
         public bool IsDead => isDead;
+        public event System.Action<float> LocalDamageTaken;
         public int DeathSequence => deathSequence;
         public Vector3 DeathFallDirection => deathFallDirection;
 
@@ -178,6 +179,7 @@ namespace ShooterPrototype.Player
             }
 
             currentHealth = Mathf.Max(0f, currentHealth - damage);
+            LocalDamageTaken?.Invoke(damage);
             if (logDamage)
             {
                 Debug.Log($"[PlayerHealth] took damage={damage:0.##} hp={currentHealth:0.##}/{MaxHealth:0.##} attacker={attackerTicketId}");
