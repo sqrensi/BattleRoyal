@@ -12,10 +12,11 @@ namespace ShooterPrototype.UI
         private const float BarBottomOffset = 28f;
         private const float LowHealthYellowThreshold = 0.55f;
         private const float CriticalHealthThreshold = 0.3f;
-        private const float DamageFadeInSeconds = 0.08f;
-        private const float DamageHoldSeconds = 0.12f;
-        private const float DamageFadeOutSeconds = 0.38f;
+        private const float DamageFadeInSeconds = 0.07f;
+        private const float DamageHoldSeconds = 0.14f;
+        private const float DamageFadeOutSeconds = 0.42f;
         private const float TrailCatchUpSpeed = 2.4f;
+        private const int DamageOverlayVersion = 2;
 
         private static Sprite whiteSprite;
 
@@ -43,40 +44,22 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            if (hpFillRect != null)
-            {
-                return;
-            }
-
-            if (hpFillImage != null)
-            {
-                var oldRoot = hostCanvas.transform.Find("HealthBarRoot");
-                if (oldRoot != null)
-                {
-                    Destroy(oldRoot.gameObject);
-                }
-
-                var oldLeft = hostCanvas.transform.Find("LeftDamageArc");
-                if (oldLeft != null)
-                {
-                    Destroy(oldLeft.gameObject);
-                }
-
-                var oldRight = hostCanvas.transform.Find("RightDamageArc");
-                if (oldRight != null)
-                {
-                    Destroy(oldRight.gameObject);
-                }
-
-                hpFillImage = null;
-                hpTrailImage = null;
-                hpBackgroundImage = null;
-                leftDamageArc = null;
-                rightDamageArc = null;
-            }
-
             canvas = hostCanvas;
-            BuildLayout(hostCanvas.transform);
+
+            if (hpFillRect == null)
+            {
+                if (hpFillImage != null)
+                {
+                    DestroyUiChild(hostCanvas.transform, "HealthBarRoot");
+                    hpFillImage = null;
+                    hpTrailImage = null;
+                    hpBackgroundImage = null;
+                }
+
+                BuildHealthBar(hostCanvas.transform);
+            }
+
+            EnsureDamageOverlay(hostCanvas.transform);
             damageOverlayAlpha = 0f;
             damageOverlayTarget = 0f;
         }
@@ -160,7 +143,7 @@ namespace ShooterPrototype.UI
         private void TriggerDamageFeedback(float damageAmount)
         {
             var intensity = Mathf.Clamp01(damageAmount / 35f);
-            damageOverlayTarget = Mathf.Max(damageOverlayTarget, 0.45f + intensity * 0.5f);
+            damageOverlayTarget = Mathf.Max(damageOverlayTarget, 0.55f + intensity * 0.4f);
             damagePulseUntil = Time.unscaledTime + DamageHoldSeconds;
         }
 
@@ -264,10 +247,10 @@ namespace ShooterPrototype.UI
             var color = arc.color;
             color.a = alpha;
             arc.color = color;
-            arc.enabled = alpha > 0.01f;
+            arc.enabled = alpha > 0.005f;
         }
 
-        private void BuildLayout(Transform root)
+        private void BuildHealthBar(Transform root)
         {
             var barRoot = CreateRect("HealthBarRoot", root);
             var barRect = barRoot.GetComponent<RectTransform>();
@@ -300,11 +283,36 @@ namespace ShooterPrototype.UI
             hpFillImage.color = new Color(0.22f, 0.78f, 0.34f, 0.98f);
             hpFillImage.raycastTarget = false;
             SetHorizontalFill(hpFillRect, 1f);
+        }
 
-            leftDamageArc = CreateDamageArc(root, "LeftDamageArc", true);
-            rightDamageArc = CreateDamageArc(root, "RightDamageArc", false);
-            leftDamageArc.transform.SetAsLastSibling();
-            rightDamageArc.transform.SetAsLastSibling();
+        private void EnsureDamageOverlay(Transform root)
+        {
+            var overlayRoot = root.Find("DamageOverlayRoot");
+            if (overlayRoot != null)
+            {
+                var versionMarker = overlayRoot.GetComponent<DamageOverlayVersionMarker>();
+                if (versionMarker != null && versionMarker.Version >= DamageOverlayVersion)
+                {
+                    leftDamageArc = overlayRoot.Find("LeftDamageArc")?.GetComponent<Image>();
+                    rightDamageArc = overlayRoot.Find("RightDamageArc")?.GetComponent<Image>();
+                    overlayRoot.SetAsLastSibling();
+                    return;
+                }
+
+                Destroy(overlayRoot.gameObject);
+            }
+
+            DestroyUiChild(root, "LeftDamageArc");
+            DestroyUiChild(root, "RightDamageArc");
+
+            var overlayObject = CreateRect("DamageOverlayRoot", root);
+            overlayObject.AddComponent<DamageOverlayVersionMarker>().Version = DamageOverlayVersion;
+            var overlayRect = overlayObject.GetComponent<RectTransform>();
+            StretchFull(overlayRect);
+
+            leftDamageArc = CreateDamageArc(overlayObject.transform, "LeftDamageArc", true);
+            rightDamageArc = CreateDamageArc(overlayObject.transform, "RightDamageArc", false);
+            overlayObject.transform.SetAsLastSibling();
         }
 
         private static Image CreateDamageArc(Transform root, string name, bool leftSide)
@@ -314,7 +322,7 @@ namespace ShooterPrototype.UI
             rect.anchorMin = new Vector2(leftSide ? 0f : 1f, 0f);
             rect.anchorMax = new Vector2(leftSide ? 0f : 1f, 1f);
             rect.pivot = new Vector2(leftSide ? 0f : 1f, 0.5f);
-            rect.sizeDelta = new Vector2(180f, 0f);
+            rect.sizeDelta = new Vector2(260f, 0f);
             rect.anchoredPosition = Vector2.zero;
 
             var image = arcObject.AddComponent<Image>();
@@ -322,14 +330,14 @@ namespace ShooterPrototype.UI
             image.sprite = CreateSideArcSprite(leftSide);
             image.type = Image.Type.Simple;
             image.preserveAspect = false;
-            image.color = new Color(0.98f, 0.08f, 0.14f, 0f);
+            image.color = new Color(0.98f, 0.05f, 0.1f, 0f);
             image.enabled = false;
             return image;
         }
 
         private static Sprite CreateSideArcSprite(bool leftSide)
         {
-            const int width = 128;
+            const int width = 160;
             const int height = 512;
             var texture = new Texture2D(width, height, TextureFormat.RGBA32, false)
             {
@@ -338,33 +346,49 @@ namespace ShooterPrototype.UI
                 hideFlags = HideFlags.HideAndDontSave
             };
 
-            var centerX = leftSide ? 0f : width - 1f;
             var centerY = height * 0.5f;
-            var radius = height * 0.46f;
             for (var y = 0; y < height; y++)
             {
                 for (var x = 0; x < width; x++)
                 {
-                    var dx = x - centerX;
-                    var dy = y - centerY;
-                    var dist = Mathf.Sqrt(dx * dx + dy * dy);
-                    var ring = 1f - Mathf.Clamp01(Mathf.Abs(dist - radius) / (radius * 0.16f));
-                    var edgeFade = leftSide
-                        ? Mathf.Clamp01(1f - x / (width * 0.72f))
-                        : Mathf.Clamp01(1f - (width - 1f - x) / (width * 0.72f));
-                    var verticalFade = 1f - Mathf.Abs(y - centerY) / (height * 0.44f);
-                    var alpha = ring * edgeFade * verticalFade;
-                    alpha = Mathf.Pow(alpha, 0.75f);
+                    var edgeDistance = leftSide ? x : (width - 1 - x);
+                    var edgeFade = 1f - (edgeDistance / (width - 1f));
+                    edgeFade = Mathf.Pow(Mathf.Clamp01(edgeFade), 1.35f);
+
+                    var verticalFade = 1f - Mathf.Abs(y - centerY) / (height * 0.46f);
+                    verticalFade = Mathf.Clamp01(verticalFade);
+                    verticalFade = Mathf.Pow(verticalFade, 0.85f);
+
+                    var innerX = leftSide ? x : (width - 1 - x);
+                    var arcRadius = height * 0.34f;
+                    var arcCenterX = arcRadius;
+                    var arcCenterY = centerY;
+                    var arcDx = innerX - arcCenterX;
+                    var arcDy = y - arcCenterY;
+                    var arcDist = Mathf.Sqrt(arcDx * arcDx + arcDy * arcDy);
+                    var arcBand = 1f - Mathf.Clamp01(Mathf.Abs(arcDist - arcRadius) / (arcRadius * 0.11f));
+                    arcBand = Mathf.Pow(arcBand, 1.2f);
+
+                    var alpha = Mathf.Clamp01(edgeFade * 0.55f + arcBand * edgeFade * 0.75f) * verticalFade;
                     texture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
                 }
             }
 
-            texture.Apply(false, true);
+            texture.Apply(false, false);
             return Sprite.Create(
                 texture,
                 new Rect(0f, 0f, width, height),
                 new Vector2(leftSide ? 0f : 1f, 0.5f),
                 100f);
+        }
+
+        private static void DestroyUiChild(Transform root, string childName)
+        {
+            var child = root.Find(childName);
+            if (child != null)
+            {
+                Object.Destroy(child.gameObject);
+            }
         }
 
         private static Sprite GetWhiteSprite()
@@ -385,7 +409,7 @@ namespace ShooterPrototype.UI
                 hideFlags = HideFlags.HideAndDontSave
             };
             texture.SetPixel(0, 0, Color.white);
-            texture.Apply(false, true);
+            texture.Apply(false, false);
             whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 1f, 1f), new Vector2(0.5f, 0.5f));
             return whiteSprite;
         }
@@ -396,6 +420,19 @@ namespace ShooterPrototype.UI
             go.transform.SetParent(parent, false);
             go.AddComponent<RectTransform>();
             return go;
+        }
+
+        private static void StretchFull(RectTransform rect)
+        {
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+        }
+
+        private sealed class DamageOverlayVersionMarker : MonoBehaviour
+        {
+            public int Version;
         }
     }
 }

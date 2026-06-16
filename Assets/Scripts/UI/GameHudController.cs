@@ -17,6 +17,7 @@ namespace ShooterPrototype.UI
     {
         private const string CanvasObjectName = "RuntimeGameHudCanvas";
         private const string MutePrefKey = "client_audio_muted";
+        private const int CornerStatsLayoutVersion = 2;
 
         private NetworkLauncher networkLauncher;
         private QueueApiClient queueApiClient;
@@ -97,11 +98,6 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            if (ReadToggleTopBarPressed())
-            {
-                SetTopBarVisible(!topBarVisible);
-            }
-
             if (ReadToggleMutePressed())
             {
                 HandleMutePressed();
@@ -116,15 +112,6 @@ namespace ShooterPrototype.UI
             return Keyboard.current != null && Keyboard.current.f8Key.wasPressedThisFrame;
 #else
             return Input.GetKeyDown(KeyCode.F8);
-#endif
-        }
-
-        private static bool ReadToggleTopBarPressed()
-        {
-#if ENABLE_INPUT_SYSTEM
-            return Keyboard.current != null && Keyboard.current.f1Key.wasPressedThisFrame;
-#else
-            return Input.GetKeyDown(KeyCode.F1);
 #endif
         }
 
@@ -333,13 +320,9 @@ namespace ShooterPrototype.UI
                 EnsureCombatHud();
             }
 
-            if (canvas != null && cornerStatsText == null)
-            {
-                BuildCornerStatsPanel(canvas.transform);
-            }
-
             if (canvas != null)
             {
+                EnsureCornerStatsPanel(canvas.transform);
                 EnsureMatchOverlayElements(canvas.transform);
             }
 
@@ -539,6 +522,24 @@ namespace ShooterPrototype.UI
             }
         }
 
+        private void EnsureCornerStatsPanel(Transform root)
+        {
+            var existingPanel = root.Find("CornerStatsPanel");
+            if (existingPanel != null)
+            {
+                var versionMarker = existingPanel.GetComponent<CornerStatsLayoutMarker>();
+                if (versionMarker != null && versionMarker.Version >= CornerStatsLayoutVersion && cornerStatsText != null)
+                {
+                    return;
+                }
+
+                cornerStatsText = null;
+                Destroy(existingPanel.gameObject);
+            }
+
+            BuildCornerStatsPanel(root);
+        }
+
         private void BuildCornerStatsPanel(Transform root)
         {
             if (cornerStatsText != null)
@@ -548,29 +549,36 @@ namespace ShooterPrototype.UI
 
             var panelObject = new GameObject("CornerStatsPanel");
             panelObject.transform.SetParent(root, false);
+            panelObject.AddComponent<CornerStatsLayoutMarker>().Version = CornerStatsLayoutVersion;
 
             var panelRect = panelObject.AddComponent<RectTransform>();
             panelRect.anchorMin = new Vector2(1f, 1f);
             panelRect.anchorMax = new Vector2(1f, 1f);
             panelRect.pivot = new Vector2(1f, 1f);
-            panelRect.sizeDelta = new Vector2(132f, 52f);
-            panelRect.anchoredPosition = new Vector2(-10f, -10f);
+            panelRect.sizeDelta = new Vector2(118f, 44f);
+            panelRect.anchoredPosition = new Vector2(-8f, -8f);
 
             var panelImage = panelObject.AddComponent<Image>();
             panelImage.color = new Color(0f, 0f, 0f, 0.42f);
             panelImage.raycastTarget = false;
 
-            cornerStatsText = CreateLabel(panelObject.transform, "CornerStatsText", new Vector2(8f, -8f), "FPS: --\nPing: -- ms");
-            var labelRect = cornerStatsText.rectTransform;
-            labelRect.anchorMin = new Vector2(0f, 1f);
-            labelRect.anchorMax = new Vector2(1f, 1f);
-            labelRect.pivot = new Vector2(0f, 1f);
-            labelRect.sizeDelta = new Vector2(-16f, 40f);
-            labelRect.anchoredPosition = new Vector2(8f, -8f);
+            var labelObject = new GameObject("CornerStatsText");
+            labelObject.transform.SetParent(panelObject.transform, false);
+            var labelRect = labelObject.AddComponent<RectTransform>();
+            labelRect.anchorMin = Vector2.zero;
+            labelRect.anchorMax = Vector2.one;
+            labelRect.offsetMin = new Vector2(10f, 6f);
+            labelRect.offsetMax = new Vector2(-10f, -6f);
+
+            cornerStatsText = labelObject.AddComponent<Text>();
+            cornerStatsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             cornerStatsText.fontSize = 14;
             cornerStatsText.alignment = TextAnchor.UpperLeft;
+            cornerStatsText.color = Color.white;
             cornerStatsText.horizontalOverflow = HorizontalWrapMode.Overflow;
             cornerStatsText.verticalOverflow = VerticalWrapMode.Overflow;
+            cornerStatsText.lineSpacing = 1f;
+            cornerStatsText.text = "FPS: --\nPing: -- ms";
         }
 
         private void EnsurePerformancePresetButton()
@@ -1011,6 +1019,11 @@ namespace ShooterPrototype.UI
 #else
             eventSystemObject.AddComponent<StandaloneInputModule>();
 #endif
+        }
+
+        private sealed class CornerStatsLayoutMarker : MonoBehaviour
+        {
+            public int Version;
         }
     }
 }
