@@ -32,6 +32,7 @@ namespace ShooterPrototype.UI
         private Text medkitText;
         private Text killsText;
         private Text inventoryText;
+        private GameObject legacyInventoryPanel;
         private Text matchStatusText;
         private Text victoryBannerText;
         private Text victorySubtitleText;
@@ -43,6 +44,15 @@ namespace ShooterPrototype.UI
         private Image perfButtonImage;
         private Coroutine pingRefreshCoroutine;
         private float fpsSmoothed;
+
+        public static void SetLegacyInventoryVisible(bool visible)
+        {
+            var hud = FindFirstObjectByType<GameHudController>();
+            if (hud != null && hud.legacyInventoryPanel != null)
+            {
+                hud.legacyInventoryPanel.SetActive(visible);
+            }
+        }
         private int consecutivePingFailures;
         private bool returnToMenuRequested;
         private bool isMuted;
@@ -309,6 +319,7 @@ namespace ShooterPrototype.UI
             panelRect.sizeDelta = new Vector2(0f, 204f);
 
             var inventoryPanel = new GameObject("InventoryPanel");
+            legacyInventoryPanel = inventoryPanel;
             inventoryPanel.transform.SetParent(rootCanvasObject.transform, false);
             var inventoryPanelRect = inventoryPanel.AddComponent<RectTransform>();
             inventoryPanelRect.anchorMin = new Vector2(0f, 0f);

@@ -144,9 +144,19 @@ namespace ShooterPrototype.Player
                 instance.AddComponent<PlayerMedkitController>();
             }
 
+            if (instance.GetComponent<PlayerSwimmingController>() == null)
+            {
+                instance.AddComponent<PlayerSwimmingController>();
+            }
+
             if (instance.GetComponent<PlayerPickupController>() == null)
             {
                 instance.AddComponent<PlayerPickupController>();
+            }
+
+            if (instance.GetComponent<ShooterPrototype.UI.PlayerInventoryPanelController>() == null)
+            {
+                instance.AddComponent<ShooterPrototype.UI.PlayerInventoryPanelController>();
             }
 
             var weaponController = instance.GetComponent<PlayerWeaponController>();

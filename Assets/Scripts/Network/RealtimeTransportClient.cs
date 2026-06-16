@@ -55,6 +55,7 @@ namespace ShooterPrototype.Network
             public int footstepSeq;
             public bool isCrouching;
             public bool isSprinting;
+            public bool isSwimming;
             public float wallAvoidBlend;
             public bool isDead;
             public int deathSeq;
@@ -207,6 +208,7 @@ namespace ShooterPrototype.Network
             public string weaponId;
             public int amount;
             public int medkitCount;
+            public int grenadeCount;
             public int weaponSlot0Kind;
             public int weaponSlot1Kind;
             public string weaponSlot0ItemId;
@@ -249,6 +251,49 @@ namespace ShooterPrototype.Network
             public int spareAmmoPistol = -1;
             public int spareAmmoMp7 = -1;
         }
+
+        [Serializable]
+        public sealed class WeaponSwapResultMessage
+        {
+            public string type;
+            public bool success;
+            public string reason;
+            public string ticketId;
+            public int slotA;
+            public int slotB;
+            public int weaponPickupSeq;
+            public int weaponSlot0Kind;
+            public int weaponSlot1Kind;
+            public string weaponSlot0ItemId;
+            public string weaponSlot1ItemId;
+            public int activeWeaponSlot;
+            public bool bothHolstered;
+            public int spareAmmoAssault = -1;
+            public int spareAmmoSniper = -1;
+            public int spareAmmoPistol = -1;
+            public int spareAmmoMp7 = -1;
+        }
+
+        [Serializable]
+        public sealed class InventoryItemDropResultMessage
+        {
+            public string type;
+            public bool success;
+            public string reason;
+            public string ticketId;
+            public string itemId;
+            public int amount;
+            public int medkitCount = -1;
+            public int grenadeCount = -1;
+            public int spareAmmoAssault = -1;
+            public int spareAmmoSniper = -1;
+            public int spareAmmoPistol = -1;
+            public int spareAmmoMp7 = -1;
+            public string droppedSpawnId;
+            public float x;
+            public float y;
+            public float z;
+        }
     private sealed class WeaponDropRequestMessage
     {
         public string type;
@@ -262,6 +307,24 @@ namespace ShooterPrototype.Network
         public int spareAmmoSniper = -1;
         public int spareAmmoPistol = -1;
         public int spareAmmoMp7 = -1;
+    }
+
+    private sealed class WeaponSwapRequestMessage
+    {
+        public string type;
+        public int slotA;
+        public int slotB;
+    }
+
+    private sealed class InventoryItemDropRequestMessage
+    {
+        public string type;
+        public string itemId;
+        public int amount;
+        public bool hasDropPosition;
+        public float x;
+        public float y;
+        public float z;
     }
 
         [Serializable]
@@ -444,6 +507,7 @@ namespace ShooterPrototype.Network
         {
             public string type;
             public string spawnId;
+            public int targetWeaponSlot = -1;
         }
 
         [Serializable]
@@ -506,6 +570,7 @@ namespace ShooterPrototype.Network
             public int footstepSeq;
             public bool isCrouching;
             public bool isSprinting;
+            public bool isSwimming;
             public float wallAvoidBlend;
             public bool isDead;
             public int deathSeq;
@@ -666,6 +731,8 @@ namespace ShooterPrototype.Network
         public event Action<PickupEventMessage> PickupEventReceived;
         public event Action<PickupResultMessage> PickupResultReceived;
         public event Action<WeaponDropResultMessage> WeaponDropResultReceived;
+        public event Action<WeaponSwapResultMessage> WeaponSwapResultReceived;
+        public event Action<InventoryItemDropResultMessage> InventoryItemDropResultReceived;
         public event Action<MedkitResultMessage> MedkitResultReceived;
         public event Action<HealMessage> HealReceived;
         public event Action<DamageZoneStateMessage> DamageZoneStateReceived;
@@ -820,6 +887,7 @@ namespace ShooterPrototype.Network
             int footstepSeq = 0,
             bool isCrouching = false,
             bool isSprinting = false,
+            bool isSwimming = false,
             float wallAvoidBlend = 0f,
             bool isDead = false,
             int deathSeq = 0,
@@ -869,6 +937,7 @@ namespace ShooterPrototype.Network
                 footstepSeq = Math.Max(0, footstepSeq),
                 isCrouching = isCrouching,
                 isSprinting = isSprinting,
+                isSwimming = isSwimming,
                 wallAvoidBlend = Mathf.Clamp01(wallAvoidBlend),
                 isDead = isDead,
                 deathSeq = Math.Max(0, deathSeq),
@@ -947,6 +1016,7 @@ namespace ShooterPrototype.Network
                 LookPitch = message.lookPitch,
                 IsCrouching = message.isCrouching,
                 IsSprinting = message.isSprinting,
+                IsSwimming = message.isSwimming,
                 IsDead = message.isDead,
                 IsHolstered = message.isHolstered,
                 IsGrounded = message.isGrounded,
@@ -1012,6 +1082,7 @@ namespace ShooterPrototype.Network
                 nextPose.isHolstered != lastSentPoseMessage.isHolstered ||
                 nextPose.isCrouching != lastSentPoseMessage.isCrouching ||
                 nextPose.isSprinting != lastSentPoseMessage.isSprinting ||
+                nextPose.isSwimming != lastSentPoseMessage.isSwimming ||
                 nextPose.isGrounded != lastSentPoseMessage.isGrounded ||
                 nextPose.inputAuth != lastSentPoseMessage.inputAuth ||
                 nextPose.jumpPressed != lastSentPoseMessage.jumpPressed ||
@@ -1098,6 +1169,7 @@ namespace ShooterPrototype.Network
                 footstepSeq = source.footstepSeq,
                 isCrouching = source.isCrouching,
                 isSprinting = source.isSprinting,
+                isSwimming = source.isSwimming,
                 wallAvoidBlend = source.wallAvoidBlend,
                 isDead = source.isDead,
                 deathSeq = source.deathSeq,
@@ -1341,7 +1413,7 @@ namespace ShooterPrototype.Network
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 
-        public void SendPickupRequest(string spawnId)
+        public void SendPickupRequest(string spawnId, int targetWeaponSlot = -1)
         {
             if (!IsReady || string.IsNullOrWhiteSpace(spawnId))
             {
@@ -1351,7 +1423,8 @@ namespace ShooterPrototype.Network
             _ = SendJsonAsync(new PickupRequestMessage
             {
                 type = "pickup",
-                spawnId = spawnId.Trim()
+                spawnId = spawnId.Trim(),
+                targetWeaponSlot = targetWeaponSlot
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 
@@ -1379,6 +1452,52 @@ namespace ShooterPrototype.Network
                 spareAmmoPistol = spareAmmoPistol,
                 spareAmmoMp7 = spareAmmoMp7
             };
+            if (dropPosition.HasValue)
+            {
+                var position = dropPosition.Value;
+                message.hasDropPosition = true;
+                message.x = position.x;
+                message.y = position.y;
+                message.z = position.z;
+            }
+
+            _ = SendJsonAsync(message, cts != null ? cts.Token : CancellationToken.None);
+        }
+
+        public void SendWeaponSwap(int slotA, int slotB)
+        {
+            if (!IsReady)
+            {
+                return;
+            }
+
+            if (slotA < 0 || slotA > 1 || slotB < 0 || slotB > 1 || slotA == slotB)
+            {
+                return;
+            }
+
+            _ = SendJsonAsync(new WeaponSwapRequestMessage
+            {
+                type = "weapon_swap",
+                slotA = slotA,
+                slotB = slotB
+            }, cts != null ? cts.Token : CancellationToken.None);
+        }
+
+        public void SendInventoryItemDrop(string itemId, int amount, Vector3? dropPosition = null)
+        {
+            if (!IsReady || string.IsNullOrWhiteSpace(itemId) || amount <= 0)
+            {
+                return;
+            }
+
+            var message = new InventoryItemDropRequestMessage
+            {
+                type = "inventory_item_drop",
+                itemId = itemId.Trim(),
+                amount = Mathf.Clamp(amount, 1, 99)
+            };
+
             if (dropPosition.HasValue)
             {
                 var position = dropPosition.Value;
@@ -1702,6 +1821,42 @@ namespace ShooterPrototype.Network
                 {
                     var message = weaponDropResultMessage;
                     EnqueueMainThreadAction(() => WeaponDropResultReceived?.Invoke(message));
+                    return;
+                }
+
+                WeaponSwapResultMessage weaponSwapResultMessage = null;
+                try
+                {
+                    weaponSwapResultMessage = JsonUtility.FromJson<WeaponSwapResultMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (weaponSwapResultMessage != null &&
+                    string.Equals(weaponSwapResultMessage.type, "weapon_swap_result", StringComparison.Ordinal))
+                {
+                    var message = weaponSwapResultMessage;
+                    EnqueueMainThreadAction(() => WeaponSwapResultReceived?.Invoke(message));
+                    return;
+                }
+
+                InventoryItemDropResultMessage inventoryItemDropResultMessage = null;
+                try
+                {
+                    inventoryItemDropResultMessage = JsonUtility.FromJson<InventoryItemDropResultMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (inventoryItemDropResultMessage != null &&
+                    string.Equals(inventoryItemDropResultMessage.type, "inventory_item_drop_result", StringComparison.Ordinal))
+                {
+                    var message = inventoryItemDropResultMessage;
+                    EnqueueMainThreadAction(() => InventoryItemDropResultReceived?.Invoke(message));
                     return;
                 }
 

@@ -1,4 +1,5 @@
 using ShooterPrototype.Network;
+using ShooterPrototype.UI;
 using System.Collections;
 using UnityEngine;
 #if ENABLE_INPUT_SYSTEM
@@ -22,6 +23,7 @@ namespace ShooterPrototype.Player
         private PlayerWeaponHolsterController weaponHolster;
         private PlayerHealth playerHealth;
         private PlayerMedkitController medkitController;
+        private PlayerInventory inventory;
         private RealtimeTransportClient transportClient;
         private MatchPresenceSync presenceSync;
         private Transform dropOrigin;
@@ -48,6 +50,7 @@ namespace ShooterPrototype.Player
             weaponHolster = GetComponent<PlayerWeaponHolsterController>();
             playerHealth = GetComponent<PlayerHealth>();
             medkitController = GetComponent<PlayerMedkitController>();
+            inventory = GetComponent<PlayerInventory>();
             presenceSync = GetComponent<MatchPresenceSync>();
             dropOrigin = transform;
         }
@@ -89,20 +92,24 @@ namespace ShooterPrototype.Player
 
         private void Update()
         {
+            if (CanAcceptWeaponSlotInput())
+            {
+                if (ReadSlotPressed(0))
+                {
+                    RequestSelectSlot(0);
+                }
+                else if (ReadSlotPressed(1))
+                {
+                    RequestSelectSlot(1);
+                }
+            }
+
             if (!CanAcceptInput())
             {
                 return;
             }
 
-            if (ReadSlotPressed(0))
-            {
-                RequestSelectSlot(0);
-            }
-            else if (ReadSlotPressed(1))
-            {
-                RequestSelectSlot(1);
-            }
-            else if (ReadDropPressed())
+            if (ReadDropPressed())
             {
                 RequestDropActiveWeapon();
             }
@@ -214,7 +221,12 @@ namespace ShooterPrototype.Player
             }
 
             var slotIndex = ResolveDropSlotIndex();
-            if (slotIndex < 0 || !loadout.IsSlotOccupied(slotIndex))
+            RequestDropWeaponSlot(slotIndex);
+        }
+
+        public void RequestDropWeaponSlot(int slotIndex)
+        {
+            if (loadout == null || slotIndex < 0 || slotIndex > 1 || !loadout.IsSlotOccupied(slotIndex))
             {
                 return;
             }
@@ -237,6 +249,141 @@ namespace ShooterPrototype.Player
             }
 
             ApplyLocalDrop(slotIndex);
+        }
+
+        public void RequestSwapWeaponSlots(int slotA, int slotB)
+        {
+            if (loadout == null || slotA == slotB || slotA < 0 || slotA > 1 || slotB < 0 || slotB > 1)
+            {
+                return;
+            }
+
+            if (!loadout.IsSlotOccupied(slotA) && !loadout.IsSlotOccupied(slotB))
+            {
+                return;
+            }
+
+            SyncActiveSlotMagAmmoFromController();
+
+            if (ShouldUseServerActions())
+            {
+                PublishAmmoStateToServer();
+                transportClient.SendWeaponSwap(slotA, slotB);
+                return;
+            }
+
+            ApplyLocalSwap(slotA, slotB);
+        }
+
+        public void RequestDropInventoryItem(string itemId, int amount = 1)
+        {
+            if (inventory == null)
+            {
+                inventory = GetComponent<PlayerInventory>();
+            }
+
+            if (string.IsNullOrWhiteSpace(itemId) || amount <= 0)
+            {
+                return;
+            }
+
+            if (AmmoCatalog.TryResolveKindFromItemId(itemId, out var ammoKind))
+            {
+                RequestDropAmmo(ammoKind, amount);
+                return;
+            }
+
+            if (inventory == null || inventory.GetCount(itemId) < amount)
+            {
+                return;
+            }
+
+            if (ShouldUseServerActions())
+            {
+                TryResolveDropPosition(out var dropPosition);
+                transportClient.SendInventoryItemDrop(itemId, amount, dropPosition);
+                return;
+            }
+
+            ApplyLocalInventoryDrop(itemId, amount);
+        }
+
+        public void RequestDropAmmo(WeaponKind kind, int amount)
+        {
+            if (loadout == null || amount <= 0)
+            {
+                return;
+            }
+
+            var spare = loadout.GetSpareAmmo(kind);
+            if (spare < amount)
+            {
+                return;
+            }
+
+            var itemId = AmmoCatalog.GetAmmoItemId(kind);
+            if (ShouldUseServerActions())
+            {
+                TryResolveDropPosition(out var dropPosition);
+                transportClient.SendInventoryItemDrop(itemId, amount, dropPosition);
+                return;
+            }
+
+            ApplyLocalAmmoDrop(kind, itemId, amount);
+        }
+
+        public void ApplyServerSwap(in WeaponLoadoutServerState serverState)
+        {
+            if (loadout == null)
+            {
+                return;
+            }
+
+            ApplyServerLoadout(serverState);
+            RefreshWeaponPresentationAfterServerChange();
+        }
+
+        public void ApplyServerInventoryDrop(
+            string itemId,
+            int medkitCount,
+            int grenadeCount,
+            int spareAmmoAssault,
+            int spareAmmoSniper,
+            int spareAmmoPistol,
+            int spareAmmoMp7,
+            string droppedSpawnId,
+            Vector3 dropPosition)
+        {
+            if (inventory == null)
+            {
+                inventory = GetComponent<PlayerInventory>();
+            }
+
+            if (inventory != null)
+            {
+                if (medkitCount >= 0)
+                {
+                    inventory.SetCount(InventoryItemIds.Medkit, medkitCount);
+                }
+
+                if (grenadeCount >= 0)
+                {
+                    inventory.SetCount(InventoryItemIds.Grenade, grenadeCount);
+                }
+            }
+
+            if (loadout != null)
+            {
+                loadout.ApplyServerSpareAmmo(
+                    spareAmmoAssault,
+                    spareAmmoSniper,
+                    spareAmmoPistol,
+                    spareAmmoMp7);
+                SyncControllerAmmoFromLoadout();
+            }
+
+            GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
+            presenceSync?.FlushLocalPose();
         }
 
         public void SyncActiveSlotMagAmmoFromController()
@@ -403,7 +550,12 @@ namespace ShooterPrototype.Player
             GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
         }
 
-        public bool TryApplyLocalPickup(string itemId, WeaponKind kind, GameObject equipPrefab, int magAmmo = -1)
+        public bool TryApplyLocalPickup(
+            string itemId,
+            WeaponKind kind,
+            GameObject equipPrefab,
+            int magAmmo = -1,
+            int preferredSlot = -1)
         {
             if (loadout == null)
             {
@@ -420,7 +572,15 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            if (loadout.OccupiedCount >= PlayerWeaponLoadout.MaxSlots)
+            var usePreferredSlot = preferredSlot == 0 || preferredSlot == 1;
+            if (usePreferredSlot)
+            {
+                if (loadout.IsSlotOccupied(preferredSlot))
+                {
+                    ApplyLocalDrop(preferredSlot, spawnWorldPickup: true);
+                }
+            }
+            else if (loadout.OccupiedCount >= PlayerWeaponLoadout.MaxSlots)
             {
                 var dropSlot = ResolveDropSlotIndex();
                 if (dropSlot >= 0)
@@ -435,7 +595,17 @@ namespace ShooterPrototype.Player
                                       weaponMount.HasMountedWeapon &&
                                       !weaponHolster.IsHolstered &&
                                       !weaponHolster.IsTransitioning;
-            if (!loadout.TryAddWeapon(itemId, kind, out var assignedSlot))
+            int assignedSlot;
+            if (usePreferredSlot)
+            {
+                if (!loadout.TryAddWeaponToSlot(preferredSlot, itemId, kind))
+                {
+                    return false;
+                }
+
+                assignedSlot = preferredSlot;
+            }
+            else if (!loadout.TryAddWeapon(itemId, kind, out assignedSlot))
             {
                 return false;
             }
@@ -831,7 +1001,7 @@ namespace ShooterPrototype.Player
             return loadout.IsSlotOccupied(0) ? 0 : 1;
         }
 
-        private bool CanAcceptInput()
+        private bool CanAcceptWeaponSlotInput()
         {
             if (slotSwitchRoutine != null)
             {
@@ -850,6 +1020,125 @@ namespace ShooterPrototype.Player
 
             var fps = GetComponent<FpsCharacterController>();
             return fps == null || fps.enabled;
+        }
+
+        private bool CanAcceptInput()
+        {
+            if (PlayerInventoryPanelController.IsOpen)
+            {
+                return false;
+            }
+
+            if (slotSwitchRoutine != null)
+            {
+                return false;
+            }
+
+            if (playerHealth != null && playerHealth.IsDead)
+            {
+                return false;
+            }
+
+            if (medkitController != null && medkitController.IsUsingMedkit)
+            {
+                return false;
+            }
+
+            var fps = GetComponent<FpsCharacterController>();
+            return fps == null || fps.enabled;
+        }
+
+        private void ApplyLocalSwap(int slotA, int slotB)
+        {
+            if (loadout == null || !loadout.TrySwapSlots(slotA, slotB))
+            {
+                return;
+            }
+
+            RefreshWeaponPresentationAfterServerChange();
+            GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
+            presenceSync?.FlushLocalPose();
+        }
+
+        private void ApplyLocalInventoryDrop(string itemId, int amount)
+        {
+            if (inventory == null || !inventory.TryRemove(itemId, amount))
+            {
+                return;
+            }
+
+            var spawnId = $"local_drop_{System.Guid.NewGuid():N}";
+            TryResolveDropPosition(out var dropPosition);
+            TrySpawnDroppedItemPickup(spawnId, itemId, dropPosition, amount);
+            GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
+            presenceSync?.FlushLocalPose();
+        }
+
+        private void ApplyLocalAmmoDrop(WeaponKind kind, string itemId, int amount)
+        {
+            if (loadout == null)
+            {
+                return;
+            }
+
+            var spare = loadout.GetSpareAmmo(kind);
+            if (spare < amount)
+            {
+                return;
+            }
+
+            loadout.SetSpareAmmo(kind, spare - amount);
+            SyncControllerAmmoFromLoadout();
+
+            var spawnId = $"local_drop_{System.Guid.NewGuid():N}";
+            TryResolveDropPosition(out var dropPosition);
+            TrySpawnDroppedItemPickup(spawnId, itemId, dropPosition, amount);
+            GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
+            presenceSync?.FlushLocalPose();
+        }
+
+        private void TrySpawnDroppedItemPickup(
+            string spawnId,
+            string itemId,
+            Vector3 dropPosition,
+            int amount = 1)
+        {
+            var spawnManager = FindFirstObjectByType<PickupSpawnManager>();
+            if (spawnManager == null || string.IsNullOrWhiteSpace(spawnId))
+            {
+                return;
+            }
+
+            var definition = spawnManager.ResolveDefinitionFromProtocol(
+                ResolvePickupKind(itemId),
+                itemId,
+                Mathf.Max(1, amount));
+            if (!definition.IsValid)
+            {
+                return;
+            }
+
+            spawnManager.SpawnDynamicPickupAtWorld(spawnId, dropPosition, transform.forward, definition);
+        }
+
+        private static PickupKind ResolvePickupKind(string itemId)
+        {
+            if (itemId == InventoryItemIds.Medkit)
+            {
+                return PickupKind.Medkit;
+            }
+
+            if (itemId == InventoryItemIds.Grenade)
+            {
+                return PickupKind.Grenade;
+            }
+
+            if (AmmoCatalog.TryResolveKindFromItemId(itemId, out _))
+            {
+                return PickupKind.Ammo;
+            }
+
+            return PickupKind.Weapon;
         }
 
         private bool ShouldUseServerActions()

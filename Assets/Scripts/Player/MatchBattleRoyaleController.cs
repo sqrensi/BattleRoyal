@@ -36,6 +36,7 @@ namespace ShooterPrototype.Player
         [SerializeField] private float planeColliderRestoreDistance = 28f;
 
         [Header("Drop")]
+        [SerializeField] private float mapPlayableHalfEdge = 60f;
         [SerializeField] private float freeFallGravity = -24f;
         [SerializeField] private float freeFallTerminalSpeed = 52f;
         [SerializeField] private float dropDescentSpeed = 13f;
@@ -194,7 +195,11 @@ namespace ShooterPrototype.Player
             if (isOnPlane && !hasJumpedLocally && lastState != null)
             {
                 UpdatePlaneOrbitCameraInput();
-                if (lastState.forceJump || lastState.useForcedDrop)
+                if (ShouldAutoEjectAtMapExit(lastState) || lastState.forceJump)
+                {
+                    RequestJumpFromPlane(lastState);
+                }
+                else if (lastState.useForcedDrop)
                 {
                     BeginFallFromPlane(lastState, forcedExtract: true);
                 }
@@ -518,7 +523,14 @@ namespace ShooterPrototype.Player
                 case "playing":
                     if (localDropState == LocalDropState.OnPlane)
                     {
-                        BeginFallFromPlane(message, forcedExtract: true);
+                        if (message.useForcedDrop)
+                        {
+                            BeginFallFromPlane(message, forcedExtract: true);
+                        }
+                        else
+                        {
+                            RequestJumpFromPlane(message);
+                        }
                     }
                     else if (!hasJumpedLocally)
                     {
@@ -772,6 +784,76 @@ namespace ShooterPrototype.Player
             return hitTransform == planeInstance.transform || hitTransform.IsChildOf(planeInstance.transform);
         }
 
+        private bool ShouldAutoEjectAtMapExit(RealtimeTransportClient.MatchStateMessage message)
+        {
+            if (message == null || planeInstance == null)
+            {
+                return false;
+            }
+
+            var halfEdge = Mathf.Max(1f, mapPlayableHalfEdge);
+            var centerX = message.mapCenterX;
+            var centerZ = message.mapCenterZ;
+            var pos = planeInstance.transform.position;
+            var relX = pos.x - centerX;
+            var relZ = pos.z - centerZ;
+
+            if (Mathf.Abs(relX) <= halfEdge && Mathf.Abs(relZ) <= halfEdge)
+            {
+                return false;
+            }
+
+            var planePos2 = new Vector2(pos.x, pos.z);
+            var distToStart = Vector2.Distance(
+                planePos2,
+                new Vector2(message.planeStartX, message.planeStartZ));
+            var distToEnd = Vector2.Distance(
+                planePos2,
+                new Vector2(message.planeEndX, message.planeEndZ));
+            return distToEnd < distToStart;
+        }
+
+        private bool TryResolveForcedDropPosition(
+            RealtimeTransportClient.MatchStateMessage message,
+            out Vector3 worldPosition)
+        {
+            worldPosition = Vector3.zero;
+            if (message == null || !message.useForcedDrop)
+            {
+                return false;
+            }
+
+            if (Mathf.Abs(message.dropPosX) < 0.01f && Mathf.Abs(message.dropPosZ) < 0.01f)
+            {
+                return false;
+            }
+
+            var altitude = message.planeY > 1f
+                ? message.planeY
+                : planePathEnd.y > 1f
+                    ? planePathEnd.y
+                    : 120f;
+            worldPosition = new Vector3(message.dropPosX, altitude, message.dropPosZ);
+            return true;
+        }
+
+        private void PlacePlayerAtForcedDrop(RealtimeTransportClient.MatchStateMessage message)
+        {
+            if (localPlayer == null || !TryResolveForcedDropPosition(message, out var dropPosition))
+            {
+                PlacePlayerAtPlaneRearExit();
+                return;
+            }
+
+            localPlayer.position = dropPosition;
+
+            var lookForward = ResolveJumpPlaneForward();
+            if (lookForward.sqrMagnitude > 0.001f)
+            {
+                localPlayer.rotation = Quaternion.LookRotation(lookForward, Vector3.up);
+            }
+        }
+
         private void PlacePlayerAtPlaneRearExit()
         {
             if (localPlayer == null || planeInstance == null)
@@ -809,7 +891,10 @@ namespace ShooterPrototype.Player
 
             if (forcedExtract)
             {
-                SnapPlaneToRouteEnd();
+                if (!TryResolveForcedDropPosition(message, out _))
+                {
+                    SnapPlaneToRouteEnd();
+                }
             }
 
             if (localPlayer.parent != null)
@@ -819,7 +904,7 @@ namespace ShooterPrototype.Player
 
             if (forcedExtract)
             {
-                PlacePlayerAtPlaneRearExit();
+                PlacePlayerAtForcedDrop(message);
                 jumpPlaneForward = ResolveJumpPlaneForward();
             }
             else

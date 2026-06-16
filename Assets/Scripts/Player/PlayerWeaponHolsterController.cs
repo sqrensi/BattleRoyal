@@ -54,6 +54,7 @@ namespace ShooterPrototype.Player
         private PlayerWeaponController weaponController;
         private PlayerHealth playerHealth;
         private PlayerMedkitController medkitController;
+        private PlayerSwimmingController swimmingController;
         private SyntyWeaponHandBinder handBinder;
         private SyntyFirstPersonArmsPresenter armsPresenter;
         private SyntySplitBodyPresentation splitBodyPresentation;
@@ -69,11 +70,14 @@ namespace ShooterPrototype.Player
         public bool IsMedkitWeaponLocked =>
             medkitUsePresentationActive ||
             (medkitController != null && medkitController.IsUsingMedkit);
+        public bool IsSwimmingWeaponLocked =>
+            swimmingController != null && swimmingController.IsSwimming;
         public bool IsWeaponReady =>
             weaponMount != null &&
             weaponMount.HasMountedWeapon &&
             phase == HolsterPhase.Armed &&
-            !IsMedkitWeaponLocked;
+            !IsMedkitWeaponLocked &&
+            !IsSwimmingWeaponLocked;
 
         public bool ShouldHideFirstPersonArms
         {
@@ -159,6 +163,7 @@ namespace ShooterPrototype.Player
 
             loadoutController = GetComponent<PlayerWeaponLoadoutController>();
             medkitController = GetComponent<PlayerMedkitController>();
+            swimmingController = GetComponent<PlayerSwimmingController>();
             fpsController = GetComponent<FpsCharacterController>();
         }
 
@@ -450,6 +455,11 @@ namespace ShooterPrototype.Player
             }
 
             if (medkitController != null && medkitController.IsUsingMedkit)
+            {
+                return false;
+            }
+
+            if (swimmingController != null && swimmingController.IsSwimming)
             {
                 return false;
             }

@@ -71,6 +71,7 @@ const MEDKIT_USE_DURATION_SECONDS = Math.max(0.5, Number(process.env.MEDKIT_USE_
 const MEDKIT_HEAL_AMOUNT = Math.max(1, Number(process.env.MEDKIT_HEAL_AMOUNT) || 70);
 const MEDKIT_MAX_COUNT = Math.max(1, Math.min(99, Number(process.env.MEDKIT_MAX_COUNT) || 8));
 const MEDKIT_STARTING_COUNT = Math.max(0, Math.min(MEDKIT_MAX_COUNT, Number(process.env.MEDKIT_STARTING_COUNT) || 0));
+const GRENADE_MAX_COUNT = Math.max(1, Math.min(99, Number(process.env.GRENADE_MAX_COUNT) || 8));
 const ZONE_STATE_BROADCAST_INTERVAL_MS = Math.max(100, Number(process.env.ZONE_STATE_BROADCAST_INTERVAL_MS) || 500);
 const ZONE_DEFAULT_INITIAL_RADIUS = Math.max(10, Number(process.env.ZONE_INITIAL_RADIUS) || 220);
 const ZONE_DEFAULT_PHASE1_END_RADIUS = Math.max(5, Number(process.env.ZONE_PHASE1_END_RADIUS) || 100);
@@ -84,7 +85,7 @@ const ZONE_DEFAULT_DAMAGE_RAMP_SEC = Math.max(30, Number(process.env.ZONE_DAMAGE
 const BR_LOBBY_COUNTDOWN_SECONDS = Math.max(3, toInt(process.env.BR_LOBBY_COUNTDOWN_SECONDS, 10));
 const BR_PLANE_DURATION_SECONDS = Math.max(10, toInt(process.env.BR_PLANE_DURATION_SECONDS, 45));
 const BR_PLANE_ALTITUDE = Math.max(20, Number(process.env.BR_PLANE_ALTITUDE) || 120);
-const BR_PLANE_HALF_LENGTH = Math.max(100, Number(process.env.BR_PLANE_HALF_LENGTH) || 400);
+const BR_PLANE_HALF_LENGTH = Math.max(100, Number(process.env.BR_PLANE_HALF_LENGTH) || 200);
 const BR_PLANE_START_RADIUS = Math.max(40, Number(process.env.BR_PLANE_START_RADIUS) || 60);
 const BR_PLANE_SPEED = Math.max(5, Number(process.env.BR_PLANE_SPEED) || 80);
 const BR_DEATH_DISCONNECT_SECONDS = Math.max(1, toInt(process.env.BR_DEATH_DISCONNECT_SECONDS, 5));
@@ -403,6 +404,16 @@ wsServer.on("connection", (socket) => {
 
       if (message.type === "weapon_drop") {
         handleWsWeaponDrop(socket, message);
+        return;
+      }
+
+      if (message.type === "weapon_swap") {
+        handleWsWeaponSwap(socket, message);
+        return;
+      }
+
+      if (message.type === "inventory_item_drop") {
+        handleWsInventoryItemDrop(socket, message);
         return;
       }
 
@@ -1177,6 +1188,89 @@ function createDroppedWeaponSpawn(matchId, ticketId, position, yaw, itemId, magA
   return spawnId;
 }
 
+function createDroppedItemSpawn(
+  matchId,
+  ticketId,
+  position,
+  yaw,
+  pickupKind,
+  itemId,
+  amount = 1,
+  clientDropPosition = null
+) {
+  const state = ensureMatchPickups(matchId);
+  if (!state || !position) {
+    return "";
+  }
+
+  const normalizedKind = normalizePickupKind(pickupKind, "medkit");
+  const normalizedItemId = typeof itemId === "string" ? itemId.trim() : "";
+  const normalizedAmount = Math.max(1, normalizeInt64(amount, 1));
+  const seq = (droppedWeaponSeqByMatchId.get(matchId) || 0) + 1;
+  droppedWeaponSeqByMatchId.set(matchId, seq);
+  const spawnId = `drop_${ticketId}_${seq}`;
+  let x;
+  let y;
+  let z;
+  if (clientDropPosition &&
+      Number.isFinite(clientDropPosition.x) &&
+      Number.isFinite(clientDropPosition.y) &&
+      Number.isFinite(clientDropPosition.z)) {
+    x = clientDropPosition.x;
+    y = clientDropPosition.y;
+    z = clientDropPosition.z;
+  } else {
+    const rad = (Number.isFinite(yaw) ? yaw : 0) * Math.PI / 180;
+    const offset = 1.2;
+    x = position.x + Math.sin(rad) * offset;
+    z = position.z + Math.cos(rad) * offset;
+    y = position.y;
+  }
+
+  state.spawns.set(spawnId, {
+    spawnId,
+    pickupKind: normalizedKind,
+    itemId: normalizedItemId,
+    weaponId: normalizedKind === "weapon" ? normalizedItemId : "",
+    amount: normalizedAmount,
+    magAmmo: -1,
+    x,
+    y,
+    z,
+    available: true,
+    respawnDelaySeconds: 0,
+    respawnAtMs: 0,
+  });
+  state.version += 1;
+  return spawnId;
+}
+
+function swapWeaponSlotData(presence, slotA, slotB) {
+  if (!presence || slotA === slotB) {
+    return;
+  }
+
+  const kindA = getWeaponSlotKind(presence, slotA);
+  const kindB = getWeaponSlotKind(presence, slotB);
+  const itemA = getWeaponSlotItemId(presence, slotA);
+  const itemB = getWeaponSlotItemId(presence, slotB);
+  const magA = getWeaponSlotMagAmmo(presence, slotA);
+  const magB = getWeaponSlotMagAmmo(presence, slotB);
+
+  setWeaponSlot(presence, slotA, itemB, kindB);
+  setWeaponSlot(presence, slotB, itemA, kindA);
+  setWeaponSlotMagAmmo(presence, slotA, magB);
+  setWeaponSlotMagAmmo(presence, slotB, magA);
+
+  if (presence.activeWeaponSlot === slotA) {
+    presence.activeWeaponSlot = slotB;
+  } else if (presence.activeWeaponSlot === slotB) {
+    presence.activeWeaponSlot = slotA;
+  }
+
+  syncWeaponPresenceFlags(presence);
+}
+
 function readPoseBufferF32(buffer, offset) {
   return buffer.readFloatLE(offset);
 }
@@ -1280,6 +1374,7 @@ function decodeBinaryPose(buffer) {
     jumpPressed: (flags & 64) !== 0,
     shotHasEndPoint: (flags & 128) !== 0,
     isAiming: (flags & 256) !== 0,
+    isSwimming: (flags & 512) !== 0,
     jumpState,
     weaponKind,
     weaponSlot0Kind,
@@ -1343,6 +1438,7 @@ function handleWsPose(socket, message) {
   const footstepSeq = Math.max(0, normalizeInt64(message.footstepSeq, 0));
   const isCrouching = !!message.isCrouching;
   const isSprinting = !!message.isSprinting;
+  const isSwimming = !!message.isSwimming;
   const wallAvoidBlend = Math.max(0, Math.min(1, normalizeNumber(message.wallAvoidBlend, 0)));
   const isDead = !!message.isDead;
   const deathSeq = Math.max(0, normalizeInt64(message.deathSeq, 0));
@@ -1494,6 +1590,7 @@ function handleWsPose(socket, message) {
   presence.footstepSeq = footstepSeq;
   presence.isCrouching = isCrouching;
   presence.isSprinting = isSprinting;
+  presence.isSwimming = isSwimming;
   presence.wallAvoidBlend = wallAvoidBlend;
   presence.isDead = isDead;
   presence.deathSeq = deathSeq;
@@ -1717,6 +1814,7 @@ function createDefaultPresence(sampleTick, sampleTimeMs) {
     footstepSeq: 0,
     isCrouching: false,
     isSprinting: false,
+    isSwimming: false,
     wallAvoidBlend: 0,
     isDead: false,
     deathSeq: 0,
@@ -1746,6 +1844,7 @@ function createDefaultPresence(sampleTick, sampleTimeMs) {
     spareAmmoByKind: [0, 0, 0, 0],
     weaponPickupSeq: 0,
     medkitCount: MEDKIT_STARTING_COUNT,
+    grenadeCount: 0,
     isUsingMedkit: false,
     medkitUseEndsAtMs: 0,
     medkitSeq: 0,
@@ -1911,6 +2010,11 @@ function handleWsPickup(socket, message) {
     return;
   }
 
+  if (pickupKind === "grenade" && (presence.grenadeCount || 0) >= GRENADE_MAX_COUNT) {
+    sendPickupResultToSocket(socket, false, "inventory_full");
+    return;
+  }
+
   const pos = presence.position;
   const dx = pos.x - spawn.x;
   const dz = pos.z - spawn.z;
@@ -1928,38 +2032,51 @@ function handleWsPickup(socket, message) {
   let pickedMagAmmo = -1;
   let pickedReserveAmmo = -1;
   if (pickupKind === "weapon") {
-    let targetSlot = findFirstEmptyWeaponSlot(presence);
-    if (targetSlot < 0) {
-      targetSlot = resolveDropSlotIndex(presence, -1);
-      const dropItemId = getWeaponSlotItemId(presence, targetSlot);
-      if (targetSlot >= 0 && dropItemId) {
-        const swapMag = Math.max(0, getWeaponSlotMagAmmo(presence, targetSlot));
-        droppedSpawnId = createDroppedWeaponSpawn(
-          ticket.matchId,
-          ticket.ticketId,
-          pos,
-          presence.yaw || 0,
-          dropItemId,
-          swapMag
-        );
-        if (droppedSpawnId) {
-          const dropSpawn = state.spawns.get(droppedSpawnId);
-          broadcastPickupEvent(ticket.matchId, {
-            type: "pickup_event",
-            spawnId: droppedSpawnId,
-            ticketId: ticket.ticketId,
-            pickupKind: "weapon",
-            itemId: dropItemId,
-            weaponId: dropItemId,
-            amount: 1,
-            available: true,
-            x: dropSpawn ? dropSpawn.x : pos.x,
-            y: dropSpawn ? dropSpawn.y : pos.y,
-            z: dropSpawn ? dropSpawn.z : pos.z,
-          });
-        }
-        clearWeaponSlot(presence, targetSlot);
+    const requestedSlot = normalizeInt64(message && message.targetWeaponSlot, -1);
+    let targetSlot = -1;
+
+    if (requestedSlot === 0 || requestedSlot === 1) {
+      targetSlot = requestedSlot;
+    } else {
+      targetSlot = findFirstEmptyWeaponSlot(presence);
+      if (targetSlot < 0) {
+        targetSlot = resolveDropSlotIndex(presence, -1);
       }
+    }
+
+    if (targetSlot < 0) {
+      sendPickupResultToSocket(socket, false, "inventory_full");
+      return;
+    }
+
+    const dropItemId = getWeaponSlotItemId(presence, targetSlot);
+    if (targetSlot >= 0 && dropItemId && isWeaponSlotOccupied(getWeaponSlotKind(presence, targetSlot))) {
+      const swapMag = Math.max(0, getWeaponSlotMagAmmo(presence, targetSlot));
+      droppedSpawnId = createDroppedWeaponSpawn(
+        ticket.matchId,
+        ticket.ticketId,
+        pos,
+        presence.yaw || 0,
+        dropItemId,
+        swapMag
+      );
+      if (droppedSpawnId) {
+        const dropSpawn = state.spawns.get(droppedSpawnId);
+        broadcastPickupEvent(ticket.matchId, {
+          type: "pickup_event",
+          spawnId: droppedSpawnId,
+          ticketId: ticket.ticketId,
+          pickupKind: "weapon",
+          itemId: dropItemId,
+          weaponId: dropItemId,
+          amount: 1,
+          available: true,
+          x: dropSpawn ? dropSpawn.x : pos.x,
+          y: dropSpawn ? dropSpawn.y : pos.y,
+          z: dropSpawn ? dropSpawn.z : pos.z,
+        });
+      }
+      clearWeaponSlot(presence, targetSlot);
     }
 
     if (targetSlot < 0) {
@@ -2019,6 +2136,11 @@ function handleWsPickup(socket, message) {
       MEDKIT_MAX_COUNT,
       Math.max(0, normalizeInt64(presence.medkitCount, 0)) + amount
     );
+  } else if (pickupKind === "grenade") {
+    presence.grenadeCount = Math.min(
+      GRENADE_MAX_COUNT,
+      Math.max(0, normalizeInt64(presence.grenadeCount, 0)) + amount
+    );
   }
 
   spawn.available = false;
@@ -2035,6 +2157,7 @@ function handleWsPickup(socket, message) {
     weaponId: itemId,
     amount,
     medkitCount: Math.max(0, normalizeInt64(presence.medkitCount, 0)),
+    grenadeCount: Math.max(0, normalizeInt64(presence.grenadeCount, 0)),
     droppedSpawnId,
     magAmmo: pickedMagAmmo,
     reserveAmmo: pickedReserveAmmo,
@@ -2076,6 +2199,7 @@ function sendPickupResultToSocket(socket, success, reason, details) {
       weaponId: details && typeof details.weaponId === "string" ? details.weaponId : "",
       amount: details && Number.isFinite(details.amount) ? details.amount : 0,
       medkitCount: details && Number.isFinite(details.medkitCount) ? details.medkitCount : 0,
+      grenadeCount: details && Number.isFinite(details.grenadeCount) ? details.grenadeCount : 0,
       droppedSpawnId: details && typeof details.droppedSpawnId === "string" ? details.droppedSpawnId : "",
       weaponSlot0Kind: details && Number.isFinite(details.weaponSlot0Kind) ? details.weaponSlot0Kind : WEAPON_SLOT_EMPTY,
       weaponSlot1Kind: details && Number.isFinite(details.weaponSlot1Kind) ? details.weaponSlot1Kind : WEAPON_SLOT_EMPTY,
@@ -2267,6 +2391,241 @@ function handleWsWeaponDrop(socket, message) {
     itemId,
     weaponId: itemId,
     amount: 1,
+    available: true,
+    x: dropSpawn ? dropSpawn.x : presence.position.x,
+    y: dropSpawn ? dropSpawn.y : presence.position.y,
+    z: dropSpawn ? dropSpawn.z : presence.position.z,
+  });
+
+  touchMatchSession(ticket.matchId);
+  broadcastMatchSnapshots(ticket.matchId);
+}
+
+function sendWeaponSwapResultToSocket(socket, success, reason, details) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  try {
+    socket.send(JSON.stringify({
+      type: "weapon_swap_result",
+      success: !!success,
+      reason: typeof reason === "string" ? reason : "",
+      ticketId: details && typeof details.ticketId === "string" ? details.ticketId : "",
+      slotA: details && Number.isFinite(details.slotA) ? details.slotA : -1,
+      slotB: details && Number.isFinite(details.slotB) ? details.slotB : -1,
+      weaponPickupSeq: details && Number.isFinite(details.weaponPickupSeq) ? details.weaponPickupSeq : 0,
+      weaponSlot0Kind: details && Number.isFinite(details.weaponSlot0Kind) ? details.weaponSlot0Kind : WEAPON_SLOT_EMPTY,
+      weaponSlot1Kind: details && Number.isFinite(details.weaponSlot1Kind) ? details.weaponSlot1Kind : WEAPON_SLOT_EMPTY,
+      weaponSlot0ItemId: details && typeof details.weaponSlot0ItemId === "string" ? details.weaponSlot0ItemId : "",
+      weaponSlot1ItemId: details && typeof details.weaponSlot1ItemId === "string" ? details.weaponSlot1ItemId : "",
+      activeWeaponSlot: details && Number.isFinite(details.activeWeaponSlot) ? details.activeWeaponSlot : WEAPON_SLOT_EMPTY,
+      bothHolstered: !!(details && details.bothHolstered),
+      spareAmmoAssault: details && Number.isFinite(details.spareAmmoAssault) ? details.spareAmmoAssault : -1,
+      spareAmmoSniper: details && Number.isFinite(details.spareAmmoSniper) ? details.spareAmmoSniper : -1,
+      spareAmmoPistol: details && Number.isFinite(details.spareAmmoPistol) ? details.spareAmmoPistol : -1,
+      spareAmmoMp7: details && Number.isFinite(details.spareAmmoMp7) ? details.spareAmmoMp7 : -1,
+    }));
+  } catch {
+    // ignored
+  }
+}
+
+function handleWsWeaponSwap(socket, message) {
+  const meta = wsMetaBySocket.get(socket);
+  if (!meta || !meta.ticketId) {
+    return;
+  }
+
+  const ticket = ticketsById.get(meta.ticketId);
+  if (!ticket || ticket.status !== "Matched" || !ticket.matchId) {
+    return;
+  }
+
+  if (!ticket.presence || !ticket.presence.hasPose) {
+    sendWeaponSwapResultToSocket(socket, false, "no_pose");
+    return;
+  }
+
+  const presence = ticket.presence;
+  if (presence.isDead) {
+    sendWeaponSwapResultToSocket(socket, false, "dead");
+    return;
+  }
+
+  const slotA = normalizeInt64(message && message.slotA, -1);
+  const slotB = normalizeInt64(message && message.slotB, -1);
+  if ((slotA !== 0 && slotA !== 1) || (slotB !== 0 && slotB !== 1) || slotA === slotB) {
+    sendWeaponSwapResultToSocket(socket, false, "invalid_slot");
+    return;
+  }
+
+  if (!isWeaponSlotOccupied(getWeaponSlotKind(presence, slotA)) &&
+      !isWeaponSlotOccupied(getWeaponSlotKind(presence, slotB))) {
+    sendWeaponSwapResultToSocket(socket, false, "empty_slot");
+    return;
+  }
+
+  swapWeaponSlotData(presence, slotA, slotB);
+  let weaponPickupSeq = Math.max(0, normalizeInt64(presence.weaponPickupSeq, 0));
+  weaponPickupSeq += 1;
+  presence.weaponPickupSeq = weaponPickupSeq;
+
+  sendWeaponSwapResultToSocket(socket, true, "ok", {
+    ticketId: ticket.ticketId,
+    slotA,
+    slotB,
+    weaponPickupSeq,
+    ...buildSpareAmmoPayload(presence),
+    ...buildWeaponLoadoutPayload(presence),
+  });
+
+  touchMatchSession(ticket.matchId);
+  broadcastMatchSnapshots(ticket.matchId);
+}
+
+function sendInventoryItemDropResultToSocket(socket, success, reason, details) {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  try {
+    socket.send(JSON.stringify({
+      type: "inventory_item_drop_result",
+      success: !!success,
+      reason: typeof reason === "string" ? reason : "",
+      ticketId: details && typeof details.ticketId === "string" ? details.ticketId : "",
+      itemId: details && typeof details.itemId === "string" ? details.itemId : "",
+      amount: details && Number.isFinite(details.amount) ? details.amount : 0,
+      medkitCount: details && Number.isFinite(details.medkitCount) ? details.medkitCount : -1,
+      grenadeCount: details && Number.isFinite(details.grenadeCount) ? details.grenadeCount : -1,
+      spareAmmoAssault: details && Number.isFinite(details.spareAmmoAssault) ? details.spareAmmoAssault : -1,
+      spareAmmoSniper: details && Number.isFinite(details.spareAmmoSniper) ? details.spareAmmoSniper : -1,
+      spareAmmoPistol: details && Number.isFinite(details.spareAmmoPistol) ? details.spareAmmoPistol : -1,
+      spareAmmoMp7: details && Number.isFinite(details.spareAmmoMp7) ? details.spareAmmoMp7 : -1,
+      droppedSpawnId: details && typeof details.droppedSpawnId === "string" ? details.droppedSpawnId : "",
+      x: details && Number.isFinite(details.x) ? details.x : 0,
+      y: details && Number.isFinite(details.y) ? details.y : 0,
+      z: details && Number.isFinite(details.z) ? details.z : 0,
+    }));
+  } catch {
+    // ignored
+  }
+}
+
+function handleWsInventoryItemDrop(socket, message) {
+  const meta = wsMetaBySocket.get(socket);
+  if (!meta || !meta.ticketId) {
+    return;
+  }
+
+  const ticket = ticketsById.get(meta.ticketId);
+  if (!ticket || ticket.status !== "Matched" || !ticket.matchId) {
+    return;
+  }
+
+  if (!ticket.presence || !ticket.presence.hasPose || !ticket.presence.position) {
+    sendInventoryItemDropResultToSocket(socket, false, "no_pose");
+    return;
+  }
+
+  const presence = ticket.presence;
+  if (presence.isDead) {
+    sendInventoryItemDropResultToSocket(socket, false, "dead");
+    return;
+  }
+
+  const itemId = message && typeof message.itemId === "string" ? message.itemId.trim().toLowerCase() : "";
+  const amount = Math.max(1, normalizeInt64(message && message.amount, 1));
+  if (!itemId) {
+    sendInventoryItemDropResultToSocket(socket, false, "invalid_item");
+    return;
+  }
+
+  let pickupKind = "";
+  if (itemId === "medkit") {
+    pickupKind = "medkit";
+    const medkitCountNow = Math.max(0, normalizeInt64(presence.medkitCount, 0));
+    if (medkitCountNow < amount) {
+      sendInventoryItemDropResultToSocket(socket, false, "not_enough");
+      return;
+    }
+    presence.medkitCount = medkitCountNow - amount;
+  } else if (itemId === "grenade") {
+    pickupKind = "grenade";
+    const grenadeCountNow = Math.max(0, normalizeInt64(presence.grenadeCount, 0));
+    if (grenadeCountNow < amount) {
+      sendInventoryItemDropResultToSocket(socket, false, "not_enough");
+      return;
+    }
+    presence.grenadeCount = grenadeCountNow - amount;
+  } else {
+    const ammoKind = resolveAmmoKindFromItemId(itemId);
+    if (ammoKind < 0) {
+      sendInventoryItemDropResultToSocket(socket, false, "invalid_item");
+      return;
+    }
+
+    pickupKind = "ammo";
+    const spareNow = getSpareAmmoForKind(presence, ammoKind);
+    if (spareNow < amount) {
+      sendInventoryItemDropResultToSocket(socket, false, "not_enough");
+      return;
+    }
+
+    setSpareAmmoForKind(presence, ammoKind, spareNow - amount);
+  }
+
+  const hasClientDrop = !!(message && message.hasDropPosition);
+  const clientDropPosition = hasClientDrop
+    ? {
+        x: normalizeNumber(message.x, NaN),
+        y: normalizeNumber(message.y, NaN),
+        z: normalizeNumber(message.z, NaN)
+      }
+    : null;
+  const useClientDrop = clientDropPosition &&
+    Number.isFinite(clientDropPosition.x) &&
+    Number.isFinite(clientDropPosition.y) &&
+    Number.isFinite(clientDropPosition.z);
+  const droppedSpawnId = createDroppedItemSpawn(
+    ticket.matchId,
+    ticket.ticketId,
+    presence.position,
+    presence.yaw || 0,
+    pickupKind,
+    itemId,
+    amount,
+    useClientDrop ? clientDropPosition : null
+  );
+  if (!droppedSpawnId) {
+    sendInventoryItemDropResultToSocket(socket, false, "spawn_failed");
+    return;
+  }
+
+  const state = ensureMatchPickups(ticket.matchId);
+  const dropSpawn = state && state.spawns.get(droppedSpawnId);
+  sendInventoryItemDropResultToSocket(socket, true, "ok", {
+    ticketId: ticket.ticketId,
+    itemId,
+    amount,
+    medkitCount: Math.max(0, normalizeInt64(presence.medkitCount, 0)),
+    grenadeCount: Math.max(0, normalizeInt64(presence.grenadeCount, 0)),
+    ...buildSpareAmmoPayload(presence),
+    droppedSpawnId,
+    x: dropSpawn ? dropSpawn.x : presence.position.x,
+    y: dropSpawn ? dropSpawn.y : presence.position.y,
+    z: dropSpawn ? dropSpawn.z : presence.position.z,
+  });
+
+  broadcastPickupEvent(ticket.matchId, {
+    type: "pickup_event",
+    spawnId: droppedSpawnId,
+    ticketId: ticket.ticketId,
+    pickupKind,
+    itemId,
+    weaponId: itemId,
+    amount,
     available: true,
     x: dropSpawn ? dropSpawn.x : presence.position.x,
     y: dropSpawn ? dropSpawn.y : presence.position.y,
@@ -3528,6 +3887,7 @@ function encodeSnapshotBinary(payload) {
       if (player.isHolstered) flags2 |= 32;
       if (player.hasWeapon) flags2 |= 64;
       if (player.isUsingMedkit) flags2 |= 128;
+      if (player.isSwimming) flags2 |= 256;
       body.writeUInt16LE(flags2, 32);
       body.writeUInt8(Math.max(0, Math.min(2, player.jumpState || 0)), 34);
       chunks.push(body);
@@ -3730,6 +4090,7 @@ function collectRealtimePlayersForMatch(matchId, ownerTicketId) {
       footstepSeq: Number.isFinite(ticket.presence.footstepSeq) ? ticket.presence.footstepSeq : 0,
       isCrouching: !!ticket.presence.isCrouching,
       isSprinting: !!ticket.presence.isSprinting,
+      isSwimming: !!ticket.presence.isSwimming,
       wallAvoidBlend: Number.isFinite(ticket.presence.wallAvoidBlend) ? ticket.presence.wallAvoidBlend : 0,
       isDead: !!ticket.presence.isDead,
       deathSeq: Number.isFinite(ticket.presence.deathSeq) ? ticket.presence.deathSeq : 0,
@@ -4278,7 +4639,8 @@ function computeBattleRoyalePlaneDurationSeconds(br) {
   const pathLength = Math.max(1, Math.hypot(dx, dz));
   const speed = Math.max(5, Number(br.planeSpeed) || BR_PLANE_SPEED);
   const travelSeconds = pathLength / speed;
-  return Math.max(12, Math.min(BR_PLANE_DURATION_SECONDS, travelSeconds));
+  const minFlightSeconds = Math.max(12, BR_PLANE_DURATION_SECONDS * 0.85);
+  return Math.max(minFlightSeconds, Math.min(BR_PLANE_DURATION_SECONDS, travelSeconds));
 }
 
 function startBattleRoyalePlane(session, nowMs) {
@@ -4468,7 +4830,7 @@ function clampPositionToMapSquare(x, z, centerX, centerZ, halfEdge) {
 }
 
 function updateBattleRoyalePlaneRoute(br, mapCenterX, mapCenterZ) {
-  const halfEdge = BR_DROP_MAX_DISTANCE_FROM_CENTER;
+  const routeHalfLength = Math.max(BR_DROP_MAX_DISTANCE_FROM_CENTER, BR_PLANE_HALF_LENGTH);
   if (!br.planePathInitialized) {
     br.planePathAngle = Math.random() * Math.PI * 2;
     br.planePathInitialized = true;
@@ -4476,8 +4838,8 @@ function updateBattleRoyalePlaneRoute(br, mapCenterX, mapCenterZ) {
 
   const pathDx = Math.cos(br.planePathAngle);
   const pathDz = Math.sin(br.planePathAngle);
-  const start = computeMapSquareEdgePoint(mapCenterX, mapCenterZ, -pathDx, -pathDz, halfEdge);
-  const end = computeMapSquareEdgePoint(mapCenterX, mapCenterZ, pathDx, pathDz, halfEdge);
+  const start = computeMapSquareEdgePoint(mapCenterX, mapCenterZ, -pathDx, -pathDz, routeHalfLength);
+  const end = computeMapSquareEdgePoint(mapCenterX, mapCenterZ, pathDx, pathDz, routeHalfLength);
   br.planeStartX = start.x;
   br.planeStartZ = start.z;
   br.planeEndX = end.x;
@@ -4537,8 +4899,36 @@ function hasPlaneReachedRouteEnd(br, nowMs) {
     nowMs >= br.planeEndsAtMs);
 }
 
-function shouldForcePlaneJump(br, nowMs, ticketId) {
-  if (!br || !ticketId || !hasPlaneReachedRouteEnd(br, nowMs)) {
+function hasPlaneCrossedMapExitEdge(br, planePosX, planePosZ) {
+  if (!br) {
+    return false;
+  }
+
+  const centerX = Number(br.mapCenterX) || 0;
+  const centerZ = Number(br.mapCenterZ) || 0;
+  const edge = BR_DROP_MAX_DISTANCE_FROM_CENTER;
+  const relX = Number(planePosX) - centerX;
+  const relZ = Number(planePosZ) - centerZ;
+
+  if (Math.abs(relX) <= edge && Math.abs(relZ) <= edge) {
+    return false;
+  }
+
+  const startX = Number(br.planeStartX) || 0;
+  const startZ = Number(br.planeStartZ) || 0;
+  const endX = Number(br.planeEndX) || 0;
+  const endZ = Number(br.planeEndZ) || 0;
+  const distToStart = Math.hypot(planePosX - startX, planePosZ - startZ);
+  const distToEnd = Math.hypot(planePosX - endX, planePosZ - endZ);
+  return distToEnd < distToStart;
+}
+
+function shouldForcePlaneJump(br, nowMs, ticketId, planePosX, planePosZ) {
+  if (!br || !ticketId || br.phase !== "plane") {
+    return false;
+  }
+
+  if (br.jumpedTickets.has(ticketId)) {
     return false;
   }
 
@@ -4546,7 +4936,7 @@ function shouldForcePlaneJump(br, nowMs, ticketId) {
     return false;
   }
 
-  return br.phase === "plane" && !br.jumpedTickets.has(ticketId);
+  return hasPlaneCrossedMapExitEdge(br, planePosX, planePosZ);
 }
 
 function onBattleRoyalePlayerLanded(ticket) {
@@ -4732,19 +5122,20 @@ function buildMatchStatePayload(session, ticketId) {
   const planePosX = br.planeStartX + ((br.planeEndX - br.planeStartX) * planeT);
   const planePosZ = br.planeStartZ + ((br.planeEndZ - br.planeStartZ) * planeT);
 
-  const forceJump = shouldForcePlaneJump(br, nowMs, ticketId);
+  const forceJump = shouldForcePlaneJump(br, nowMs, ticketId, planePosX, planePosZ);
   const voluntaryJump = !!(ticketId && br.voluntaryJumpTickets && br.voluntaryJumpTickets.has(ticketId));
   let dropPosX = 0;
   let dropPosZ = 0;
   let useForcedDrop = false;
   if (ticketId && !voluntaryJump) {
-    const stillOnPlane = br.phase === "plane" && !br.jumpedTickets.has(ticketId);
     const missedJumpAfterPlane = br.phase === "playing" &&
       br.jumpedTickets.has(ticketId) &&
       !br.landedTickets.has(ticketId);
-    const mustAutoExtract = (forceJump && stillOnPlane) || missedJumpAfterPlane;
-    if (mustAutoExtract) {
+    if (missedJumpAfterPlane) {
       useForcedDrop = true;
+      const drop = ensureAutoDropPosition(br, ticketId);
+      dropPosX = drop.x;
+      dropPosZ = drop.z;
     }
   }
 

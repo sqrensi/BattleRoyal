@@ -48,6 +48,7 @@
     <Analyzer Include="C:\Program Files\Unity\Hub\Editor\6000.3.10f1\Editor\Data\Tools\BuildPipeline\Unity.SourceGenerators\Unity.UIToolkit.SourceGenerator.dll" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Assets\Scripts\UI\InventoryIconCatalog.cs" />
     <Compile Include="Assets\Scripts\Bootstrap\GameBootstrap.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextEventHandler.cs" />
     <Compile Include="Assets\Scripts\Network\RealtimePoseBinaryCodec.cs" />
@@ -85,6 +86,7 @@
     <Compile Include="Assets\Scripts\Player\RemotePlayerEditorPreview.cs" />
     <Compile Include="Assets\Scripts\Player\PickupGroundLayers.cs" />
     <Compile Include="Assets\Scripts\Player\MatchPickupSync.cs" />
+    <Compile Include="Assets\Scripts\Player\WaterLayers.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_ExampleScript_01.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMPro_InstructionOverlay.cs" />
     <Compile Include="Assets\Scripts\Player\PickupItemDefinition.cs" />
@@ -94,6 +96,7 @@
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\MultiAnimationDisplay.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyBoneAnchorSync.cs" />
     <Compile Include="Assets\Scripts\Player\MovementNetworkDiagnostics.cs" />
+    <Compile Include="Assets\Scripts\UI\InventoryTypes.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponKind.cs" />
     <Compile Include="Assets\Scripts\Network\NetworkLauncher.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexJitter.cs" />
@@ -120,6 +123,7 @@
     <Compile Include="Assets\Scripts\Player\SyntyCrouchPosture.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuController.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexShakeA.cs" />
+    <Compile Include="Assets\Scripts\UI\PlayerInventoryPanelController.cs" />
     <Compile Include="Assets\Scripts\Player\PickupSpawnRandomPool.cs" />
     <Compile Include="Assets\Scripts\Player\ProceduralLocomotionRig.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteMedkitPresentation.cs" />
@@ -159,6 +163,7 @@
     <Compile Include="Assets\Scripts\Player\MatchDamageZoneController.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerNetworkIdentity.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\IndividualAnimationDisplay.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerSwimmingController.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark03.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerViewPresentation.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\Element.cs" />
@@ -186,6 +191,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerPickupController.cs" />
     <Compile Include="Assets\Scripts\Bootstrap\LaunchMode.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\CharacterItemEvent.cs" />
+    <Compile Include="Assets\Scripts\UI\InventorySlotView.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerAudioController.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TextMeshProFloatingText.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_Demo_RandomDir.cs" />

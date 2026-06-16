@@ -47,6 +47,7 @@ namespace ShooterPrototype.Network
             if (packet.JumpPressed) flags |= 64;
             if (packet.ShotHasEndPoint) flags |= 128;
             if (packet.IsAiming) flags |= 256;
+            if (packet.IsSwimming) flags |= 512;
             WriteU16(buffer, ref offset, flags);
 
             WriteU8(buffer, ref offset, (byte)Math.Clamp(packet.JumpState, 0, 2));
@@ -147,6 +148,7 @@ namespace ShooterPrototype.Network
         public bool JumpPressed;
         public bool ShotHasEndPoint;
         public bool IsAiming;
+        public bool IsSwimming;
         public int JumpState;
         public int WeaponKind;
         public int WeaponSlot0Kind;

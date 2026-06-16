@@ -1,4 +1,5 @@
 using System;
+using ShooterPrototype.UI;
 using UnityEngine;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -192,8 +193,10 @@ namespace ShooterPrototype.Player
         private PlayerWeaponHolsterController holsterController;
 
         private bool BlocksLocalAimInput =>
+            PlayerInventoryPanelController.IsOpen ||
             (medkitController != null && medkitController.IsUsingMedkit) ||
             (holsterController != null && holsterController.IsMedkitWeaponLocked) ||
+            (holsterController != null && holsterController.IsSwimmingWeaponLocked) ||
             localHolstered;
 
         private void Awake()

@@ -268,6 +268,54 @@ namespace ShooterPrototype.Player
             return true;
         }
 
+        public bool TryAddWeaponToSlot(int slotIndex, string itemId, WeaponKind kind)
+        {
+            if (slotIndex < 0 || slotIndex > 1)
+            {
+                return false;
+            }
+
+            SetSlot(slotIndex, itemId, kind);
+            activeSlotIndex = slotIndex;
+            bothHolstered = false;
+            return true;
+        }
+
+        public bool TrySwapSlots(int slotA, int slotB)
+        {
+            if (slotA == slotB || slotA < 0 || slotA > 1 || slotB < 0 || slotB > 1)
+            {
+                return false;
+            }
+
+            var slotAData = GetSlot(slotA);
+            var slotBData = GetSlot(slotB);
+            var magA = GetSlotMagAmmo(slotA);
+            var magB = GetSlotMagAmmo(slotB);
+
+            SetSlot(slotA, slotBData.ItemId, slotBData.Kind);
+            SetSlot(slotB, slotAData.ItemId, slotAData.Kind);
+            SetSlotMagAmmo(slotA, magB);
+            SetSlotMagAmmo(slotB, magA);
+
+            if (activeSlotIndex == slotA)
+            {
+                activeSlotIndex = slotB;
+            }
+            else if (activeSlotIndex == slotB)
+            {
+                activeSlotIndex = slotA;
+            }
+
+            if (!HasAnyWeapon)
+            {
+                activeSlotIndex = NoActiveSlot;
+                bothHolstered = true;
+            }
+
+            return true;
+        }
+
         public bool TryRemoveSlot(int slotIndex, out Slot removed)
         {
             removed = default;

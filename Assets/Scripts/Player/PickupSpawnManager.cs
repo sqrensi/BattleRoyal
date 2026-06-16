@@ -2480,9 +2480,38 @@ namespace ShooterPrototype.Player
                             resolvedItemId,
                             resolvedAmount);
                 }
+                case PickupKind.Medkit:
+                {
+                    var visual = ResolveGenericItemVisualPrefab();
+                    return PickupItemDefinition.Create(
+                        PickupKind.Medkit,
+                        visual,
+                        InventoryItemIds.Medkit,
+                        resolvedAmount);
+                }
+                case PickupKind.Grenade:
+                {
+                    var visual = ResolveGenericItemVisualPrefab();
+                    return PickupItemDefinition.Create(
+                        PickupKind.Grenade,
+                        visual,
+                        InventoryItemIds.Grenade,
+                        resolvedAmount);
+                }
                 default:
                     return default;
             }
+        }
+
+        private static GameObject ResolveGenericItemVisualPrefab()
+        {
+            var prefab = Resources.Load<GameObject>("1");
+            if (prefab != null)
+            {
+                return prefab;
+            }
+
+            return Resources.Load<GameObject>("Prefabs/Plane/Plane");
         }
 
 

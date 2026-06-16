@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using ShooterPrototype.Network;
+using ShooterPrototype.UI;
 using UnityEngine;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -314,6 +315,12 @@ namespace ShooterPrototype.Player
         private void Update()
         {
             TryResolveRuntimeMuzzle();
+
+            if (PlayerInventoryPanelController.IsOpen)
+            {
+                return;
+            }
+
             var firePressed = ReadFirePressed();
 
             if (!enabled)
@@ -328,6 +335,11 @@ namespace ShooterPrototype.Player
             }
 
             if (weaponHolster != null && weaponHolster.IsMedkitWeaponLocked)
+            {
+                return;
+            }
+
+            if (weaponHolster != null && weaponHolster.IsSwimmingWeaponLocked)
             {
                 return;
             }

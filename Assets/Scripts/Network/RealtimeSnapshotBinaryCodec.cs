@@ -337,6 +337,7 @@ namespace ShooterPrototype.Network
                     isGrounded = (flags2 & 2) != 0,
                     isCrouching = (flags2 & 4) != 0,
                     isSprinting = (flags2 & 8) != 0,
+                    isSwimming = (flags2 & 256) != 0,
                     isAiming = (flags2 & 16) != 0,
                     isHolstered = (flags2 & 32) != 0,
                     hasWeapon = (flags2 & 64) != 0,

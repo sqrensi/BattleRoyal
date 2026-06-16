@@ -1,4 +1,6 @@
 using ShooterPrototype.Network;
+using ShooterPrototype.UI;
+using System.Collections.Generic;
 using UnityEngine;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -9,6 +11,18 @@ namespace ShooterPrototype.Player
     [DisallowMultipleComponent]
     public sealed class PlayerPickupController : MonoBehaviour
     {
+        public readonly struct NearbyPickupInfo
+        {
+            public NearbyPickupInfo(WorldPickup pickup, float distanceSqr)
+            {
+                Pickup = pickup;
+                DistanceSqr = distanceSqr;
+            }
+
+            public WorldPickup Pickup { get; }
+            public float DistanceSqr { get; }
+        }
+
         [SerializeField] private float pickupRadius = 3f;
         [SerializeField] private float pickupLookDot = 0.7f;
         [SerializeField] private float pickupSampleHeight = 0.35f;
@@ -111,12 +125,71 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            if (PlayerInventoryPanelController.IsOpen)
+            {
+                return;
+            }
+
             if (!ReadPickupPressed())
             {
                 return;
             }
 
             TryPickupBestNearby();
+        }
+
+        public void CollectNearbyPickups(List<NearbyPickupInfo> buffer, float radius = -1f)
+        {
+            buffer.Clear();
+            var maxRadius = radius > 0f ? radius : pickupRadius + 1f;
+            var playerPosition = GetPickupSamplePosition();
+            var context = BuildPickupContext();
+            var pickups = WorldPickup.Active;
+
+            for (var i = 0; i < pickups.Count; i++)
+            {
+                var pickup = pickups[i];
+                if (pickup == null || !pickup.isActiveAndEnabled)
+                {
+                    continue;
+                }
+
+                if (!IsWithinHorizontalRadius(pickup, playerPosition, maxRadius, out var distanceSqr))
+                {
+                    continue;
+                }
+
+                if (!PlayerPickupApplier.CanPickup(context, pickup.Definition))
+                {
+                    continue;
+                }
+
+                buffer.Add(new NearbyPickupInfo(pickup, distanceSqr));
+            }
+
+            buffer.Sort((a, b) => a.DistanceSqr.CompareTo(b.DistanceSqr));
+        }
+
+        public void RequestPickupBySpawnId(string spawnId, int targetWeaponSlot = -1)
+        {
+            if (string.IsNullOrWhiteSpace(spawnId))
+            {
+                return;
+            }
+
+            var pickup = FindPickupBySpawnId(spawnId);
+            if (pickup == null)
+            {
+                return;
+            }
+
+            var context = BuildPickupContext();
+            if (!PlayerPickupApplier.CanPickup(context, pickup.Definition))
+            {
+                return;
+            }
+
+            RequestPickup(pickup, targetWeaponSlot);
         }
 
         private void TryPickupBestNearby()
@@ -264,7 +337,7 @@ namespace ShooterPrototype.Player
             return default;
         }
 
-        private void RequestPickup(WorldPickup pickup)
+        private void RequestPickup(WorldPickup pickup, int targetWeaponSlot = -1)
         {
             if (pickup == null || string.IsNullOrWhiteSpace(pickup.SpawnId))
             {
@@ -274,11 +347,11 @@ namespace ShooterPrototype.Player
             if (ShouldUseServerPickup())
             {
                 pendingSpawnId = pickup.SpawnId;
-                transportClient.SendPickupRequest(pickup.SpawnId);
+                transportClient.SendPickupRequest(pickup.SpawnId, targetWeaponSlot);
                 return;
             }
 
-            CompleteLocalPickup(pickup, PickupApplyServerState.None);
+            CompleteLocalPickup(pickup, PickupApplyServerState.None, targetWeaponSlot);
         }
 
         private bool ShouldUseServerPickup()
@@ -286,7 +359,10 @@ namespace ShooterPrototype.Player
             return transportClient != null && transportClient.IsReady;
         }
 
-        private void CompleteLocalPickup(WorldPickup pickup, PickupApplyServerState serverState)
+        private void CompleteLocalPickup(
+            WorldPickup pickup,
+            PickupApplyServerState serverState,
+            int preferredWeaponSlot = -1)
         {
             if (pickup == null)
             {
@@ -294,7 +370,11 @@ namespace ShooterPrototype.Player
             }
 
             var definition = pickup.Definition;
-            var result = PlayerPickupApplier.TryApply(BuildPickupContext(), definition, serverState);
+            var result = PlayerPickupApplier.TryApply(
+                BuildPickupContext(),
+                definition,
+                serverState,
+                preferredWeaponSlot);
             if (!result.Success)
             {
                 Debug.LogWarning($"[PlayerPickup] Local apply failed: {result.FailureReason} kind={definition.Kind}");
@@ -378,6 +458,33 @@ namespace ShooterPrototype.Player
             }
 
             return best;
+        }
+
+        private readonly List<NearbyPickupInfo> nearbyBuffer = new List<NearbyPickupInfo>(12);
+
+        private static bool IsWithinHorizontalRadius(
+            WorldPickup pickup,
+            Vector3 playerPosition,
+            float maxRadius,
+            out float distanceSqr)
+        {
+            distanceSqr = float.MaxValue;
+            if (pickup == null)
+            {
+                return false;
+            }
+
+            var center = pickup.transform.position;
+            var playerFeetY = playerPosition.y - 0.35f;
+            if (Mathf.Abs(center.y - playerFeetY) > 1.2f)
+            {
+                return false;
+            }
+
+            var horizontalOffset = playerPosition - center;
+            horizontalOffset.y = 0f;
+            distanceSqr = horizontalOffset.sqrMagnitude;
+            return maxRadius <= 0.01f || distanceSqr <= maxRadius * maxRadius;
         }
 
         private static bool ReadPickupPressed()

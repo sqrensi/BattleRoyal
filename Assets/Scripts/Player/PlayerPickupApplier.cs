@@ -39,7 +39,8 @@ namespace ShooterPrototype.Player
         public static PickupApplyResult TryApply(
             in PlayerPickupContext context,
             in PickupItemDefinition definition,
-            in PickupApplyServerState serverState)
+            in PickupApplyServerState serverState,
+            int preferredWeaponSlot = -1)
         {
             if (!CanPickup(context, definition))
             {
@@ -49,7 +50,7 @@ namespace ShooterPrototype.Player
             switch (definition.Kind)
             {
                 case PickupKind.Weapon:
-                    return TryApplyWeapon(context, definition, serverState);
+                    return TryApplyWeapon(context, definition, serverState, preferredWeaponSlot);
                 case PickupKind.Ammo:
                     return TryApplyAmmo(context, definition, serverState);
                 case PickupKind.Grenade:
@@ -64,7 +65,8 @@ namespace ShooterPrototype.Player
         private static PickupApplyResult TryApplyWeapon(
             in PlayerPickupContext context,
             in PickupItemDefinition definition,
-            in PickupApplyServerState serverState)
+            in PickupApplyServerState serverState,
+            int preferredWeaponSlot = -1)
         {
             if (serverState.WeaponLoadout.HasWeaponLoadout && context.WeaponLoadout != null)
             {
@@ -80,7 +82,8 @@ namespace ShooterPrototype.Player
                         definition.ResolvedItemId,
                         kind,
                         WeaponCatalog.GetWeaponPrefab(kind),
-                        pickupMagAmmo))
+                        pickupMagAmmo,
+                        preferredWeaponSlot))
                 {
                     return new PickupApplyResult(false, "equip_failed");
                 }

@@ -124,6 +124,8 @@ namespace ShooterPrototype.Player
             transportClient.PickupEventReceived += HandlePickupEvent;
             transportClient.PickupResultReceived += HandlePickupResult;
             transportClient.WeaponDropResultReceived += HandleWeaponDropResult;
+            transportClient.WeaponSwapResultReceived += HandleWeaponSwapResult;
+            transportClient.InventoryItemDropResultReceived += HandleInventoryItemDropResult;
             eventsSubscribed = true;
         }
 
@@ -139,6 +141,8 @@ namespace ShooterPrototype.Player
             transportClient.PickupEventReceived -= HandlePickupEvent;
             transportClient.PickupResultReceived -= HandlePickupResult;
             transportClient.WeaponDropResultReceived -= HandleWeaponDropResult;
+            transportClient.WeaponSwapResultReceived -= HandleWeaponSwapResult;
+            transportClient.InventoryItemDropResultReceived -= HandleInventoryItemDropResult;
             eventsSubscribed = false;
         }
 
@@ -218,6 +222,14 @@ namespace ShooterPrototype.Player
                 itemId,
                 message.amount > 0 ? message.amount : 1);
             localPickupController?.ApplyConfirmedPickup(confirmed, serverState);
+            if (kind == PickupKind.Grenade && message.grenadeCount >= 0)
+            {
+                var inventory = localPickupController != null
+                    ? localPickupController.GetComponent<PlayerInventory>()
+                    : null;
+                inventory?.SetCount(InventoryItemIds.Grenade, message.grenadeCount);
+            }
+
             localPresenceSync?.FlushLocalPose();
         }
 
@@ -281,6 +293,100 @@ namespace ShooterPrototype.Player
             localPickupController?.RefreshPickupContext();
             localPickupController?.RefreshWeaponAvailability();
             localPresenceSync?.FlushLocalPose();
+        }
+
+        private void HandleWeaponSwapResult(RealtimeTransportClient.WeaponSwapResultMessage message)
+        {
+            if (message == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(localTicketId) &&
+                !string.IsNullOrWhiteSpace(message.ticketId) &&
+                !string.Equals(message.ticketId, localTicketId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!message.success)
+            {
+                Debug.LogWarning($"[MatchPickupSync] Weapon swap rejected: {message.reason}");
+                return;
+            }
+
+            localLoadoutController?.ApplyServerSwap(BuildWeaponLoadoutFromSwapResult(message));
+            localPresenceSync?.AcknowledgeWeaponPickupSeq(message.weaponPickupSeq);
+            localPickupController?.RefreshWeaponAvailability();
+            localPresenceSync?.FlushLocalPose();
+        }
+
+        private void HandleInventoryItemDropResult(RealtimeTransportClient.InventoryItemDropResultMessage message)
+        {
+            if (message == null)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(localTicketId) &&
+                !string.IsNullOrWhiteSpace(message.ticketId) &&
+                !string.Equals(message.ticketId, localTicketId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!message.success)
+            {
+                Debug.LogWarning($"[MatchPickupSync] Inventory drop rejected: {message.reason}");
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(message.droppedSpawnId) && pickupSpawnManager != null)
+            {
+                TrySpawnDynamicPickupFromInventoryDrop(message);
+            }
+
+            localLoadoutController?.ApplyServerInventoryDrop(
+                message.itemId,
+                message.medkitCount,
+                message.grenadeCount,
+                message.spareAmmoAssault,
+                message.spareAmmoSniper,
+                message.spareAmmoPistol,
+                message.spareAmmoMp7,
+                message.droppedSpawnId,
+                new Vector3(message.x, message.y, message.z));
+            localPickupController?.RefreshPickupContext();
+            localPresenceSync?.FlushLocalPose();
+        }
+
+        private void TrySpawnDynamicPickupFromInventoryDrop(
+            RealtimeTransportClient.InventoryItemDropResultMessage message)
+        {
+            if (pickupSpawnManager == null || string.IsNullOrWhiteSpace(message.droppedSpawnId))
+            {
+                return;
+            }
+
+            var kind = message.itemId == InventoryItemIds.Medkit
+                ? PickupKind.Medkit
+                : message.itemId == InventoryItemIds.Grenade
+                    ? PickupKind.Grenade
+                    : AmmoCatalog.TryResolveKindFromItemId(message.itemId, out _)
+                        ? PickupKind.Ammo
+                        : PickupKind.Weapon;
+            var definition = pickupSpawnManager.ResolveDefinitionFromProtocol(
+                kind,
+                message.itemId,
+                message.amount > 0 ? message.amount : 1);
+            if (!definition.IsValid)
+            {
+                return;
+            }
+
+            var position = new Vector3(message.x, message.y, message.z);
+            pickupSpawnManager.EnsureDynamicSlot(message.droppedSpawnId, position, Vector3.forward, definition);
+            pickupSpawnManager.ApplyServerPickupRespawn(message.droppedSpawnId);
         }
 
         private void TrySpawnDynamicPickupFromEvent(RealtimeTransportClient.PickupEventMessage message)
@@ -406,6 +512,26 @@ namespace ShooterPrototype.Player
                 message.droppedSpawnId ?? string.Empty,
                 -1,
                 message.reserveAmmo,
+                message.spareAmmoAssault,
+                message.spareAmmoSniper,
+                message.spareAmmoPistol,
+                message.spareAmmoMp7);
+        }
+
+        private static WeaponLoadoutServerState BuildWeaponLoadoutFromSwapResult(
+            RealtimeTransportClient.WeaponSwapResultMessage message)
+        {
+            return new WeaponLoadoutServerState(
+                true,
+                (byte)Mathf.Clamp(message.weaponSlot0Kind, 0, 255),
+                (byte)Mathf.Clamp(message.weaponSlot1Kind, 0, 255),
+                message.weaponSlot0ItemId ?? string.Empty,
+                message.weaponSlot1ItemId ?? string.Empty,
+                message.activeWeaponSlot,
+                message.bothHolstered,
+                string.Empty,
+                -1,
+                -1,
                 message.spareAmmoAssault,
                 message.spareAmmoSniper,
                 message.spareAmmoPistol,

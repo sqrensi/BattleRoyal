@@ -9,6 +9,8 @@ namespace ShooterPrototype.Player
         [SerializeField] private AudioClip[] footstepClips;
         [SerializeField] private AudioClip[] sprintFootstepClips;
         [SerializeField] private AudioClip[] remoteFootstepClips;
+        [SerializeField] private AudioClip[] swimStrokeClips;
+        [SerializeField] private AudioClip[] remoteSwimStrokeClips;
         [SerializeField] private AudioClip jumpClip;
         [SerializeField] private AudioClip planeJumpClip;
         [SerializeField] private AudioClip landClip;
@@ -24,6 +26,10 @@ namespace ShooterPrototype.Player
         [SerializeField] private float masterVolume = 1f;
         [Range(0f, 1f)]
         [SerializeField] private float footstepVolume = 0.35f;
+        [Range(0f, 1f)]
+        [SerializeField] private float swimStrokeVolume = 0.14f;
+        [Range(0f, 1f)]
+        [SerializeField] private float remoteSwimStrokeVolumeMultiplier = 0.55f;
         [Range(0f, 1f)]
         [SerializeField] private float sprintFootstepVolumeMultiplier = 1.12f;
         [Range(0f, 1f)]
@@ -85,6 +91,78 @@ namespace ShooterPrototype.Player
             {
                 parachuteOpenClip = Resources.Load<AudioClip>("Sounds/4");
             }
+
+            EnsureSwimStrokeClips();
+        }
+
+        private void EnsureSwimStrokeClips()
+        {
+            if (!HasValidClips(swimStrokeClips))
+            {
+                swimStrokeClips = LoadDefaultSwimStrokeClips();
+            }
+
+            if (!HasValidClips(remoteSwimStrokeClips))
+            {
+                remoteSwimStrokeClips = swimStrokeClips;
+            }
+        }
+
+        private static AudioClip[] LoadDefaultSwimStrokeClips()
+        {
+            var loaded = new[]
+            {
+                Resources.Load<AudioClip>("Sounds/swim1"),
+                Resources.Load<AudioClip>("Sounds/swim2"),
+                Resources.Load<AudioClip>("Sounds/swim3"),
+                Resources.Load<AudioClip>("Sounds/swim4")
+            };
+
+            var count = 0;
+            for (var i = 0; i < loaded.Length; i++)
+            {
+                if (loaded[i] != null)
+                {
+                    count++;
+                }
+            }
+
+            if (count <= 0)
+            {
+                return null;
+            }
+
+            var clips = new AudioClip[count];
+            var writeIndex = 0;
+            for (var i = 0; i < loaded.Length; i++)
+            {
+                if (loaded[i] == null)
+                {
+                    continue;
+                }
+
+                clips[writeIndex++] = loaded[i];
+            }
+
+            return clips;
+        }
+
+        private static bool HasValidClips(AudioClip[] clips)
+        {
+            if (clips == null || clips.Length == 0)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < clips.Length; i++)
+            {
+                if (clips[i] != null)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public void PlayFootstep(bool isLocal, bool isSprinting = false)
@@ -99,6 +177,23 @@ namespace ShooterPrototype.Player
             if (isLocal && isSprinting)
             {
                 volume *= sprintFootstepVolumeMultiplier;
+            }
+
+            PlayClip(nearSource, clip, volume, isLocal, defaultMaxDistance);
+        }
+
+        public void PlaySwimStroke(bool isLocal)
+        {
+            var clip = GetRandomSwimStrokeClip(isLocal);
+            if (clip == null)
+            {
+                return;
+            }
+
+            var volume = swimStrokeVolume;
+            if (!isLocal)
+            {
+                volume *= remoteSwimStrokeVolumeMultiplier;
             }
 
             PlayClip(nearSource, clip, volume, isLocal, defaultMaxDistance);
@@ -181,6 +276,8 @@ namespace ShooterPrototype.Player
             footstepClips = source.footstepClips;
             sprintFootstepClips = source.sprintFootstepClips;
             remoteFootstepClips = source.remoteFootstepClips;
+            swimStrokeClips = source.swimStrokeClips;
+            remoteSwimStrokeClips = source.remoteSwimStrokeClips;
             jumpClip = source.jumpClip;
             planeJumpClip = source.planeJumpClip;
             landClip = source.landClip;
@@ -192,6 +289,8 @@ namespace ShooterPrototype.Player
             hitPlayerClip = source.hitPlayerClip;
             masterVolume = source.masterVolume;
             footstepVolume = source.footstepVolume;
+            swimStrokeVolume = source.swimStrokeVolume;
+            remoteSwimStrokeVolumeMultiplier = source.remoteSwimStrokeVolumeMultiplier;
             sprintFootstepVolumeMultiplier = source.sprintFootstepVolumeMultiplier;
             jumpVolume = source.jumpVolume;
             planeJumpVolume = source.planeJumpVolume;
@@ -276,6 +375,22 @@ namespace ShooterPrototype.Player
             }
 
             return clips[idx];
+        }
+
+        private AudioClip GetRandomSwimStrokeClip(bool isLocal)
+        {
+            var clips = isLocal ? swimStrokeClips : remoteSwimStrokeClips;
+            if (clips == null || clips.Length == 0)
+            {
+                clips = swimStrokeClips;
+            }
+
+            if (clips == null || clips.Length == 0)
+            {
+                return null;
+            }
+
+            return clips[Random.Range(0, clips.Length)];
         }
 
         private System.Collections.IEnumerator ReloadAudioRoutine(
