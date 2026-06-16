@@ -29,6 +29,13 @@ namespace ShooterPrototype.UI
         [SerializeField] private float positionSmoothTime = 0.62f;
         [SerializeField] private float rotationSmoothTime = 0.68f;
 
+        [Header("Inventory View")]
+        [SerializeField] private float inventoryForwardOffset = 0.32f;
+        [SerializeField] private float inventoryRightOffset = 0.26f;
+        [SerializeField] private float inventoryFov = 28f;
+        [SerializeField] private float inventoryTransitionSmoothTime = 0.72f;
+
+        private Camera cameraComponent;
         private Vector3 basePosition;
         private Quaternion baseRotation;
         private Vector3 currentPositionOffset;
@@ -37,6 +44,20 @@ namespace ShooterPrototype.UI
         private Vector3 eulerOffsetVelocity;
         private float phaseOffset;
         private bool hasBasePose;
+        private float defaultFov = 51f;
+        private float targetViewBlend;
+        private float currentViewBlend;
+        private float viewBlendVelocity;
+
+        public void EnterInventoryView()
+        {
+            targetViewBlend = 1f;
+        }
+
+        public void ExitInventoryView()
+        {
+            targetViewBlend = 0f;
+        }
 
         private void Awake()
         {
@@ -62,6 +83,14 @@ namespace ShooterPrototype.UI
             {
                 CaptureBasePose();
             }
+
+            currentViewBlend = Mathf.SmoothDamp(
+                currentViewBlend,
+                targetViewBlend,
+                ref viewBlendVelocity,
+                inventoryTransitionSmoothTime,
+                Mathf.Infinity,
+                Time.unscaledDeltaTime);
 
             var time = Time.unscaledTime + phaseOffset;
             var targetPositionOffset = new Vector3(
@@ -89,15 +118,31 @@ namespace ShooterPrototype.UI
                 Mathf.Infinity,
                 Time.unscaledDeltaTime);
 
+            var inventoryOffset = baseRotation * new Vector3(
+                inventoryRightOffset * currentViewBlend,
+                0f,
+                inventoryForwardOffset * currentViewBlend);
+
             cameraTransform.SetPositionAndRotation(
-                basePosition + currentPositionOffset,
+                basePosition + inventoryOffset + currentPositionOffset,
                 baseRotation * Quaternion.Euler(currentEulerOffset));
+
+            if (cameraComponent != null)
+            {
+                cameraComponent.fieldOfView = Mathf.Lerp(defaultFov, inventoryFov, currentViewBlend);
+            }
         }
 
         private void ResolveCamera()
         {
             if (cameraTransform != null)
             {
+                cameraComponent = cameraTransform.GetComponent<Camera>();
+                if (cameraComponent == null)
+                {
+                    cameraComponent = cameraTransform.GetComponentInChildren<Camera>();
+                }
+
                 return;
             }
 
@@ -105,6 +150,7 @@ namespace ShooterPrototype.UI
             if (taggedCamera != null)
             {
                 cameraTransform = taggedCamera.transform;
+                cameraComponent = taggedCamera.GetComponent<Camera>();
                 return;
             }
 
@@ -112,6 +158,7 @@ namespace ShooterPrototype.UI
             if (mainCamera != null)
             {
                 cameraTransform = mainCamera.transform;
+                cameraComponent = mainCamera;
             }
         }
 
@@ -123,12 +170,24 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            if (cameraComponent == null)
+            {
+                cameraComponent = cameraTransform.GetComponent<Camera>();
+            }
+
             basePosition = cameraTransform.position;
             baseRotation = cameraTransform.rotation;
+            if (cameraComponent != null)
+            {
+                defaultFov = cameraComponent.fieldOfView;
+            }
+
             currentPositionOffset = Vector3.zero;
             currentEulerOffset = Vector3.zero;
             positionOffsetVelocity = Vector3.zero;
             eulerOffsetVelocity = Vector3.zero;
+            currentViewBlend = targetViewBlend;
+            viewBlendVelocity = 0f;
             hasBasePose = true;
         }
     }

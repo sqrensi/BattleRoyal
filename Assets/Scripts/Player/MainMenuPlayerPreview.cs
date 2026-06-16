@@ -24,11 +24,24 @@ namespace ShooterPrototype.Player
         };
 
         private GameObject previewInstance;
+        private WeaponKind? pinnedLobbyWeaponKind;
 
         public void Refresh()
         {
             DestroyPreviewInstance();
             SpawnPreview();
+        }
+
+        public void RefreshSkins()
+        {
+            if (previewInstance == null)
+            {
+                Refresh();
+                return;
+            }
+
+            PlayerSkinSelectionService.ApplyToPlayer(previewInstance, forceReapply: true);
+            EnsurePreviewBodyVisible(previewInstance);
         }
 
         private void OnDisable()
@@ -61,6 +74,7 @@ namespace ShooterPrototype.Player
 
             WireAsMenuPreview(previewInstance);
             ApplySelectedCharacterAndSkins(previewInstance);
+            EnsurePreviewBodyVisible(previewInstance);
             if (equipRandomLobbyWeapon)
             {
                 ApplyRandomLobbyWeapon(previewInstance);
@@ -121,7 +135,7 @@ namespace ShooterPrototype.Player
             PlayerSkinSelectionService.ApplyToPlayer(root, forceReapply: true);
         }
 
-        private static void ApplyRandomLobbyWeapon(GameObject root)
+        private void ApplyRandomLobbyWeapon(GameObject root)
         {
             var thirdPersonBody = root.transform.Find("ThirdPersonBody");
             if (thirdPersonBody == null)
@@ -138,7 +152,12 @@ namespace ShooterPrototype.Player
             weaponPresentation.Configure(thirdPersonBody);
             weaponPresentation.InvalidateAttachTarget();
 
-            var kind = LobbyWeaponKinds[Random.Range(0, LobbyWeaponKinds.Length)];
+            if (!pinnedLobbyWeaponKind.HasValue)
+            {
+                pinnedLobbyWeaponKind = LobbyWeaponKinds[Random.Range(0, LobbyWeaponKinds.Length)];
+            }
+
+            var kind = pinnedLobbyWeaponKind.Value;
             var kindByte = (byte)kind;
             weaponPresentation.SetWeaponLoadout(
                 kindByte,
@@ -229,6 +248,43 @@ namespace ShooterPrototype.Player
                     listener.enabled = false;
                 }
             }
+        }
+
+        private static void EnsurePreviewBodyVisible(GameObject root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var presentation = root.GetComponent<PlayerViewPresentation>();
+            presentation?.Configure(false);
+
+            var thirdPersonBody = root.transform.Find("ThirdPersonBody");
+            if (thirdPersonBody != null)
+            {
+                thirdPersonBody.gameObject.SetActive(true);
+
+                var renderers = thirdPersonBody.GetComponentsInChildren<Renderer>(true);
+                for (var i = 0; i < renderers.Length; i++)
+                {
+                    var renderer = renderers[i];
+                    if (renderer == null)
+                    {
+                        continue;
+                    }
+
+                    if (renderer.gameObject.name.EndsWith("_FirstPersonArms", System.StringComparison.Ordinal))
+                    {
+                        renderer.enabled = false;
+                        continue;
+                    }
+
+                    renderer.enabled = true;
+                }
+            }
+
+            root.GetComponent<SyntySplitBodyPresentation>()?.ApplyViewMode();
         }
 
         private void DestroyPreviewInstance()

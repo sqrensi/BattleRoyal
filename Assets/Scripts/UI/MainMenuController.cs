@@ -47,9 +47,18 @@ namespace ShooterPrototype.UI
         private string currentTicketId = string.Empty;
         private string localPlayerId;
 
+        private MainMenuUiSoundController uiSound;
+
+        public Button ChangeCharacterButton => changeCharacterButton;
+
+        public Button StartButton => startButton;
+        public TMP_Text StatusText => statusText;
+
         private void Awake()
         {
             EnsureDependencies();
+            EnsureUiLayout();
+            EnsureUiSound();
 
             if (startButton != null)
             {
@@ -58,6 +67,10 @@ namespace ShooterPrototype.UI
             if (changeCharacterButton != null)
             {
                 changeCharacterButton.onClick.AddListener(OnChangeCharacterPressed);
+                if (uiSound != null)
+                {
+                    changeCharacterButton.onClick.AddListener(uiSound.PlayButton);
+                }
             }
 
             localPlayerId = BuildLocalPlayerId();
@@ -68,6 +81,7 @@ namespace ShooterPrototype.UI
             RefreshPlayerPreview();
             EnsureAmbience();
             EnsureCameraMotion();
+            EnsureSections();
         }
 
         private void OnEnable()
@@ -119,6 +133,11 @@ namespace ShooterPrototype.UI
         {
             EnsureDependencies();
 
+            if (GetComponent<MainMenuSectionController>() is { IsInventoryOpen: true })
+            {
+                return;
+            }
+
             if (networkLauncher == null)
             {
                 SetStatus("Ошибка: NetworkLauncher не привязан.");
@@ -133,6 +152,7 @@ namespace ShooterPrototype.UI
 
             if (isQueueing)
             {
+                uiSound?.PlayCancel();
                 CancelQueue();
                 return;
             }
@@ -143,6 +163,7 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            uiSound?.PlayStart();
             StartQueueSearch();
         }
 
@@ -352,7 +373,44 @@ namespace ShooterPrototype.UI
 
             if (startButtonText != null)
             {
-                startButtonText.text = isQueueing ? "Cancel Queue" : "Start";
+                startButtonText.text = isQueueing ? "Отмена" : "Играть";
+            }
+            else if (startButton != null)
+            {
+                var label = startButton.GetComponentInChildren<TMP_Text>(true);
+                if (label != null)
+                {
+                    label.text = isQueueing ? "Отмена" : "Играть";
+                }
+            }
+        }
+
+        public void BindStartButtonText(TMP_Text label)
+        {
+            startButtonText = label;
+        }
+
+        private void EnsureUiSound()
+        {
+            uiSound = GetComponent<MainMenuUiSoundController>();
+            if (uiSound == null)
+            {
+                uiSound = gameObject.AddComponent<MainMenuUiSoundController>();
+            }
+        }
+
+        private void EnsureUiLayout()
+        {
+            var layout = GetComponent<MainMenuUiLayout>();
+            if (layout == null)
+            {
+                layout = gameObject.AddComponent<MainMenuUiLayout>();
+            }
+
+            layout.ApplyLayout(this);
+            if (startButtonText == null && startButton != null)
+            {
+                startButtonText = startButton.GetComponentInChildren<TMP_Text>(true);
             }
         }
 
@@ -396,6 +454,12 @@ namespace ShooterPrototype.UI
             {
                 gameObject.AddComponent<MainMenuAmbienceController>();
             }
+        }
+
+        private void EnsureSections()
+        {
+            var layout = GetComponent<MainMenuUiLayout>();
+            layout?.ConfigureSections(this);
         }
 
         private void EnsureCameraMotion()

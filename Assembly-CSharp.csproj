@@ -88,6 +88,7 @@
     <Compile Include="Assets\Scripts\Player\RemotePlayerEditorPreview.cs" />
     <Compile Include="Assets\Scripts\Player\PickupGroundLayers.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuAmbienceController.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuUiSoundController.cs" />
     <Compile Include="Assets\Scripts\Player\MatchPickupSync.cs" />
     <Compile Include="Assets\Scripts\Player\WaterLayers.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_ExampleScript_01.cs" />
@@ -144,6 +145,7 @@
     <Compile Include="Assets\Scripts\Player\RemotePlayerShotEffects.cs" />
     <Compile Include="Assets\Scripts\Network\RealtimeTransportClient.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyWeaponHandBinder.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuInventoryPanel.cs" />
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_SimpleRotate.cs" />
     <Compile Include="Assets\Scripts\Player\PickupWorldVisualBuilder.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\FollowCam.cs" />
@@ -177,6 +179,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerPickupApplier.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyFirstPersonArmLocomotionGate.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponProfile.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuSectionController.cs" />
     <Compile Include="Assets\Scripts\Player\PickupApplyResult.cs" />
     <Compile Include="Assets\Scripts\Player\PickupKind.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyCharacterVisualBinder.cs" />
@@ -188,6 +191,7 @@
     <Compile Include="Assets\Scripts\Player\Day5RuntimeSetup.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\ObjectSpin.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_PhoneNumberValidator.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuUiLayout.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo_New.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_Demo_Translate.cs" />
     <Compile Include="Assets\Scripts\Player\LocalPlayerMarker.cs" />

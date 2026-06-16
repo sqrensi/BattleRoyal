@@ -11,6 +11,10 @@ namespace ShooterPrototype.Player
         {
         }
 
+        private sealed class AppliedClothingRendererMarker : MonoBehaviour
+        {
+        }
+
         private const string ClothingRootName = "RemoteResourceClothing";
         public const string FirstPersonGlovesRootName = "LocalFirstPersonGloves";
         private const float MinimumBoneBindRatio = 0.65f;
@@ -71,6 +75,9 @@ namespace ShooterPrototype.Player
         private static readonly Dictionary<long, Mesh> BodyWithoutHandsMeshCache =
             new Dictionary<long, Mesh>(8);
 
+        private static readonly Dictionary<int, Mesh> TrimmedBodyMeshSources =
+            new Dictionary<int, Mesh>(32);
+
         [SerializeField] private bool applyOnRemote = true;
         [SerializeField] private bool hideBodyTorsoWhenClothed = true;
         [SerializeField] private float minTorsoHideBoneWeight = 0.35f;
@@ -108,6 +115,7 @@ namespace ShooterPrototype.Player
         private int lastHiddenBodyStateHash;
         private Mesh lastAppliedHiddenMesh;
         private readonly List<Renderer> lastAppliedGloveRenderers = new List<Renderer>(4);
+        private readonly List<Renderer> lastAppliedClothingRenderers = new List<Renderer>(8);
 
         public void InvalidateBodyMeshCache()
         {
@@ -241,7 +249,8 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            RefreshHiddenBodyParts(bodyRenderer, hideHandsOnThirdPersonBody);
+            var hiddenBodyRenderer = FindCharacterBodyRenderer(syntyVisual) ?? bodyRenderer;
+            RefreshHiddenBodyParts(hiddenBodyRenderer, hideHandsOnThirdPersonBody);
             return true;
         }
 
@@ -428,6 +437,11 @@ namespace ShooterPrototype.Player
             Transform layerParent,
             bool snapToBodyHierarchy = true)
         {
+            if (string.IsNullOrWhiteSpace(resourcePath))
+            {
+                return false;
+            }
+
             var prefab = LoadClothingAsset(resourcePath);
             if (prefab == null)
             {
@@ -468,6 +482,11 @@ namespace ShooterPrototype.Player
                 TrackAppliedGloveRenderers(instance, clothingRenderers);
             }
 
+            if (appliedAny)
+            {
+                TrackAppliedClothingRenderers(instance, clothingRenderers);
+            }
+
             StripEmbeddedArmature(instance);
             DisableColliders(instance);
 
@@ -481,6 +500,46 @@ namespace ShooterPrototype.Player
             }
 
             return appliedAny;
+        }
+
+        private void TrackAppliedClothingRenderers(GameObject instance, SkinnedMeshRenderer[] clothingRenderers)
+        {
+            if (clothingRenderers != null)
+            {
+                for (var i = 0; i < clothingRenderers.Length; i++)
+                {
+                    TrackAppliedClothingRenderer(clothingRenderers[i]);
+                }
+            }
+
+            if (instance == null)
+            {
+                return;
+            }
+
+            var staticRenderers = instance.GetComponentsInChildren<Renderer>(true);
+            for (var i = 0; i < staticRenderers.Length; i++)
+            {
+                TrackAppliedClothingRenderer(staticRenderers[i]);
+            }
+        }
+
+        private void TrackAppliedClothingRenderer(Renderer renderer)
+        {
+            if (renderer == null ||
+                !renderer.enabled ||
+                lastAppliedClothingRenderers.Contains(renderer) ||
+                renderer is SkinnedMeshRenderer skinned && IsCharacterBodyRenderer(skinned))
+            {
+                return;
+            }
+
+            if (renderer is SkinnedMeshRenderer clothingSkinned)
+            {
+                MarkAppliedClothingRenderer(clothingSkinned);
+            }
+
+            lastAppliedClothingRenderers.Add(renderer);
         }
 
         private void TrackAppliedGloveRenderers(GameObject instance, SkinnedMeshRenderer[] clothingRenderers)
@@ -568,6 +627,18 @@ namespace ShooterPrototype.Player
             EnsureOriginalBodyMeshCached(bodyRenderer);
 
             var workingMesh = originalBodyMeshBeforeHide;
+            if (workingMesh == null &&
+                bodyRenderer.sharedMesh != null &&
+                IsRuntimeTrimmedBodyMesh(bodyRenderer.sharedMesh))
+            {
+                workingMesh = TryRecoverUntrimmedBodyMesh(bodyRenderer.sharedMesh);
+                if (workingMesh != null)
+                {
+                    originalBodyMeshBeforeHide = workingMesh;
+                    bodyRenderer.sharedMesh = workingMesh;
+                }
+            }
+
             if (workingMesh == null)
             {
                 return;
@@ -709,9 +780,19 @@ namespace ShooterPrototype.Player
                 }
                 else
                 {
-                    originalBodyMeshBeforeHide = null;
-                    bodyRendererWithHiddenParts = null;
-                    return;
+                    var recovered = TryRecoverUntrimmedBodyMesh(currentMesh);
+                    if (recovered != null)
+                    {
+                        originalBodyMeshBeforeHide = recovered;
+                        bodyRenderer.sharedMesh = recovered;
+                        currentMesh = recovered;
+                    }
+                    else
+                    {
+                        originalBodyMeshBeforeHide = null;
+                        bodyRendererWithHiddenParts = null;
+                        return;
+                    }
                 }
             }
 
@@ -763,6 +844,7 @@ namespace ShooterPrototype.Player
             if (trimmedMesh != null)
             {
                 BodyWithoutTorsoMeshCache[cacheKey] = trimmedMesh;
+                RememberTrimmedBodyMeshSource(trimmedMesh, sourceMesh);
             }
 
             return trimmedMesh;
@@ -790,6 +872,7 @@ namespace ShooterPrototype.Player
             if (trimmedMesh != null)
             {
                 BodyWithoutLegsMeshCache[cacheKey] = trimmedMesh;
+                RememberTrimmedBodyMeshSource(trimmedMesh, sourceMesh);
             }
 
             return trimmedMesh;
@@ -817,6 +900,7 @@ namespace ShooterPrototype.Player
             if (trimmedMesh != null)
             {
                 BodyWithoutFeetMeshCache[cacheKey] = trimmedMesh;
+                RememberTrimmedBodyMeshSource(trimmedMesh, sourceMesh);
             }
 
             return trimmedMesh;
@@ -846,6 +930,7 @@ namespace ShooterPrototype.Player
             if (trimmedMesh != null)
             {
                 BodyWithoutHandsMeshCache[cacheKey] = trimmedMesh;
+                RememberTrimmedBodyMeshSource(trimmedMesh, sourceMesh);
             }
 
             return trimmedMesh;
@@ -854,6 +939,72 @@ namespace ShooterPrototype.Player
         private static long BuildHandMeshCacheKey(Mesh sourceMesh)
         {
             return ((long)sourceMesh.GetInstanceID() << 8) | HandMeshTrimCacheVersion;
+        }
+
+        private static void RememberTrimmedBodyMeshSource(Mesh trimmedMesh, Mesh sourceMesh)
+        {
+            if (trimmedMesh == null || sourceMesh == null || trimmedMesh == sourceMesh)
+            {
+                return;
+            }
+
+            TrimmedBodyMeshSources[trimmedMesh.GetInstanceID()] = sourceMesh;
+        }
+
+        private static Mesh TryRecoverUntrimmedBodyMesh(Mesh currentMesh)
+        {
+            var resolved = currentMesh;
+            var guard = 0;
+            while (resolved != null &&
+                   IsRuntimeTrimmedBodyMesh(resolved) &&
+                   guard++ < 8 &&
+                   TrimmedBodyMeshSources.TryGetValue(resolved.GetInstanceID(), out var source) &&
+                   source != null &&
+                   source != resolved)
+            {
+                resolved = source;
+            }
+
+            return resolved != null && !IsRuntimeTrimmedBodyMesh(resolved) ? resolved : null;
+        }
+
+        private static bool IsCharacterBodyRenderer(SkinnedMeshRenderer renderer)
+        {
+            return CharacterModelApplier.IsCharacterBodyRenderer(renderer);
+        }
+
+        private void RestoreFullBodyMesh(SkinnedMeshRenderer bodyRenderer)
+        {
+            if (bodyRenderer == null)
+            {
+                bodyRendererWithHiddenParts = null;
+                originalBodyMeshBeforeHide = null;
+                lastHiddenBodyStateHash = 0;
+                lastAppliedHiddenMesh = null;
+                return;
+            }
+
+            EnsureOriginalBodyMeshCached(bodyRenderer);
+            var restoredMesh = originalBodyMeshBeforeHide;
+            if (restoredMesh == null &&
+                bodyRenderer.sharedMesh != null &&
+                IsRuntimeTrimmedBodyMesh(bodyRenderer.sharedMesh))
+            {
+                restoredMesh = TryRecoverUntrimmedBodyMesh(bodyRenderer.sharedMesh);
+                if (restoredMesh != null)
+                {
+                    originalBodyMeshBeforeHide = restoredMesh;
+                }
+            }
+
+            if (restoredMesh != null)
+            {
+                bodyRenderer.sharedMesh = restoredMesh;
+            }
+
+            bodyRendererWithHiddenParts = null;
+            lastHiddenBodyStateHash = 0;
+            lastAppliedHiddenMesh = null;
         }
 
         private void RestoreHiddenBodyTorso()
@@ -876,13 +1027,79 @@ namespace ShooterPrototype.Player
 
         private void ClearExistingClothing(Transform syntyVisual)
         {
-            RestoreHiddenBodyTorso();
+            var bodyRenderer = syntyVisual != null ? FindCharacterBodyRenderer(syntyVisual) : null;
+            RestoreFullBodyMesh(bodyRenderer);
 
-            var existing = syntyVisual != null ? syntyVisual.Find(ClothingRootName) : null;
-            if (existing != null)
+            for (var i = lastAppliedClothingRenderers.Count - 1; i >= 0; i--)
             {
-                Destroy(existing.gameObject);
+                var renderer = lastAppliedClothingRenderers[i];
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                if (renderer is SkinnedMeshRenderer skinned && IsCharacterBodyRenderer(skinned))
+                {
+                    continue;
+                }
+
+                DestroyObject(renderer.gameObject);
             }
+
+            lastAppliedClothingRenderers.Clear();
+            lastAppliedGloveRenderers.Clear();
+            DestroyOrphanedClothingRenderers(syntyVisual, bodyRenderer);
+
+            if (syntyVisual == null)
+            {
+                return;
+            }
+
+            for (var i = syntyVisual.childCount - 1; i >= 0; i--)
+            {
+                var child = syntyVisual.GetChild(i);
+                if (child.name.StartsWith("RemoteClothing_", StringComparison.Ordinal) ||
+                    string.Equals(child.name, ClothingRootName, StringComparison.Ordinal))
+                {
+                    DestroyObject(child.gameObject);
+                }
+            }
+        }
+
+        private void DestroyOrphanedClothingRenderers(Transform syntyVisual, SkinnedMeshRenderer bodyRenderer)
+        {
+            if (syntyVisual == null)
+            {
+                return;
+            }
+
+            var renderers = syntyVisual.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            for (var i = 0; i < renderers.Length; i++)
+            {
+                var renderer = renderers[i];
+                if (renderer == null || renderer == bodyRenderer || !IsAppliedClothingRenderer(renderer))
+                {
+                    continue;
+                }
+
+                DestroyObject(renderer.gameObject);
+            }
+        }
+
+        private static void DestroyObject(GameObject target)
+        {
+            if (target == null)
+            {
+                return;
+            }
+
+            if (Application.isPlaying)
+            {
+                Destroy(target);
+                return;
+            }
+
+            DestroyImmediate(target);
         }
 
         private static bool RebindSkinnedRenderers(
@@ -939,6 +1156,7 @@ namespace ShooterPrototype.Player
 
                 renderer.updateWhenOffscreen = false;
                 renderer.enabled = true;
+                MarkAppliedClothingRenderer(renderer);
                 if (snapToBodyHierarchy)
                 {
                     SnapRendererToBodyHierarchy(renderer, bodyRenderer, bodyParent);
@@ -2097,7 +2315,7 @@ namespace ShooterPrototype.Player
             return false;
         }
 
-        private static SkinnedMeshRenderer FindCharacterBodyRenderer(Transform syntyVisual)
+        private SkinnedMeshRenderer FindCharacterBodyRenderer(Transform syntyVisual)
         {
             if (syntyVisual == null)
             {
@@ -2110,12 +2328,12 @@ namespace ShooterPrototype.Player
             for (var i = 0; i < skinnedMeshes.Length; i++)
             {
                 var candidate = skinnedMeshes[i];
-                if (candidate == null || IsClothingRenderer(candidate))
+                if (candidate == null || IsAppliedClothingRenderer(candidate))
                 {
                     continue;
                 }
 
-                if (!CharacterModelApplier.IsCharacterBodyRenderer(candidate))
+                if (!IsCharacterBodyRenderer(candidate))
                 {
                     continue;
                 }
@@ -2148,12 +2366,52 @@ namespace ShooterPrototype.Player
             return best;
         }
 
-        private static bool IsClothingRenderer(SkinnedMeshRenderer renderer)
+        private static void MarkAppliedClothingRenderer(Renderer renderer)
         {
-            var current = renderer != null ? renderer.transform : null;
+            if (renderer == null)
+            {
+                return;
+            }
+
+            if (renderer.GetComponent<AppliedClothingRendererMarker>() == null)
+            {
+                renderer.gameObject.AddComponent<AppliedClothingRendererMarker>();
+            }
+        }
+
+        private bool IsAppliedClothingRenderer(SkinnedMeshRenderer renderer)
+        {
+            if (renderer == null)
+            {
+                return false;
+            }
+
+            if (renderer.GetComponent<AppliedClothingRendererMarker>() != null)
+            {
+                return true;
+            }
+
+            if (lastAppliedClothingRenderers.Contains(renderer))
+            {
+                return true;
+            }
+
+            var mesh = renderer.sharedMesh;
+            if (mesh != null && mesh.name.EndsWith("_Rebound", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (renderer.GetComponent<FirstPersonGloveRendererMarker>() != null)
+            {
+                return true;
+            }
+
+            var current = renderer.transform;
             while (current != null)
             {
-                if (string.Equals(current.name, ClothingRootName, StringComparison.Ordinal))
+                if (string.Equals(current.name, ClothingRootName, StringComparison.Ordinal) ||
+                    current.name.StartsWith("RemoteClothing_", StringComparison.Ordinal))
                 {
                     return true;
                 }

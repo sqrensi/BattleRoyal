@@ -42,6 +42,16 @@ namespace ShooterPrototype.UI
             }
         }
 
+        public static Sprite GetSkinIcon(string iconFileName)
+        {
+            return LoadSprite(iconFileName);
+        }
+
+        public static void ClearCache()
+        {
+            SpriteCache.Clear();
+        }
+
         public static Sprite GetPickupIcon(PickupKind kind, string itemId)
         {
             switch (kind)

@@ -15,36 +15,44 @@ namespace ShooterPrototype.Player
 
     public readonly struct PlayerSkinDefinition
     {
-        public PlayerSkinDefinition(string id, string displayName, string meshResourcePath, string materialResourcePath)
+        public PlayerSkinDefinition(
+            string id,
+            string displayName,
+            string meshResourcePath,
+            string materialResourcePath,
+            string iconFileName = "")
         {
             Id = id ?? string.Empty;
             DisplayName = displayName ?? string.Empty;
             MeshResourcePath = meshResourcePath ?? string.Empty;
             MaterialResourcePath = materialResourcePath ?? string.Empty;
+            IconFileName = iconFileName ?? string.Empty;
         }
 
         public string Id { get; }
         public string DisplayName { get; }
         public string MeshResourcePath { get; }
         public string MaterialResourcePath { get; }
+        public string IconFileName { get; }
         public bool IsValid => !string.IsNullOrWhiteSpace(MeshResourcePath);
     }
 
     public static class PlayerSkinSelectionService
     {
         private const string PrefKeyPrefix = "player_skin_";
+        private const string LegacyUnequippedSkinId = "__none__";
 
         private static readonly PlayerSkinDefinition DefaultShirt =
-            new PlayerSkinDefinition("default_shirt", "Футболка", "1", "tshirt");
+            new PlayerSkinDefinition("default_shirt", "Футболка", "1", "tshirt", "clothes_tshirt.png");
 
         private static readonly PlayerSkinDefinition DefaultPants =
-            new PlayerSkinDefinition("default_pants", "Штаны", "2", "pants");
+            new PlayerSkinDefinition("default_pants", "Штаны", "2", "pants", "clothes_pants.png");
 
         private static readonly PlayerSkinDefinition DefaultBoots =
-            new PlayerSkinDefinition("default_boots", "Ботинки", "3", "feets");
+            new PlayerSkinDefinition("default_boots", "Ботинки", "3", "feets", "clothes_shoes.png");
 
         private static readonly PlayerSkinDefinition DefaultGloves =
-            new PlayerSkinDefinition("default_gloves", "Перчатки", "4", "gloves");
+            new PlayerSkinDefinition("default_gloves", "Перчатки", "4", "gloves", "clothes_gloves.png");
 
         private static readonly Dictionary<PlayerSkinSlot, List<PlayerSkinDefinition>> Catalog =
             new Dictionary<PlayerSkinSlot, List<PlayerSkinDefinition>>
@@ -72,28 +80,109 @@ namespace ShooterPrototype.Player
             return Catalog.TryGetValue(slot, out var options) ? options : Array.Empty<PlayerSkinDefinition>();
         }
 
-        public static PlayerSkinDefinition GetSelected(PlayerSkinSlot slot)
+        private static readonly PlayerSkinSlot[] OwnedItemDisplayOrder =
         {
-            var options = GetOptions(slot);
-            if (options.Count == 0)
+            PlayerSkinSlot.Gloves,
+            PlayerSkinSlot.Pants,
+            PlayerSkinSlot.Shirt,
+            PlayerSkinSlot.Boots
+        };
+
+        public static IReadOnlyList<PlayerSkinDefinition> GetOwnedItems()
+        {
+            var owned = new List<PlayerSkinDefinition>(OwnedItemDisplayOrder.Length);
+            for (var i = 0; i < OwnedItemDisplayOrder.Length; i++)
             {
-                return default;
+                var options = GetOptions(OwnedItemDisplayOrder[i]);
+                for (var j = 0; j < options.Count; j++)
+                {
+                    owned.Add(options[j]);
+                }
             }
 
-            var savedId = PlayerPrefs.GetString(BuildPrefKey(slot), string.Empty);
-            if (!string.IsNullOrWhiteSpace(savedId))
+            return owned;
+        }
+
+        public static bool TryResolveSlot(PlayerSkinDefinition item, out PlayerSkinSlot slot)
+        {
+            if (string.IsNullOrWhiteSpace(item.Id))
             {
+                slot = default;
+                return false;
+            }
+
+            foreach (PlayerSkinSlot candidate in Enum.GetValues(typeof(PlayerSkinSlot)))
+            {
+                var options = GetOptions(candidate);
                 for (var i = 0; i < options.Count; i++)
                 {
-                    if (string.Equals(options[i].Id, savedId, StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(options[i].Id, item.Id, StringComparison.OrdinalIgnoreCase))
                     {
-                        return options[i];
+                        slot = candidate;
+                        return true;
                     }
                 }
             }
 
-            SaveSelected(slot, options[0].Id);
-            return options[0];
+            slot = default;
+            return false;
+        }
+
+        public static bool TryGetAppliedSkin(PlayerSkinSlot slot, out PlayerSkinDefinition definition)
+        {
+            var options = GetOptions(slot);
+            if (options.Count == 0)
+            {
+                definition = default;
+                return false;
+            }
+
+            var savedId = PlayerPrefs.GetString(BuildPrefKey(slot), string.Empty);
+            if (string.IsNullOrWhiteSpace(savedId) ||
+                string.Equals(savedId, LegacyUnequippedSkinId, StringComparison.OrdinalIgnoreCase))
+            {
+                definition = options[0];
+                return true;
+            }
+
+            for (var i = 0; i < options.Count; i++)
+            {
+                if (string.Equals(options[i].Id, savedId, StringComparison.OrdinalIgnoreCase))
+                {
+                    definition = options[i];
+                    return true;
+                }
+            }
+
+            definition = default;
+            return false;
+        }
+
+        public static bool IsEquipped(PlayerSkinDefinition item)
+        {
+            if (!TryResolveSlot(item, out var slot))
+            {
+                return false;
+            }
+
+            return TryGetAppliedSkin(slot, out var applied) &&
+                   string.Equals(applied.Id, item.Id, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static bool TryEquip(PlayerSkinDefinition item)
+        {
+            if (!TryResolveSlot(item, out var slot) || !item.IsValid || IsEquipped(item))
+            {
+                return false;
+            }
+
+            SaveSelected(slot, item.Id);
+            return true;
+        }
+
+        public static PlayerSkinDefinition GetSelected(PlayerSkinSlot slot)
+        {
+            return TryGetAppliedSkin(slot, out var definition) ? definition : default;
         }
 
         public static PlayerSkinDefinition SelectNext(PlayerSkinSlot slot)
@@ -144,20 +233,20 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var shirt = GetSelected(PlayerSkinSlot.Shirt);
-            var pants = GetSelected(PlayerSkinSlot.Pants);
-            var boots = GetSelected(PlayerSkinSlot.Boots);
-            var gloves = GetSelected(PlayerSkinSlot.Gloves);
+            ResolveSkinPaths(PlayerSkinSlot.Shirt, out var shirtMesh, out var shirtMaterial);
+            ResolveSkinPaths(PlayerSkinSlot.Pants, out var pantsMesh, out var pantsMaterial);
+            ResolveSkinPaths(PlayerSkinSlot.Boots, out var bootsMesh, out var bootsMaterial);
+            ResolveSkinPaths(PlayerSkinSlot.Gloves, out var glovesMesh, out var glovesMaterial);
 
             applier.ConfigureSkinPaths(
-                shirt.MeshResourcePath,
-                shirt.MaterialResourcePath,
-                pants.MeshResourcePath,
-                pants.MaterialResourcePath,
-                boots.MeshResourcePath,
-                boots.MaterialResourcePath,
-                gloves.MeshResourcePath,
-                gloves.MaterialResourcePath);
+                shirtMesh,
+                shirtMaterial,
+                pantsMesh,
+                pantsMaterial,
+                bootsMesh,
+                bootsMaterial,
+                glovesMesh,
+                glovesMaterial);
         }
 
         public static void ApplyToPlayer(GameObject playerRoot, bool forceReapply = true)
@@ -190,6 +279,19 @@ namespace ShooterPrototype.Player
             }
 
             clothingApplier.ApplyToRemoteVisual(syntyVisual, forceReapply);
+        }
+
+        private static void ResolveSkinPaths(PlayerSkinSlot slot, out string meshPath, out string materialPath)
+        {
+            if (TryGetAppliedSkin(slot, out var definition) && definition.IsValid)
+            {
+                meshPath = definition.MeshResourcePath;
+                materialPath = definition.MaterialResourcePath;
+                return;
+            }
+
+            meshPath = string.Empty;
+            materialPath = string.Empty;
         }
 
         private static string BuildPrefKey(PlayerSkinSlot slot)
