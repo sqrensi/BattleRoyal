@@ -10,7 +10,9 @@ namespace ShooterPrototype.UI
     public sealed class GameKillFeedController : MonoBehaviour
     {
         private const int MaxEntries = 5;
-        private const float EntryLifetimeSeconds = 5.5f;
+        private const float EntryLifetimeSeconds = 3f;
+        private const int FeedLayoutVersion = 2;
+        private const float TopOffsetBelowCornerStats = 58f;
         private const float EntryHorizontalPadding = 24f;
         private const float EntryVerticalPadding = 8f;
         private const float EntryMinWidth = 96f;
@@ -48,6 +50,24 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            var existingPanel = targetCanvas.transform.Find("KillFeedPanel");
+            if (existingPanel != null)
+            {
+                var versionMarker = existingPanel.GetComponent<KillFeedLayoutMarker>();
+                if (versionMarker != null && versionMarker.Version >= FeedLayoutVersion)
+                {
+                    feedRoot = existingPanel.GetComponent<RectTransform>();
+                    built = true;
+                    BindTransportClient();
+                    return;
+                }
+
+                ClearEntries();
+                Destroy(existingPanel.gameObject);
+                feedRoot = null;
+                built = false;
+            }
+
             if (!built)
             {
                 BuildFeedPanel(targetCanvas.transform);
@@ -82,12 +102,14 @@ namespace ShooterPrototype.UI
             }
 
             var now = Time.unscaledTime;
+            var layoutDirty = false;
             for (var i = activeEntries.Count - 1; i >= 0; i--)
             {
                 var entry = activeEntries[i];
                 if (entry == null || entry.Root == null)
                 {
                     activeEntries.RemoveAt(i);
+                    layoutDirty = true;
                     continue;
                 }
 
@@ -96,13 +118,19 @@ namespace ShooterPrototype.UI
                 {
                     Destroy(entry.Root);
                     activeEntries.RemoveAt(i);
+                    layoutDirty = true;
                     continue;
                 }
 
                 if (entry.Group != null)
                 {
-                    entry.Group.alpha = remaining < 1f ? remaining : 1f;
+                    entry.Group.alpha = remaining < 0.45f ? remaining / 0.45f : 1f;
                 }
+            }
+
+            if (layoutDirty)
+            {
+                RebuildEntryLayout();
             }
         }
 
@@ -292,10 +320,16 @@ namespace ShooterPrototype.UI
             feedRoot.anchorMin = new Vector2(1f, 1f);
             feedRoot.anchorMax = new Vector2(1f, 1f);
             feedRoot.pivot = new Vector2(1f, 1f);
-            feedRoot.anchoredPosition = new Vector2(-edgeMargin, -edgeMargin);
+            feedRoot.anchoredPosition = new Vector2(-edgeMargin, -(edgeMargin + TopOffsetBelowCornerStats));
             feedRoot.sizeDelta = new Vector2(EntryMaxWidth, 240f);
 
+            rootObject.AddComponent<KillFeedLayoutMarker>().Version = FeedLayoutVersion;
             built = true;
+        }
+
+        private sealed class KillFeedLayoutMarker : MonoBehaviour
+        {
+            public int Version;
         }
 
         private static Sprite GetWhiteSprite()

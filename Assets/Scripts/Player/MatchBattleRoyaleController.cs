@@ -106,6 +106,13 @@ namespace ShooterPrototype.Player
         private AudioSource planeLoopSource;
         private AudioSource windLoopSource;
         private PlayerAudioController localAudioController;
+        private bool matchOutcomeScheduled;
+        private int localPlacement;
+        private int displayKillCount;
+        private int displayAliveCount;
+        private float matchPlayingStartRealtime = -1f;
+        private float matchDeathRealtime = -1f;
+        private MatchOutcomeSummary? capturedOutcome;
 
         public bool IsLocalParachuting =>
             localDropState == LocalDropState.Falling || localDropState == LocalDropState.Gliding;
@@ -158,7 +165,27 @@ namespace ShooterPrototype.Player
             planeCollidersSuppressed = false;
             dropReconcileSuppressUntil = 0f;
             lastState = null;
+            matchOutcomeScheduled = false;
+            localPlacement = 0;
+            displayKillCount = 0;
+            displayAliveCount = 0;
+            matchPlayingStartRealtime = -1f;
+            matchDeathRealtime = -1f;
+            capturedOutcome = null;
             gameHud?.ResetMatchOverlay();
+            EnsureLocalPlayer();
+            ResetLocalSwimmingState();
+        }
+
+        private void ResetLocalSwimmingState()
+        {
+            if (localPlayer == null)
+            {
+                return;
+            }
+
+            localPlayer.GetComponent<PlayerSwimmingController>()?.ForceExitWaterState();
+            fpsController?.SetSwimmingMode(false);
         }
 
         private void OnDisable()
@@ -209,7 +236,7 @@ namespace ShooterPrototype.Player
                 }
             }
 
-            if (localDropState == LocalDropState.Falling)
+            if (localDropState == LocalDropState.Falling && landingRoutine == null)
             {
                 UpdateFallingMotion();
                 TryRestorePlaneCollidersAfterDrop();
@@ -218,7 +245,7 @@ namespace ShooterPrototype.Player
                 TryCompleteLanding();
             }
 
-            if (localDropState == LocalDropState.Gliding)
+            if (localDropState == LocalDropState.Gliding && landingRoutine == null)
             {
                 UpdateGlidingMotion();
                 TryRestorePlaneCollidersAfterDrop();
@@ -226,6 +253,92 @@ namespace ShooterPrototype.Player
             }
 
             UpdatePlaneLoopAttenuation();
+            TryScheduleDeathGameOver();
+        }
+
+        private void TryScheduleDeathGameOver()
+        {
+            if (matchOutcomeScheduled || playerHealth == null || !playerHealth.IsDead)
+            {
+                return;
+            }
+
+            if (matchDeathRealtime < 0f)
+            {
+                matchDeathRealtime = Time.realtimeSinceStartup;
+            }
+
+            if (localPlacement <= 0 && lastState != null)
+            {
+                localPlacement = Mathf.Max(1, lastState.aliveCount + 1);
+            }
+
+            ScheduleMatchOutcome(false);
+        }
+
+        private void ScheduleMatchOutcome(bool won)
+        {
+            if (matchOutcomeScheduled)
+            {
+                return;
+            }
+
+            matchOutcomeScheduled = true;
+            var summary = BuildMatchOutcomeSummary(won);
+            gameHud?.ScheduleGameOver(won, summary);
+        }
+
+        private MatchOutcomeSummary BuildMatchOutcomeSummary(bool won)
+        {
+            if (capturedOutcome.HasValue)
+            {
+                return capturedOutcome.Value;
+            }
+
+            var placement = won
+                ? 1
+                : localPlacement > 0
+                    ? localPlacement
+                    : Mathf.Max(1, (lastState?.aliveCount ?? displayAliveCount) + 1);
+            var kills = lastState?.localKillCount ?? displayKillCount;
+            var survivalSeconds = GetSurvivalSeconds();
+            var summary = new MatchOutcomeSummary(kills, placement, survivalSeconds);
+            capturedOutcome = summary;
+            return summary;
+        }
+
+        private int GetSurvivalSeconds()
+        {
+            if (matchPlayingStartRealtime < 0f)
+            {
+                return 0;
+            }
+
+            var endTime = matchDeathRealtime >= 0f
+                ? matchDeathRealtime
+                : Time.realtimeSinceStartup;
+            return Mathf.Max(0, Mathf.FloorToInt(endTime - matchPlayingStartRealtime));
+        }
+
+        private void UpdateMatchHudStats(RealtimeTransportClient.MatchStateMessage message)
+        {
+            displayKillCount = message.localKillCount;
+            displayAliveCount = message.aliveCount;
+            gameHud?.SetMatchCornerStats(displayKillCount, displayAliveCount);
+
+            if (string.Equals(message.phase, "playing", StringComparison.Ordinal) && matchPlayingStartRealtime < 0f)
+            {
+                matchPlayingStartRealtime = Time.realtimeSinceStartup;
+            }
+
+            if (playerHealth != null && playerHealth.IsDead && localPlacement <= 0)
+            {
+                localPlacement = Mathf.Max(1, message.aliveCount + 1);
+                if (matchDeathRealtime < 0f)
+                {
+                    matchDeathRealtime = Time.realtimeSinceStartup;
+                }
+            }
         }
 
         private void LateUpdate()
@@ -376,17 +489,27 @@ namespace ShooterPrototype.Player
             var reason = message.reason ?? string.Empty;
             if (reason == "winner")
             {
-                gameHud?.SetMatchStatusMessage("Возврат в меню...");
-            }
-            else if (reason == "eliminated")
-            {
-                gameHud?.SetMatchStatusMessage("Вы выбыли. Возврат в меню...");
-            }
-            else
-            {
-                gameHud?.SetMatchStatusMessage("Матч завершён.");
+                if (!matchOutcomeScheduled)
+                {
+                    gameHud?.SetVictoryBanner(true, string.Empty);
+                    gameHud?.SetMatchStatusMessage(string.Empty);
+                    ScheduleMatchOutcome(true);
+                }
+
+                return;
             }
 
+            if (reason == "eliminated")
+            {
+                if (!matchOutcomeScheduled)
+                {
+                    ScheduleMatchOutcome(false);
+                }
+
+                return;
+            }
+
+            gameHud?.SetMatchStatusMessage("Матч завершён.");
             gameHud?.RequestReturnToMenu(reason);
         }
 
@@ -398,6 +521,7 @@ namespace ShooterPrototype.Player
             }
 
             gameHud.SetKillCount(message.localKillCount);
+            UpdateMatchHudStats(message);
 
             if (currentPhase == "ending" || message.phase == "ending")
             {
@@ -461,16 +585,15 @@ namespace ShooterPrototype.Player
 
             if (isWinner)
             {
-                var subtitle = message.winnerDisconnectSeconds > 0
-                    ? $"Возврат в меню через {message.winnerDisconnectSeconds}..."
-                    : string.Empty;
-                gameHud?.SetVictoryBanner(true, subtitle);
+                gameHud?.SetVictoryBanner(true, string.Empty);
                 gameHud?.SetMatchStatusMessage(string.Empty);
+                ScheduleMatchOutcome(true);
             }
             else
             {
                 gameHud?.SetVictoryBanner(false);
-                gameHud?.SetMatchStatusMessage("Матч завершён");
+                gameHud?.SetMatchStatusMessage(string.Empty);
+                ScheduleMatchOutcome(false);
             }
         }
 
@@ -572,6 +695,16 @@ namespace ShooterPrototype.Player
             }
         }
 
+        public void SetLocalCombatInputEnabled(bool enabled)
+        {
+            SetCombatEnabled(enabled);
+        }
+
+        private static float GetDropPhysicsDelta()
+        {
+            return Mathf.Min(Time.unscaledDeltaTime, 0.05f);
+        }
+
         private static void SetZoneVisualActive(bool active)
         {
             var zone = FindFirstObjectByType<MatchDamageZoneController>();
@@ -595,6 +728,7 @@ namespace ShooterPrototype.Player
             isOnPlane = true;
             hasJumpedLocally = false;
             parachuteDeployed = false;
+            ResetLocalSwimmingState();
             fpsController?.SetMovementLocked(true);
             fpsController?.SetServerReconciliationSuspended(true);
             viewPresentation?.SetForceThirdPersonBody(true);
@@ -879,6 +1013,7 @@ namespace ShooterPrototype.Player
             }
 
             hasJumpedLocally = true;
+            ResetLocalSwimmingState();
             isOnPlane = false;
             localDropState = LocalDropState.Falling;
             parachuteDeployed = false;
@@ -1021,9 +1156,10 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            fallVerticalVelocity += freeFallGravity * Time.deltaTime;
+            var deltaTime = GetDropPhysicsDelta();
+            fallVerticalVelocity += freeFallGravity * deltaTime;
             fallVerticalVelocity = Mathf.Max(fallVerticalVelocity, -Mathf.Max(4f, freeFallTerminalSpeed));
-            characterController.Move(Vector3.up * (fallVerticalVelocity * Time.deltaTime));
+            characterController.Move(Vector3.up * (fallVerticalVelocity * deltaTime));
 
             if (Time.unscaledTime >= nextDropPoseFlushRealtime)
             {
@@ -1060,6 +1196,7 @@ namespace ShooterPrototype.Player
         private IEnumerator CompleteLandingRoutine(float clearance)
         {
             dropHorizontalVelocity = Vector3.zero;
+            fallVerticalVelocity = 0f;
 
             var settleDelta = Vector3.down * Mathf.Max(0f, clearance - 0.04f);
             if (settleDelta.sqrMagnitude > 0.000001f)
@@ -1081,6 +1218,7 @@ namespace ShooterPrototype.Player
             localAudioController?.PlayLand(true);
             dropReconcileSuppressUntil = Time.unscaledTime + Mathf.Max(2f, dropLandingReconcileSuppressSeconds);
             fpsController.ClearExternalLaunchVelocity();
+            fpsController.PrepareForLanding();
             fpsController.SetMovementLocked(false);
             fpsController.NotifyLocalRespawned(dropLandingReconcileSuppressSeconds);
 
@@ -1133,13 +1271,14 @@ namespace ShooterPrototype.Player
             }
 
             var targetHorizontal = steerDirection * dropGlideSpeed;
+            var deltaTime = GetDropPhysicsDelta();
             dropHorizontalVelocity = Vector3.MoveTowards(
                 dropHorizontalVelocity,
                 targetHorizontal,
-                dropSteerRate * Time.deltaTime);
+                dropSteerRate * deltaTime);
 
-            characterController.Move(dropHorizontalVelocity * Time.deltaTime);
-            characterController.Move(Vector3.down * (dropDescentSpeed * Time.deltaTime));
+            characterController.Move(dropHorizontalVelocity * deltaTime);
+            characterController.Move(Vector3.down * (dropDescentSpeed * deltaTime));
 
             if (Time.unscaledTime >= nextDropPoseFlushRealtime)
             {

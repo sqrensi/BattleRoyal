@@ -21,6 +21,7 @@ namespace ShooterPrototype.UI
         private const int DamageOverlayVersion = 2;
         private const float KillBannerFadeInSeconds = 0.28f;
         private const float KillBannerHoldSeconds = 2.2f;
+        private const float DeathBannerHoldSeconds = 4f;
         private const float KillBannerFadeOutSeconds = 0.45f;
         private const float KillBannerBottomOffset = 58f;
 
@@ -161,14 +162,32 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            var localTicketId = ResolveLocalTicketId();
+            if (string.IsNullOrWhiteSpace(localTicketId))
+            {
+                return;
+            }
+
+            if (string.Equals(message.victimTicketId, localTicketId, System.StringComparison.Ordinal))
+            {
+                if (string.Equals(message.cause, "player", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    ShowDeathBanner(message.killerNickname);
+                }
+                else if (string.Equals(message.cause, "zone", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    ShowDeathBanner(null, fromZone: true);
+                }
+
+                return;
+            }
+
             if (!string.Equals(message.cause, "player", System.StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
 
-            var localTicketId = ResolveLocalTicketId();
-            if (string.IsNullOrWhiteSpace(localTicketId) ||
-                !string.Equals(message.killerTicketId, localTicketId, System.StringComparison.Ordinal))
+            if (!string.Equals(message.killerTicketId, localTicketId, System.StringComparison.Ordinal))
             {
                 return;
             }
@@ -201,10 +220,37 @@ namespace ShooterPrototype.UI
 
             var victim = string.IsNullOrWhiteSpace(victimNickname) ? "Игрок" : victimNickname.Trim();
             killBannerText.text = $"Вы убили {victim}";
+            killBannerText.color = new Color(0.98f, 0.9f, 0.58f, 1f);
+            ActivateBanner(KillBannerFadeInSeconds + KillBannerHoldSeconds);
+        }
+
+        private void ShowDeathBanner(string killerNickname, bool fromZone = false)
+        {
+            if (killBannerRoot == null || killBannerText == null || killBannerGroup == null)
+            {
+                return;
+            }
+
+            if (fromZone)
+            {
+                killBannerText.text = "Зона вас убила";
+            }
+            else
+            {
+                var killer = string.IsNullOrWhiteSpace(killerNickname) ? "Игрок" : killerNickname.Trim();
+                killBannerText.text = $"{killer} вас убил";
+            }
+
+            killBannerText.color = new Color(0.98f, 0.62f, 0.62f, 1f);
+            ActivateBanner(KillBannerFadeInSeconds + DeathBannerHoldSeconds);
+        }
+
+        private void ActivateBanner(float visibleSeconds)
+        {
             killBannerRoot.gameObject.SetActive(true);
             killBannerAlpha = 0f;
             killBannerTargetAlpha = 1f;
-            killBannerHideAt = Time.unscaledTime + KillBannerFadeInSeconds + KillBannerHoldSeconds;
+            killBannerHideAt = Time.unscaledTime + visibleSeconds;
         }
 
         private void TickKillBanner()

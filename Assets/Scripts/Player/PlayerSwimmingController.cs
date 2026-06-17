@@ -83,6 +83,8 @@ namespace ShooterPrototype.Player
 
             if (holsterController == null || wasHolsteredBeforeWater)
             {
+                wasHolsteredBeforeWater = false;
+                restoreDrawAfterWater = false;
                 return;
             }
 
@@ -90,6 +92,17 @@ namespace ShooterPrototype.Player
             {
                 holsterController.BeginDrawEquippedWeapon();
             }
+
+            wasHolsteredBeforeWater = false;
+            restoreDrawAfterWater = false;
+        }
+
+        public void ForceExitWaterState()
+        {
+            waterOverlapCount = 0;
+            wasHolsteredBeforeWater = false;
+            restoreDrawAfterWater = false;
+            fpsController?.SetSwimmingMode(false);
         }
     }
 }

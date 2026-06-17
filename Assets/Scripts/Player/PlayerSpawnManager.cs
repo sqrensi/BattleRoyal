@@ -104,6 +104,7 @@ namespace ShooterPrototype.Player
             var existingLocalPlayer = FindObjectOfType<LocalPlayerMarker>();
             if (existingLocalPlayer != null)
             {
+                ResetMovementStateForMatch(existingLocalPlayer.gameObject);
                 if (enableMatchPresenceSync)
                 {
                     AttachPresenceSync(existingLocalPlayer.gameObject);
@@ -199,6 +200,18 @@ namespace ShooterPrototype.Player
             }
 
             ResetPlayerLoadoutForSpawn(instance);
+            ResetMovementStateForMatch(instance);
+        }
+
+        private static void ResetMovementStateForMatch(GameObject player)
+        {
+            if (player == null)
+            {
+                return;
+            }
+
+            player.GetComponent<PlayerSwimmingController>()?.ForceExitWaterState();
+            player.GetComponent<FpsCharacterController>()?.SetSwimmingMode(false);
         }
 
         private static void ResetPlayerLoadoutForSpawn(GameObject player)

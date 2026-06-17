@@ -124,6 +124,7 @@ namespace ShooterPrototype.Player
 
         private int lastReconciledServerTick = -1;
         private bool reconciliationSuspended;
+        private bool gameOverMode;
         private float reconciliationGraceUntilRealtime;
         private bool movementLocked;
         private Vector2 externalHorizontalVelocity;
@@ -209,6 +210,32 @@ namespace ShooterPrototype.Player
         {
             externalHorizontalVelocity = Vector2.zero;
         }
+
+        public void PrepareForLanding()
+        {
+            verticalVelocity = -2f;
+            externalHorizontalVelocity = Vector2.zero;
+            isGrounded = true;
+            groundedEvalFrame = -1;
+        }
+
+        public void SetGameOverMode(bool enabled)
+        {
+            gameOverMode = enabled;
+            if (!enabled)
+            {
+                return;
+            }
+
+            SetMovementLocked(true);
+            externalHorizontalVelocity = Vector2.zero;
+            networkMoveInputX = 0f;
+            networkMoveInputZ = 0f;
+            networkJumpPressed = false;
+            isSprinting = false;
+        }
+
+        public bool IsGameOverMode => gameOverMode;
 
         public void ApplyLookOrientation(float yawDegrees, float pitchDegrees)
         {
@@ -450,7 +477,11 @@ namespace ShooterPrototype.Player
 
         private void Update()
         {
-            HandleCursorToggle();
+            if (!gameOverMode)
+            {
+                HandleCursorToggle();
+            }
+
             RecordNetworkMoveInput();
             if (!ShouldPauseControls())
             {
@@ -498,6 +529,13 @@ namespace ShooterPrototype.Player
                 var health = GetComponent<PlayerHealth>();
                 if (health != null && health.IsDead)
                 {
+                    return;
+                }
+
+                if (gameOverMode)
+                {
+                    Cursor.lockState = CursorLockMode.None;
+                    Cursor.visible = true;
                     return;
                 }
 
@@ -579,6 +617,11 @@ namespace ShooterPrototype.Player
 
         private bool ShouldPauseControls()
         {
+            if (gameOverMode)
+            {
+                return true;
+            }
+
             if (PlayerInventoryPanelController.IsOpen)
             {
                 return true;
@@ -594,6 +637,11 @@ namespace ShooterPrototype.Player
 
         private bool ShouldBlockMovement()
         {
+            if (gameOverMode)
+            {
+                return true;
+            }
+
             if (movementLocked)
             {
                 return true;

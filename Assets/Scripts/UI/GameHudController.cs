@@ -2,6 +2,7 @@ using System.Collections;
 using ShooterPrototype.Bootstrap;
 using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
+using ShooterPrototype.Player;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
@@ -19,6 +20,10 @@ namespace ShooterPrototype.UI
         public const string RuntimeCanvasObjectName = CanvasObjectName;
         private const string MutePrefKey = "client_audio_muted";
         private const int CornerStatsLayoutVersion = 2;
+        private const int MatchCornerStatsLayoutVersion = 1;
+        private const float GameOverPanelDelaySeconds = 5f;
+        private const float GameOverAutoExitSeconds = 15f;
+        private const int GameOverPanelLayoutVersion = 3;
 
         private NetworkLauncher networkLauncher;
         private QueueApiClient queueApiClient;
@@ -35,6 +40,9 @@ namespace ShooterPrototype.UI
         private Text pingText;
         private Text fpsText;
         private Text cornerStatsText;
+        private Text matchCornerStatsText;
+        private int matchCornerKillCount;
+        private int matchCornerAliveCount;
         private int displayPingMs = -1;
         private string displayPingLabel = "--";
         private Text ammoText;
@@ -46,6 +54,25 @@ namespace ShooterPrototype.UI
         private Text matchStatusText;
         private Text victoryBannerText;
         private Text victorySubtitleText;
+        private GameObject gameOverPanel;
+        private CanvasGroup gameOverPanelGroup;
+        private Text gameOverTitleText;
+        private Text gameOverStatsText;
+        private Text gameOverHintText;
+        private Image gameOverPanelBackground;
+        private Button gameOverExitButton;
+        private Coroutine gameOverFlowCoroutine;
+        private bool gameOverFlowStarted;
+        private bool gameOverPanelVisible;
+        private MatchOutcomeSummary pendingMatchOutcome;
+        private bool matchRewardGranted;
+        private bool gameOverInputLocked;
+        private GameObject pauseMenuPanel;
+        private GameObject pauseSettingsPanel;
+        private Text pauseMuteButtonLabel;
+        private Text pausePerfButtonLabel;
+        private bool pauseMenuOpen;
+        private bool pauseSettingsOpen;
         private Button backButton;
         private Button muteButton;
         private Button perfButton;
@@ -105,7 +132,108 @@ namespace ShooterPrototype.UI
                 HandleMutePressed();
             }
 
+            if (ReadEscapePressed())
+            {
+                HandleEscapePressed();
+            }
+
             RefreshCornerStats();
+            RefreshMatchCornerStatsText();
+        }
+
+        private static bool ReadEscapePressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            return Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
+#else
+            return Input.GetKeyDown(KeyCode.Escape);
+#endif
+        }
+
+        private void HandleEscapePressed()
+        {
+            if (returnToMenuRequested || gameOverPanelVisible || gameOverFlowStarted)
+            {
+                return;
+            }
+
+            if (PlayerInventoryPanelController.IsOpen)
+            {
+                return;
+            }
+
+            if (pauseMenuOpen && pauseSettingsOpen)
+            {
+                SetPauseSettingsOpen(false);
+                return;
+            }
+
+            SetPauseMenuOpen(!pauseMenuOpen);
+        }
+
+        private void SetPauseMenuOpen(bool open)
+        {
+            EnsureHudExists();
+            EnsurePauseMenuPanel(canvas != null ? canvas.transform : null);
+            pauseMenuOpen = open;
+            if (!open)
+            {
+                pauseSettingsOpen = false;
+                if (pauseSettingsPanel != null)
+                {
+                    pauseSettingsPanel.SetActive(false);
+                }
+            }
+
+            if (pauseMenuPanel != null)
+            {
+                pauseMenuPanel.SetActive(open);
+            }
+
+            ApplyPauseCursor(open);
+        }
+
+        private void SetPauseSettingsOpen(bool open)
+        {
+            pauseSettingsOpen = open;
+            if (pauseSettingsPanel != null)
+            {
+                pauseSettingsPanel.SetActive(open);
+            }
+        }
+
+        private void ApplyPauseCursor(bool pauseOpen)
+        {
+            if (pauseOpen)
+            {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+                return;
+            }
+
+            var fps = FindFirstObjectByType<FpsCharacterController>();
+            if (fps != null && fps.isActiveAndEnabled)
+            {
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+            }
+        }
+
+        private void HandlePauseSettingsPressed()
+        {
+            RefreshPauseSettingsButtonLabels();
+            SetPauseSettingsOpen(true);
+        }
+
+        private void HandlePauseSettingsBackPressed()
+        {
+            SetPauseSettingsOpen(false);
+        }
+
+        private void HandlePauseExitPressed()
+        {
+            SetPauseMenuOpen(false);
+            RequestReturnToMenu("pause_exit");
         }
 
         private static bool ReadToggleMutePressed()
@@ -229,11 +357,213 @@ namespace ShooterPrototype.UI
             }
         }
 
+        public void SetMatchCornerStats(int killCount, int aliveCount)
+        {
+            matchCornerKillCount = Mathf.Max(0, killCount);
+            matchCornerAliveCount = Mathf.Max(0, aliveCount);
+            EnsureHudExists();
+            RefreshMatchCornerStatsText();
+        }
+
+        private void RefreshMatchCornerStatsText()
+        {
+            if (matchCornerStatsText == null)
+            {
+                return;
+            }
+
+            matchCornerStatsText.text =
+                $"Киллы: {matchCornerKillCount}\nВыживших: {matchCornerAliveCount}";
+        }
+
         public void ResetMatchOverlay()
         {
+            StopGameOverFlow();
             SetVictoryBanner(false);
             SetMatchStatusMessage(string.Empty);
             SetKillCount(0);
+            SetMatchCornerStats(0, 0);
+            HideGameOverPanel();
+            SetPauseMenuOpen(false);
+            pendingMatchOutcome = default;
+            matchRewardGranted = false;
+            ApplyGameOverInputLock(false);
+        }
+
+        public void ScheduleGameOver(bool won, MatchOutcomeSummary summary)
+        {
+            if (gameOverFlowStarted)
+            {
+                return;
+            }
+
+            EnsureHudExists();
+            pendingMatchOutcome = summary;
+            gameOverFlowStarted = true;
+            SetPauseMenuOpen(false);
+            gameOverFlowCoroutine = StartCoroutine(GameOverFlowRoutine(won, summary));
+        }
+
+        private IEnumerator GameOverFlowRoutine(bool won, MatchOutcomeSummary summary)
+        {
+            yield return new WaitForSecondsRealtime(GameOverPanelDelaySeconds);
+
+            SetVictoryBanner(false);
+            SetMatchStatusMessage(string.Empty);
+            ShowGameOverPanel(won, summary);
+
+            var remaining = GameOverAutoExitSeconds;
+            while (remaining > 0f)
+            {
+                if (returnToMenuRequested)
+                {
+                    yield break;
+                }
+
+                remaining -= Time.unscaledDeltaTime;
+                if (gameOverHintText != null)
+                {
+                    gameOverHintText.text = $"Автовыход через {Mathf.CeilToInt(Mathf.Max(0f, remaining))} сек.";
+                }
+
+                yield return null;
+            }
+
+            if (!returnToMenuRequested)
+            {
+                RequestReturnToMenu(won ? "game_over_win" : "game_over_loss");
+            }
+        }
+
+        private void ShowGameOverPanel(bool won, MatchOutcomeSummary summary)
+        {
+            EnsureHudExists();
+            EnsureGameOverPanel(canvas != null ? canvas.transform : null);
+            if (gameOverPanel == null)
+            {
+                return;
+            }
+
+            if (!matchRewardGranted && summary.CoinReward > 0)
+            {
+                PlayerCurrencyService.AddCurrency(summary.CoinReward);
+                matchRewardGranted = true;
+            }
+
+            SetVictoryBanner(false);
+            SetMatchStatusMessage(string.Empty);
+            SetPauseMenuOpen(false);
+            ApplyGameOverInputLock(true);
+
+            gameOverPanelVisible = true;
+            gameOverPanel.SetActive(true);
+            gameOverPanel.transform.SetAsLastSibling();
+            if (gameOverPanelGroup != null)
+            {
+                gameOverPanelGroup.alpha = 1f;
+                gameOverPanelGroup.interactable = true;
+                gameOverPanelGroup.blocksRaycasts = true;
+            }
+
+            var accentColor = won
+                ? new Color(0.95f, 0.82f, 0.35f, 1f)
+                : new Color(0.9f, 0.45f, 0.45f, 1f);
+
+            if (gameOverPanelBackground != null)
+            {
+                gameOverPanelBackground.color = new Color(0.09f, 0.11f, 0.13f, 0.97f);
+            }
+
+            if (gameOverTitleText != null)
+            {
+                gameOverTitleText.text = won ? "Вы выиграли" : "Вы проиграли";
+                gameOverTitleText.color = accentColor;
+            }
+
+            if (gameOverStatsText != null)
+            {
+                gameOverStatsText.text =
+                    $"#{summary.Placement} место  ·  {summary.KillCount} киллов\n" +
+                    $"{summary.SurvivalSeconds} сек  ·  +{summary.CoinReward:N0} монет";
+            }
+
+            if (gameOverHintText != null)
+            {
+                gameOverHintText.text =
+                    $"Автовыход через {Mathf.CeilToInt(GameOverAutoExitSeconds)} сек";
+            }
+
+            if (gameOverExitButton != null)
+            {
+                gameOverExitButton.interactable = true;
+            }
+        }
+
+        private void ApplyGameOverInputLock(bool locked)
+        {
+            if (gameOverInputLocked == locked)
+            {
+                return;
+            }
+
+            gameOverInputLocked = locked;
+            var marker = FindFirstObjectByType<LocalPlayerMarker>();
+            if (marker == null)
+            {
+                if (locked)
+                {
+                    Cursor.lockState = CursorLockMode.None;
+                    Cursor.visible = true;
+                }
+
+                return;
+            }
+
+            var fps = marker.GetComponent<FpsCharacterController>();
+            var weaponMount = marker.GetComponent<PlayerWeaponMount>();
+            var battleRoyale = FindFirstObjectByType<MatchBattleRoyaleController>();
+
+            if (locked)
+            {
+                fps?.SetGameOverMode(true);
+                battleRoyale?.SetLocalCombatInputEnabled(false);
+                weaponMount?.ForceExitAds();
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+                return;
+            }
+
+            fps?.SetGameOverMode(false);
+        }
+
+        private void HideGameOverPanel()
+        {
+            gameOverPanelVisible = false;
+            ApplyGameOverInputLock(false);
+            if (gameOverPanel != null)
+            {
+                gameOverPanel.SetActive(false);
+            }
+        }
+
+        private void StopGameOverFlow()
+        {
+            gameOverFlowStarted = false;
+            if (gameOverFlowCoroutine != null)
+            {
+                StopCoroutine(gameOverFlowCoroutine);
+                gameOverFlowCoroutine = null;
+            }
+        }
+
+        private void HandleGameOverExitPressed()
+        {
+            if (gameOverExitButton != null)
+            {
+                gameOverExitButton.interactable = false;
+            }
+
+            RequestReturnToMenu("game_over_exit");
         }
 
         public void RequestReturnToMenu(string reason)
@@ -244,7 +574,10 @@ namespace ShooterPrototype.UI
             }
 
             returnToMenuRequested = true;
-            ResetMatchOverlay();
+            StopGameOverFlow();
+            HideGameOverPanel();
+            SetPauseMenuOpen(false);
+            SetVictoryBanner(false);
             networkLauncher?.DisconnectClient(reason ?? "match ended");
             StartCoroutine(LeaveMatchAndReturnRoutine());
         }
@@ -266,6 +599,7 @@ namespace ShooterPrototype.UI
             PlayerPrefs.SetInt(MutePrefKey, isMuted ? 1 : 0);
             PlayerPrefs.Save();
             ApplyMuteState();
+            RefreshPauseSettingsButtonLabels();
         }
 
         private void HandlePerfPressed()
@@ -282,6 +616,21 @@ namespace ShooterPrototype.UI
 
             performancePreset.ToggleMaxPerformance();
             RefreshPerfButtonVisuals();
+            RefreshPauseSettingsButtonLabels();
+        }
+
+        private void RefreshPauseSettingsButtonLabels()
+        {
+            if (pauseMuteButtonLabel != null)
+            {
+                pauseMuteButtonLabel.text = isMuted ? "Звук: выкл" : "Звук: вкл";
+            }
+
+            if (pausePerfButtonLabel != null)
+            {
+                var maxPerformance = performancePreset != null && performancePreset.MaxPerformanceEnabled;
+                pausePerfButtonLabel.text = maxPerformance ? "Графика: MAX" : "Графика: качество";
+            }
         }
 
         private void LoadMuteState()
@@ -328,7 +677,9 @@ namespace ShooterPrototype.UI
             if (canvas != null)
             {
                 EnsureCornerStatsPanel(canvas.transform);
+                EnsureMatchCornerStatsPanel(canvas.transform);
                 EnsureMatchOverlayElements(canvas.transform);
+                EnsurePauseMenuPanel(canvas.transform);
             }
 
             EnsureEventSystemExists();
@@ -539,6 +890,147 @@ namespace ShooterPrototype.UI
                 victorySubtitleText.text = string.Empty;
                 victorySubtitleObject.SetActive(false);
             }
+
+            EnsureGameOverPanel(root);
+        }
+
+        private void EnsureGameOverPanel(Transform root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var existingPanel = root.Find("GameOverPanel");
+            if (existingPanel != null)
+            {
+                var versionMarker = existingPanel.GetComponent<GameOverPanelLayoutMarker>();
+                if (versionMarker != null &&
+                    versionMarker.Version >= GameOverPanelLayoutVersion &&
+                    gameOverPanel != null)
+                {
+                    return;
+                }
+
+                gameOverPanel = null;
+                gameOverPanelGroup = null;
+                gameOverTitleText = null;
+                gameOverStatsText = null;
+                gameOverHintText = null;
+                gameOverExitButton = null;
+                gameOverPanelBackground = null;
+                Destroy(existingPanel.gameObject);
+            }
+
+            BuildGameOverPanel(root);
+        }
+
+        private void BuildGameOverPanel(Transform root)
+        {
+            if (gameOverPanel != null)
+            {
+                return;
+            }
+
+            var overlayObject = new GameObject("GameOverPanel");
+            overlayObject.transform.SetParent(root, false);
+            overlayObject.AddComponent<GameOverPanelLayoutMarker>().Version = GameOverPanelLayoutVersion;
+
+            var overlayRect = overlayObject.AddComponent<RectTransform>();
+            overlayRect.anchorMin = Vector2.zero;
+            overlayRect.anchorMax = Vector2.one;
+            overlayRect.offsetMin = Vector2.zero;
+            overlayRect.offsetMax = Vector2.zero;
+
+            var overlayImage = overlayObject.AddComponent<Image>();
+            overlayImage.color = new Color(0.02f, 0.03f, 0.05f, 0.75f);
+            overlayImage.raycastTarget = true;
+
+            gameOverPanelGroup = overlayObject.AddComponent<CanvasGroup>();
+            gameOverPanel = overlayObject;
+
+            var panelObject = new GameObject("Panel");
+            panelObject.transform.SetParent(overlayObject.transform, false);
+            var panelRect = panelObject.AddComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            panelRect.pivot = new Vector2(0.5f, 0.5f);
+            panelRect.sizeDelta = new Vector2(440f, 300f);
+
+            gameOverPanelBackground = panelObject.AddComponent<Image>();
+            gameOverPanelBackground.color = new Color(0.09f, 0.11f, 0.13f, 0.97f);
+
+            var titleObject = new GameObject("Title");
+            titleObject.transform.SetParent(panelObject.transform, false);
+            var titleRect = titleObject.AddComponent<RectTransform>();
+            titleRect.anchorMin = new Vector2(0.5f, 1f);
+            titleRect.anchorMax = new Vector2(0.5f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.anchoredPosition = new Vector2(0f, -32f);
+            titleRect.sizeDelta = new Vector2(380f, 48f);
+            gameOverTitleText = titleObject.AddComponent<Text>();
+            gameOverTitleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            gameOverTitleText.fontSize = 36;
+            gameOverTitleText.fontStyle = FontStyle.Bold;
+            gameOverTitleText.alignment = TextAnchor.MiddleCenter;
+            gameOverTitleText.text = "Вы проиграли";
+
+            var statsObject = new GameObject("Stats");
+            statsObject.transform.SetParent(panelObject.transform, false);
+            var statsRect = statsObject.AddComponent<RectTransform>();
+            statsRect.anchorMin = new Vector2(0.5f, 0.5f);
+            statsRect.anchorMax = new Vector2(0.5f, 0.5f);
+            statsRect.pivot = new Vector2(0.5f, 0.5f);
+            statsRect.anchoredPosition = new Vector2(0f, 18f);
+            statsRect.sizeDelta = new Vector2(380f, 64f);
+            gameOverStatsText = statsObject.AddComponent<Text>();
+            gameOverStatsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            gameOverStatsText.fontSize = 21;
+            gameOverStatsText.alignment = TextAnchor.MiddleCenter;
+            gameOverStatsText.color = new Color(0.86f, 0.9f, 0.93f, 1f);
+            gameOverStatsText.lineSpacing = 1.2f;
+
+            var buttonObject = new GameObject("ExitButton");
+            buttonObject.transform.SetParent(panelObject.transform, false);
+            var buttonRect = buttonObject.AddComponent<RectTransform>();
+            buttonRect.anchorMin = new Vector2(0.5f, 0f);
+            buttonRect.anchorMax = new Vector2(0.5f, 0f);
+            buttonRect.pivot = new Vector2(0.5f, 0f);
+            buttonRect.sizeDelta = new Vector2(260f, 48f);
+            buttonRect.anchoredPosition = new Vector2(0f, 52f);
+
+            var buttonImage = buttonObject.AddComponent<Image>();
+            buttonImage.color = new Color(0.2f, 0.46f, 0.4f, 1f);
+
+            gameOverExitButton = buttonObject.AddComponent<Button>();
+            gameOverExitButton.onClick.AddListener(HandleGameOverExitPressed);
+
+            var buttonLabel = CreateLabel(buttonObject.transform, "Label", Vector2.zero, "Выйти в меню");
+            var buttonLabelRect = buttonLabel.rectTransform;
+            buttonLabelRect.anchorMin = Vector2.zero;
+            buttonLabelRect.anchorMax = Vector2.one;
+            buttonLabelRect.offsetMin = Vector2.zero;
+            buttonLabelRect.offsetMax = Vector2.zero;
+            buttonLabel.fontSize = 20;
+            buttonLabel.fontStyle = FontStyle.Bold;
+            buttonLabel.alignment = TextAnchor.MiddleCenter;
+
+            var hintObject = new GameObject("Hint");
+            hintObject.transform.SetParent(panelObject.transform, false);
+            var hintRect = hintObject.AddComponent<RectTransform>();
+            hintRect.anchorMin = new Vector2(0.5f, 0f);
+            hintRect.anchorMax = new Vector2(0.5f, 0f);
+            hintRect.pivot = new Vector2(0.5f, 0f);
+            hintRect.anchoredPosition = new Vector2(0f, 20f);
+            hintRect.sizeDelta = new Vector2(380f, 22f);
+            gameOverHintText = hintObject.AddComponent<Text>();
+            gameOverHintText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            gameOverHintText.fontSize = 14;
+            gameOverHintText.alignment = TextAnchor.MiddleCenter;
+            gameOverHintText.color = new Color(0.62f, 0.68f, 0.72f, 0.9f);
+
+            overlayObject.SetActive(false);
+            overlayObject.transform.SetAsLastSibling();
         }
 
         private void EnsureCornerStatsPanel(Transform root)
@@ -598,6 +1090,210 @@ namespace ShooterPrototype.UI
             cornerStatsText.verticalOverflow = VerticalWrapMode.Overflow;
             cornerStatsText.lineSpacing = 1f;
             cornerStatsText.text = "FPS: --\nPing: -- ms";
+        }
+
+        private void EnsureMatchCornerStatsPanel(Transform root)
+        {
+            var existingPanel = root.Find("MatchCornerStatsPanel");
+            if (existingPanel != null)
+            {
+                var versionMarker = existingPanel.GetComponent<CornerStatsLayoutMarker>();
+                if (versionMarker != null &&
+                    versionMarker.Version >= MatchCornerStatsLayoutVersion &&
+                    matchCornerStatsText != null)
+                {
+                    return;
+                }
+
+                matchCornerStatsText = null;
+                Destroy(existingPanel.gameObject);
+            }
+
+            BuildMatchCornerStatsPanel(root);
+        }
+
+        private void BuildMatchCornerStatsPanel(Transform root)
+        {
+            if (matchCornerStatsText != null)
+            {
+                return;
+            }
+
+            var panelObject = new GameObject("MatchCornerStatsPanel");
+            panelObject.transform.SetParent(root, false);
+            panelObject.AddComponent<CornerStatsLayoutMarker>().Version = MatchCornerStatsLayoutVersion;
+
+            var panelRect = panelObject.AddComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0f, 1f);
+            panelRect.anchorMax = new Vector2(0f, 1f);
+            panelRect.pivot = new Vector2(0f, 1f);
+            panelRect.sizeDelta = new Vector2(168f, 52f);
+            panelRect.anchoredPosition = new Vector2(8f, -8f);
+
+            var panelImage = panelObject.AddComponent<Image>();
+            panelImage.color = new Color(0f, 0f, 0f, 0.42f);
+            panelImage.raycastTarget = false;
+
+            var labelObject = new GameObject("MatchCornerStatsText");
+            labelObject.transform.SetParent(panelObject.transform, false);
+            var labelRect = labelObject.AddComponent<RectTransform>();
+            labelRect.anchorMin = Vector2.zero;
+            labelRect.anchorMax = Vector2.one;
+            labelRect.offsetMin = new Vector2(10f, 6f);
+            labelRect.offsetMax = new Vector2(-10f, -6f);
+
+            matchCornerStatsText = labelObject.AddComponent<Text>();
+            matchCornerStatsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            matchCornerStatsText.fontSize = 16;
+            matchCornerStatsText.fontStyle = FontStyle.Bold;
+            matchCornerStatsText.alignment = TextAnchor.UpperLeft;
+            matchCornerStatsText.color = Color.white;
+            matchCornerStatsText.lineSpacing = 1f;
+            matchCornerStatsText.text = "Киллы: 0\nВыживших: 0";
+        }
+
+        private void EnsurePauseMenuPanel(Transform root)
+        {
+            if (pauseMenuPanel != null || root == null)
+            {
+                return;
+            }
+
+            var overlayObject = new GameObject("PauseMenuPanel");
+            overlayObject.transform.SetParent(root, false);
+            var overlayRect = overlayObject.AddComponent<RectTransform>();
+            overlayRect.anchorMin = Vector2.zero;
+            overlayRect.anchorMax = Vector2.one;
+            overlayRect.offsetMin = Vector2.zero;
+            overlayRect.offsetMax = Vector2.zero;
+
+            var overlayImage = overlayObject.AddComponent<Image>();
+            overlayImage.color = new Color(0.02f, 0.04f, 0.06f, 0.72f);
+            overlayImage.raycastTarget = true;
+
+            pauseMenuPanel = overlayObject;
+
+            var panelObject = new GameObject("Panel");
+            panelObject.transform.SetParent(overlayObject.transform, false);
+            var panelRect = panelObject.AddComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            panelRect.pivot = new Vector2(0.5f, 0.5f);
+            panelRect.sizeDelta = new Vector2(420f, 320f);
+
+            var panelImage = panelObject.AddComponent<Image>();
+            panelImage.color = new Color(0.08f, 0.1f, 0.12f, 0.96f);
+
+            var titleObject = new GameObject("Title");
+            titleObject.transform.SetParent(panelObject.transform, false);
+            var titleRect = titleObject.AddComponent<RectTransform>();
+            titleRect.anchorMin = new Vector2(0.5f, 1f);
+            titleRect.anchorMax = new Vector2(0.5f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.anchoredPosition = new Vector2(0f, -24f);
+            titleRect.sizeDelta = new Vector2(360f, 48f);
+            var titleText = titleObject.AddComponent<Text>();
+            titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            titleText.fontSize = 34;
+            titleText.fontStyle = FontStyle.Bold;
+            titleText.alignment = TextAnchor.MiddleCenter;
+            titleText.text = "Пауза";
+
+            CreatePauseMenuButton(
+                panelObject.transform,
+                "SettingsButton",
+                new Vector2(0f, 36f),
+                "Настройки",
+                HandlePauseSettingsPressed);
+
+            CreatePauseMenuButton(
+                panelObject.transform,
+                "ExitButton",
+                new Vector2(0f, -36f),
+                "Выйти в меню",
+                HandlePauseExitPressed);
+
+            pauseSettingsPanel = new GameObject("SettingsPanel");
+            pauseSettingsPanel.transform.SetParent(panelObject.transform, false);
+            var settingsRect = pauseSettingsPanel.AddComponent<RectTransform>();
+            settingsRect.anchorMin = Vector2.zero;
+            settingsRect.anchorMax = Vector2.one;
+            settingsRect.offsetMin = Vector2.zero;
+            settingsRect.offsetMax = Vector2.zero;
+
+            var settingsTitleObject = new GameObject("SettingsTitle");
+            settingsTitleObject.transform.SetParent(pauseSettingsPanel.transform, false);
+            var settingsTitleRect = settingsTitleObject.AddComponent<RectTransform>();
+            settingsTitleRect.anchorMin = new Vector2(0.5f, 1f);
+            settingsTitleRect.anchorMax = new Vector2(0.5f, 1f);
+            settingsTitleRect.pivot = new Vector2(0.5f, 1f);
+            settingsTitleRect.anchoredPosition = new Vector2(0f, -24f);
+            settingsTitleRect.sizeDelta = new Vector2(360f, 48f);
+            var settingsTitleText = settingsTitleObject.AddComponent<Text>();
+            settingsTitleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            settingsTitleText.fontSize = 30;
+            settingsTitleText.fontStyle = FontStyle.Bold;
+            settingsTitleText.alignment = TextAnchor.MiddleCenter;
+            settingsTitleText.text = "Настройки";
+
+            pauseMuteButtonLabel = CreatePauseMenuButton(
+                pauseSettingsPanel.transform,
+                "MuteButton",
+                new Vector2(0f, 48f),
+                isMuted ? "Звук: выкл" : "Звук: вкл",
+                HandleMutePressed);
+
+            pausePerfButtonLabel = CreatePauseMenuButton(
+                pauseSettingsPanel.transform,
+                "PerfButton",
+                new Vector2(0f, -16f),
+                performancePreset != null && performancePreset.MaxPerformanceEnabled ? "Графика: MAX" : "Графика: качество",
+                HandlePerfPressed);
+
+            CreatePauseMenuButton(
+                pauseSettingsPanel.transform,
+                "BackButton",
+                new Vector2(0f, -96f),
+                "Назад",
+                HandlePauseSettingsBackPressed);
+
+            pauseSettingsPanel.SetActive(false);
+            overlayObject.SetActive(false);
+            overlayObject.transform.SetAsLastSibling();
+        }
+
+        private Text CreatePauseMenuButton(
+            Transform parent,
+            string objectName,
+            Vector2 anchoredPosition,
+            string label,
+            UnityEngine.Events.UnityAction onClick)
+        {
+            var buttonObject = new GameObject(objectName);
+            buttonObject.transform.SetParent(parent, false);
+            var buttonRect = buttonObject.AddComponent<RectTransform>();
+            buttonRect.anchorMin = new Vector2(0.5f, 0.5f);
+            buttonRect.anchorMax = new Vector2(0.5f, 0.5f);
+            buttonRect.pivot = new Vector2(0.5f, 0.5f);
+            buttonRect.sizeDelta = new Vector2(280f, 52f);
+            buttonRect.anchoredPosition = anchoredPosition;
+
+            var buttonImage = buttonObject.AddComponent<Image>();
+            buttonImage.color = new Color(0.18f, 0.22f, 0.26f, 0.96f);
+
+            var button = buttonObject.AddComponent<Button>();
+            button.onClick.AddListener(onClick);
+
+            var buttonLabel = CreateLabel(buttonObject.transform, "Label", Vector2.zero, label);
+            var buttonLabelRect = buttonLabel.rectTransform;
+            buttonLabelRect.anchorMin = Vector2.zero;
+            buttonLabelRect.anchorMax = Vector2.one;
+            buttonLabelRect.offsetMin = Vector2.zero;
+            buttonLabelRect.offsetMax = Vector2.zero;
+            buttonLabel.fontSize = 20;
+            buttonLabel.fontStyle = FontStyle.Bold;
+            buttonLabel.alignment = TextAnchor.MiddleCenter;
+            return buttonLabel;
         }
 
         private void EnsurePerformancePresetButton()
@@ -1041,6 +1737,11 @@ namespace ShooterPrototype.UI
         }
 
         private sealed class CornerStatsLayoutMarker : MonoBehaviour
+        {
+            public int Version;
+        }
+
+        private sealed class GameOverPanelLayoutMarker : MonoBehaviour
         {
             public int Version;
         }
