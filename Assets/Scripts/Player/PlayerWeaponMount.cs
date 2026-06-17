@@ -681,7 +681,18 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            PlayerSkinOwnershipService.EquipmentChanged += HandleEquipmentChanged;
             EnsureWeaponMounted();
+        }
+
+        private void OnDisable()
+        {
+            PlayerSkinOwnershipService.EquipmentChanged -= HandleEquipmentChanged;
+        }
+
+        private void HandleEquipmentChanged()
+        {
+            RefreshEquippedWeaponSkin();
         }
 
         private void LateUpdate()
@@ -1376,6 +1387,39 @@ namespace ShooterPrototype.Player
             }
 
             ApplyEquippedWeaponProfile();
+            ApplyEquippedWeaponSkin();
+        }
+
+        private void ApplyEquippedWeaponSkin()
+        {
+            if (weaponInstance == null)
+            {
+                return;
+            }
+
+            WeaponKind kind;
+            if (activeWeaponProfile != null)
+            {
+                kind = activeWeaponProfile.Kind;
+            }
+            else
+            {
+                var profile = weaponInstance.GetComponent<WeaponProfile>() ??
+                              weaponInstance.GetComponentInChildren<WeaponProfile>(true);
+                if (profile == null)
+                {
+                    return;
+                }
+
+                kind = profile.Kind;
+            }
+
+            WeaponSkinApplier.ApplyEquippedSkin(weaponInstance.transform, kind);
+        }
+
+        public void RefreshEquippedWeaponSkin()
+        {
+            ApplyEquippedWeaponSkin();
         }
 
         private void ApplyEquippedWeaponProfile()

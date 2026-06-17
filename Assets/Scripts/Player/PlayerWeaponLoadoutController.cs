@@ -876,6 +876,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            weaponMount.RefreshEquippedWeaponSkin();
             weaponMount.SetThirdPersonWeaponRenderersEnabled(true);
 
             weaponHolster?.SyncArmedPoseFromMountedWeapon();

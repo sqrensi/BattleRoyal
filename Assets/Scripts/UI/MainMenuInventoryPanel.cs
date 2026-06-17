@@ -118,13 +118,30 @@ namespace ShooterPrototype.UI
 
         private void OnEquipmentChanged()
         {
+            playerPreview?.RefreshSkins();
+
             if (contentRect == null || itemSlots.Count == 0)
             {
                 return;
             }
 
             RefreshEquippedVisuals(pendingPulseItemId);
+            TryRefreshPreviewWeapon(pendingPulseItemId);
             pendingPulseItemId = null;
+        }
+
+        private void TryRefreshPreviewWeapon(string itemId)
+        {
+            if (string.IsNullOrWhiteSpace(itemId) ||
+                !PlayerSkinSelectionService.TryGetDefinitionById(itemId, out var definition))
+            {
+                return;
+            }
+
+            if (PlayerSkinSelectionService.TryResolveWeaponKind(definition, out var weaponKind))
+            {
+                playerPreview?.ShowWeaponWithSkin(weaponKind);
+            }
         }
 
         public void Show()
@@ -371,8 +388,9 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            playerPreview?.RefreshSkins();
             pendingPulseItemId = item.Id;
+            TryRefreshPreviewWeapon(item.Id);
+            playerPreview?.RefreshSkins();
             RefreshEquippedVisuals(pendingPulseItemId);
             pendingPulseItemId = null;
             uiSound?.PlayButton();
@@ -405,6 +423,8 @@ namespace ShooterPrototype.UI
                 yield break;
             }
 
+            RefreshEquippedVisuals(pendingPulseItemId);
+            TryRefreshPreviewWeapon(item.Id);
             playerPreview?.RefreshSkins();
             uiSound?.PlayButton();
         }

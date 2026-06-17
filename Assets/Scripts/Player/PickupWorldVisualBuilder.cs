@@ -4,6 +4,7 @@ namespace ShooterPrototype.Player
 {
     /// <summary>
     /// Builds world pickup visuals from source prefabs by keeping render meshes only.
+    /// Pickups always keep the prefab default look; player inventory skins are applied only after pickup.
     /// </summary>
     internal static class PickupWorldVisualBuilder
     {

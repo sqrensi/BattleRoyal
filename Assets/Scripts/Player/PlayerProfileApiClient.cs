@@ -15,6 +15,10 @@ namespace ShooterPrototype.Player
         public string gloves;
         public string face;
         public string hair;
+        public string weaponAssault;
+        public string weaponSniper;
+        public string weaponPistol;
+        public string weaponMp7;
     }
 
     [Serializable]

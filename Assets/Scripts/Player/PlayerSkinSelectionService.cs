@@ -11,8 +11,11 @@ namespace ShooterPrototype.Player
         Boots = 2,
         Gloves = 3,
         Face = 4,
-        Hair = 5
-        // Future: Hat, Mask, Backpack, etc.
+        Hair = 5,
+        WeaponAssaultRifle = 6,
+        WeaponSniperRifle = 7,
+        WeaponPistol = 8,
+        WeaponMp7 = 9
     }
 
     public readonly struct PlayerSkinDefinition
@@ -22,13 +25,15 @@ namespace ShooterPrototype.Player
             string displayName,
             string prefabResourcePath,
             string materialResourcePath,
-            string pictureResourcePath = "")
+            string pictureResourcePath = "",
+            WeaponKind? weaponKind = null)
         {
             Id = id ?? string.Empty;
             DisplayName = displayName ?? string.Empty;
             PrefabResourcePath = prefabResourcePath ?? string.Empty;
             MaterialResourcePath = materialResourcePath ?? string.Empty;
             PictureResourcePath = pictureResourcePath ?? string.Empty;
+            WeaponKind = weaponKind;
         }
 
         public string Id { get; }
@@ -36,13 +41,19 @@ namespace ShooterPrototype.Player
         public string PrefabResourcePath { get; }
         public string MaterialResourcePath { get; }
         public string PictureResourcePath { get; }
+        public WeaponKind? WeaponKind { get; }
         [Obsolete("Use PrefabResourcePath.")]
         public string MeshResourcePath => PrefabResourcePath;
 
         [Obsolete("Use PictureResourcePath.")]
         public string IconFileName => PictureResourcePath;
 
-        public bool IsValid => !string.IsNullOrWhiteSpace(PrefabResourcePath);
+        public bool IsWeaponSkin => WeaponKind.HasValue;
+
+        public bool IsValid =>
+            IsWeaponSkin
+                ? !string.IsNullOrWhiteSpace(PictureResourcePath)
+                : !string.IsNullOrWhiteSpace(PrefabResourcePath);
     }
 
     public static class PlayerSkinSelectionService
@@ -61,7 +72,11 @@ namespace ShooterPrototype.Player
             PlayerSkinSlot.Gloves,
             PlayerSkinSlot.Pants,
             PlayerSkinSlot.Shirt,
-            PlayerSkinSlot.Boots
+            PlayerSkinSlot.Boots,
+            PlayerSkinSlot.WeaponAssaultRifle,
+            PlayerSkinSlot.WeaponSniperRifle,
+            PlayerSkinSlot.WeaponPistol,
+            PlayerSkinSlot.WeaponMp7
         };
 
         public static IReadOnlyList<PlayerSkinDefinition> GetOptions(PlayerSkinSlot slot)
@@ -83,6 +98,29 @@ namespace ShooterPrototype.Player
         {
             PlayerSkinOwnershipService.EnsureInitialized();
             return PlayerSkinOwnershipService.GetOwnedCatalogItems();
+        }
+
+        public static bool TryResolveWeaponKind(PlayerSkinDefinition item, out WeaponKind kind)
+        {
+            if (item.WeaponKind.HasValue)
+            {
+                kind = item.WeaponKind.Value;
+                return true;
+            }
+
+            kind = default;
+            return false;
+        }
+
+        public static bool TryGetEquippedWeaponSkin(WeaponKind kind, out PlayerSkinDefinition definition)
+        {
+            if (!WeaponSkinResourcePaths.TryGetSlotForKind(kind, out var slot))
+            {
+                definition = default;
+                return false;
+            }
+
+            return TryGetAppliedSkin(slot, out definition);
         }
 
         public static bool TryGetDefinitionById(string skinId, out PlayerSkinDefinition definition)
@@ -137,42 +175,58 @@ namespace ShooterPrototype.Player
         public static bool TryGetAppliedSkin(PlayerSkinSlot slot, out PlayerSkinDefinition definition)
         {
             PlayerSkinOwnershipService.EnsureInitialized();
+            definition = default;
 
-            var options = PlayerSkinOwnershipService.GetOwnedOptions(slot);
-            if (options.Count == 0)
+            if (PlayerSkinResourcePaths.IsAttachmentSlot(slot))
             {
-                definition = default;
-                return false;
-            }
-
-            var savedId = NormalizeSavedSkinId(PlayerPrefs.GetString(BuildPrefKey(slot), string.Empty));
-            if (PlayerSkinResourcePaths.IsAttachmentSlot(slot) &&
-                string.Equals(savedId, LegacyUnequippedSkinId, StringComparison.OrdinalIgnoreCase))
-            {
-                definition = default;
-                return false;
-            }
-
-            if (string.IsNullOrWhiteSpace(savedId))
-            {
-                return TryResolveDefaultAppliedSkin(slot, options, out definition);
-            }
-
-            for (var i = 0; i < options.Count; i++)
-            {
-                if (string.Equals(options[i].Id, savedId, StringComparison.OrdinalIgnoreCase))
+                var attachmentId = ResolveEquippedSkinId(slot);
+                if (string.IsNullOrWhiteSpace(attachmentId))
                 {
-                    definition = options[i];
-                    return true;
+                    return false;
                 }
+
+                return TryGetDefinitionById(attachmentId, out definition);
             }
 
-            return TryResolveDefaultAppliedSkin(slot, options, out definition);
+            var skinId = ResolveEquippedSkinId(slot);
+            if (string.IsNullOrWhiteSpace(skinId))
+            {
+                return false;
+            }
+
+            return TryGetDefinitionById(skinId, out definition);
         }
 
         public static bool SupportsUnequip(PlayerSkinSlot slot)
         {
-            return PlayerSkinResourcePaths.IsAttachmentSlot(slot);
+            return PlayerSkinResourcePaths.IsAttachmentSlot(slot) ||
+                   WeaponSkinResourcePaths.IsWeaponSkinSlot(slot);
+        }
+
+        public static string GetSavedSkinId(PlayerSkinSlot slot)
+        {
+            return NormalizeSavedSkinId(PlayerPrefs.GetString(BuildPrefKey(slot), string.Empty));
+        }
+
+        /// <summary>
+        /// Authoritative equipped skin id for UI, visuals, and network capture.
+        /// When server-synced, profile DTO wins; otherwise PlayerPrefs with catalog defaults.
+        /// </summary>
+        public static string ResolveEquippedSkinId(PlayerSkinSlot slot)
+        {
+            PlayerSkinOwnershipService.EnsureInitialized();
+
+            if (WeaponSkinResourcePaths.IsWeaponSkinSlot(slot))
+            {
+                return ResolveEquippedWeaponSkinId(slot);
+            }
+
+            if (PlayerSkinResourcePaths.IsAttachmentSlot(slot))
+            {
+                return ResolveEquippedAttachmentSkinId(slot);
+            }
+
+            return ResolveEquippedClothingSkinId(slot);
         }
 
         public static bool IsSlotApplied(PlayerSkinSlot slot)
@@ -187,8 +241,31 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            return TryGetAppliedSkin(slot, out var applied) &&
-                   string.Equals(applied.Id, item.Id, StringComparison.OrdinalIgnoreCase);
+            var savedId = ResolveEquippedSkinId(slot);
+            if (WeaponSkinResourcePaths.IsWeaponSkinSlot(slot))
+            {
+                if (string.IsNullOrWhiteSpace(savedId))
+                {
+                    return false;
+                }
+
+                if (WeaponSkinResourcePaths.TryParseSkinId(savedId, out _, out var variantId) &&
+                    string.Equals(variantId, "000", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                return string.Equals(savedId, item.Id, StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (PlayerSkinResourcePaths.IsAttachmentSlot(slot) &&
+                string.Equals(savedId, LegacyUnequippedSkinId, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            return !string.IsNullOrWhiteSpace(savedId) &&
+                   string.Equals(savedId, item.Id, StringComparison.OrdinalIgnoreCase);
         }
 
         public static bool TryEquip(PlayerSkinDefinition item)
@@ -213,7 +290,16 @@ namespace ShooterPrototype.Player
                     return false;
                 }
 
-                SaveSelected(slot, LegacyUnequippedSkinId);
+                if (WeaponSkinResourcePaths.IsWeaponSkinSlot(slot) &&
+                    WeaponSkinResourcePaths.TryGetWeaponKind(slot, out var weaponKind))
+                {
+                    SaveSelected(slot, WeaponSkinResourcePaths.BuildSkinId(weaponKind, "000"));
+                }
+                else
+                {
+                    SaveSelected(slot, LegacyUnequippedSkinId);
+                }
+
                 return true;
             }
 
@@ -274,39 +360,42 @@ namespace ShooterPrototype.Player
 
         public static PlayerSkinNetworkState CaptureLocalNetworkState()
         {
-            if (PlayerProfileService.IsServerSynced && PlayerProfileService.CurrentProfile?.equipped != null)
-            {
-                return CaptureFromEquipped(PlayerProfileService.CurrentProfile.equipped);
-            }
-
-            return CaptureFromPlayerPrefs();
+            return BuildResolvedNetworkState();
         }
 
         public static PlayerSkinNetworkState CaptureFromEquipped(PlayerProfileEquippedDto equipped)
         {
             if (equipped == null)
             {
-                return CaptureFromPlayerPrefs();
+                return BuildResolvedNetworkState();
             }
 
             return new PlayerSkinNetworkState(
-                equipped.shirt,
-                equipped.pants,
-                equipped.boots,
-                equipped.gloves,
-                equipped.face,
-                equipped.hair);
+                ResolveEquippedClothingSkinId(PlayerSkinSlot.Shirt, equipped.shirt),
+                ResolveEquippedClothingSkinId(PlayerSkinSlot.Pants, equipped.pants),
+                ResolveEquippedClothingSkinId(PlayerSkinSlot.Boots, equipped.boots),
+                ResolveEquippedClothingSkinId(PlayerSkinSlot.Gloves, equipped.gloves),
+                ResolveEquippedAttachmentSkinId(PlayerSkinSlot.Face, equipped.face),
+                ResolveEquippedAttachmentSkinId(PlayerSkinSlot.Hair, equipped.hair),
+                ResolveEquippedWeaponSkinId(PlayerSkinSlot.WeaponAssaultRifle, equipped.weaponAssault),
+                ResolveEquippedWeaponSkinId(PlayerSkinSlot.WeaponSniperRifle, equipped.weaponSniper),
+                ResolveEquippedWeaponSkinId(PlayerSkinSlot.WeaponPistol, equipped.weaponPistol),
+                ResolveEquippedWeaponSkinId(PlayerSkinSlot.WeaponMp7, equipped.weaponMp7));
         }
 
-        private static PlayerSkinNetworkState CaptureFromPlayerPrefs()
+        private static PlayerSkinNetworkState BuildResolvedNetworkState()
         {
             return new PlayerSkinNetworkState(
-                GetAppliedSkinId(PlayerSkinSlot.Shirt),
-                GetAppliedSkinId(PlayerSkinSlot.Pants),
-                GetAppliedSkinId(PlayerSkinSlot.Boots),
-                GetAppliedSkinId(PlayerSkinSlot.Gloves),
-                GetAppliedSkinId(PlayerSkinSlot.Face),
-                GetAppliedSkinId(PlayerSkinSlot.Hair));
+                ResolveEquippedSkinId(PlayerSkinSlot.Shirt),
+                ResolveEquippedSkinId(PlayerSkinSlot.Pants),
+                ResolveEquippedSkinId(PlayerSkinSlot.Boots),
+                ResolveEquippedSkinId(PlayerSkinSlot.Gloves),
+                ResolveEquippedSkinId(PlayerSkinSlot.Face),
+                ResolveEquippedSkinId(PlayerSkinSlot.Hair),
+                ResolveEquippedSkinId(PlayerSkinSlot.WeaponAssaultRifle),
+                ResolveEquippedSkinId(PlayerSkinSlot.WeaponSniperRifle),
+                ResolveEquippedSkinId(PlayerSkinSlot.WeaponPistol),
+                ResolveEquippedSkinId(PlayerSkinSlot.WeaponMp7));
         }
 
         public static void ApplyNetworkStateToPlayer(
@@ -406,6 +495,20 @@ namespace ShooterPrototype.Player
             var catalog = new Dictionary<PlayerSkinSlot, List<PlayerSkinDefinition>>();
             foreach (PlayerSkinSlot slot in Enum.GetValues(typeof(PlayerSkinSlot)))
             {
+                if (WeaponSkinResourcePaths.IsWeaponSkinSlot(slot))
+                {
+                    if (WeaponSkinResourcePaths.TryGetWeaponKind(slot, out var weaponKind))
+                    {
+                        catalog[slot] = DiscoverWeaponSkinsForKind(weaponKind);
+                    }
+                    else
+                    {
+                        catalog[slot] = new List<PlayerSkinDefinition>(0);
+                    }
+
+                    continue;
+                }
+
                 if (PlayerSkinResourcePaths.IsAttachmentSlot(slot))
                 {
                     catalog[slot] = DiscoverAttachmentsForCategory(
@@ -419,6 +522,57 @@ namespace ShooterPrototype.Player
             }
 
             return catalog;
+        }
+
+        private static List<PlayerSkinDefinition> DiscoverWeaponSkinsForKind(WeaponKind kind)
+        {
+            var results = new List<PlayerSkinDefinition>(8);
+            var displayBase = GetWeaponDisplayName(kind);
+
+            for (var i = 0; i <= MaxVariantProbeCount; i++)
+            {
+                var variantId = i.ToString("000");
+                var picturePath = WeaponSkinResourcePaths.BuildPicturePath(kind, variantId);
+                if (!HasResourcePicture(picturePath))
+                {
+                    if (results.Count > 0)
+                    {
+                        break;
+                    }
+
+                    continue;
+                }
+
+                var materialPath = string.Empty;
+                if (i > 0)
+                {
+                    var candidateMaterialPath = WeaponSkinResourcePaths.BuildMaterialPath(kind, variantId);
+                    if (Resources.Load<Material>(candidateMaterialPath) != null)
+                    {
+                        materialPath = candidateMaterialPath;
+                    }
+                }
+
+                var skinId = WeaponSkinResourcePaths.BuildSkinId(kind, variantId);
+                var displayName = i == 0
+                    ? $"{displayBase} (стандарт)"
+                    : $"{displayBase} {variantId}";
+                results.Add(new PlayerSkinDefinition(
+                    skinId,
+                    displayName,
+                    string.Empty,
+                    materialPath,
+                    picturePath,
+                    kind));
+            }
+
+            return results;
+        }
+
+        private static bool HasResourcePicture(string picturePath)
+        {
+            return Resources.Load<Sprite>(picturePath) != null ||
+                   Resources.Load<Texture2D>(picturePath) != null;
         }
 
         private static List<PlayerSkinDefinition> DiscoverAttachmentsForCategory(
@@ -512,8 +666,33 @@ namespace ShooterPrototype.Player
                     return "Лицо";
                 case PlayerSkinSlot.Hair:
                     return "Волосы";
+                case PlayerSkinSlot.WeaponAssaultRifle:
+                    return "AK-47";
+                case PlayerSkinSlot.WeaponSniperRifle:
+                    return "Снайперка";
+                case PlayerSkinSlot.WeaponPistol:
+                    return "Пистолет";
+                case PlayerSkinSlot.WeaponMp7:
+                    return "MP7";
                 default:
                     return "Скин";
+            }
+        }
+
+        private static string GetWeaponDisplayName(WeaponKind kind)
+        {
+            switch (kind)
+            {
+                case WeaponKind.AssaultRifle:
+                    return "AK-47";
+                case WeaponKind.SniperRifle:
+                    return "Снайперка";
+                case WeaponKind.Pistol:
+                    return "Пистолет";
+                case WeaponKind.Mp7:
+                    return "MP7";
+                default:
+                    return "Оружие";
             }
         }
 
@@ -548,9 +727,122 @@ namespace ShooterPrototype.Player
 
         private static string GetAppliedSkinId(PlayerSkinSlot slot)
         {
-            return TryGetAppliedSkin(slot, out var definition) && !string.IsNullOrWhiteSpace(definition.Id)
-                ? definition.Id
-                : string.Empty;
+            return ResolveEquippedSkinId(slot);
+        }
+
+        private static string ReadRawEquippedId(PlayerSkinSlot slot)
+        {
+            if (PlayerProfileService.IsServerSynced &&
+                PlayerProfileService.CurrentProfile?.equipped != null)
+            {
+                var fromProfile = ReadEquippedIdFromProfile(
+                    slot,
+                    PlayerProfileService.CurrentProfile.equipped);
+                if (!string.IsNullOrWhiteSpace(fromProfile))
+                {
+                    return fromProfile;
+                }
+            }
+
+            return PlayerPrefs.GetString(BuildPrefKey(slot), string.Empty);
+        }
+
+        private static string ReadEquippedIdFromProfile(
+            PlayerSkinSlot slot,
+            PlayerProfileEquippedDto equipped)
+        {
+            if (equipped == null)
+            {
+                return string.Empty;
+            }
+
+            switch (slot)
+            {
+                case PlayerSkinSlot.Shirt:
+                    return equipped.shirt;
+                case PlayerSkinSlot.Pants:
+                    return equipped.pants;
+                case PlayerSkinSlot.Boots:
+                    return equipped.boots;
+                case PlayerSkinSlot.Gloves:
+                    return equipped.gloves;
+                case PlayerSkinSlot.Face:
+                    return equipped.face;
+                case PlayerSkinSlot.Hair:
+                    return equipped.hair;
+                case PlayerSkinSlot.WeaponAssaultRifle:
+                    return equipped.weaponAssault;
+                case PlayerSkinSlot.WeaponSniperRifle:
+                    return equipped.weaponSniper;
+                case PlayerSkinSlot.WeaponPistol:
+                    return equipped.weaponPistol;
+                case PlayerSkinSlot.WeaponMp7:
+                    return equipped.weaponMp7;
+                default:
+                    return string.Empty;
+            }
+        }
+
+        private static string ResolveEquippedClothingSkinId(PlayerSkinSlot slot)
+        {
+            return ResolveEquippedClothingSkinId(slot, ReadRawEquippedId(slot));
+        }
+
+        private static string ResolveEquippedClothingSkinId(PlayerSkinSlot slot, string rawId)
+        {
+            var normalized = NormalizeSavedSkinId(rawId);
+            if (!string.IsNullOrWhiteSpace(normalized) &&
+                TryGetDefinitionById(normalized, out _))
+            {
+                return normalized;
+            }
+
+            if (PlayerSkinOwnershipService.TryGetDefaultEquipped(slot, out var definition) &&
+                definition.IsValid)
+            {
+                return definition.Id;
+            }
+
+            return string.Empty;
+        }
+
+        private static string ResolveEquippedAttachmentSkinId(PlayerSkinSlot slot)
+        {
+            return ResolveEquippedAttachmentSkinId(slot, ReadRawEquippedId(slot));
+        }
+
+        private static string ResolveEquippedAttachmentSkinId(PlayerSkinSlot slot, string rawId)
+        {
+            var normalized = NormalizeSavedSkinId(rawId);
+            if (string.IsNullOrWhiteSpace(normalized) ||
+                string.Equals(normalized, LegacyUnequippedSkinId, StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
+            return TryGetDefinitionById(normalized, out _) ? normalized : string.Empty;
+        }
+
+        private static string ResolveEquippedWeaponSkinId(PlayerSkinSlot slot)
+        {
+            return ResolveEquippedWeaponSkinId(slot, ReadRawEquippedId(slot));
+        }
+
+        private static string ResolveEquippedWeaponSkinId(PlayerSkinSlot slot, string rawId)
+        {
+            var normalized = NormalizeSavedSkinId(rawId);
+            if (!string.IsNullOrWhiteSpace(normalized) &&
+                TryGetDefinitionById(normalized, out _))
+            {
+                return normalized;
+            }
+
+            if (WeaponSkinResourcePaths.TryGetWeaponKind(slot, out var kind))
+            {
+                return WeaponSkinResourcePaths.BuildSkinId(kind, "000");
+            }
+
+            return string.Empty;
         }
 
         private static bool TryResolveDefaultAppliedSkin(
@@ -558,6 +850,12 @@ namespace ShooterPrototype.Player
             IReadOnlyList<PlayerSkinDefinition> options,
             out PlayerSkinDefinition definition)
         {
+            if (WeaponSkinResourcePaths.IsWeaponSkinSlot(slot) &&
+                TryGetDefaultWeaponSkinDefinition(slot, out definition))
+            {
+                return true;
+            }
+
             if (PlayerSkinOwnershipService.TryGetDefaultEquipped(slot, out definition))
             {
                 return true;
@@ -567,6 +865,21 @@ namespace ShooterPrototype.Player
             {
                 definition = options[0];
                 return true;
+            }
+
+            definition = default;
+            return false;
+        }
+
+        private static bool TryGetDefaultWeaponSkinDefinition(
+            PlayerSkinSlot slot,
+            out PlayerSkinDefinition definition)
+        {
+            if (WeaponSkinResourcePaths.TryGetWeaponKind(slot, out var kind))
+            {
+                return TryGetDefinitionById(
+                    WeaponSkinResourcePaths.BuildSkinId(kind, "000"),
+                    out definition);
             }
 
             definition = default;

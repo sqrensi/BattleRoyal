@@ -122,6 +122,9 @@ namespace ShooterPrototype.Player
                 clothingApplier = playerRoot.AddComponent<RemoteResourceClothingApplier>();
             }
 
+            PlayerSkinSelectionService.ApplyTo(
+                clothingApplier,
+                PlayerSkinSelectionService.CaptureLocalNetworkState());
             clothingApplier.ApplyToRemoteVisual(syntyVisual, forceReapply: true);
         }
 
@@ -149,6 +152,9 @@ namespace ShooterPrototype.Player
                 clothingApplier = playerRoot.AddComponent<RemoteResourceClothingApplier>();
             }
 
+            PlayerSkinSelectionService.ApplyTo(
+                clothingApplier,
+                PlayerSkinSelectionService.CaptureLocalNetworkState());
             clothingApplier.ApplyToLocalVisual(syntyVisual, armsPresenter, forceReapply: true);
         }
 

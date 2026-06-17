@@ -57,7 +57,10 @@ namespace ShooterPrototype.Player
             }
 
             presentation.Configure(thirdPersonBody);
-            presentation.SetWeaponEquipped(false);
+            if (!MainMenuPlayerPreview.IsMenuPreviewSpawn)
+            {
+                presentation.SetWeaponEquipped(false);
+            }
         }
 
         private void WireRemoteMedkit(Transform thirdPersonBody)

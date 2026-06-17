@@ -28,7 +28,7 @@ namespace ShooterPrototype.Network
 
             var offset = 4;
             var version = ReadU8(data, ref offset);
-            if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11)
+            if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12)
             {
                 return false;
             }
@@ -99,9 +99,17 @@ namespace ShooterPrototype.Network
                     offset += modelLen;
                 }
 
-                if (version >= 11)
+                if (version >= 12)
                 {
-                    if (!PlayerSkinNetworkCodec.TryReadSlotIds(data, ref offset, out skinState))
+                    if (!PlayerSkinNetworkCodec.TryReadClothingSlotIds(data, ref offset, out skinState) ||
+                        !PlayerSkinNetworkCodec.TryReadWeaponSlotIds(data, ref offset, in skinState, out skinState))
+                    {
+                        return false;
+                    }
+                }
+                else if (version >= 11)
+                {
+                    if (!PlayerSkinNetworkCodec.TryReadClothingSlotIds(data, ref offset, out skinState))
                     {
                         return false;
                     }
@@ -319,6 +327,10 @@ namespace ShooterPrototype.Network
                     skinGloves = skinState.GlovesId,
                     skinFace = skinState.FaceId,
                     skinHair = skinState.HairId,
+                    skinWeaponAssault = skinState.WeaponAssaultId,
+                    skinWeaponSniper = skinState.WeaponSniperId,
+                    skinWeaponPistol = skinState.WeaponPistolId,
+                    skinWeaponMp7 = skinState.WeaponMp7Id,
                     position = new RealtimeTransportClient.PositionDto { x = px, y = py, z = pz },
                     yaw = yaw,
                     velX = velX,

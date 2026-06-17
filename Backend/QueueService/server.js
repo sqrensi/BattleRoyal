@@ -1370,6 +1370,7 @@ function readPoseBufferU32(buffer, offset) {
 }
 
 const SKIN_SLOT_COUNT = 6;
+const WEAPON_SKIN_SLOT_COUNT = 4;
 const MAX_SKIN_ID_LEN = 48;
 
 function normalizeSkinId(value) {
@@ -1388,6 +1389,10 @@ function normalizeSkinIds(message) {
     skinGloves: normalizeSkinId(message?.skinGloves),
     skinFace: normalizeSkinId(message?.skinFace),
     skinHair: normalizeSkinId(message?.skinHair),
+    skinWeaponAssault: normalizeSkinId(message?.skinWeaponAssault),
+    skinWeaponSniper: normalizeSkinId(message?.skinWeaponSniper),
+    skinWeaponPistol: normalizeSkinId(message?.skinWeaponPistol),
+    skinWeaponMp7: normalizeSkinId(message?.skinWeaponMp7),
   };
 }
 
@@ -1401,11 +1406,15 @@ function applySkinIdsToPresence(presence, skins) {
   presence.skinGloves = skins.skinGloves || "";
   presence.skinFace = skins.skinFace || "";
   presence.skinHair = skins.skinHair || "";
+  presence.skinWeaponAssault = skins.skinWeaponAssault || "";
+  presence.skinWeaponSniper = skins.skinWeaponSniper || "";
+  presence.skinWeaponPistol = skins.skinWeaponPistol || "";
+  presence.skinWeaponMp7 = skins.skinWeaponMp7 || "";
 }
 
-function readSkinBlock(buffer, offset) {
+function readSkinBlock(buffer, offset, slotCount = SKIN_SLOT_COUNT) {
   const ids = [];
-  for (let i = 0; i < SKIN_SLOT_COUNT; i++) {
+  for (let i = 0; i < slotCount; i++) {
     const len = buffer[offset];
     offset += 1;
     if (len > MAX_SKIN_ID_LEN || offset + len > buffer.length) {
@@ -1435,6 +1444,22 @@ function writeSkinBlockChunks(chunks, presence) {
   }
 }
 
+function writeWeaponSkinBlockChunks(chunks, presence) {
+  const ids = [
+    presence?.skinWeaponAssault || "",
+    presence?.skinWeaponSniper || "",
+    presence?.skinWeaponPistol || "",
+    presence?.skinWeaponMp7 || "",
+  ];
+  for (let i = 0; i < ids.length; i++) {
+    const bytes = Buffer.from(ids[i].slice(0, MAX_SKIN_ID_LEN), "utf8");
+    chunks.push(Buffer.from([bytes.length]));
+    if (bytes.length > 0) {
+      chunks.push(bytes);
+    }
+  }
+}
+
 function decodeBinaryPose(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 12) {
     return null;
@@ -1445,7 +1470,7 @@ function decodeBinaryPose(buffer) {
   }
 
   const version = buffer[4];
-  if (version !== 1 && version !== 2) {
+  if (version !== 1 && version !== 2 && version !== 3) {
     return null;
   }
 
@@ -1467,18 +1492,40 @@ function decodeBinaryPose(buffer) {
   let skinGloves = "";
   let skinFace = "";
   let skinHair = "";
+  let skinWeaponAssault = "";
+  let skinWeaponSniper = "";
+  let skinWeaponPistol = "";
+  let skinWeaponMp7 = "";
   if (version >= 2) {
-    const skinBlock = readSkinBlock(buffer, offset);
-    if (!skinBlock) {
-      return null;
+    if (version >= 3) {
+      const legacyBlock = readSkinBlock(buffer, offset, SKIN_SLOT_COUNT + WEAPON_SKIN_SLOT_COUNT);
+      if (!legacyBlock) {
+        return null;
+      }
+      offset = legacyBlock.offset;
+      skinShirt = legacyBlock.ids[0] || "";
+      skinPants = legacyBlock.ids[1] || "";
+      skinBoots = legacyBlock.ids[2] || "";
+      skinGloves = legacyBlock.ids[3] || "";
+      skinFace = legacyBlock.ids[4] || "";
+      skinHair = legacyBlock.ids[5] || "";
+      skinWeaponAssault = legacyBlock.ids[6] || "";
+      skinWeaponSniper = legacyBlock.ids[7] || "";
+      skinWeaponPistol = legacyBlock.ids[8] || "";
+      skinWeaponMp7 = legacyBlock.ids[9] || "";
+    } else {
+      const clothingBlock = readSkinBlock(buffer, offset, SKIN_SLOT_COUNT);
+      if (!clothingBlock) {
+        return null;
+      }
+      offset = clothingBlock.offset;
+      skinShirt = clothingBlock.ids[0] || "";
+      skinPants = clothingBlock.ids[1] || "";
+      skinBoots = clothingBlock.ids[2] || "";
+      skinGloves = clothingBlock.ids[3] || "";
+      skinFace = clothingBlock.ids[4] || "";
+      skinHair = clothingBlock.ids[5] || "";
     }
-    offset = skinBlock.offset;
-    skinShirt = skinBlock.ids[0] || "";
-    skinPants = skinBlock.ids[1] || "";
-    skinBoots = skinBlock.ids[2] || "";
-    skinGloves = skinBlock.ids[3] || "";
-    skinFace = skinBlock.ids[4] || "";
-    skinHair = skinBlock.ids[5] || "";
   }
 
   const minSize = offset + 121;
@@ -1522,6 +1569,17 @@ function decodeBinaryPose(buffer) {
   const shotEndY = readPoseBufferF32(buffer, offset); offset += 4;
   const shotEndZ = readPoseBufferF32(buffer, offset); offset += 4;
 
+  if (version === 2 && offset < buffer.length) {
+    const weaponBlock = readSkinBlock(buffer, offset, WEAPON_SKIN_SLOT_COUNT);
+    if (weaponBlock) {
+      offset = weaponBlock.offset;
+      skinWeaponAssault = weaponBlock.ids[0] || "";
+      skinWeaponSniper = weaponBlock.ids[1] || "";
+      skinWeaponPistol = weaponBlock.ids[2] || "";
+      skinWeaponMp7 = weaponBlock.ids[3] || "";
+    }
+  }
+
   return {
     type: "pose",
     poseSeq,
@@ -1532,6 +1590,10 @@ function decodeBinaryPose(buffer) {
     skinGloves,
     skinFace,
     skinHair,
+    skinWeaponAssault,
+    skinWeaponSniper,
+    skinWeaponPistol,
+    skinWeaponMp7,
     position: { x, y, z },
     yaw,
     lookPitch,
@@ -1975,6 +2037,10 @@ function createDefaultPresence(sampleTick, sampleTimeMs) {
     skinGloves: "",
     skinFace: "",
     skinHair: "",
+    skinWeaponAssault: "",
+    skinWeaponSniper: "",
+    skinWeaponPistol: "",
+    skinWeaponMp7: "",
     shotSeq: 0,
     shotOriginX: 0,
     shotOriginY: 0,
@@ -4033,7 +4099,7 @@ function encodeSnapshotBinary(payload) {
     const chunks = [];
     const header = Buffer.alloc(11);
     header.write("RTS1", 0, 4, "ascii");
-    header.writeUInt8(11, 4);
+    header.writeUInt8(12, 4);
     header.writeUInt32LE(payload.serverTick >>> 0, 5);
     header.writeUInt16LE(payload.serverTickRate >>> 0, 9);
     chunks.push(header);
@@ -4066,6 +4132,7 @@ function encodeSnapshotBinary(payload) {
       chunks.push(Buffer.from([Math.min(255, modelBytes.length)]));
       chunks.push(modelBytes);
       writeSkinBlockChunks(chunks, player);
+      writeWeaponSkinBlockChunks(chunks, player);
 
       const pos = player.position || { x: 0, y: 0, z: 0 };
       const body = Buffer.alloc(35);
@@ -4278,6 +4345,10 @@ function collectRealtimePlayersForMatch(matchId, ownerTicketId) {
       skinGloves: ticket.presence.skinGloves || "",
       skinFace: ticket.presence.skinFace || "",
       skinHair: ticket.presence.skinHair || "",
+      skinWeaponAssault: ticket.presence.skinWeaponAssault || "",
+      skinWeaponSniper: ticket.presence.skinWeaponSniper || "",
+      skinWeaponPistol: ticket.presence.skinWeaponPistol || "",
+      skinWeaponMp7: ticket.presence.skinWeaponMp7 || "",
       shotSeq: Number.isFinite(ticket.presence.shotSeq) ? ticket.presence.shotSeq : 0,
       shotOriginX: Number.isFinite(ticket.presence.shotOriginX) ? ticket.presence.shotOriginX : 0,
       shotOriginY: Number.isFinite(ticket.presence.shotOriginY) ? ticket.presence.shotOriginY : 0,

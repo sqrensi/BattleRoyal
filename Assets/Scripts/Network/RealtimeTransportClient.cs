@@ -53,6 +53,10 @@ namespace ShooterPrototype.Network
             public string skinGloves;
             public string skinFace;
             public string skinHair;
+            public string skinWeaponAssault;
+            public string skinWeaponSniper;
+            public string skinWeaponPistol;
+            public string skinWeaponMp7;
             public PositionDto position;
             public float yaw;
             public float lookPitch;
@@ -587,6 +591,10 @@ namespace ShooterPrototype.Network
             public string skinGloves;
             public string skinFace;
             public string skinHair;
+            public string skinWeaponAssault;
+            public string skinWeaponSniper;
+            public string skinWeaponPistol;
+            public string skinWeaponMp7;
             public PositionDto position;
             public float yaw;
             public float lookPitch;
@@ -965,6 +973,10 @@ namespace ShooterPrototype.Network
                 skinGloves = skinState.GlovesId ?? string.Empty,
                 skinFace = skinState.FaceId ?? string.Empty,
                 skinHair = skinState.HairId ?? string.Empty,
+                skinWeaponAssault = skinState.WeaponAssaultId ?? string.Empty,
+                skinWeaponSniper = skinState.WeaponSniperId ?? string.Empty,
+                skinWeaponPistol = skinState.WeaponPistolId ?? string.Empty,
+                skinWeaponMp7 = skinState.WeaponMp7Id ?? string.Empty,
                 yaw = yaw,
                 lookPitch = lookPitch,
                 shotSeq = Math.Max(0, shotSeq),
@@ -1051,7 +1063,11 @@ namespace ShooterPrototype.Network
                     message.skinBoots,
                     message.skinGloves,
                     message.skinFace,
-                    message.skinHair),
+                    message.skinHair,
+                    message.skinWeaponAssault,
+                    message.skinWeaponSniper,
+                    message.skinWeaponPistol,
+                    message.skinWeaponMp7),
                 PosX = message.position?.x ?? 0f,
                 PosY = message.position?.y ?? 0f,
                 PosZ = message.position?.z ?? 0f,
@@ -1150,7 +1166,11 @@ namespace ShooterPrototype.Network
                 !string.Equals(nextPose.skinBoots, lastSentPoseMessage.skinBoots, StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(nextPose.skinGloves, lastSentPoseMessage.skinGloves, StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(nextPose.skinFace, lastSentPoseMessage.skinFace, StringComparison.OrdinalIgnoreCase) ||
-                !string.Equals(nextPose.skinHair, lastSentPoseMessage.skinHair, StringComparison.OrdinalIgnoreCase))
+                !string.Equals(nextPose.skinHair, lastSentPoseMessage.skinHair, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(nextPose.skinWeaponAssault, lastSentPoseMessage.skinWeaponAssault, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(nextPose.skinWeaponSniper, lastSentPoseMessage.skinWeaponSniper, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(nextPose.skinWeaponPistol, lastSentPoseMessage.skinWeaponPistol, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(nextPose.skinWeaponMp7, lastSentPoseMessage.skinWeaponMp7, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
@@ -1212,6 +1232,10 @@ namespace ShooterPrototype.Network
                 skinGloves = source.skinGloves,
                 skinFace = source.skinFace,
                 skinHair = source.skinHair,
+                skinWeaponAssault = source.skinWeaponAssault,
+                skinWeaponSniper = source.skinWeaponSniper,
+                skinWeaponPistol = source.skinWeaponPistol,
+                skinWeaponMp7 = source.skinWeaponMp7,
                 position = source.position == null
                     ? null
                     : new PositionDto

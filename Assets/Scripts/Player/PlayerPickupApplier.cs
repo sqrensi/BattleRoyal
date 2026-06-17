@@ -100,6 +100,7 @@ namespace ShooterPrototype.Player
                 return new PickupApplyResult(false, "equip_failed");
             }
 
+            context.WeaponMount.RefreshEquippedWeaponSkin();
             context.WeaponMount.SetThirdPersonWeaponRenderersEnabled(true);
 
             if (context.WeaponController != null)

@@ -167,13 +167,83 @@ function getEquippedMap(playerId) {
   return equipped;
 }
 
+function mapEquippedForClient(equippedMap) {
+  return {
+    shirt: equippedMap.shirt || "",
+    pants: equippedMap.pants || "",
+    boots: equippedMap.boots || "",
+    gloves: equippedMap.gloves || "",
+    face: equippedMap.face || "",
+    hair: equippedMap.hair || "",
+    weaponAssault: equippedMap.weapon_assault || "",
+    weaponSniper: equippedMap.weapon_sniper || "",
+    weaponPistol: equippedMap.weapon_pistol || "",
+    weaponMp7: equippedMap.weapon_mp7 || "",
+  };
+}
+
+function ensureWeaponSkinDefaults(playerId) {
+  const db = openDatabase();
+  const timestamp = nowMs();
+  const weaponDefaults = [
+    "weapon_ak47_000",
+    "weapon_sniper_000",
+    "weapon_pistol_000",
+    "weapon_mp7_000",
+  ];
+  const weaponEquipped = {
+    weapon_assault: "weapon_ak47_000",
+    weapon_sniper: "weapon_sniper_000",
+    weapon_pistol: "weapon_pistol_000",
+    weapon_mp7: "weapon_mp7_000",
+  };
+
+  const insertOwned = db.prepare(
+    `INSERT OR IGNORE INTO player_owned_items
+     (player_id, item_type, item_id, source, acquired_at)
+     VALUES (?, ?, ?, ?, ?)`
+  );
+  for (const skinId of weaponDefaults) {
+    insertOwned.run(playerId, ITEM_TYPE_SKIN, skinId, "weapon_defaults", timestamp);
+  }
+
+  const selectEquipped = db.prepare(
+    `SELECT item_id
+     FROM player_equipped_items
+     WHERE player_id = ? AND slot_key = ?`
+  );
+  const insertEquipped = db.prepare(
+    `INSERT INTO player_equipped_items (player_id, slot_key, item_id, updated_at)
+     VALUES (?, ?, ?, ?)`
+  );
+  const updateEquipped = db.prepare(
+    `UPDATE player_equipped_items
+     SET item_id = ?, updated_at = ?
+     WHERE player_id = ? AND slot_key = ?`
+  );
+
+  for (const [slot, skinId] of Object.entries(weaponEquipped)) {
+    const existing = selectEquipped.get(playerId, slot);
+    if (!existing) {
+      insertEquipped.run(playerId, slot, skinId, timestamp);
+      continue;
+    }
+
+    if (!existing.item_id) {
+      updateEquipped.run(skinId, timestamp, playerId, slot);
+    }
+  }
+}
+
 function buildProfileResponse(playerRow) {
   if (!playerRow) {
     return null;
   }
 
+  ensureWeaponSkinDefaults(playerRow.id);
+
   const ownedSkins = getOwnedSkinIds(playerRow.id);
-  const equipped = getEquippedMap(playerRow.id);
+  const equipped = mapEquippedForClient(getEquippedMap(playerRow.id));
 
   return {
     playerId: playerRow.external_player_id,
@@ -371,6 +441,11 @@ function setEquippedSlot(externalPlayerId, slotKey, itemId) {
   if (!normalizedItemId || normalizedItemId === UNEQUIPPED_ATTACHMENT) {
     if (normalizedSlot === "face" || normalizedSlot === "hair") {
       normalizedItemId = "";
+    } else if (normalizedSlot.startsWith("weapon_")) {
+      normalizedItemId = DEFAULT_EQUIPPED[normalizedSlot] || "";
+      if (!normalizedItemId) {
+        return { ok: false, error: "CannotUnequip", message: "Weapon slot cannot be reset." };
+      }
     } else {
       return { ok: false, error: "CannotUnequip", message: "Clothing slot cannot be empty." };
     }

@@ -1506,10 +1506,7 @@ namespace ShooterPrototype.UI
 
         private static Font GetBoldHudFont()
         {
-            var font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            return font != null
-                ? font
-                : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            return Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         }
 
         private static void ApplyBoldHudText(Text text)

@@ -4,7 +4,7 @@ namespace ShooterPrototype.Player
 {
     public readonly struct PlayerSkinNetworkState : IEquatable<PlayerSkinNetworkState>
     {
-        public const int SlotCount = 6;
+        public const int SlotCount = 10;
         private const string NoneSentinel = "__none__";
 
         public string ShirtId { get; }
@@ -13,6 +13,10 @@ namespace ShooterPrototype.Player
         public string GlovesId { get; }
         public string FaceId { get; }
         public string HairId { get; }
+        public string WeaponAssaultId { get; }
+        public string WeaponSniperId { get; }
+        public string WeaponPistolId { get; }
+        public string WeaponMp7Id { get; }
 
         public PlayerSkinNetworkState(
             string shirtId,
@@ -20,7 +24,11 @@ namespace ShooterPrototype.Player
             string bootsId,
             string glovesId,
             string faceId,
-            string hairId)
+            string hairId,
+            string weaponAssaultId = "",
+            string weaponSniperId = "",
+            string weaponPistolId = "",
+            string weaponMp7Id = "")
         {
             ShirtId = NormalizeClothingId(shirtId);
             PantsId = NormalizeClothingId(pantsId);
@@ -28,6 +36,10 @@ namespace ShooterPrototype.Player
             GlovesId = NormalizeClothingId(glovesId);
             FaceId = NormalizeAttachmentId(faceId);
             HairId = NormalizeAttachmentId(hairId);
+            WeaponAssaultId = NormalizeClothingId(weaponAssaultId);
+            WeaponSniperId = NormalizeClothingId(weaponSniperId);
+            WeaponPistolId = NormalizeClothingId(weaponPistolId);
+            WeaponMp7Id = NormalizeClothingId(weaponMp7Id);
         }
 
         public string GetSlotId(int index)
@@ -46,6 +58,14 @@ namespace ShooterPrototype.Player
                     return FaceId;
                 case 5:
                     return HairId;
+                case 6:
+                    return WeaponAssaultId;
+                case 7:
+                    return WeaponSniperId;
+                case 8:
+                    return WeaponPistolId;
+                case 9:
+                    return WeaponMp7Id;
                 default:
                     return string.Empty;
             }
@@ -59,7 +79,25 @@ namespace ShooterPrototype.Player
                 GetSlot(ids, 2),
                 GetSlot(ids, 3),
                 GetSlot(ids, 4),
-                GetSlot(ids, 5));
+                GetSlot(ids, 5),
+                GetSlot(ids, 6),
+                GetSlot(ids, 7),
+                GetSlot(ids, 8),
+                GetSlot(ids, 9));
+        }
+
+        public bool TryGetWeaponSkinId(WeaponKind kind, out string skinId)
+        {
+            skinId = kind switch
+            {
+                WeaponKind.AssaultRifle => WeaponAssaultId,
+                WeaponKind.SniperRifle => WeaponSniperId,
+                WeaponKind.Pistol => WeaponPistolId,
+                WeaponKind.Mp7 => WeaponMp7Id,
+                _ => string.Empty
+            };
+
+            return !string.IsNullOrWhiteSpace(skinId);
         }
 
         public bool Equals(PlayerSkinNetworkState other)
@@ -69,7 +107,11 @@ namespace ShooterPrototype.Player
                    string.Equals(BootsId, other.BootsId, StringComparison.OrdinalIgnoreCase) &&
                    string.Equals(GlovesId, other.GlovesId, StringComparison.OrdinalIgnoreCase) &&
                    string.Equals(FaceId, other.FaceId, StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals(HairId, other.HairId, StringComparison.OrdinalIgnoreCase);
+                   string.Equals(HairId, other.HairId, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(WeaponAssaultId, other.WeaponAssaultId, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(WeaponSniperId, other.WeaponSniperId, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(WeaponPistolId, other.WeaponPistolId, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(WeaponMp7Id, other.WeaponMp7Id, StringComparison.OrdinalIgnoreCase);
         }
 
         public override bool Equals(object obj)
@@ -87,6 +129,10 @@ namespace ShooterPrototype.Player
                 hash = (hash * 397) ^ StringComparer.OrdinalIgnoreCase.GetHashCode(GlovesId ?? string.Empty);
                 hash = (hash * 397) ^ StringComparer.OrdinalIgnoreCase.GetHashCode(FaceId ?? string.Empty);
                 hash = (hash * 397) ^ StringComparer.OrdinalIgnoreCase.GetHashCode(HairId ?? string.Empty);
+                hash = (hash * 397) ^ StringComparer.OrdinalIgnoreCase.GetHashCode(WeaponAssaultId ?? string.Empty);
+                hash = (hash * 397) ^ StringComparer.OrdinalIgnoreCase.GetHashCode(WeaponSniperId ?? string.Empty);
+                hash = (hash * 397) ^ StringComparer.OrdinalIgnoreCase.GetHashCode(WeaponPistolId ?? string.Empty);
+                hash = (hash * 397) ^ StringComparer.OrdinalIgnoreCase.GetHashCode(WeaponMp7Id ?? string.Empty);
                 return hash;
             }
         }

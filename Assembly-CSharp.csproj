@@ -181,6 +181,7 @@
     <Compile Include="Assets\FarlandSkies\Demo\Scripts\Skybox\SkyboxChanger.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\PackInfo.cs" />
     <Compile Include="Assets\Scripts\Player\CharacterSelectionService.cs" />
+    <Compile Include="Assets\Scripts\Player\WeaponSkinApplier.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\CameraController.cs" />
     <Compile Include="Assets\Scripts\Player\MatchDamageZoneController.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerNetworkIdentity.cs" />
@@ -225,6 +226,7 @@
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_Demo_RandomDir.cs" />
     <Compile Include="Assets\Scripts\Player\PickupApplyRules.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerSkinSelectionService.cs" />
+    <Compile Include="Assets\Scripts\Player\WeaponSkinResourcePaths.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponLoadoutServerState.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyHandAttachedWeaponMount.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Spawn System\CFX_SpawnSystem.cs" />

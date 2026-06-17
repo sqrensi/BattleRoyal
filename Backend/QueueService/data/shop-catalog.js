@@ -8,6 +8,10 @@ const DEFAULT_OWNED_SKIN_IDS = [
   "gloves_001",
   "attachment_face_001",
   "attachment_hair_003",
+  "weapon_ak47_000",
+  "weapon_sniper_000",
+  "weapon_pistol_000",
+  "weapon_mp7_000",
 ];
 
 const DEFAULT_EQUIPPED = {
@@ -17,12 +21,27 @@ const DEFAULT_EQUIPPED = {
   gloves: "gloves_001",
   face: "attachment_face_001",
   hair: "attachment_hair_003",
+  weapon_assault: "weapon_ak47_000",
+  weapon_sniper: "weapon_sniper_000",
+  weapon_pistol: "weapon_pistol_000",
+  weapon_mp7: "weapon_mp7_000",
 };
 
-const EQUIPMENT_SLOTS = ["shirt", "pants", "boots", "gloves", "face", "hair"];
+const EQUIPMENT_SLOTS = [
+  "shirt",
+  "pants",
+  "boots",
+  "gloves",
+  "face",
+  "hair",
+  "weapon_assault",
+  "weapon_sniper",
+  "weapon_pistol",
+  "weapon_mp7",
+];
 
 const SKIN_ID_PATTERN =
-  /^(tshirts|pants|shoes|gloves)_\d{3}$|^attachment_(face|hair)_\d{3}$/;
+  /^(tshirts|pants|shoes|gloves)_\d{3}$|^attachment_(face|hair)_\d{3}$|^weapon_(ak47|sniper|pistol|mp7)_\d{3}$/;
 
 const SHOP_SKIN_IDS = [
   "tshirts_002",
@@ -37,6 +56,10 @@ const SHOP_SKIN_IDS = [
   "attachment_face_003",
   "attachment_hair_001",
   "attachment_hair_002",
+  "weapon_ak47_001",
+  "weapon_sniper_001",
+  "weapon_pistol_001",
+  "weapon_mp7_001",
 ];
 
 const SHOP_PRICE_BY_SKIN_ID = buildShopPrices();
@@ -83,6 +106,10 @@ function slotForSkinId(skinId) {
   if (normalized.startsWith("gloves_")) return "gloves";
   if (normalized.startsWith("attachment_face_")) return "face";
   if (normalized.startsWith("attachment_hair_")) return "hair";
+  if (normalized.startsWith("weapon_ak47_")) return "weapon_assault";
+  if (normalized.startsWith("weapon_sniper_")) return "weapon_sniper";
+  if (normalized.startsWith("weapon_pistol_")) return "weapon_pistol";
+  if (normalized.startsWith("weapon_mp7_")) return "weapon_mp7";
   return "";
 }
 

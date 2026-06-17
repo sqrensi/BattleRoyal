@@ -19,7 +19,11 @@ namespace ShooterPrototype.Player
             PlayerSkinResourcePaths.BuildSkinId("shoes", "001"),
             PlayerSkinResourcePaths.BuildSkinId("gloves", "001"),
             PlayerSkinResourcePaths.BuildAttachmentSkinId("face", "001"),
-            PlayerSkinResourcePaths.BuildAttachmentSkinId("hair", "003")
+            PlayerSkinResourcePaths.BuildAttachmentSkinId("hair", "003"),
+            WeaponSkinResourcePaths.BuildSkinId(WeaponKind.AssaultRifle, "000"),
+            WeaponSkinResourcePaths.BuildSkinId(WeaponKind.SniperRifle, "000"),
+            WeaponSkinResourcePaths.BuildSkinId(WeaponKind.Pistol, "000"),
+            WeaponSkinResourcePaths.BuildSkinId(WeaponKind.Mp7, "000")
         };
 
         private static readonly Dictionary<PlayerSkinSlot, string> DefaultEquippedSkinIds =
@@ -30,7 +34,11 @@ namespace ShooterPrototype.Player
                 { PlayerSkinSlot.Boots, PlayerSkinResourcePaths.BuildSkinId("shoes", "001") },
                 { PlayerSkinSlot.Gloves, PlayerSkinResourcePaths.BuildSkinId("gloves", "001") },
                 { PlayerSkinSlot.Face, PlayerSkinResourcePaths.BuildAttachmentSkinId("face", "001") },
-                { PlayerSkinSlot.Hair, PlayerSkinResourcePaths.BuildAttachmentSkinId("hair", "003") }
+                { PlayerSkinSlot.Hair, PlayerSkinResourcePaths.BuildAttachmentSkinId("hair", "003") },
+                { PlayerSkinSlot.WeaponAssaultRifle, WeaponSkinResourcePaths.BuildSkinId(WeaponKind.AssaultRifle, "000") },
+                { PlayerSkinSlot.WeaponSniperRifle, WeaponSkinResourcePaths.BuildSkinId(WeaponKind.SniperRifle, "000") },
+                { PlayerSkinSlot.WeaponPistol, WeaponSkinResourcePaths.BuildSkinId(WeaponKind.Pistol, "000") },
+                { PlayerSkinSlot.WeaponMp7, WeaponSkinResourcePaths.BuildSkinId(WeaponKind.Mp7, "000") }
             };
 
         private static readonly Dictionary<string, int> ShopPriceBySkinId = BuildShopPrices();
@@ -46,6 +54,8 @@ namespace ShooterPrototype.Player
                 PlayerPrefs.SetInt(CurrencyGrantKey, 1);
                 PlayerPrefs.Save();
             }
+
+            EnsureDefaultWeaponOwnership();
 
             if (PlayerPrefs.HasKey(OwnershipInitKey))
             {
@@ -192,10 +202,17 @@ namespace ShooterPrototype.Player
                 var options = PlayerSkinSelectionService.GetCatalogOptions(order[i]);
                 for (var j = 0; j < options.Count; j++)
                 {
-                    if (IsOwned(options[j]))
+                    if (!IsOwned(options[j]))
                     {
-                        owned.Add(options[j]);
+                        continue;
                     }
+
+                    if (options[j].IsWeaponSkin && IsDefaultOwnedSkin(options[j].Id))
+                    {
+                        continue;
+                    }
+
+                    owned.Add(options[j]);
                 }
             }
         }
@@ -301,6 +318,47 @@ namespace ShooterPrototype.Player
 
                 PlayerSkinSelectionService.SaveSelected(slot, definition.Id);
             }
+        }
+
+        private static void EnsureDefaultWeaponOwnership()
+        {
+            var weaponDefaults = new[]
+            {
+                WeaponSkinResourcePaths.BuildSkinId(WeaponKind.AssaultRifle, "000"),
+                WeaponSkinResourcePaths.BuildSkinId(WeaponKind.SniperRifle, "000"),
+                WeaponSkinResourcePaths.BuildSkinId(WeaponKind.Pistol, "000"),
+                WeaponSkinResourcePaths.BuildSkinId(WeaponKind.Mp7, "000")
+            };
+
+            for (var i = 0; i < weaponDefaults.Length; i++)
+            {
+                MarkOwned(weaponDefaults[i], persist: false);
+            }
+
+            foreach (PlayerSkinSlot slot in Enum.GetValues(typeof(PlayerSkinSlot)))
+            {
+                if (!WeaponSkinResourcePaths.IsWeaponSkinSlot(slot))
+                {
+                    continue;
+                }
+
+                if (PlayerPrefs.HasKey(BuildEquippedPrefKey(slot)))
+                {
+                    continue;
+                }
+
+                if (TryGetDefaultEquipped(slot, out var definition))
+                {
+                    PlayerSkinSelectionService.SaveSelected(slot, definition.Id);
+                }
+            }
+
+            PlayerPrefs.Save();
+        }
+
+        private static string BuildEquippedPrefKey(PlayerSkinSlot slot)
+        {
+            return "player_skin_" + slot.ToString().ToLowerInvariant();
         }
     }
 }

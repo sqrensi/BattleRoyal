@@ -11,37 +11,36 @@ namespace ShooterPrototype.UI
     {
         private static Sprite whiteSprite;
 
-        private static readonly Color PanelColor = new Color(0.06f, 0.08f, 0.1f, 0.62f);
+        private static readonly Color PanelColor = new Color(0.06f, 0.08f, 0.1f, 0.72f);
         private static readonly Color InputColor = new Color(0.1f, 0.12f, 0.15f, 0.92f);
         private static readonly Color LabelColor = new Color(0.94f, 0.96f, 0.98f, 0.98f);
         private static readonly Color StatusOkColor = new Color(0.62f, 0.9f, 0.72f, 0.95f);
         private static readonly Color StatusErrorColor = new Color(0.98f, 0.58f, 0.58f, 0.95f);
-        private static readonly Color StatusHintColor = new Color(0.82f, 0.88f, 0.92f, 0.88f);
         private static readonly Color ButtonNormalColor = new Color(0.18f, 0.48f, 0.42f, 0.96f);
         private static readonly Color ButtonHighlightedColor = new Color(0.22f, 0.58f, 0.5f, 1f);
         private static readonly Color ButtonPressedColor = new Color(0.14f, 0.38f, 0.34f, 1f);
 
         [SerializeField] private float edgeMargin = 28f;
         [SerializeField] private float bottomOffset = 28f;
-        [SerializeField] private float panelWidth = 380f;
-        [SerializeField] private float rowHeight = 44f;
-        [SerializeField] private float panelPadding = 14f;
-        [SerializeField] private float rowSpacing = 8f;
-        [SerializeField] private float labelFontSize = 17f;
+        [SerializeField] private float panelWidth = 340f;
+        [SerializeField] private float fieldHeight = 44f;
+        [SerializeField] private float panelPadding = 16f;
+        [SerializeField] private float labelFontSize = 16f;
         [SerializeField] private float inputFontSize = 19f;
-        [SerializeField] private float statusFontSize = 15f;
-        [SerializeField] private float buttonWidth = 112f;
+        [SerializeField] private float statusFontSize = 14f;
+        [SerializeField] private float actionButtonWidth = 104f;
 
         private CanvasGroup canvasGroup;
         private TMP_InputField nicknameInput;
         private TMP_Text statusText;
-        private Button saveButton;
+        private TMP_Text actionButtonLabel;
+        private Button actionButton;
         private MainMenuController menuController;
         private PlayerProfileApiClient profileApiClient;
         private MainMenuUiSoundController uiSound;
         private Coroutine saveCoroutine;
-        private Coroutine validateCoroutine;
         private bool built;
+        private bool isEditing;
 
         public CanvasGroup CanvasGroup => canvasGroup;
 
@@ -79,8 +78,8 @@ namespace ShooterPrototype.UI
             canvasGroup = rootObject.AddComponent<CanvasGroup>();
 
             var layout = rootObject.AddComponent<VerticalLayoutGroup>();
-            layout.childAlignment = TextAnchor.LowerRight;
-            layout.spacing = rowSpacing;
+            layout.childAlignment = TextAnchor.UpperRight;
+            layout.spacing = 8f;
             layout.padding = new RectOffset(
                 Mathf.RoundToInt(panelPadding),
                 Mathf.RoundToInt(panelPadding),
@@ -98,54 +97,45 @@ namespace ShooterPrototype.UI
             var labelObject = new GameObject("Label");
             labelObject.transform.SetParent(rootObject.transform, false);
             var labelLayout = labelObject.AddComponent<LayoutElement>();
-            labelLayout.preferredHeight = 22f;
+            labelLayout.preferredHeight = 20f;
             var labelText = labelObject.AddComponent<TextMeshProUGUI>();
-            labelText.text = "Никнейм";
+            labelText.text = "Ник";
             labelText.fontSize = labelFontSize;
             labelText.fontStyle = FontStyles.Bold;
-            labelText.alignment = TextAlignmentOptions.MidlineRight;
+            labelText.alignment = TextAlignmentOptions.MidlineLeft;
             labelText.color = LabelColor;
             labelText.raycastTarget = false;
 
-            var rowObject = new GameObject("InputRow");
-            rowObject.transform.SetParent(rootObject.transform, false);
-            var rowLayout = rowObject.AddComponent<HorizontalLayoutGroup>();
-            rowLayout.childAlignment = TextAnchor.MiddleRight;
-            rowLayout.spacing = rowSpacing;
-            rowLayout.childControlWidth = true;
-            rowLayout.childControlHeight = true;
-            rowLayout.childForceExpandWidth = false;
-            rowLayout.childForceExpandHeight = false;
+            var fieldContainer = new GameObject("NicknameField");
+            fieldContainer.transform.SetParent(rootObject.transform, false);
+            var fieldLayout = fieldContainer.AddComponent<LayoutElement>();
+            fieldLayout.preferredHeight = fieldHeight;
+            fieldLayout.minHeight = fieldHeight;
 
-            var rowElement = rowObject.AddComponent<LayoutElement>();
-            rowElement.preferredHeight = rowHeight;
-            rowElement.minHeight = rowHeight;
-
-            nicknameInput = CreateInputField(rowObject.transform);
-            nicknameInput.onEndEdit.AddListener(OnNicknameEndEdit);
-
-            saveButton = CreateButton(rowObject.transform, "Сохранить", buttonWidth, rowHeight);
-            saveButton.onClick.AddListener(OnSavePressed);
+            nicknameInput = CreateInputField(fieldContainer.transform, actionButtonWidth + 8f);
+            actionButton = CreateActionButton(fieldContainer.transform);
+            actionButton.onClick.AddListener(OnActionPressed);
             if (uiSound != null)
             {
-                saveButton.onClick.AddListener(uiSound.PlayButton);
+                actionButton.onClick.AddListener(uiSound.PlayButton);
             }
 
             var statusObject = new GameObject("Status");
             statusObject.transform.SetParent(rootObject.transform, false);
             var statusLayout = statusObject.AddComponent<LayoutElement>();
-            statusLayout.preferredHeight = 20f;
-            statusLayout.minHeight = 20f;
+            statusLayout.preferredHeight = 18f;
+            statusLayout.minHeight = 18f;
             statusText = statusObject.AddComponent<TextMeshProUGUI>();
             statusText.fontSize = statusFontSize;
-            statusText.alignment = TextAlignmentOptions.MidlineRight;
+            statusText.alignment = TextAlignmentOptions.TopLeft;
             statusText.enableWordWrapping = true;
-            statusText.overflowMode = TextOverflowModes.Ellipsis;
-            statusText.color = StatusHintColor;
+            statusText.overflowMode = TextOverflowModes.Overflow;
+            statusText.color = StatusErrorColor;
             statusText.raycastTarget = false;
             statusText.text = string.Empty;
 
             built = true;
+            SetEditMode(false);
             RefreshFromProfile();
         }
 
@@ -167,43 +157,65 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            if (!isEditing)
+            {
+                RefreshNicknameFromProfile();
+            }
+
+            if (actionButton != null)
+            {
+                actionButton.interactable = PlayerProfileService.IsServerSynced;
+            }
+        }
+
+        private void RefreshNicknameFromProfile()
+        {
             var nickname = PlayerProfileService.Nickname;
             if (!string.IsNullOrWhiteSpace(nickname))
             {
                 nicknameInput.SetTextWithoutNotify(nickname);
             }
-
-            if (PlayerProfileService.IsServerSynced)
-            {
-                SetStatus("Можно сменить никнейм.", StatusHintColor);
-                if (saveButton != null)
-                {
-                    saveButton.interactable = true;
-                }
-            }
-            else
-            {
-                SetStatus("Сервер недоступен — никнейм нельзя изменить.", StatusErrorColor);
-                if (saveButton != null)
-                {
-                    saveButton.interactable = false;
-                }
-            }
         }
 
-        private void OnNicknameEndEdit(string value)
+        private void OnActionPressed()
         {
             if (!PlayerProfileService.IsServerSynced || profileApiClient == null)
             {
+                SetStatus("Сервер недоступен — никнейм нельзя изменить.", StatusErrorColor);
                 return;
             }
 
-            if (validateCoroutine != null)
+            if (isEditing)
             {
-                StopCoroutine(validateCoroutine);
+                OnSavePressed();
+                return;
             }
 
-            validateCoroutine = StartCoroutine(ValidateNicknameRoutine(value));
+            SetEditMode(true);
+        }
+
+        private void SetEditMode(bool editing)
+        {
+            isEditing = editing;
+            if (nicknameInput != null)
+            {
+                nicknameInput.interactable = editing;
+            }
+
+            if (actionButtonLabel != null)
+            {
+                actionButtonLabel.text = editing ? "Сохранить" : "Изменить";
+            }
+
+            if (editing)
+            {
+                ClearStatus();
+                nicknameInput?.Select();
+                nicknameInput?.ActivateInputField();
+                return;
+            }
+
+            RefreshNicknameFromProfile();
         }
 
         private string ResolvePlayerId()
@@ -219,64 +231,6 @@ namespace ShooterPrototype.UI
             }
 
             return this;
-        }
-
-        private IEnumerator ValidateNicknameRoutine(string value)
-        {
-            var trimmed = (value ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(trimmed))
-            {
-                SetStatus("Введите никнейм.", StatusErrorColor);
-                yield break;
-            }
-
-            if (string.Equals(trimmed, PlayerProfileService.Nickname, System.StringComparison.OrdinalIgnoreCase))
-            {
-                SetStatus("Это ваш текущий никнейм.", StatusHintColor);
-                yield break;
-            }
-
-            var completed = false;
-            var success = false;
-            var available = false;
-            var message = string.Empty;
-
-            yield return profileApiClient.CheckNicknameAvailable(ResolvePlayerId(), trimmed, (ok, isAvailable, responseMessage, _) =>
-            {
-                completed = true;
-                success = ok;
-                available = isAvailable;
-                message = responseMessage;
-            });
-
-            if (!completed)
-            {
-                yield break;
-            }
-
-            if (!success)
-            {
-                SetStatus(PlayerProfileService.IsServerSynced
-                    ? "Не удалось проверить никнейм."
-                    : message, StatusErrorColor);
-                yield break;
-            }
-
-            if (available)
-            {
-                SetStatus("Никнейм свободен.", StatusOkColor);
-                yield break;
-            }
-
-            if (message.IndexOf("Invalid", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                message.IndexOf("3-16", System.StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                SetStatus("Никнейм: 3–16 символов, буквы, цифры, _ или -.", StatusErrorColor);
-            }
-            else
-            {
-                SetStatus("Этот никнейм уже занят.", StatusErrorColor);
-            }
         }
 
         private void OnSavePressed()
@@ -297,18 +251,18 @@ namespace ShooterPrototype.UI
 
         private IEnumerator SaveNicknameRoutine()
         {
-            if (saveButton != null)
+            if (actionButton != null)
             {
-                saveButton.interactable = false;
+                actionButton.interactable = false;
             }
 
             var trimmed = nicknameInput != null ? nicknameInput.text.Trim() : string.Empty;
             if (string.IsNullOrWhiteSpace(trimmed))
             {
                 SetStatus("Введите никнейм.", StatusErrorColor);
-                if (saveButton != null)
+                if (actionButton != null)
                 {
-                    saveButton.interactable = true;
+                    actionButton.interactable = PlayerProfileService.IsServerSynced;
                 }
 
                 yield break;
@@ -316,16 +270,14 @@ namespace ShooterPrototype.UI
 
             if (string.Equals(trimmed, PlayerProfileService.Nickname, System.StringComparison.OrdinalIgnoreCase))
             {
-                SetStatus("Никнейм не изменился.", StatusHintColor);
-                if (saveButton != null)
+                SetEditMode(false);
+                if (actionButton != null)
                 {
-                    saveButton.interactable = true;
+                    actionButton.interactable = PlayerProfileService.IsServerSynced;
                 }
 
                 yield break;
             }
-
-            SetStatus("Сохранение...", StatusHintColor);
 
             var completed = false;
             var success = false;
@@ -337,15 +289,15 @@ namespace ShooterPrototype.UI
                 ResolvePlayerId(),
                 trimmed,
                 (ok, responseError) =>
-            {
-                completed = true;
-                success = ok;
-                error = responseError;
-            });
+                {
+                    completed = true;
+                    success = ok;
+                    error = responseError;
+                });
 
-            if (saveButton != null)
+            if (actionButton != null)
             {
-                saveButton.interactable = PlayerProfileService.IsServerSynced;
+                actionButton.interactable = PlayerProfileService.IsServerSynced;
             }
 
             if (!completed)
@@ -355,12 +307,23 @@ namespace ShooterPrototype.UI
 
             if (success)
             {
+                SetEditMode(false);
                 nicknameInput.SetTextWithoutNotify(PlayerProfileService.Nickname);
                 SetStatus("Никнейм сохранён.", StatusOkColor);
                 yield break;
             }
 
             SetStatus(string.IsNullOrWhiteSpace(error) ? "Не удалось сохранить никнейм." : error, StatusErrorColor);
+        }
+
+        private void ClearStatus()
+        {
+            if (statusText == null)
+            {
+                return;
+            }
+
+            statusText.text = string.Empty;
         }
 
         private void SetStatus(string message, Color color)
@@ -374,15 +337,13 @@ namespace ShooterPrototype.UI
             statusText.color = color;
         }
 
-        private TMP_InputField CreateInputField(Transform parent)
+        private TMP_InputField CreateInputField(Transform parent, float rightPadding)
         {
             var inputObject = new GameObject("NicknameInput");
             inputObject.transform.SetParent(parent, false);
 
-            var layoutElement = inputObject.AddComponent<LayoutElement>();
-            layoutElement.flexibleWidth = 1f;
-            layoutElement.minWidth = 140f;
-            layoutElement.preferredHeight = rowHeight;
+            var inputRect = inputObject.AddComponent<RectTransform>();
+            StretchFull(inputRect);
 
             var background = inputObject.AddComponent<Image>();
             background.sprite = GetWhiteSprite();
@@ -391,13 +352,14 @@ namespace ShooterPrototype.UI
 
             var inputField = inputObject.AddComponent<TMP_InputField>();
             inputField.characterLimit = 16;
+            inputField.interactable = false;
 
             var textAreaObject = new GameObject("Text Area");
             textAreaObject.transform.SetParent(inputObject.transform, false);
             var textAreaRect = textAreaObject.AddComponent<RectTransform>();
             StretchFull(textAreaRect);
             textAreaRect.offsetMin = new Vector2(12f, 7f);
-            textAreaRect.offsetMax = new Vector2(-12f, -7f);
+            textAreaRect.offsetMax = new Vector2(-rightPadding, -7f);
             textAreaObject.AddComponent<RectMask2D>();
 
             var placeholderObject = new GameObject("Placeholder");
@@ -430,15 +392,17 @@ namespace ShooterPrototype.UI
             return inputField;
         }
 
-        private Button CreateButton(Transform parent, string label, float width, float height)
+        private Button CreateActionButton(Transform parent)
         {
-            var buttonObject = new GameObject("SaveNicknameButton");
+            var buttonObject = new GameObject("ActionButton");
             buttonObject.transform.SetParent(parent, false);
 
-            var layoutElement = buttonObject.AddComponent<LayoutElement>();
-            layoutElement.preferredWidth = width;
-            layoutElement.minWidth = width;
-            layoutElement.preferredHeight = height;
+            var buttonRect = buttonObject.AddComponent<RectTransform>();
+            buttonRect.anchorMin = new Vector2(1f, 0f);
+            buttonRect.anchorMax = new Vector2(1f, 1f);
+            buttonRect.pivot = new Vector2(1f, 0.5f);
+            buttonRect.sizeDelta = new Vector2(actionButtonWidth, 0f);
+            buttonRect.anchoredPosition = new Vector2(-4f, 0f);
 
             var image = buttonObject.AddComponent<Image>();
             image.sprite = GetWhiteSprite();
@@ -452,7 +416,7 @@ namespace ShooterPrototype.UI
             colors.pressedColor = ButtonPressedColor;
             colors.selectedColor = ButtonHighlightedColor;
             colors.disabledColor = new Color(0.12f, 0.14f, 0.16f, 0.55f);
-            colors.fadeDuration = 0.12f;
+            colors.fadeDuration = 0.08f;
             button.colors = colors;
             button.targetGraphic = image;
 
@@ -460,13 +424,13 @@ namespace ShooterPrototype.UI
             labelObject.transform.SetParent(buttonObject.transform, false);
             var labelRect = labelObject.AddComponent<RectTransform>();
             StretchFull(labelRect);
-            var labelText = labelObject.AddComponent<TextMeshProUGUI>();
-            labelText.text = label;
-            labelText.fontSize = 17f;
-            labelText.fontStyle = FontStyles.Bold;
-            labelText.alignment = TextAlignmentOptions.Center;
-            labelText.color = LabelColor;
-            labelText.raycastTarget = false;
+            actionButtonLabel = labelObject.AddComponent<TextMeshProUGUI>();
+            actionButtonLabel.text = "Изменить";
+            actionButtonLabel.fontSize = 15f;
+            actionButtonLabel.fontStyle = FontStyles.Bold;
+            actionButtonLabel.alignment = TextAlignmentOptions.Center;
+            actionButtonLabel.color = LabelColor;
+            actionButtonLabel.raycastTarget = false;
 
             return button;
         }

@@ -88,11 +88,8 @@ namespace ShooterPrototype.Player
             {
                 PlayerSkinOwnershipService.NotifyOwnershipChanged();
             }
-            else
-            {
-                PlayerSkinOwnershipService.NotifyEquipmentChanged();
-            }
 
+            PlayerSkinOwnershipService.NotifyEquipmentChanged();
             ProfileSynced?.Invoke();
         }
 
@@ -394,13 +391,24 @@ namespace ShooterPrototype.Player
             ApplyEquippedSlot(PlayerSkinSlot.Gloves, equipped.gloves);
             ApplyEquippedSlot(PlayerSkinSlot.Face, equipped.face);
             ApplyEquippedSlot(PlayerSkinSlot.Hair, equipped.hair);
+            ApplyEquippedSlot(PlayerSkinSlot.WeaponAssaultRifle, equipped.weaponAssault);
+            ApplyEquippedSlot(PlayerSkinSlot.WeaponSniperRifle, equipped.weaponSniper);
+            ApplyEquippedSlot(PlayerSkinSlot.WeaponPistol, equipped.weaponPistol);
+            ApplyEquippedSlot(PlayerSkinSlot.WeaponMp7, equipped.weaponMp7);
         }
 
         private static void ApplyEquippedSlot(PlayerSkinSlot slot, string skinId)
         {
             if (string.IsNullOrWhiteSpace(skinId))
             {
-                if (PlayerSkinSelectionService.SupportsUnequip(slot))
+                if (WeaponSkinResourcePaths.IsWeaponSkinSlot(slot) &&
+                    WeaponSkinResourcePaths.TryGetWeaponKind(slot, out var kind))
+                {
+                    PlayerSkinSelectionService.SaveSelected(
+                        slot,
+                        WeaponSkinResourcePaths.BuildSkinId(kind, "000"));
+                }
+                else if (PlayerSkinSelectionService.SupportsUnequip(slot))
                 {
                     PlayerSkinSelectionService.SaveSelected(slot, "__none__");
                 }
@@ -452,6 +460,18 @@ namespace ShooterPrototype.Player
                     return true;
                 case PlayerSkinSlot.Hair:
                     slotKey = "hair";
+                    return true;
+                case PlayerSkinSlot.WeaponAssaultRifle:
+                    slotKey = "weapon_assault";
+                    return true;
+                case PlayerSkinSlot.WeaponSniperRifle:
+                    slotKey = "weapon_sniper";
+                    return true;
+                case PlayerSkinSlot.WeaponPistol:
+                    slotKey = "weapon_pistol";
+                    return true;
+                case PlayerSkinSlot.WeaponMp7:
+                    slotKey = "weapon_mp7";
                     return true;
                 default:
                     slotKey = string.Empty;

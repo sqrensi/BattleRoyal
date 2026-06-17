@@ -525,10 +525,13 @@ namespace ShooterPrototype.UI
 
         private void EnsurePlayerPreview()
         {
-            if (GetComponent<MainMenuPlayerPreview>() == null)
+            var preview = GetComponent<MainMenuPlayerPreview>();
+            if (preview == null)
             {
-                gameObject.AddComponent<MainMenuPlayerPreview>();
+                preview = gameObject.AddComponent<MainMenuPlayerPreview>();
             }
+
+            preview.SetAllowPreview(false);
         }
 
         private void RefreshNicknameEditor()

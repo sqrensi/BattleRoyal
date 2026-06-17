@@ -14,6 +14,17 @@ namespace ShooterPrototype.UI
 
         public static Sprite GetWeaponIcon(WeaponKind kind)
         {
+            if (PlayerSkinSelectionService.TryGetEquippedWeaponSkin(kind, out var skin) &&
+                skin.IsValid &&
+                !string.IsNullOrWhiteSpace(skin.PictureResourcePath))
+            {
+                var skinIcon = GetSkinIcon(skin.PictureResourcePath);
+                if (skinIcon != null)
+                {
+                    return skinIcon;
+                }
+            }
+
             switch (kind)
             {
                 case WeaponKind.SniperRifle:

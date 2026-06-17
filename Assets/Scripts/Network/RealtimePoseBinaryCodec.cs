@@ -20,8 +20,9 @@ namespace ShooterPrototype.Network
                 Array.Resize(ref modelBytes, 64);
             }
 
-            var skinSize = PlayerSkinNetworkCodec.GetEncodedSize(packet.SkinState);
-            var buffer = new byte[HeaderSize + modelBytes.Length + skinSize + BodySize];
+            var clothingSize = PlayerSkinNetworkCodec.GetClothingEncodedSize(packet.SkinState);
+            var weaponSize = PlayerSkinNetworkCodec.GetWeaponEncodedSize(packet.SkinState);
+            var buffer = new byte[HeaderSize + modelBytes.Length + clothingSize + BodySize + weaponSize];
             var offset = 0;
             WriteMagic(buffer, ref offset);
             WriteU8(buffer, ref offset, Version);
@@ -33,7 +34,7 @@ namespace ShooterPrototype.Network
                 offset += modelBytes.Length;
             }
 
-            offset = PlayerSkinNetworkCodec.WriteSlotIds(buffer, offset, packet.SkinState);
+            offset = PlayerSkinNetworkCodec.WriteClothingSlotIds(buffer, offset, in packet.SkinState);
 
             WriteF32(buffer, ref offset, packet.PosX);
             WriteF32(buffer, ref offset, packet.PosY);
@@ -83,6 +84,8 @@ namespace ShooterPrototype.Network
             WriteF32(buffer, ref offset, packet.ShotEndX);
             WriteF32(buffer, ref offset, packet.ShotEndY);
             WriteF32(buffer, ref offset, packet.ShotEndZ);
+
+            offset = PlayerSkinNetworkCodec.WriteWeaponSlotIds(buffer, offset, in packet.SkinState);
 
             if (offset != buffer.Length)
             {

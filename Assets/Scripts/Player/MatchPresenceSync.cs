@@ -254,6 +254,7 @@ namespace ShooterPrototype.Player
 
         private void OnEnable()
         {
+            PlayerSkinOwnershipService.EquipmentChanged += HandleLocalEquipmentChanged;
             if (syncCoroutine == null)
             {
                 syncCoroutine = StartCoroutine(SyncRoutine());
@@ -262,6 +263,7 @@ namespace ShooterPrototype.Player
 
         private void OnDisable()
         {
+            PlayerSkinOwnershipService.EquipmentChanged -= HandleLocalEquipmentChanged;
             UnsubscribeTransportEvents();
 
             if (syncCoroutine != null)
@@ -657,6 +659,13 @@ namespace ShooterPrototype.Player
 
         public void FlushLocalPose()
         {
+            SendLocalPose(forceImmediate: true);
+        }
+
+        private void HandleLocalEquipmentChanged()
+        {
+            PlayerSkinSelectionService.ApplyToPlayer(gameObject, forceReapply: true);
+            localWeaponMount?.RefreshEquippedWeaponSkin();
             SendLocalPose(forceImmediate: true);
         }
 
@@ -1479,6 +1488,8 @@ namespace ShooterPrototype.Player
                         remoteWeapon?.SetHolstered(p.isHolstered);
                     }
 
+                    remoteWeapon?.RefreshAllWeaponSkins();
+
                     ApplyRemoteWeaponEffects(avatar, ResolveRemoteActiveWeaponKind(p));
                     MaybeStopRemoteReloadOnWeaponInterrupt(avatar, p);
                     avatar.RemoteMedkit?.SetNetworkMedkitState(p.isUsingMedkit);
@@ -1665,13 +1676,18 @@ namespace ShooterPrototype.Player
                 player.skinBoots,
                 player.skinGloves,
                 player.skinFace,
-                player.skinHair);
+                player.skinHair,
+                player.skinWeaponAssault,
+                player.skinWeaponSniper,
+                player.skinWeaponPistol,
+                player.skinWeaponMp7);
             if (avatar.HasAppliedSkinState && skinState.Equals(avatar.AppliedSkinState))
             {
                 return;
             }
 
             PlayerSkinSelectionService.ApplyNetworkStateToPlayer(avatar.Root, skinState, forceReapply: true);
+            avatar.RemoteWeapon?.SetNetworkWeaponSkins(skinState);
             avatar.AppliedSkinState = skinState;
             avatar.HasAppliedSkinState = true;
         }
