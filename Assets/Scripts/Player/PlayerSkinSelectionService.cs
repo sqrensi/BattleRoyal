@@ -9,7 +9,9 @@ namespace ShooterPrototype.Player
         Shirt = 0,
         Pants = 1,
         Boots = 2,
-        Gloves = 3
+        Gloves = 3,
+        Face = 4,
+        Hair = 5
         // Future: Hat, Mask, Backpack, etc.
     }
 
@@ -48,11 +50,14 @@ namespace ShooterPrototype.Player
         private const string PrefKeyPrefix = "player_skin_";
         private const string LegacyUnequippedSkinId = "__none__";
         private const int MaxVariantProbeCount = 32;
+        private const int MaxAttachmentProbeCount = 64;
 
         private static readonly Dictionary<PlayerSkinSlot, List<PlayerSkinDefinition>> Catalog = BuildCatalog();
 
         private static readonly PlayerSkinSlot[] OwnedItemDisplayOrder =
         {
+            PlayerSkinSlot.Face,
+            PlayerSkinSlot.Hair,
             PlayerSkinSlot.Gloves,
             PlayerSkinSlot.Pants,
             PlayerSkinSlot.Shirt,
@@ -239,6 +244,7 @@ namespace ShooterPrototype.Player
             }
 
             ApplyTo(clothingApplier);
+            ApplyAttachmentsToPlayer(playerRoot, forceReapply);
 
             var thirdPersonBody = playerRoot.transform.Find("ThirdPersonBody");
             var syntyVisual = thirdPersonBody != null ? thirdPersonBody.Find("SyntyVisual") : null;
@@ -257,16 +263,73 @@ namespace ShooterPrototype.Player
             clothingApplier.ApplyToRemoteVisual(syntyVisual, forceReapply);
         }
 
+        public static void ApplyAttachmentsToPlayer(GameObject playerRoot, bool forceReapply = true)
+        {
+            if (playerRoot == null)
+            {
+                return;
+            }
+
+            var attachmentApplier = playerRoot.GetComponent<PlayerAttachmentApplier>();
+            if (attachmentApplier == null)
+            {
+                attachmentApplier = playerRoot.AddComponent<PlayerAttachmentApplier>();
+            }
+
+            attachmentApplier.Apply(forceReapply);
+        }
+
         private static Dictionary<PlayerSkinSlot, List<PlayerSkinDefinition>> BuildCatalog()
         {
             var catalog = new Dictionary<PlayerSkinSlot, List<PlayerSkinDefinition>>();
             foreach (PlayerSkinSlot slot in Enum.GetValues(typeof(PlayerSkinSlot)))
             {
+                if (PlayerSkinResourcePaths.IsAttachmentSlot(slot))
+                {
+                    catalog[slot] = DiscoverAttachmentsForCategory(
+                        slot,
+                        PlayerSkinResourcePaths.GetAttachmentCategory(slot));
+                    continue;
+                }
+
                 var category = PlayerSkinResourcePaths.GetCategoryFolder(slot);
                 catalog[slot] = DiscoverSkinsForCategory(slot, category);
             }
 
             return catalog;
+        }
+
+        private static List<PlayerSkinDefinition> DiscoverAttachmentsForCategory(
+            PlayerSkinSlot slot,
+            string categoryFolder)
+        {
+            var results = new List<PlayerSkinDefinition>(16);
+            if (string.IsNullOrWhiteSpace(categoryFolder))
+            {
+                return results;
+            }
+
+            var displayBase = GetDefaultDisplayName(slot);
+            for (var i = 1; i <= MaxAttachmentProbeCount; i++)
+            {
+                var variantId = i.ToString("000");
+                var prefabPath = PlayerSkinResourcePaths.BuildAttachmentPrefabPath(categoryFolder, variantId);
+                if (Resources.Load<GameObject>(prefabPath) == null)
+                {
+                    continue;
+                }
+
+                var skinId = PlayerSkinResourcePaths.BuildAttachmentSkinId(categoryFolder, variantId);
+                var displayName = results.Count == 0 ? displayBase : $"{displayBase} {variantId}";
+                results.Add(new PlayerSkinDefinition(
+                    skinId,
+                    displayName,
+                    prefabPath,
+                    string.Empty,
+                    PlayerSkinResourcePaths.BuildAttachmentPicturePath(categoryFolder, variantId)));
+            }
+
+            return results;
         }
 
         private static List<PlayerSkinDefinition> DiscoverSkinsForCategory(PlayerSkinSlot slot, string categoryFolder)
@@ -323,6 +386,10 @@ namespace ShooterPrototype.Player
                     return "Ботинки";
                 case PlayerSkinSlot.Gloves:
                     return "Перчатки";
+                case PlayerSkinSlot.Face:
+                    return "Лицо";
+                case PlayerSkinSlot.Hair:
+                    return "Волосы";
                 default:
                     return "Скин";
             }

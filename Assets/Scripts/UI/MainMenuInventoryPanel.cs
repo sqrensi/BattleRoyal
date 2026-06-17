@@ -22,7 +22,6 @@ namespace ShooterPrototype.UI
         private static readonly Color ScrollTrackColor = new Color(0.1f, 0.12f, 0.14f, 0.55f);
         private static readonly Color ScrollHandleColor = new Color(0.24f, 0.28f, 0.32f, 0.92f);
         private static readonly Color TitleColor = new Color(0.94f, 0.96f, 0.98f, 0.98f);
-        private static readonly Color SubtitleColor = new Color(0.78f, 0.84f, 0.88f, 0.92f);
 
         [SerializeField] private float edgeMargin = 44f;
         [SerializeField] private float panelWidth = 528f;
@@ -34,10 +33,7 @@ namespace ShooterPrototype.UI
         [SerializeField] private float scrollbarWidth = 12f;
         [SerializeField] private float scrollbarGap = 8f;
         [SerializeField] private float titleFontSize = 28f;
-        [SerializeField] private float itemFontSize = 16f;
-        [SerializeField] private float labelHeight = 22f;
-        [SerializeField] private float slotVerticalPadding = 10f;
-        [SerializeField] private float slotContentSpacing = 6f;
+        [SerializeField] private float slotPadding = 12f;
 
         private readonly List<ItemSlotVisual> itemSlots = new List<ItemSlotVisual>(32);
 
@@ -47,7 +43,6 @@ namespace ShooterPrototype.UI
         private Vector2 hiddenAnchoredPosition;
         private float itemCellWidth;
         private float itemCellHeight;
-        private float itemIconSize;
         private MainMenuPlayerPreview playerPreview;
         private MainMenuUiSoundController uiSound;
         private bool isVisible;
@@ -74,8 +69,7 @@ namespace ShooterPrototype.UI
             }
 
             itemCellWidth = (panelWidth - innerPadding * 2f - itemSpacing - scrollbarWidth - scrollbarGap) * 0.5f;
-            itemIconSize = itemCellWidth - 24f;
-            itemCellHeight = slotVerticalPadding * 2f + itemIconSize + slotContentSpacing + labelHeight;
+            itemCellHeight = itemCellWidth;
 
             var panelObject = new GameObject("MainMenuInventoryPanel");
             panelObject.transform.SetParent(canvasRect, false);
@@ -279,49 +273,19 @@ namespace ShooterPrototype.UI
             button.targetGraphic = background;
             button.onClick.AddListener(() => OnItemClicked(item));
 
-            var layout = slotObject.AddComponent<VerticalLayoutGroup>();
-            layout.childAlignment = TextAnchor.UpperCenter;
-            layout.spacing = slotContentSpacing;
-            layout.padding = new RectOffset(12, 12, (int)slotVerticalPadding, (int)slotVerticalPadding);
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
-
             var iconObject = new GameObject("Icon", typeof(RectTransform));
             iconObject.transform.SetParent(slotObject.transform, false);
 
-            var iconLayout = iconObject.AddComponent<LayoutElement>();
-            iconLayout.preferredWidth = itemIconSize;
-            iconLayout.preferredHeight = itemIconSize;
-            iconLayout.minWidth = itemIconSize;
-            iconLayout.minHeight = itemIconSize;
-
             var iconRect = iconObject.GetComponent<RectTransform>();
-            iconRect.sizeDelta = new Vector2(itemIconSize, itemIconSize);
+            iconRect.anchorMin = Vector2.zero;
+            iconRect.anchorMax = Vector2.one;
+            iconRect.offsetMin = new Vector2(slotPadding, slotPadding);
+            iconRect.offsetMax = new Vector2(-slotPadding, -slotPadding);
 
             var iconImage = iconObject.AddComponent<Image>();
             iconImage.preserveAspect = true;
             iconImage.raycastTarget = false;
             iconImage.sprite = InventoryIconCatalog.GetSkinIcon(item.PictureResourcePath);
-
-            var labelObject = new GameObject("Label", typeof(RectTransform));
-            labelObject.transform.SetParent(slotObject.transform, false);
-
-            var labelLayout = labelObject.AddComponent<LayoutElement>();
-            labelLayout.preferredHeight = labelHeight;
-            labelLayout.minHeight = labelHeight;
-            labelLayout.flexibleHeight = 0f;
-
-            var label = labelObject.AddComponent<TextMeshProUGUI>();
-            label.text = item.DisplayName;
-            label.fontSize = itemFontSize;
-            label.alignment = TextAlignmentOptions.Center;
-            label.verticalAlignment = VerticalAlignmentOptions.Middle;
-            label.color = SubtitleColor;
-            label.enableWordWrapping = false;
-            label.overflowMode = TextOverflowModes.Ellipsis;
-            label.raycastTarget = false;
 
             return new ItemSlotVisual
             {

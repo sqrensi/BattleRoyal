@@ -103,6 +103,7 @@ namespace ShooterPrototype.Player
 
             RefreshRemoteHitboxes(playerRoot, syntyVisual);
             RefreshRemoteResourceClothing(playerRoot, syntyVisual);
+            PlayerSkinSelectionService.ApplyAttachmentsToPlayer(playerRoot, forceReapply: true);
         }
 
         private static void RefreshRemoteResourceClothing(GameObject playerRoot, Transform syntyVisual)

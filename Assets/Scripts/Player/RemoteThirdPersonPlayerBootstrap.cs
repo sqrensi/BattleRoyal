@@ -206,6 +206,7 @@ namespace ShooterPrototype.Player
             }
 
             clothingApplier.ApplyToRemoteVisual(syntyVisual, forceReapply: true);
+            PlayerSkinSelectionService.ApplyAttachmentsToPlayer(gameObject, forceReapply: true);
         }
 
         private void RefreshRemoteResourceClothingAfterSkeletonReady()
