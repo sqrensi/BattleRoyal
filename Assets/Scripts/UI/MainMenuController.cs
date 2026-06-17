@@ -14,6 +14,7 @@ namespace ShooterPrototype.UI
         [Header("Dependencies")]
         [SerializeField] private NetworkLauncher networkLauncher;
         [SerializeField] private QueueApiClient queueApiClient;
+        [SerializeField] private PlayerProfileApiClient profileApiClient;
         [SerializeField] private NetworkConfig networkConfig;
 
         [Header("UI")]
@@ -43,11 +44,13 @@ namespace ShooterPrototype.UI
         [SerializeField] private float enqueueRetryDelaySeconds = 0.4f;
 
         private Coroutine queuePollingCoroutine;
+        private Coroutine profileSyncCoroutine;
         private bool isQueueing;
         private string currentTicketId = string.Empty;
         private string localPlayerId;
 
         private MainMenuUiSoundController uiSound;
+        private MainMenuServerConnectionGate connectionGate;
 
         public Button ChangeCharacterButton => changeCharacterButton;
 
@@ -57,7 +60,6 @@ namespace ShooterPrototype.UI
         private void Awake()
         {
             EnsureDependencies();
-            EnsureEconomy();
             EnsureUiLayout();
             EnsureUiSound();
 
@@ -74,15 +76,20 @@ namespace ShooterPrototype.UI
                 }
             }
 
-            localPlayerId = BuildLocalPlayerId();
+            localPlayerId = PlayerIdentityService.GetOrCreatePlayerId();
             SetStatus(idleStatusText);
             SetStartButtonState(isQueueing: false, interactable: true);
             RefreshSelectedCharacterLabel();
             EnsurePlayerPreview();
-            RefreshPlayerPreview();
             EnsureAmbience();
             EnsureCameraMotion();
             EnsureSections();
+            ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Подключение к серверу...");
+        }
+
+        private void Start()
+        {
+            profileSyncCoroutine = StartCoroutine(SyncProfileRoutine());
         }
 
         private void OnEnable()
@@ -100,7 +107,10 @@ namespace ShooterPrototype.UI
             SetStatus(idleStatusText);
             SetStartButtonState(isQueueing: false, interactable: true);
             RefreshSelectedCharacterLabel();
-            RefreshPlayerPreview();
+            if (PlayerProfileService.IsServerSynced)
+            {
+                RefreshPlayerPreview(true);
+            }
         }
 
         private void OnDisable()
@@ -127,7 +137,7 @@ namespace ShooterPrototype.UI
             var selection = CharacterSelectionService.SelectNextModel(charactersResourcesFolder);
             var displayName = selection.ModelAsset != null ? selection.DisplayName : "Default";
             RefreshSelectedCharacterLabel(displayName);
-            RefreshPlayerPreview();
+            RefreshPlayerPreview(PlayerProfileService.IsServerSynced);
         }
 
         public void OnStartPressed()
@@ -136,6 +146,13 @@ namespace ShooterPrototype.UI
 
             if (GetComponent<MainMenuSectionController>() is { IsPanelOpen: true })
             {
+                return;
+            }
+
+            if (!PlayerProfileService.IsServerSynced)
+            {
+                SetStatus("Сервер недоступен");
+                ApplyServerConnectionState(MainMenuServerConnectionState.Unavailable, "Сервер недоступен");
                 return;
             }
 
@@ -222,6 +239,26 @@ namespace ShooterPrototype.UI
             var realtimeClient = FindObjectOfType<RealtimeTransportClient>();
             realtimeClient?.Disconnect();
             networkLauncher?.DisconnectClient("Preparing queue search.");
+
+            if (profileApiClient != null)
+            {
+                yield return PlayerProfileService.SyncProfile(
+                    this,
+                    profileApiClient,
+                    localPlayerId,
+                    fallbackToLocalOnFailure: false);
+            }
+
+            if (!PlayerProfileService.IsServerSynced)
+            {
+                SetStatus("Сервер недоступен");
+                ApplyServerConnectionState(MainMenuServerConnectionState.Unavailable, "Сервер недоступен");
+                SetStartButtonState(isQueueing: false, interactable: true);
+                yield break;
+            }
+
+            RefreshPlayerPreview(true);
+            RefreshNicknameEditor();
 
             if (queueApiClient != null && networkLauncher != null && !string.IsNullOrWhiteSpace(networkLauncher.CurrentTicketId))
             {
@@ -393,8 +430,58 @@ namespace ShooterPrototype.UI
 
         private void EnsureEconomy()
         {
-            PlayerSkinOwnershipService.EnsureInitialized();
+            PlayerProfileService.ApplyLocalFallback();
         }
+
+        public void BindConnectionGate(MainMenuServerConnectionGate gate)
+        {
+            connectionGate = gate;
+        }
+
+        public void RetryServerConnection()
+        {
+            if (profileSyncCoroutine != null)
+            {
+                StopCoroutine(profileSyncCoroutine);
+                profileSyncCoroutine = null;
+            }
+
+            ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Подключение к серверу...");
+            profileSyncCoroutine = StartCoroutine(SyncProfileRoutine());
+        }
+
+        private IEnumerator SyncProfileRoutine()
+        {
+            if (profileApiClient == null)
+            {
+                ApplyServerConnectionState(MainMenuServerConnectionState.Unavailable, "Сервер недоступен");
+                yield break;
+            }
+
+            ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Подключение к серверу...");
+            yield return PlayerProfileService.SyncProfile(this, profileApiClient, localPlayerId, fallbackToLocalOnFailure: false);
+
+            if (PlayerProfileService.IsServerSynced)
+            {
+                SetStatus(idleStatusText);
+                ApplyServerConnectionState(MainMenuServerConnectionState.Connected);
+                RefreshPlayerPreview(true);
+                RefreshNicknameEditor();
+                yield break;
+            }
+
+            SetStatus("Сервер недоступен");
+            ApplyServerConnectionState(MainMenuServerConnectionState.Unavailable, "Сервер недоступен");
+            RefreshPlayerPreview(false);
+        }
+
+        private void ApplyServerConnectionState(MainMenuServerConnectionState state, string message = null)
+        {
+            connectionGate?.SetState(state, message);
+        }
+
+        public string LocalPlayerId => localPlayerId;
+        public PlayerProfileApiClient ProfileApiClient => profileApiClient;
 
         private void EnsureUiSound()
         {
@@ -445,12 +532,21 @@ namespace ShooterPrototype.UI
             }
         }
 
-        private void RefreshPlayerPreview()
+        private void RefreshNicknameEditor()
+        {
+            var editor = GetComponent<MainMenuNicknameEditor>();
+            if (editor != null)
+            {
+                editor.Configure(this, profileApiClient, uiSound);
+            }
+        }
+
+        private void RefreshPlayerPreview(bool allow)
         {
             var preview = GetComponent<MainMenuPlayerPreview>();
             if (preview != null)
             {
-                preview.Refresh();
+                preview.SetAllowPreview(allow);
             }
         }
 
@@ -478,23 +574,7 @@ namespace ShooterPrototype.UI
 
         private static string BuildLocalPlayerId()
         {
-            var deviceId = SystemInfo.deviceUniqueIdentifier;
-            var processId = 0;
-            try
-            {
-                processId = System.Diagnostics.Process.GetCurrentProcess().Id;
-            }
-            catch
-            {
-                processId = UnityEngine.Random.Range(1000, 99999);
-            }
-
-            if (string.IsNullOrWhiteSpace(deviceId))
-            {
-                return $"player-{System.Guid.NewGuid():N}-{processId}";
-            }
-
-            return $"player-{Mathf.Abs(deviceId.GetHashCode())}-{processId}";
+            return PlayerIdentityService.GetOrCreatePlayerId();
         }
 
         private void EnsureDependencies()
@@ -509,6 +589,11 @@ namespace ShooterPrototype.UI
                 queueApiClient = FindObjectOfType<QueueApiClient>();
             }
 
+            if (profileApiClient == null)
+            {
+                profileApiClient = FindObjectOfType<PlayerProfileApiClient>();
+            }
+
             if (queueApiClient == null && networkLauncher != null && !Application.isBatchMode)
             {
                 queueApiClient = networkLauncher.GetComponent<QueueApiClient>();
@@ -516,6 +601,15 @@ namespace ShooterPrototype.UI
                 {
                     queueApiClient = networkLauncher.gameObject.AddComponent<QueueApiClient>();
                     Debug.Log("[MainMenuController] QueueApiClient auto-created on NetworkLauncher object.");
+                }
+            }
+
+            if (profileApiClient == null && networkLauncher != null && !Application.isBatchMode)
+            {
+                profileApiClient = networkLauncher.GetComponent<PlayerProfileApiClient>();
+                if (profileApiClient == null)
+                {
+                    profileApiClient = networkLauncher.gameObject.AddComponent<PlayerProfileApiClient>();
                 }
             }
 
@@ -529,6 +623,7 @@ namespace ShooterPrototype.UI
                 var baseUrl = networkConfig != null ? networkConfig.QueueApiBaseUrl : "http://127.0.0.1:5050";
                 var timeout = networkConfig != null ? networkConfig.QueueRequestTimeoutSeconds : 5f;
                 queueApiClient.Configure(baseUrl, timeout);
+                profileApiClient?.Configure(baseUrl, timeout);
             }
         }
 

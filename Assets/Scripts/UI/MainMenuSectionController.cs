@@ -42,7 +42,8 @@ namespace ShooterPrototype.UI
             Button back,
             CanvasGroup backGroup,
             MainMenuInventoryPanel inventory,
-            MainMenuShopPanel shop)
+            MainMenuShopPanel shop,
+            CanvasGroup nicknameGroup = null)
         {
             cameraMotion = camera;
             uiSound = sound;
@@ -65,6 +66,11 @@ namespace ShooterPrototype.UI
             if (changeCharacterGroup != null)
             {
                 mainMenuGroups.Add(changeCharacterGroup);
+            }
+
+            if (nicknameGroup != null)
+            {
+                mainMenuGroups.Add(nicknameGroup);
             }
 
             if (inventoryButton != null)

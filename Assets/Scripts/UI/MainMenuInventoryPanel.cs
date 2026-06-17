@@ -335,14 +335,55 @@ namespace ShooterPrototype.UI
 
         private void OnItemClicked(PlayerSkinDefinition item)
         {
-            if (!PlayerSkinSelectionService.TryResolveSlot(item, out _))
+            if (!PlayerSkinSelectionService.TryResolveSlot(item, out var slot))
             {
                 return;
+            }
+
+            if (PlayerProfileService.IsServerSynced)
+            {
+                var menu = FindObjectOfType<MainMenuController>();
+                if (menu != null && menu.ProfileApiClient != null)
+                {
+                    StartCoroutine(EquipFromServerRoutine(menu, item, slot));
+                    return;
+                }
             }
 
             if (!PlayerSkinSelectionService.TryEquip(item))
             {
                 return;
+            }
+
+            playerPreview?.RefreshSkins();
+            RefreshEquippedVisuals();
+            uiSound?.PlayButton();
+        }
+
+        private IEnumerator EquipFromServerRoutine(
+            MainMenuController menu,
+            PlayerSkinDefinition item,
+            PlayerSkinSlot slot)
+        {
+            var wasEquipped = PlayerSkinSelectionService.IsEquipped(item);
+            if (wasEquipped && !PlayerSkinSelectionService.SupportsUnequip(slot))
+            {
+                yield break;
+            }
+
+            var skinId = wasEquipped ? "__none__" : item.Id;
+            var success = false;
+            yield return PlayerProfileService.EquipSkin(
+                this,
+                menu.ProfileApiClient,
+                menu.LocalPlayerId,
+                slot,
+                skinId,
+                (ok, _) => success = ok);
+
+            if (!success)
+            {
+                yield break;
             }
 
             playerPreview?.RefreshSkins();

@@ -6,6 +6,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using ShooterPrototype.Player;
 using UnityEngine;
 
 namespace ShooterPrototype.Network
@@ -46,6 +47,12 @@ namespace ShooterPrototype.Network
         {
             public string ticketId;
             public string characterModel;
+            public string skinShirt;
+            public string skinPants;
+            public string skinBoots;
+            public string skinGloves;
+            public string skinFace;
+            public string skinHair;
             public PositionDto position;
             public float yaw;
             public float lookPitch;
@@ -478,6 +485,19 @@ namespace ShooterPrototype.Network
         }
 
         [Serializable]
+        public sealed class KillFeedMessage
+        {
+            public string type;
+            public long seq;
+            public string killerTicketId;
+            public string victimTicketId;
+            public string killerNickname;
+            public string victimNickname;
+            public int weaponKind;
+            public string cause;
+        }
+
+        [Serializable]
         public sealed class PlayerLandMessage
         {
             public string type;
@@ -561,6 +581,12 @@ namespace ShooterPrototype.Network
         {
             public string type;
             public string characterModel;
+            public string skinShirt;
+            public string skinPants;
+            public string skinBoots;
+            public string skinGloves;
+            public string skinFace;
+            public string skinHair;
             public PositionDto position;
             public float yaw;
             public float lookPitch;
@@ -740,6 +766,7 @@ namespace ShooterPrototype.Network
         public event Action<DamageZoneStateMessage> DamageZoneStateReceived;
         public event Action<MatchStateMessage> MatchStateReceived;
         public event Action<MatchDisconnectMessage> MatchDisconnectReceived;
+        public event Action<KillFeedMessage> KillFeedReceived;
         public event Action<PlayerLandMessage> PlayerLandReceived;
 
         private void Awake()
@@ -882,6 +909,7 @@ namespace ShooterPrototype.Network
             Vector3 position,
             float yaw,
             string characterModel = "",
+            PlayerSkinNetworkState skinState = default,
             float lookPitch = 0f,
             int shotSeq = 0,
             int reloadSeq = 0,
@@ -931,6 +959,12 @@ namespace ShooterPrototype.Network
                     z = position.z
                 },
                 characterModel = string.IsNullOrWhiteSpace(characterModel) ? string.Empty : characterModel,
+                skinShirt = skinState.ShirtId ?? string.Empty,
+                skinPants = skinState.PantsId ?? string.Empty,
+                skinBoots = skinState.BootsId ?? string.Empty,
+                skinGloves = skinState.GlovesId ?? string.Empty,
+                skinFace = skinState.FaceId ?? string.Empty,
+                skinHair = skinState.HairId ?? string.Empty,
                 yaw = yaw,
                 lookPitch = lookPitch,
                 shotSeq = Math.Max(0, shotSeq),
@@ -1011,6 +1045,13 @@ namespace ShooterPrototype.Network
             {
                 PoseSeq = message.poseSeq,
                 CharacterModel = message.characterModel ?? string.Empty,
+                SkinState = new PlayerSkinNetworkState(
+                    message.skinShirt,
+                    message.skinPants,
+                    message.skinBoots,
+                    message.skinGloves,
+                    message.skinFace,
+                    message.skinHair),
                 PosX = message.position?.x ?? 0f,
                 PosY = message.position?.y ?? 0f,
                 PosZ = message.position?.z ?? 0f,
@@ -1104,6 +1145,16 @@ namespace ShooterPrototype.Network
                 return true;
             }
 
+            if (!string.Equals(nextPose.skinShirt, lastSentPoseMessage.skinShirt, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(nextPose.skinPants, lastSentPoseMessage.skinPants, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(nextPose.skinBoots, lastSentPoseMessage.skinBoots, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(nextPose.skinGloves, lastSentPoseMessage.skinGloves, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(nextPose.skinFace, lastSentPoseMessage.skinFace, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(nextPose.skinHair, lastSentPoseMessage.skinHair, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
             var lastPos = lastSentPoseMessage.position;
             var nextPos = nextPose.position;
             if (lastPos == null || nextPos == null)
@@ -1155,6 +1206,12 @@ namespace ShooterPrototype.Network
             {
                 type = source.type,
                 characterModel = source.characterModel,
+                skinShirt = source.skinShirt,
+                skinPants = source.skinPants,
+                skinBoots = source.skinBoots,
+                skinGloves = source.skinGloves,
+                skinFace = source.skinFace,
+                skinHair = source.skinHair,
                 position = source.position == null
                     ? null
                     : new PositionDto
@@ -1948,6 +2005,24 @@ namespace ShooterPrototype.Network
                 {
                     var message = matchDisconnectMessage;
                     EnqueueMainThreadAction(() => MatchDisconnectReceived?.Invoke(message));
+                    return;
+                }
+
+                KillFeedMessage killFeedMessage = null;
+                try
+                {
+                    killFeedMessage = JsonUtility.FromJson<KillFeedMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (killFeedMessage != null &&
+                    string.Equals(killFeedMessage.type, "kill_feed", StringComparison.Ordinal))
+                {
+                    var message = killFeedMessage;
+                    EnqueueMainThreadAction(() => KillFeedReceived?.Invoke(message));
                     return;
                 }
 

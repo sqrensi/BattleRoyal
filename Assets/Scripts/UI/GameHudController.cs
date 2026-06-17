@@ -29,6 +29,7 @@ namespace ShooterPrototype.UI
         private GameObject topBarPanel;
         private bool topBarVisible;
         private CombatHudController combatHud;
+        private GameKillFeedController killFeed;
         private Text connectionText;
         private Text playersText;
         private Text pingText;
@@ -151,11 +152,13 @@ namespace ShooterPrototype.UI
                 EnsurePingRefreshRunning();
                 SetTopBarVisible(topBarVisible);
                 combatHud?.SetActiveForScene(true);
+                killFeed?.SetActiveForScene(true);
             }
             else
             {
                 StopPingRefresh();
                 combatHud?.SetActiveForScene(false);
+                killFeed?.SetActiveForScene(false);
             }
         }
 
@@ -319,6 +322,7 @@ namespace ShooterPrototype.UI
                 EnsureEventSystemExists();
                 BuildHudLayout(canvas.gameObject);
                 EnsureCombatHud();
+                EnsureKillFeed();
             }
 
             if (canvas != null)
@@ -342,6 +346,20 @@ namespace ShooterPrototype.UI
             }
 
             combatHud.EnsureOnCanvas(canvas);
+        }
+
+        private void EnsureKillFeed()
+        {
+            if (killFeed == null)
+            {
+                killFeed = GetComponent<GameKillFeedController>();
+                if (killFeed == null)
+                {
+                    killFeed = gameObject.AddComponent<GameKillFeedController>();
+                }
+            }
+
+            killFeed.EnsureOnCanvas(canvas);
         }
 
         private void BuildHudLayout(GameObject rootCanvasObject)

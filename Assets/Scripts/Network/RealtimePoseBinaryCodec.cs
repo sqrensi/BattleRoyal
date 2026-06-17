@@ -1,12 +1,13 @@
 using System;
 using System.Text;
+using ShooterPrototype.Player;
 
 namespace ShooterPrototype.Network
 {
     internal static class RealtimePoseBinaryCodec
     {
         private static readonly byte[] Magic = { (byte)'R', (byte)'T', (byte)'P', (byte)'1' };
-        public const byte Version = 1;
+        public const byte Version = 2;
         private const int HeaderSize = 10; // magic4 + version1 + poseSeq4 + modelLen1
         private const int BodySize = 121; // 5*f32 + u16 + 5*u8 + i16 + 6*u32 + 17*f32
 
@@ -19,7 +20,8 @@ namespace ShooterPrototype.Network
                 Array.Resize(ref modelBytes, 64);
             }
 
-            var buffer = new byte[HeaderSize + modelBytes.Length + BodySize];
+            var skinSize = PlayerSkinNetworkCodec.GetEncodedSize(packet.SkinState);
+            var buffer = new byte[HeaderSize + modelBytes.Length + skinSize + BodySize];
             var offset = 0;
             WriteMagic(buffer, ref offset);
             WriteU8(buffer, ref offset, Version);
@@ -30,6 +32,8 @@ namespace ShooterPrototype.Network
                 Buffer.BlockCopy(modelBytes, 0, buffer, offset, modelBytes.Length);
                 offset += modelBytes.Length;
             }
+
+            offset = PlayerSkinNetworkCodec.WriteSlotIds(buffer, offset, packet.SkinState);
 
             WriteF32(buffer, ref offset, packet.PosX);
             WriteF32(buffer, ref offset, packet.PosY);
@@ -134,6 +138,7 @@ namespace ShooterPrototype.Network
     {
         public int PoseSeq;
         public string CharacterModel;
+        public PlayerSkinNetworkState SkinState;
         public float PosX;
         public float PosY;
         public float PosZ;

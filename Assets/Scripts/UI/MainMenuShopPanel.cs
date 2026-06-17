@@ -465,6 +465,16 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            if (PlayerProfileService.IsServerSynced)
+            {
+                var menu = FindObjectOfType<MainMenuController>();
+                if (menu != null && menu.ProfileApiClient != null)
+                {
+                    StartCoroutine(PurchaseFromServerRoutine(menu, item));
+                    return;
+                }
+            }
+
             if (!PlayerSkinOwnershipService.TryPurchase(item))
             {
                 uiSound?.PlayButton();
@@ -473,6 +483,23 @@ namespace ShooterPrototype.UI
 
             uiSound?.PlayButton();
             RefreshSlotVisuals();
+        }
+
+        private IEnumerator PurchaseFromServerRoutine(MainMenuController menu, PlayerSkinDefinition item)
+        {
+            var success = false;
+            yield return PlayerProfileService.PurchaseSkin(
+                this,
+                menu.ProfileApiClient,
+                menu.LocalPlayerId,
+                item.Id,
+                (ok, _) => success = ok);
+
+            uiSound?.PlayButton();
+            if (success)
+            {
+                RefreshSlotVisuals();
+            }
         }
 
         private void RefreshAffordability()

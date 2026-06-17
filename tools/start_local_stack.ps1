@@ -51,6 +51,12 @@ function Save-PidInfo {
 
 New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
 
+$launcherSource = Join-Path $repoRoot "tools\client-launcher\LaunchClient2.exe"
+$launcherTarget = Join-Path (Split-Path -Parent $serverExe) "LaunchClient2.exe"
+if (Test-Path $launcherSource) {
+    Copy-Item -Path $launcherSource -Destination $launcherTarget -Force
+}
+
 if (!(Test-Path $serverExe)) {
     throw "Server build not found: $serverExe"
 }

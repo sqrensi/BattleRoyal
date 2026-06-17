@@ -13,7 +13,10 @@ namespace ShooterPrototype.UI
         [SerializeField] private float valueFontSize = 24f;
 
         private TMP_Text valueText;
+        private CanvasGroup canvasGroup;
         private bool built;
+
+        public CanvasGroup CanvasGroup => canvasGroup;
 
         public void Build(RectTransform canvasRect)
         {
@@ -42,6 +45,7 @@ namespace ShooterPrototype.UI
             valueText.color = ValueColor;
             valueText.raycastTarget = false;
 
+            canvasGroup = textObject.AddComponent<CanvasGroup>();
             built = true;
             Refresh();
         }

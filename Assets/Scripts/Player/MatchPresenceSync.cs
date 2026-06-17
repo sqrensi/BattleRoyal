@@ -129,6 +129,8 @@ namespace ShooterPrototype.Player
             public bool HadWeapon;
             public int LastAppliedStateTick = -1;
             public string AppliedCharacterModelName;
+            public PlayerSkinNetworkState AppliedSkinState;
+            public bool HasAppliedSkinState;
             public RemoteWeaponPresentation RemoteWeapon;
             public RemoteLookPitchPosture RemotePitchPosture;
             public RemoteMedkitPresentation RemoteMedkit;
@@ -191,6 +193,7 @@ namespace ShooterPrototype.Player
 
             localCharacterModelName = CharacterSelectionService.GetSelectedModelName(charactersResourcesFolder);
             wsJoinGraceUntilRealtime = Time.unscaledTime + wsJoinGraceSeconds;
+            PlayerSkinSelectionService.ApplyToPlayer(gameObject, forceReapply: true);
             SyncLocalWeaponLoadoutFromMount();
             SubscribeTransportEvents();
             if (realtimeClient != null && realtimeClient.IsReady)
@@ -905,6 +908,7 @@ namespace ShooterPrototype.Player
                     currentPos,
                     currentYaw,
                     localCharacterModelName,
+                    PlayerSkinSelectionService.CaptureLocalNetworkState(),
                     lookPitch,
                     shotSeq,
                     reloadSeq,
@@ -1449,6 +1453,7 @@ namespace ShooterPrototype.Player
                     avatar.LocomotionRig?.SetNetworkLookPitch(p.lookPitch);
                     IngestPlayerStateSamples(avatar, p);
                     ApplyRemoteCharacterModel(avatar, p.characterModel);
+                    ApplyRemoteSkins(avatar, p);
 
                     var remoteWeapon = avatar.RemoteWeapon;
                     remoteWeapon?.SetNetworkLookPitch(p.lookPitch);
@@ -1598,6 +1603,8 @@ namespace ShooterPrototype.Player
                 LastKnownYaw = initialYaw,
                 HasKnownPose = true,
                 AppliedCharacterModelName = string.Empty,
+                AppliedSkinState = default,
+                HasAppliedSkinState = false,
                 HadWeapon = false,
                 WasHolstered = true
             };
@@ -1640,8 +1647,33 @@ namespace ShooterPrototype.Player
             if (CharacterModelApplier.TryApplyToPlayer(avatar.Root, modelAsset))
             {
                 avatar.AppliedCharacterModelName = modelName;
+                avatar.HasAppliedSkinState = false;
                 CacheRemoteAvatarComponents(avatar);
             }
+        }
+
+        private void ApplyRemoteSkins(RemoteAvatar avatar, RealtimeTransportClient.RealtimePlayerState player)
+        {
+            if (avatar?.Root == null || player == null || lastSnapshotBinaryVersion < 11)
+            {
+                return;
+            }
+
+            var skinState = new PlayerSkinNetworkState(
+                player.skinShirt,
+                player.skinPants,
+                player.skinBoots,
+                player.skinGloves,
+                player.skinFace,
+                player.skinHair);
+            if (avatar.HasAppliedSkinState && skinState.Equals(avatar.AppliedSkinState))
+            {
+                return;
+            }
+
+            PlayerSkinSelectionService.ApplyNetworkStateToPlayer(avatar.Root, skinState, forceReapply: true);
+            avatar.AppliedSkinState = skinState;
+            avatar.HasAppliedSkinState = true;
         }
 
         private void EnsureAvatarHasFallbackModel(GameObject avatarRoot)

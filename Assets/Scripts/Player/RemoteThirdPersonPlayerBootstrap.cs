@@ -11,26 +11,12 @@ namespace ShooterPrototype.Player
         [SerializeField] private bool applyOnAwake = true;
         [SerializeField] private RuntimeAnimatorController remoteAnimatorController;
 
-        private bool deferredClothingRefreshPending;
-
         private void Awake()
         {
             if (applyOnAwake)
             {
                 ApplyRemoteThirdPersonMode();
-                deferredClothingRefreshPending = true;
             }
-        }
-
-        private void Start()
-        {
-            if (!deferredClothingRefreshPending)
-            {
-                return;
-            }
-
-            deferredClothingRefreshPending = false;
-            RefreshRemoteResourceClothingAfterSkeletonReady();
         }
 
         public void RefreshRemoteWeaponPresentation()
@@ -54,7 +40,6 @@ namespace ShooterPrototype.Player
             WireRemoteMedkit(thirdPersonBody);
             WireRemoteLookPitchPosture(thirdPersonBody);
             EnsureBoneHitboxes(thirdPersonBody);
-            ApplyRemoteResourceClothing(thirdPersonBody);
             EnsureRemoteShotEffects();
         }
 
@@ -184,49 +169,6 @@ namespace ShooterPrototype.Player
             {
                 gameObject.AddComponent<RemotePlayerShotEffects>();
             }
-        }
-
-        private void ApplyRemoteResourceClothing(Transform thirdPersonBody)
-        {
-            if (thirdPersonBody == null)
-            {
-                return;
-            }
-
-            var syntyVisual = thirdPersonBody.Find("SyntyVisual");
-            if (syntyVisual == null)
-            {
-                return;
-            }
-
-            var clothingApplier = GetComponent<RemoteResourceClothingApplier>();
-            if (clothingApplier == null)
-            {
-                clothingApplier = gameObject.AddComponent<RemoteResourceClothingApplier>();
-            }
-
-            clothingApplier.ApplyToRemoteVisual(syntyVisual, forceReapply: true);
-            PlayerSkinSelectionService.ApplyAttachmentsToPlayer(gameObject, forceReapply: true);
-        }
-
-        private void RefreshRemoteResourceClothingAfterSkeletonReady()
-        {
-            var thirdPersonBody = transform.Find("ThirdPersonBody");
-            if (thirdPersonBody == null)
-            {
-                return;
-            }
-
-            var syntyVisual = thirdPersonBody.Find("SyntyVisual");
-            if (syntyVisual == null)
-            {
-                return;
-            }
-
-            var animator = syntyVisual.GetComponent<Animator>();
-            animator?.Update(0f);
-
-            ApplyRemoteResourceClothing(thirdPersonBody);
         }
 
         private void WireRemoteHolsterAnimation(Transform thirdPersonBody)

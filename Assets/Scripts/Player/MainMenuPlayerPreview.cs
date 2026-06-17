@@ -26,6 +26,20 @@ namespace ShooterPrototype.Player
         private GameObject previewInstance;
         private WeaponKind? pinnedLobbyWeaponKind;
 
+        private bool allowPreview = true;
+
+        public void SetAllowPreview(bool allow)
+        {
+            allowPreview = allow;
+            if (!allowPreview)
+            {
+                DestroyPreviewInstance();
+                return;
+            }
+
+            Refresh();
+        }
+
         public void Refresh()
         {
             DestroyPreviewInstance();
@@ -51,6 +65,11 @@ namespace ShooterPrototype.Player
 
         private void SpawnPreview()
         {
+            if (!allowPreview)
+            {
+                return;
+            }
+
             ResolveRemotePrefab();
             if (remotePlayerPrefab == null)
             {

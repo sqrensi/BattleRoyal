@@ -5,6 +5,7 @@
   "description": "Local queue and matchmaking service for ShooterPrototype MVP",
   "main": "server.js",
   "dependencies": {
+    "better-sqlite3": "^11.10.0",
     "ws": "^8.20.1"
   },
   "scripts": {

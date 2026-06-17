@@ -11,6 +11,13 @@ namespace ShooterPrototype.Player
 
         public static int Balance => PlayerPrefs.GetInt(BalancePrefKey, 0);
 
+        public static void ApplyFromServer(int amount)
+        {
+            var clamped = Mathf.Max(0, amount);
+            PlayerPrefs.SetInt(BalancePrefKey, clamped);
+            BalanceChanged?.Invoke();
+        }
+
         public static void SetBalance(int amount)
         {
             var clamped = Mathf.Max(0, amount);

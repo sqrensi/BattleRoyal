@@ -69,6 +69,11 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
+            if (PlayerProfileService.IsServerSynced)
+            {
+                return PlayerProfileService.IsOwned(skinId);
+            }
+
             return PlayerPrefs.GetInt(OwnedPrefPrefix + skinId, 0) == 1;
         }
 
@@ -114,6 +119,11 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
+            if (PlayerProfileService.IsServerSynced)
+            {
+                return false;
+            }
+
             var price = GetShopPrice(item);
             if (!PlayerCurrencyService.TrySpend(price))
             {
@@ -122,6 +132,16 @@ namespace ShooterPrototype.Player
 
             MarkOwned(item.Id);
             return true;
+        }
+
+        public static void MarkOwnedFromServer(string skinId)
+        {
+            MarkOwned(skinId, persist: false);
+        }
+
+        public static void NotifyOwnershipChanged()
+        {
+            OwnershipChanged?.Invoke();
         }
 
         public static IReadOnlyList<PlayerSkinDefinition> GetOwnedOptions(PlayerSkinSlot slot)

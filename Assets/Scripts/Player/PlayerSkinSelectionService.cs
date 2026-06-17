@@ -201,6 +201,11 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
+            if (PlayerProfileService.IsServerSynced)
+            {
+                return false;
+            }
+
             if (IsEquipped(item))
             {
                 if (!SupportsUnequip(slot))
@@ -264,15 +269,100 @@ namespace ShooterPrototype.Player
 
         public static void ApplyTo(RemoteResourceClothingApplier applier)
         {
+            ApplyTo(applier, CaptureLocalNetworkState());
+        }
+
+        public static PlayerSkinNetworkState CaptureLocalNetworkState()
+        {
+            if (PlayerProfileService.IsServerSynced && PlayerProfileService.CurrentProfile?.equipped != null)
+            {
+                return CaptureFromEquipped(PlayerProfileService.CurrentProfile.equipped);
+            }
+
+            return CaptureFromPlayerPrefs();
+        }
+
+        public static PlayerSkinNetworkState CaptureFromEquipped(PlayerProfileEquippedDto equipped)
+        {
+            if (equipped == null)
+            {
+                return CaptureFromPlayerPrefs();
+            }
+
+            return new PlayerSkinNetworkState(
+                equipped.shirt,
+                equipped.pants,
+                equipped.boots,
+                equipped.gloves,
+                equipped.face,
+                equipped.hair);
+        }
+
+        private static PlayerSkinNetworkState CaptureFromPlayerPrefs()
+        {
+            return new PlayerSkinNetworkState(
+                GetAppliedSkinId(PlayerSkinSlot.Shirt),
+                GetAppliedSkinId(PlayerSkinSlot.Pants),
+                GetAppliedSkinId(PlayerSkinSlot.Boots),
+                GetAppliedSkinId(PlayerSkinSlot.Gloves),
+                GetAppliedSkinId(PlayerSkinSlot.Face),
+                GetAppliedSkinId(PlayerSkinSlot.Hair));
+        }
+
+        public static void ApplyNetworkStateToPlayer(
+            GameObject playerRoot,
+            in PlayerSkinNetworkState state,
+            bool forceReapply = true)
+        {
+            if (playerRoot == null)
+            {
+                return;
+            }
+
+            var clothingApplier = playerRoot.GetComponent<RemoteResourceClothingApplier>();
+            if (clothingApplier == null)
+            {
+                clothingApplier = playerRoot.AddComponent<RemoteResourceClothingApplier>();
+            }
+
+            ApplyTo(clothingApplier, state);
+
+            var attachmentApplier = playerRoot.GetComponent<PlayerAttachmentApplier>();
+            if (attachmentApplier == null)
+            {
+                attachmentApplier = playerRoot.AddComponent<PlayerAttachmentApplier>();
+            }
+
+            attachmentApplier.ApplyFromNetwork(state, forceReapply);
+
+            var thirdPersonBody = playerRoot.transform.Find("ThirdPersonBody");
+            var syntyVisual = thirdPersonBody != null ? thirdPersonBody.Find("SyntyVisual") : null;
+            if (syntyVisual == null)
+            {
+                return;
+            }
+
+            var armsPresenter = playerRoot.GetComponent<SyntyFirstPersonArmsPresenter>();
+            if (armsPresenter != null && playerRoot.GetComponent<RemoteThirdPersonPlayerBootstrap>() == null)
+            {
+                clothingApplier.ApplyToLocalVisual(syntyVisual, armsPresenter, forceReapply);
+                return;
+            }
+
+            clothingApplier.ApplyToRemoteVisual(syntyVisual, forceReapply);
+        }
+
+        public static void ApplyTo(RemoteResourceClothingApplier applier, in PlayerSkinNetworkState state)
+        {
             if (applier == null)
             {
                 return;
             }
 
-            ResolveSkinPaths(PlayerSkinSlot.Shirt, out var shirtMesh, out var shirtMaterial);
-            ResolveSkinPaths(PlayerSkinSlot.Pants, out var pantsMesh, out var pantsMaterial);
-            ResolveSkinPaths(PlayerSkinSlot.Boots, out var bootsMesh, out var bootsMaterial);
-            ResolveSkinPaths(PlayerSkinSlot.Gloves, out var glovesMesh, out var glovesMaterial);
+            ResolveSkinPathsFromId(state.ShirtId, out var shirtMesh, out var shirtMaterial);
+            ResolveSkinPathsFromId(state.PantsId, out var pantsMesh, out var pantsMaterial);
+            ResolveSkinPathsFromId(state.BootsId, out var bootsMesh, out var bootsMaterial);
+            ResolveSkinPathsFromId(state.GlovesId, out var glovesMesh, out var glovesMaterial);
 
             applier.ConfigureSkinPaths(
                 shirtMesh,
@@ -292,30 +382,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var clothingApplier = playerRoot.GetComponent<RemoteResourceClothingApplier>();
-            if (clothingApplier == null)
-            {
-                clothingApplier = playerRoot.AddComponent<RemoteResourceClothingApplier>();
-            }
-
-            ApplyTo(clothingApplier);
-            ApplyAttachmentsToPlayer(playerRoot, forceReapply);
-
-            var thirdPersonBody = playerRoot.transform.Find("ThirdPersonBody");
-            var syntyVisual = thirdPersonBody != null ? thirdPersonBody.Find("SyntyVisual") : null;
-            if (syntyVisual == null)
-            {
-                return;
-            }
-
-            var armsPresenter = playerRoot.GetComponent<SyntyFirstPersonArmsPresenter>();
-            if (armsPresenter != null && playerRoot.GetComponent<RemoteThirdPersonPlayerBootstrap>() == null)
-            {
-                clothingApplier.ApplyToLocalVisual(syntyVisual, armsPresenter, forceReapply);
-                return;
-            }
-
-            clothingApplier.ApplyToRemoteVisual(syntyVisual, forceReapply);
+            ApplyNetworkStateToPlayer(playerRoot, CaptureLocalNetworkState(), forceReapply);
         }
 
         public static void ApplyAttachmentsToPlayer(GameObject playerRoot, bool forceReapply = true)
@@ -461,6 +528,29 @@ namespace ShooterPrototype.Player
 
             meshPath = string.Empty;
             materialPath = string.Empty;
+        }
+
+        private static void ResolveSkinPathsFromId(string skinId, out string meshPath, out string materialPath)
+        {
+            meshPath = string.Empty;
+            materialPath = string.Empty;
+            if (string.IsNullOrWhiteSpace(skinId))
+            {
+                return;
+            }
+
+            if (TryGetDefinitionById(skinId, out var definition) && definition.IsValid)
+            {
+                meshPath = definition.PrefabResourcePath;
+                materialPath = definition.MaterialResourcePath;
+            }
+        }
+
+        private static string GetAppliedSkinId(PlayerSkinSlot slot)
+        {
+            return TryGetAppliedSkin(slot, out var definition) && !string.IsNullOrWhiteSpace(definition.Id)
+                ? definition.Id
+                : string.Empty;
         }
 
         private static bool TryResolveDefaultAppliedSkin(

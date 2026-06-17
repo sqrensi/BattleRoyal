@@ -30,6 +30,34 @@ namespace ShooterPrototype.Player
             ApplySlot(PlayerSkinSlot.Hair, HairSocketName, ref appliedHairId, forceReapply);
         }
 
+        public void ApplyFromNetwork(in PlayerSkinNetworkState state, bool forceReapply = false)
+        {
+            ApplyNetworkSlot(state.FaceId, FaceSocketName, ref appliedFaceId, forceReapply);
+            ApplyNetworkSlot(state.HairId, HairSocketName, ref appliedHairId, forceReapply);
+        }
+
+        private void ApplyNetworkSlot(
+            string skinId,
+            string socketName,
+            ref string appliedId,
+            bool forceReapply)
+        {
+            if (string.IsNullOrWhiteSpace(skinId) ||
+                !PlayerSkinSelectionService.TryGetDefinitionById(skinId, out var definition) ||
+                !definition.IsValid)
+            {
+                if (!string.IsNullOrEmpty(appliedId))
+                {
+                    ClearSocket(EnsureAttachmentSocket(socketName));
+                    appliedId = string.Empty;
+                }
+
+                return;
+            }
+
+            ApplyDefinitionToSocket(definition, socketName, ref appliedId, forceReapply);
+        }
+
         private void ApplySlot(
             PlayerSkinSlot slot,
             string socketName,
@@ -45,6 +73,20 @@ namespace ShooterPrototype.Player
                     appliedId = string.Empty;
                 }
 
+                return;
+            }
+
+            ApplyDefinitionToSocket(definition, socketName, ref appliedId, forceReapply);
+        }
+
+        private void ApplyDefinitionToSocket(
+            PlayerSkinDefinition definition,
+            string socketName,
+            ref string appliedId,
+            bool forceReapply)
+        {
+            if (!definition.IsValid)
+            {
                 return;
             }
 

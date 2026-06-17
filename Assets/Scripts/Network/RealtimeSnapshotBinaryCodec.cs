@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using ShooterPrototype.Player;
 using UnityEngine;
 
 namespace ShooterPrototype.Network
@@ -27,7 +28,7 @@ namespace ShooterPrototype.Network
 
             var offset = 4;
             var version = ReadU8(data, ref offset);
-            if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10)
+            if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11)
             {
                 return false;
             }
@@ -80,6 +81,7 @@ namespace ShooterPrototype.Network
                 var ticketId = Encoding.UTF8.GetString(data, offset, ticketLen);
                 offset += ticketLen;
                 var characterModel = string.Empty;
+                var skinState = default(PlayerSkinNetworkState);
                 if (version >= 6)
                 {
                     if (offset >= data.Length)
@@ -95,6 +97,14 @@ namespace ShooterPrototype.Network
 
                     characterModel = Encoding.UTF8.GetString(data, offset, modelLen);
                     offset += modelLen;
+                }
+
+                if (version >= 11)
+                {
+                    if (!PlayerSkinNetworkCodec.TryReadSlotIds(data, ref offset, out skinState))
+                    {
+                        return false;
+                    }
                 }
 
                 if (offset + 35 > data.Length)
@@ -303,6 +313,12 @@ namespace ShooterPrototype.Network
                 {
                     ticketId = ticketId,
                     characterModel = characterModel,
+                    skinShirt = skinState.ShirtId,
+                    skinPants = skinState.PantsId,
+                    skinBoots = skinState.BootsId,
+                    skinGloves = skinState.GlovesId,
+                    skinFace = skinState.FaceId,
+                    skinHair = skinState.HairId,
                     position = new RealtimeTransportClient.PositionDto { x = px, y = py, z = pz },
                     yaw = yaw,
                     velX = velX,

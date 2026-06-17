@@ -42,6 +42,8 @@ namespace ShooterPrototype.UI
         private CanvasGroup backButtonGroup;
         private CanvasGroup startButtonGroup;
         private MainMenuCurrencyDisplay currencyDisplay;
+        private MainMenuNicknameEditor nicknameEditor;
+        private MainMenuServerConnectionGate connectionGate;
 
         public void ApplyLayout(MainMenuController controller)
         {
@@ -64,6 +66,7 @@ namespace ShooterPrototype.UI
             BuildTopNavBar(canvasRect, uiSound);
             CreateBackButton(canvasRect);
             BuildCurrencyDisplay(controller, canvasRect);
+            BuildNicknameEditor(controller, canvasRect, uiSound);
 
             if (controller.StartButton != null)
             {
@@ -111,6 +114,17 @@ namespace ShooterPrototype.UI
                 inventoryPanel.Build(canvasRect);
                 shopPanel.Build(canvasRect);
                 currencyDisplay?.Build(canvasRect);
+                nicknameEditor?.Build(canvasRect);
+                nicknameEditor?.Configure(controller, controller.ProfileApiClient, EnsureUiSound(controller));
+
+                connectionGate = EnsureConnectionGate(controller);
+                connectionGate.Configure(controller, controller.StatusText);
+                connectionGate.Build(canvasRect, EnsureUiSound(controller));
+                connectionGate.RegisterMenuGroup(topNavBarObject != null ? EnsureCanvasGroup(topNavBarObject) : null);
+                connectionGate.RegisterMenuGroup(startButtonGroup);
+                connectionGate.RegisterMenuGroup(nicknameEditor != null ? nicknameEditor.CanvasGroup : null);
+                connectionGate.RegisterMenuGroup(currencyDisplay != null ? currencyDisplay.CanvasGroup : null);
+                controller.BindConnectionGate(connectionGate);
             }
 
             inventoryPanel.Configure(
@@ -125,6 +139,8 @@ namespace ShooterPrototype.UI
                 ? EnsureCanvasGroup(controller.ChangeCharacterButton.gameObject)
                 : null;
 
+            connectionGate?.RegisterMenuGroup(changeCharacterGroup);
+
             sectionController.Configure(
                 controller.GetComponent<MainMenuCameraMotion>(),
                 controller.GetComponent<MainMenuUiSoundController>(),
@@ -136,7 +152,40 @@ namespace ShooterPrototype.UI
                 backButton,
                 backButtonGroup,
                 inventoryPanel,
-                shopPanel);
+                shopPanel,
+                nicknameEditor != null ? nicknameEditor.CanvasGroup : null);
+        }
+
+        private void BuildNicknameEditor(MainMenuController controller, RectTransform canvasRect, MainMenuUiSoundController uiSound)
+        {
+            if (controller == null || canvasRect == null)
+            {
+                return;
+            }
+
+            nicknameEditor = controller.GetComponent<MainMenuNicknameEditor>();
+            if (nicknameEditor == null)
+            {
+                nicknameEditor = controller.gameObject.AddComponent<MainMenuNicknameEditor>();
+            }
+
+            nicknameEditor.Configure(controller, controller.ProfileApiClient, uiSound);
+        }
+
+        private static MainMenuServerConnectionGate EnsureConnectionGate(MainMenuController controller)
+        {
+            if (controller == null)
+            {
+                return null;
+            }
+
+            var gate = controller.GetComponent<MainMenuServerConnectionGate>();
+            if (gate == null)
+            {
+                gate = controller.gameObject.AddComponent<MainMenuServerConnectionGate>();
+            }
+
+            return gate;
         }
 
         private void BuildCurrencyDisplay(MainMenuController controller, RectTransform canvasRect)

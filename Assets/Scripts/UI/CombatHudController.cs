@@ -1,4 +1,6 @@
+using ShooterPrototype.Network;
 using ShooterPrototype.Player;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -17,6 +19,10 @@ namespace ShooterPrototype.UI
         private const float DamageFadeOutSeconds = 0.42f;
         private const float TrailCatchUpSpeed = 2.4f;
         private const int DamageOverlayVersion = 2;
+        private const float KillBannerFadeInSeconds = 0.28f;
+        private const float KillBannerHoldSeconds = 2.2f;
+        private const float KillBannerFadeOutSeconds = 0.45f;
+        private const float KillBannerBottomOffset = 58f;
 
         private static Sprite whiteSprite;
 
@@ -28,6 +34,14 @@ namespace ShooterPrototype.UI
         private Image hpBackgroundImage;
         private Image leftDamageArc;
         private Image rightDamageArc;
+        private RectTransform killBannerRoot;
+        private CanvasGroup killBannerGroup;
+        private TMP_Text killBannerText;
+        private RealtimeTransportClient transportClient;
+        private float killBannerAlpha;
+        private float killBannerTargetAlpha;
+        private float killBannerHideAt;
+        private bool sceneActive;
 
         private PlayerHealth trackedHealth;
         private float displayedHealthRatio = 1f;
@@ -60,12 +74,14 @@ namespace ShooterPrototype.UI
             }
 
             EnsureDamageOverlay(hostCanvas.transform);
+            EnsureKillBanner(hostCanvas.transform);
             damageOverlayAlpha = 0f;
             damageOverlayTarget = 0f;
         }
 
         public void SetActiveForScene(bool active)
         {
+            sceneActive = active;
             if (canvas == null)
             {
                 return;
@@ -74,11 +90,22 @@ namespace ShooterPrototype.UI
             if (!active)
             {
                 UnbindHealth();
+                UnbindKillFeed();
                 displayedHealthRatio = 1f;
                 trailHealthRatio = 1f;
                 lastObservedHealth = -1f;
                 damageOverlayAlpha = 0f;
                 damageOverlayTarget = 0f;
+                killBannerAlpha = 0f;
+                killBannerTargetAlpha = 0f;
+                if (killBannerRoot != null)
+                {
+                    killBannerRoot.gameObject.SetActive(false);
+                }
+            }
+            else
+            {
+                BindKillFeed();
             }
         }
 
@@ -92,11 +119,119 @@ namespace ShooterPrototype.UI
             EnsureHealthBinding();
             RefreshHealthBar();
             TickDamageOverlay();
+            TickKillBanner();
         }
 
         private void OnDestroy()
         {
             UnbindHealth();
+            UnbindKillFeed();
+        }
+
+        private void BindKillFeed()
+        {
+            if (transportClient == null)
+            {
+                transportClient = RealtimeTransportClient.Active != null
+                    ? RealtimeTransportClient.Active
+                    : FindFirstObjectByType<RealtimeTransportClient>();
+            }
+
+            if (transportClient == null)
+            {
+                return;
+            }
+
+            transportClient.KillFeedReceived -= HandleKillFeed;
+            transportClient.KillFeedReceived += HandleKillFeed;
+        }
+
+        private void UnbindKillFeed()
+        {
+            if (transportClient != null)
+            {
+                transportClient.KillFeedReceived -= HandleKillFeed;
+            }
+        }
+
+        private void HandleKillFeed(RealtimeTransportClient.KillFeedMessage message)
+        {
+            if (!sceneActive || message == null)
+            {
+                return;
+            }
+
+            if (!string.Equals(message.cause, "player", System.StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var localTicketId = ResolveLocalTicketId();
+            if (string.IsNullOrWhiteSpace(localTicketId) ||
+                !string.Equals(message.killerTicketId, localTicketId, System.StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            ShowKillBanner(message.victimNickname);
+        }
+
+        private static string ResolveLocalTicketId()
+        {
+            var launcher = FindFirstObjectByType<NetworkLauncher>();
+            if (launcher != null && !string.IsNullOrWhiteSpace(launcher.CurrentTicketId))
+            {
+                return launcher.CurrentTicketId.Trim();
+            }
+
+            var transport = RealtimeTransportClient.Active != null
+                ? RealtimeTransportClient.Active
+                : FindFirstObjectByType<RealtimeTransportClient>();
+            return string.IsNullOrWhiteSpace(transport?.ConnectedTicketId)
+                ? string.Empty
+                : transport.ConnectedTicketId.Trim();
+        }
+
+        private void ShowKillBanner(string victimNickname)
+        {
+            if (killBannerRoot == null || killBannerText == null || killBannerGroup == null)
+            {
+                return;
+            }
+
+            var victim = string.IsNullOrWhiteSpace(victimNickname) ? "Игрок" : victimNickname.Trim();
+            killBannerText.text = $"Вы убили {victim}";
+            killBannerRoot.gameObject.SetActive(true);
+            killBannerAlpha = 0f;
+            killBannerTargetAlpha = 1f;
+            killBannerHideAt = Time.unscaledTime + KillBannerFadeInSeconds + KillBannerHoldSeconds;
+        }
+
+        private void TickKillBanner()
+        {
+            if (killBannerRoot == null || killBannerGroup == null || !killBannerRoot.gameObject.activeSelf)
+            {
+                return;
+            }
+
+            if (Time.unscaledTime >= killBannerHideAt)
+            {
+                killBannerTargetAlpha = 0f;
+            }
+
+            var fadeSpeed = killBannerTargetAlpha > killBannerAlpha
+                ? 1f / Mathf.Max(0.01f, KillBannerFadeInSeconds)
+                : 1f / Mathf.Max(0.01f, KillBannerFadeOutSeconds);
+            killBannerAlpha = Mathf.MoveTowards(
+                killBannerAlpha,
+                killBannerTargetAlpha,
+                fadeSpeed * Time.unscaledDeltaTime);
+            killBannerGroup.alpha = killBannerAlpha;
+
+            if (killBannerAlpha <= 0.001f && killBannerTargetAlpha <= 0.001f)
+            {
+                killBannerRoot.gameObject.SetActive(false);
+            }
         }
 
         private void EnsureHealthBinding()
@@ -283,6 +418,46 @@ namespace ShooterPrototype.UI
             hpFillImage.color = new Color(0.22f, 0.78f, 0.34f, 0.98f);
             hpFillImage.raycastTarget = false;
             SetHorizontalFill(hpFillRect, 1f);
+        }
+
+        private void EnsureKillBanner(Transform root)
+        {
+            if (killBannerRoot != null)
+            {
+                return;
+            }
+
+            var bannerObject = CreateRect("KillBannerRoot", root);
+            killBannerRoot = bannerObject.GetComponent<RectTransform>();
+            killBannerRoot.anchorMin = new Vector2(0.5f, 0f);
+            killBannerRoot.anchorMax = new Vector2(0.5f, 0f);
+            killBannerRoot.pivot = new Vector2(0.5f, 0f);
+            killBannerRoot.anchoredPosition = new Vector2(0f, KillBannerBottomOffset);
+            killBannerRoot.sizeDelta = new Vector2(520f, 42f);
+
+            var background = bannerObject.AddComponent<Image>();
+            background.sprite = GetWhiteSprite();
+            background.type = Image.Type.Simple;
+            background.color = new Color(0.04f, 0.06f, 0.08f, 0.72f);
+            background.raycastTarget = false;
+
+            killBannerGroup = bannerObject.AddComponent<CanvasGroup>();
+            killBannerGroup.alpha = 0f;
+
+            var labelObject = CreateRect("Label", bannerObject.transform);
+            var labelRect = labelObject.GetComponent<RectTransform>();
+            StretchFull(labelRect);
+            labelRect.offsetMin = new Vector2(16f, 6f);
+            labelRect.offsetMax = new Vector2(-16f, -6f);
+
+            killBannerText = labelObject.AddComponent<TextMeshProUGUI>();
+            killBannerText.fontSize = 24f;
+            killBannerText.fontStyle = FontStyles.Bold;
+            killBannerText.alignment = TextAlignmentOptions.Center;
+            killBannerText.color = new Color(0.98f, 0.9f, 0.58f, 1f);
+            killBannerText.raycastTarget = false;
+
+            bannerObject.SetActive(false);
         }
 
         private void EnsureDamageOverlay(Transform root)

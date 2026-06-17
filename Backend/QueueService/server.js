@@ -3,6 +3,9 @@ const { URL } = require("url");
 const crypto = require("crypto");
 const WebSocket = require("ws");
 const { WebSocketServer } = WebSocket;
+const { openDatabase } = require("./db/database");
+const { registerProfileRoutes } = require("./db/profileRoutes");
+const playerRepository = require("./db/playerRepository");
 
 const PORT = toInt(process.env.PORT, 5050);
 const MATCH_SERVER_ADDRESS = process.env.MATCH_SERVER_ADDRESS || "127.0.0.1";
@@ -22,6 +25,21 @@ const USE_BINARY_POSES = (process.env.USE_BINARY_POSES || "1") !== "0";
 const POSE_HISTORY_KEEP_MS = Math.max(200, toInt(process.env.POSE_HISTORY_KEEP_MS, 500));
 const SNAPSHOT_HISTORY_SAMPLES = Math.max(4, toInt(process.env.SNAPSHOT_HISTORY_SAMPLES, 16));
 const USE_BINARY_SNAPSHOTS = (process.env.USE_BINARY_SNAPSHOTS || "1") !== "0";
+
+try {
+  openDatabase();
+  console.log("[db] SQLite profile database ready.");
+} catch (error) {
+  console.error("[db] Failed to initialize SQLite database:", error.message || error);
+  process.exit(1);
+}
+
+const handleProfileRoutes = registerProfileRoutes({
+  readJsonBody,
+  respondJson,
+  getRequestUrl: (req) => new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`),
+});
+const killFeedSeqByMatchId = new Map();
 const MAX_PLAYER_SPEED = Number.isFinite(Number(process.env.MAX_PLAYER_SPEED))
   ? Math.max(4, Number(process.env.MAX_PLAYER_SPEED))
   : 12.5;
@@ -123,8 +141,13 @@ const server = http.createServer(async (req, res) => {
       queueSize: queuedTicketIds.length,
       ticketCount: ticketsById.size,
       activeMatchId: activeMatch ? activeMatch.matchId : "",
-      activeSessionCount: Array.from(matchesById.values()).filter((m) => m.state !== "Ended").length
+      activeSessionCount: Array.from(matchesById.values()).filter((m) => m.state !== "Ended").length,
+      database: "sqlite"
     });
+    return;
+  }
+
+  if (await handleProfileRoutes(req, res, path, req.method)) {
     return;
   }
 
@@ -157,7 +180,9 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && path === "/enqueue") {
     const body = await readJsonBody(req);
     const playerId = normalizePlayerId(body && body.playerId);
+    playerRepository.ensurePlayer(playerId);
     const ticket = createQueuedTicket(playerId);
+    syncTicketNickname(ticket);
     if (DEBUG_REALTIME) {
       console.log(`[http][enqueue] player=${playerId} ticket=${ticket.ticketId}`);
     }
@@ -482,6 +507,57 @@ wsServer.on("connection", (socket) => {
     handleWsDisconnect(socket);
   });
 });
+
+function syncTicketNickname(ticket) {
+  if (!ticket) {
+    return;
+  }
+
+  ticket.nickname = playerRepository.resolvePlayerNickname(ticket.playerId, ticket.ticketId);
+  if (ticket.presence) {
+    ticket.presence.nickname = ticket.nickname;
+  }
+}
+
+function resolveTicketNickname(ticket) {
+  if (!ticket) {
+    return "Игрок";
+  }
+
+  if (ticket.nickname) {
+    return ticket.nickname;
+  }
+
+  syncTicketNickname(ticket);
+  return ticket.nickname || "Игрок";
+}
+
+function broadcastKillFeed(matchId, payload) {
+  if (!matchId) {
+    return;
+  }
+
+  const nextSeq = (killFeedSeqByMatchId.get(matchId) || 0) + 1;
+  killFeedSeqByMatchId.set(matchId, nextSeq);
+  const message = JSON.stringify({
+    type: "kill_feed",
+    seq: nextSeq,
+    ...payload,
+  });
+
+  for (const [ticketId, socket] of wsClientsByTicketId.entries()) {
+    const ticket = ticketsById.get(ticketId);
+    if (!ticket || ticket.matchId !== matchId || socket.readyState !== WebSocket.OPEN) {
+      continue;
+    }
+
+    try {
+      socket.send(message);
+    } catch {
+      // ignored
+    }
+  }
+}
 
 function createQueuedTicket(playerId) {
   cancelExistingQueuedTicketsForPlayer(playerId);
@@ -817,6 +893,8 @@ function handleWsJoin(socket, ticketId) {
     ticket.presence.serverSampleTimeMs = nowMs;
     ticket.presence.lastSeenMs = nowMs;
   }
+
+  syncTicketNickname(ticket);
 
   wsClientsByTicketId.set(ticketId, socket);
   wsMetaBySocket.set(socket, { ticketId });
@@ -1291,6 +1369,72 @@ function readPoseBufferU32(buffer, offset) {
   return buffer.readUInt32LE(offset);
 }
 
+const SKIN_SLOT_COUNT = 6;
+const MAX_SKIN_ID_LEN = 48;
+
+function normalizeSkinId(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  return trimmed.length > MAX_SKIN_ID_LEN ? trimmed.slice(0, MAX_SKIN_ID_LEN) : trimmed;
+}
+
+function normalizeSkinIds(message) {
+  return {
+    skinShirt: normalizeSkinId(message?.skinShirt),
+    skinPants: normalizeSkinId(message?.skinPants),
+    skinBoots: normalizeSkinId(message?.skinBoots),
+    skinGloves: normalizeSkinId(message?.skinGloves),
+    skinFace: normalizeSkinId(message?.skinFace),
+    skinHair: normalizeSkinId(message?.skinHair),
+  };
+}
+
+function applySkinIdsToPresence(presence, skins) {
+  if (!presence || !skins) {
+    return;
+  }
+  presence.skinShirt = skins.skinShirt || "";
+  presence.skinPants = skins.skinPants || "";
+  presence.skinBoots = skins.skinBoots || "";
+  presence.skinGloves = skins.skinGloves || "";
+  presence.skinFace = skins.skinFace || "";
+  presence.skinHair = skins.skinHair || "";
+}
+
+function readSkinBlock(buffer, offset) {
+  const ids = [];
+  for (let i = 0; i < SKIN_SLOT_COUNT; i++) {
+    const len = buffer[offset];
+    offset += 1;
+    if (len > MAX_SKIN_ID_LEN || offset + len > buffer.length) {
+      return null;
+    }
+    ids.push(len > 0 ? buffer.toString("utf8", offset, offset + len) : "");
+    offset += len;
+  }
+  return { ids, offset };
+}
+
+function writeSkinBlockChunks(chunks, presence) {
+  const ids = [
+    presence?.skinShirt || "",
+    presence?.skinPants || "",
+    presence?.skinBoots || "",
+    presence?.skinGloves || "",
+    presence?.skinFace || "",
+    presence?.skinHair || "",
+  ];
+  for (let i = 0; i < ids.length; i++) {
+    const bytes = Buffer.from(ids[i].slice(0, MAX_SKIN_ID_LEN), "utf8");
+    chunks.push(Buffer.from([bytes.length]));
+    if (bytes.length > 0) {
+      chunks.push(bytes);
+    }
+  }
+}
+
 function decodeBinaryPose(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 12) {
     return null;
@@ -1301,7 +1445,7 @@ function decodeBinaryPose(buffer) {
   }
 
   const version = buffer[4];
-  if (version !== 1) {
+  if (version !== 1 && version !== 2) {
     return null;
   }
 
@@ -1316,6 +1460,26 @@ function decodeBinaryPose(buffer) {
 
   const characterModel = modelLen > 0 ? buffer.toString("utf8", offset, offset + modelLen) : "";
   offset += modelLen;
+
+  let skinShirt = "";
+  let skinPants = "";
+  let skinBoots = "";
+  let skinGloves = "";
+  let skinFace = "";
+  let skinHair = "";
+  if (version >= 2) {
+    const skinBlock = readSkinBlock(buffer, offset);
+    if (!skinBlock) {
+      return null;
+    }
+    offset = skinBlock.offset;
+    skinShirt = skinBlock.ids[0] || "";
+    skinPants = skinBlock.ids[1] || "";
+    skinBoots = skinBlock.ids[2] || "";
+    skinGloves = skinBlock.ids[3] || "";
+    skinFace = skinBlock.ids[4] || "";
+    skinHair = skinBlock.ids[5] || "";
+  }
 
   const minSize = offset + 121;
   if (buffer.length < minSize) {
@@ -1362,6 +1526,12 @@ function decodeBinaryPose(buffer) {
     type: "pose",
     poseSeq,
     characterModel,
+    skinShirt,
+    skinPants,
+    skinBoots,
+    skinGloves,
+    skinFace,
+    skinHair,
     position: { x, y, z },
     yaw,
     lookPitch,
@@ -1422,6 +1592,7 @@ function handleWsPose(socket, message) {
   const yaw = normalizeNumber(message.yaw, 0);
   const lookPitch = normalizeNumber(message.lookPitch, 0);
   const characterModel = typeof message.characterModel === "string" ? message.characterModel.trim() : "";
+  const skins = normalizeSkinIds(message);
   const shotSeq = Math.max(0, normalizeInt64(message.shotSeq, 0));
   const shotOriginX = normalizeNumber(message.shotOriginX, 0);
   const shotOriginY = normalizeNumber(message.shotOriginY, 0);
@@ -1569,6 +1740,7 @@ function handleWsPose(socket, message) {
 
   presence.lookPitch = lookPitch;
   presence.characterModel = characterModel;
+  applySkinIdsToPresence(presence, skins);
   presence.shotSeq = shotSeq;
   if (shotSeq > (prevPresence.shotSeq || 0)) {
     recordShotEvent(ticket, {
@@ -1797,6 +1969,12 @@ function createDefaultPresence(sampleTick, sampleTimeMs) {
     yaw: 0,
     lookPitch: 0,
     characterModel: "",
+    skinShirt: "",
+    skinPants: "",
+    skinBoots: "",
+    skinGloves: "",
+    skinFace: "",
+    skinHair: "",
     shotSeq: 0,
     shotOriginX: 0,
     shotOriginY: 0,
@@ -3174,11 +3352,22 @@ function applyZoneDamageToTicket(ticket, damage, zone) {
   }
 
   if (targetPresence.health <= 0.001) {
+    const wasAlive = !targetPresence.isDead;
     targetPresence.isDead = true;
     targetPresence.deathSeq = Math.max(0, normalizeInt64(targetPresence.deathSeq, 0)) + 1;
     targetPresence.deathFallDirX = dirX;
     targetPresence.deathFallDirY = dirY;
     targetPresence.deathFallDirZ = dirZ;
+    if (wasAlive) {
+      broadcastKillFeed(ticket.matchId, {
+        killerTicketId: "zone",
+        victimTicketId: ticket.ticketId,
+        killerNickname: "Зона",
+        victimNickname: resolveTicketNickname(ticket),
+        weaponKind: 0,
+        cause: "zone",
+      });
+    }
     onBattleRoyalePlayerDied(ticket);
   }
 
@@ -3774,11 +3963,20 @@ function handleWsHit(socket, message) {
   const targetPresence = targetTicket.presence;
   const maxHealth = Number.isFinite(targetPresence.maxHealth) ? targetPresence.maxHealth : 100;
   const currentHealth = Number.isFinite(targetPresence.health) ? targetPresence.health : maxHealth;
+  const wasAlive = currentHealth > 0.001;
   targetPresence.health = Math.max(0, currentHealth - damage);
-  if (targetPresence.health <= 0.001) {
+  if (targetPresence.health <= 0.001 && wasAlive) {
     targetPresence.isDead = true;
     targetPresence.deathSeq = Math.max(0, normalizeInt64(targetPresence.deathSeq, 0)) + 1;
     recordBattleRoyaleKill(attackerTicket);
+    broadcastKillFeed(attackerTicket.matchId, {
+      killerTicketId: attackerTicket.ticketId,
+      victimTicketId: targetTicket.ticketId,
+      killerNickname: resolveTicketNickname(attackerTicket),
+      victimNickname: resolveTicketNickname(targetTicket),
+      weaponKind: Math.max(0, Math.min(WEAPON_KIND_MAX, normalizeInt64(attackerTicket.presence?.weaponKind, 0))),
+      cause: "player",
+    });
     onBattleRoyalePlayerDied(targetTicket);
   }
 
@@ -3835,7 +4033,7 @@ function encodeSnapshotBinary(payload) {
     const chunks = [];
     const header = Buffer.alloc(11);
     header.write("RTS1", 0, 4, "ascii");
-    header.writeUInt8(10, 4);
+    header.writeUInt8(11, 4);
     header.writeUInt32LE(payload.serverTick >>> 0, 5);
     header.writeUInt16LE(payload.serverTickRate >>> 0, 9);
     chunks.push(header);
@@ -3867,6 +4065,7 @@ function encodeSnapshotBinary(payload) {
       const modelBytes = Buffer.from(modelName, "utf8");
       chunks.push(Buffer.from([Math.min(255, modelBytes.length)]));
       chunks.push(modelBytes);
+      writeSkinBlockChunks(chunks, player);
 
       const pos = player.position || { x: 0, y: 0, z: 0 };
       const body = Buffer.alloc(35);
@@ -4073,6 +4272,12 @@ function collectRealtimePlayersForMatch(matchId, ownerTicketId) {
       yaw: ticket.presence.yaw,
       lookPitch: ticket.presence.lookPitch || 0,
       characterModel: ticket.presence.characterModel || "",
+      skinShirt: ticket.presence.skinShirt || "",
+      skinPants: ticket.presence.skinPants || "",
+      skinBoots: ticket.presence.skinBoots || "",
+      skinGloves: ticket.presence.skinGloves || "",
+      skinFace: ticket.presence.skinFace || "",
+      skinHair: ticket.presence.skinHair || "",
       shotSeq: Number.isFinite(ticket.presence.shotSeq) ? ticket.presence.shotSeq : 0,
       shotOriginX: Number.isFinite(ticket.presence.shotOriginX) ? ticket.presence.shotOriginX : 0,
       shotOriginY: Number.isFinite(ticket.presence.shotOriginY) ? ticket.presence.shotOriginY : 0,

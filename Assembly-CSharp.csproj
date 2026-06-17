@@ -60,6 +60,7 @@
     <Compile Include="Assets\Scripts\Network\NetworkConfig.cs" />
     <Compile Include="Assets\Scripts\Player\NetworkPerformanceMonitor.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\EnvMapAnimator.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuNicknameEditor.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerHitboxCleanup.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextSelector_A.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponAudioOverrides.cs" />
@@ -70,6 +71,7 @@
     <Compile Include="Assets\Scripts\Player\WorldPickup.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteLeftHandIkBinder.cs" />
     <Compile Include="Assets\Scripts\UI\CombatHudController.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerSkinNetworkState.cs" />
     <Compile Include="Assets\Scripts\Player\PickupSpawnManager.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerPickupContext.cs" />
     <Compile Include="Assets\Scripts\Network\RealtimeSnapshotBinaryCodec.cs" />
@@ -123,6 +125,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\ShaderPropAnimator.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerInventory.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerSkinResourcePaths.cs" />
+    <Compile Include="Assets\Scripts\Network\PlayerSkinNetworkCodec.cs" />
     <Compile Include="Assets\Scripts\Player\MatchBattleRoyaleController.cs" />
     <Compile Include="Assets\Scripts\Player\InventoryItemIds.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuShopPanel.cs" />
@@ -131,6 +134,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextInfoDebugTool.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteResourceClothingApplier.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponMount.cs" />
+    <Compile Include="Assets\Scripts\UI\GameKillFeedController.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\CFX_AutoDestructShuriken.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyCrouchPosture.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuController.cs" />
@@ -144,6 +148,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark01_UGUI.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\SimpleScript.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark04.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerProfileService.cs" />
     <Compile Include="Assets\Scripts\Player\ThreadArmRig.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\Spawner.cs" />
     <Compile Include="Assets\Scripts\Player\DamageZoneMath.cs" />
@@ -155,6 +160,7 @@
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_SimpleRotate.cs" />
     <Compile Include="Assets\Scripts\Player\PickupWorldVisualBuilder.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\FollowCam.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerProfileApiClient.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponScopeOverlay.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponHolsterController.cs" />
     <Compile Include="Assets\Scripts\Player\MatchPresenceSync.cs" />
@@ -183,6 +189,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerViewPresentation.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\Element.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerPickupApplier.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuServerConnectionGate.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyFirstPersonArmLocomotionGate.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponProfile.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuSectionController.cs" />
@@ -199,6 +206,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_PhoneNumberValidator.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuUiLayout.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo_New.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerIdentityService.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_Demo_Translate.cs" />
     <Compile Include="Assets\Scripts\Player\LocalPlayerMarker.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TextConsoleSimulator.cs" />
