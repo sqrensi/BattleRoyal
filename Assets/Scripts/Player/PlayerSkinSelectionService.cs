@@ -69,19 +69,44 @@ namespace ShooterPrototype.Player
             return Catalog.TryGetValue(slot, out var options) ? options : Array.Empty<PlayerSkinDefinition>();
         }
 
+        public static IReadOnlyList<PlayerSkinDefinition> GetCatalogOptions(PlayerSkinSlot slot)
+        {
+            return GetOptions(slot);
+        }
+
+        public static PlayerSkinSlot[] GetDisplaySlotOrder()
+        {
+            return OwnedItemDisplayOrder;
+        }
+
         public static IReadOnlyList<PlayerSkinDefinition> GetOwnedItems()
         {
-            var owned = new List<PlayerSkinDefinition>(OwnedItemDisplayOrder.Length);
-            for (var i = 0; i < OwnedItemDisplayOrder.Length; i++)
+            PlayerSkinOwnershipService.EnsureInitialized();
+            return PlayerSkinOwnershipService.GetOwnedCatalogItems();
+        }
+
+        public static bool TryGetDefinitionById(string skinId, out PlayerSkinDefinition definition)
+        {
+            definition = default;
+            if (string.IsNullOrWhiteSpace(skinId))
             {
-                var options = GetOptions(OwnedItemDisplayOrder[i]);
-                for (var j = 0; j < options.Count; j++)
+                return false;
+            }
+
+            foreach (PlayerSkinSlot slot in Enum.GetValues(typeof(PlayerSkinSlot)))
+            {
+                var options = GetOptions(slot);
+                for (var i = 0; i < options.Count; i++)
                 {
-                    owned.Add(options[j]);
+                    if (string.Equals(options[i].Id, skinId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        definition = options[i];
+                        return true;
+                    }
                 }
             }
 
-            return owned;
+            return false;
         }
 
         public static bool TryResolveSlot(PlayerSkinDefinition item, out PlayerSkinSlot slot)
@@ -111,7 +136,9 @@ namespace ShooterPrototype.Player
 
         public static bool TryGetAppliedSkin(PlayerSkinSlot slot, out PlayerSkinDefinition definition)
         {
-            var options = GetOptions(slot);
+            PlayerSkinOwnershipService.EnsureInitialized();
+
+            var options = PlayerSkinOwnershipService.GetOwnedOptions(slot);
             if (options.Count == 0)
             {
                 definition = default;
@@ -119,11 +146,16 @@ namespace ShooterPrototype.Player
             }
 
             var savedId = NormalizeSavedSkinId(PlayerPrefs.GetString(BuildPrefKey(slot), string.Empty));
-            if (string.IsNullOrWhiteSpace(savedId) ||
+            if (PlayerSkinResourcePaths.IsAttachmentSlot(slot) &&
                 string.Equals(savedId, LegacyUnequippedSkinId, StringComparison.OrdinalIgnoreCase))
             {
-                definition = options[0];
-                return true;
+                definition = default;
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(savedId))
+            {
+                return TryResolveDefaultAppliedSkin(slot, options, out definition);
             }
 
             for (var i = 0; i < options.Count; i++)
@@ -135,8 +167,17 @@ namespace ShooterPrototype.Player
                 }
             }
 
-            definition = default;
-            return false;
+            return TryResolveDefaultAppliedSkin(slot, options, out definition);
+        }
+
+        public static bool SupportsUnequip(PlayerSkinSlot slot)
+        {
+            return PlayerSkinResourcePaths.IsAttachmentSlot(slot);
+        }
+
+        public static bool IsSlotApplied(PlayerSkinSlot slot)
+        {
+            return TryGetAppliedSkin(slot, out _);
         }
 
         public static bool IsEquipped(PlayerSkinDefinition item)
@@ -152,9 +193,23 @@ namespace ShooterPrototype.Player
 
         public static bool TryEquip(PlayerSkinDefinition item)
         {
-            if (!TryResolveSlot(item, out var slot) || !item.IsValid || IsEquipped(item))
+            PlayerSkinOwnershipService.EnsureInitialized();
+            if (!PlayerSkinOwnershipService.IsOwned(item) ||
+                !TryResolveSlot(item, out var slot) ||
+                !item.IsValid)
             {
                 return false;
+            }
+
+            if (IsEquipped(item))
+            {
+                if (!SupportsUnequip(slot))
+                {
+                    return false;
+                }
+
+                SaveSelected(slot, LegacyUnequippedSkinId);
+                return true;
             }
 
             SaveSelected(slot, item.Id);
@@ -406,6 +461,26 @@ namespace ShooterPrototype.Player
 
             meshPath = string.Empty;
             materialPath = string.Empty;
+        }
+
+        private static bool TryResolveDefaultAppliedSkin(
+            PlayerSkinSlot slot,
+            IReadOnlyList<PlayerSkinDefinition> options,
+            out PlayerSkinDefinition definition)
+        {
+            if (PlayerSkinOwnershipService.TryGetDefaultEquipped(slot, out definition))
+            {
+                return true;
+            }
+
+            if (options.Count > 0)
+            {
+                definition = options[0];
+                return true;
+            }
+
+            definition = default;
+            return false;
         }
 
         private static string NormalizeSavedSkinId(string savedId)

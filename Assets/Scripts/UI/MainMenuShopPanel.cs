@@ -8,57 +8,64 @@ using UnityEngine.UI;
 namespace ShooterPrototype.UI
 {
     [DisallowMultipleComponent]
-    public sealed class MainMenuInventoryPanel : MonoBehaviour
+    public sealed class MainMenuShopPanel : MonoBehaviour
     {
         private static Sprite whiteSprite;
 
-        private static readonly Color PanelColor = new Color(0.06f, 0.08f, 0.1f, 0.72f);
+        private static readonly Color PanelColor = new Color(0.04f, 0.06f, 0.08f, 0.94f);
         private static readonly Color ItemBackgroundColor = new Color(0.12f, 0.14f, 0.17f, 0.88f);
-        private static readonly Color EquippedBackgroundColor = new Color(0.18f, 0.48f, 0.42f, 0.96f);
-        private static readonly Color EquippedHighlightedColor = new Color(0.22f, 0.58f, 0.5f, 1f);
-        private static readonly Color EquippedPressedColor = new Color(0.14f, 0.38f, 0.34f, 1f);
         private static readonly Color ItemHighlightedColor = new Color(0.16f, 0.18f, 0.21f, 0.94f);
         private static readonly Color ItemPressedColor = new Color(0.1f, 0.12f, 0.14f, 0.98f);
+        private static readonly Color UnaffordableColor = new Color(0.16f, 0.12f, 0.12f, 0.9f);
+        private static readonly Color PurchasedBackgroundColor = new Color(0.08f, 0.09f, 0.11f, 0.94f);
+        private static readonly Color PurchasedBadgeColor = new Color(0.06f, 0.07f, 0.09f, 0.96f);
+        private static readonly Color PurchasedLabelColor = new Color(0.56f, 0.6f, 0.64f, 0.94f);
+        private static readonly Color PriceBadgeColor = new Color(0.08f, 0.09f, 0.11f, 0.92f);
+        private static readonly Color PriceTextColor = new Color(0.92f, 0.84f, 0.55f, 0.98f);
+        private static readonly Color PriceMutedColor = new Color(0.62f, 0.58f, 0.52f, 0.88f);
         private static readonly Color ScrollTrackColor = new Color(0.1f, 0.12f, 0.14f, 0.55f);
         private static readonly Color ScrollHandleColor = new Color(0.24f, 0.28f, 0.32f, 0.92f);
         private static readonly Color TitleColor = new Color(0.94f, 0.96f, 0.98f, 0.98f);
 
-        [SerializeField] private float edgeMargin = 44f;
-        [SerializeField] private float panelWidth = 528f;
-        [SerializeField] private float innerPadding = 24f;
+        [SerializeField] private float edgeMargin = 28f;
+        [SerializeField] private float leftReservedWidth = 228f;
+        [SerializeField] private float topReservedHeight = 92f;
+        [SerializeField] private float innerPadding = 28f;
         [SerializeField] private float fadeDuration = 0.38f;
-        [SerializeField] private float slideOffset = 56f;
-        [SerializeField] private float itemSpacing = 14f;
-        [SerializeField] private float headerHeight = 76f;
-        [SerializeField] private float scrollbarWidth = 12f;
-        [SerializeField] private float scrollbarGap = 8f;
-        [SerializeField] private float titleFontSize = 28f;
-        [SerializeField] private float slotPadding = 12f;
+        [SerializeField] private float itemSpacing = 16f;
+        [SerializeField] private float headerHeight = 72f;
+        [SerializeField] private float scrollbarWidth = 10f;
+        [SerializeField] private float scrollbarGap = 10f;
+        [SerializeField] private float titleFontSize = 30f;
+        [SerializeField] private float slotPadding = 10f;
+        [SerializeField] private int gridColumns = 4;
+        [SerializeField] private float priceBadgeHeight = 32f;
+        [SerializeField] private float priceFontSize = 20f;
 
-        private readonly List<ItemSlotVisual> itemSlots = new List<ItemSlotVisual>(32);
+        private readonly List<ShopSlotVisual> itemSlots = new List<ShopSlotVisual>(64);
 
         private CanvasGroup panelGroup;
         private RectTransform panelRect;
         private RectTransform contentRect;
-        private Vector2 shownAnchoredPosition;
-        private Vector2 hiddenAnchoredPosition;
+        private ScrollRect itemsScrollRect;
+        private GridLayoutGroup itemGrid;
         private float itemCellWidth;
         private float itemCellHeight;
-        private MainMenuPlayerPreview playerPreview;
         private MainMenuUiSoundController uiSound;
         private bool isVisible;
         private Coroutine transitionCoroutine;
 
-        private sealed class ItemSlotVisual
+        private sealed class ShopSlotVisual
         {
             public PlayerSkinDefinition Definition;
             public Image Background;
             public Button Button;
+            public TMP_Text PriceLabel;
+            public Image PriceBadge;
         }
 
         public void Configure(MainMenuPlayerPreview preview, MainMenuUiSoundController sound)
         {
-            playerPreview = preview;
             uiSound = sound;
         }
 
@@ -69,23 +76,16 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            itemCellWidth = (panelWidth - innerPadding * 2f - itemSpacing - scrollbarWidth - scrollbarGap) * 0.5f;
-            itemCellHeight = itemCellWidth;
+            ComputeCellSize(canvasRect.rect.width);
 
-            var panelObject = new GameObject("MainMenuInventoryPanel");
+            var panelObject = new GameObject("MainMenuShopPanel");
             panelObject.transform.SetParent(canvasRect, false);
 
             panelRect = panelObject.AddComponent<RectTransform>();
-            panelRect.anchorMin = new Vector2(1f, 0f);
-            panelRect.anchorMax = new Vector2(1f, 1f);
-            panelRect.pivot = new Vector2(1f, 0.5f);
-            panelRect.anchoredPosition = new Vector2(-edgeMargin, 0f);
-            panelRect.offsetMin = new Vector2(-panelWidth, edgeMargin);
-            panelRect.offsetMax = new Vector2(0f, -edgeMargin);
-
-            shownAnchoredPosition = panelRect.anchoredPosition;
-            hiddenAnchoredPosition = shownAnchoredPosition + new Vector2(slideOffset, 0f);
-            panelRect.anchoredPosition = hiddenAnchoredPosition;
+            panelRect.anchorMin = Vector2.zero;
+            panelRect.anchorMax = Vector2.one;
+            panelRect.offsetMin = new Vector2(leftReservedWidth, edgeMargin);
+            panelRect.offsetMax = new Vector2(-edgeMargin, -topReservedHeight);
 
             var background = panelObject.AddComponent<Image>();
             background.sprite = GetWhiteSprite();
@@ -102,22 +102,11 @@ namespace ShooterPrototype.UI
             BuildItemsGrid(panelObject.transform);
         }
 
-        private void OnEnable()
-        {
-            PlayerSkinOwnershipService.OwnershipChanged += RebuildItems;
-        }
-
-        private void OnDisable()
-        {
-            PlayerSkinOwnershipService.OwnershipChanged -= RebuildItems;
-        }
-
         public void Show()
         {
             if (isVisible)
             {
                 RebuildItems();
-                RefreshEquippedVisuals();
                 return;
             }
 
@@ -137,6 +126,31 @@ namespace ShooterPrototype.UI
             StartTransition(show: false);
         }
 
+        private void OnEnable()
+        {
+            PlayerCurrencyService.BalanceChanged += RefreshSlotVisuals;
+            PlayerSkinOwnershipService.OwnershipChanged += RefreshSlotVisuals;
+        }
+
+        private void OnDisable()
+        {
+            PlayerCurrencyService.BalanceChanged -= RefreshSlotVisuals;
+            PlayerSkinOwnershipService.OwnershipChanged -= RefreshSlotVisuals;
+        }
+
+        private void ComputeCellSize(float canvasWidth)
+        {
+            if (canvasWidth <= 0f)
+            {
+                canvasWidth = 1920f;
+            }
+
+            var scrollAreaWidth = canvasWidth - leftReservedWidth - edgeMargin - innerPadding * 2f - scrollbarWidth - scrollbarGap;
+            var columns = Mathf.Max(3, gridColumns);
+            itemCellWidth = (scrollAreaWidth - itemSpacing * (columns - 1)) / columns;
+            itemCellHeight = itemCellWidth;
+        }
+
         private void BuildHeader(Transform parent)
         {
             var headerObject = new GameObject("Header");
@@ -146,11 +160,11 @@ namespace ShooterPrototype.UI
             rect.anchorMin = new Vector2(0f, 1f);
             rect.anchorMax = new Vector2(1f, 1f);
             rect.pivot = new Vector2(0.5f, 1f);
-            rect.offsetMin = new Vector2(innerPadding, -(headerHeight + innerPadding * 0.5f));
-            rect.offsetMax = new Vector2(-innerPadding, -innerPadding * 0.5f);
+            rect.offsetMin = new Vector2(innerPadding, -(headerHeight + innerPadding * 0.35f));
+            rect.offsetMax = new Vector2(-innerPadding, -innerPadding * 0.35f);
 
             var title = headerObject.AddComponent<TextMeshProUGUI>();
-            title.text = "Инвентарь";
+            title.text = "Магазин";
             title.fontSize = titleFontSize;
             title.fontStyle = FontStyles.Bold;
             title.alignment = TextAlignmentOptions.Center;
@@ -170,6 +184,7 @@ namespace ShooterPrototype.UI
             scrollRectTransform.offsetMax = new Vector2(-innerPadding, -(headerHeight + innerPadding));
 
             var scroll = scrollObject.AddComponent<ScrollRect>();
+            itemsScrollRect = scroll;
             scroll.horizontal = false;
             scroll.vertical = true;
             scroll.movementType = ScrollRect.MovementType.Clamped;
@@ -205,13 +220,13 @@ namespace ShooterPrototype.UI
             contentBackground.color = Color.clear;
             contentBackground.raycastTarget = true;
 
-            var grid = contentObject.AddComponent<GridLayoutGroup>();
-            grid.cellSize = new Vector2(itemCellWidth, itemCellHeight);
-            grid.spacing = new Vector2(itemSpacing, itemSpacing);
-            grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-            grid.constraintCount = 2;
-            grid.childAlignment = TextAnchor.UpperCenter;
-            grid.padding = new RectOffset(0, 0, 4, 8);
+            itemGrid = contentObject.AddComponent<GridLayoutGroup>();
+            itemGrid.cellSize = new Vector2(itemCellWidth, itemCellHeight);
+            itemGrid.spacing = new Vector2(itemSpacing, itemSpacing);
+            itemGrid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            itemGrid.constraintCount = Mathf.Max(3, gridColumns);
+            itemGrid.childAlignment = TextAnchor.UpperCenter;
+            itemGrid.padding = new RectOffset(0, 0, 4, 12);
 
             var fitter = contentObject.AddComponent<ContentSizeFitter>();
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
@@ -219,8 +234,6 @@ namespace ShooterPrototype.UI
 
             scroll.viewport = viewportRect;
             scroll.content = contentRect;
-
-            RebuildItems();
         }
 
         private void RebuildItems()
@@ -240,13 +253,89 @@ namespace ShooterPrototype.UI
             }
 
             itemSlots.Clear();
-            var ownedItems = PlayerSkinSelectionService.GetOwnedItems();
-            for (var i = 0; i < ownedItems.Count; i++)
+            var shopItems = PlayerSkinOwnershipService.GetShopCatalogItems();
+            for (var i = 0; i < shopItems.Count; i++)
             {
-                itemSlots.Add(CreateItemSlot(contentRect, ownedItems[i]));
+                itemSlots.Add(CreateItemSlot(contentRect, shopItems[i]));
             }
 
-            RefreshEquippedVisuals();
+            RefreshSlotVisuals();
+        }
+
+        private void RefreshSlotVisuals()
+        {
+            var balance = PlayerCurrencyService.Balance;
+            for (var i = 0; i < itemSlots.Count; i++)
+            {
+                var slot = itemSlots[i];
+                var owned = PlayerSkinOwnershipService.IsOwned(slot.Definition);
+                if (owned)
+                {
+                    if (slot.Background != null)
+                    {
+                        slot.Background.color = PurchasedBackgroundColor;
+                    }
+
+                    if (slot.Button != null)
+                    {
+                        slot.Button.interactable = false;
+                        var colors = slot.Button.colors;
+                        colors.normalColor = PurchasedBackgroundColor;
+                        colors.highlightedColor = PurchasedBackgroundColor;
+                        colors.pressedColor = PurchasedBackgroundColor;
+                        colors.selectedColor = PurchasedBackgroundColor;
+                        colors.disabledColor = PurchasedBackgroundColor;
+                        colors.fadeDuration = 0.1f;
+                        slot.Button.colors = colors;
+                    }
+
+                    if (slot.PriceLabel != null)
+                    {
+                        slot.PriceLabel.text = "Куплено";
+                        slot.PriceLabel.color = PurchasedLabelColor;
+                    }
+
+                    if (slot.PriceBadge != null)
+                    {
+                        slot.PriceBadge.color = PurchasedBadgeColor;
+                    }
+
+                    continue;
+                }
+
+                var price = PlayerSkinOwnershipService.GetShopPrice(slot.Definition);
+                var canAfford = balance >= price;
+                var normalColor = canAfford ? ItemBackgroundColor : UnaffordableColor;
+
+                if (slot.Background != null)
+                {
+                    slot.Background.color = normalColor;
+                }
+
+                if (slot.Button != null)
+                {
+                    slot.Button.interactable = true;
+                    var colors = slot.Button.colors;
+                    colors.normalColor = normalColor;
+                    colors.highlightedColor = canAfford ? ItemHighlightedColor : UnaffordableColor;
+                    colors.pressedColor = canAfford ? ItemPressedColor : UnaffordableColor;
+                    colors.selectedColor = colors.highlightedColor;
+                    colors.disabledColor = normalColor;
+                    colors.fadeDuration = 0.1f;
+                    slot.Button.colors = colors;
+                }
+
+                if (slot.PriceLabel != null)
+                {
+                    slot.PriceLabel.text = FormatPrice(price);
+                    slot.PriceLabel.color = canAfford ? PriceTextColor : PriceMutedColor;
+                }
+
+                if (slot.PriceBadge != null)
+                {
+                    slot.PriceBadge.color = canAfford ? PriceBadgeColor : new Color(0.12f, 0.1f, 0.1f, 0.92f);
+                }
+            }
         }
 
         private Scrollbar CreateVerticalScrollbar(Transform parent)
@@ -291,9 +380,9 @@ namespace ShooterPrototype.UI
             return scrollbar;
         }
 
-        private ItemSlotVisual CreateItemSlot(Transform parent, PlayerSkinDefinition item)
+        private ShopSlotVisual CreateItemSlot(Transform parent, PlayerSkinDefinition item)
         {
-            var slotObject = new GameObject("Item_" + item.Id);
+            var slotObject = new GameObject("ShopItem_" + item.Id);
             slotObject.transform.SetParent(parent, false);
 
             var slotLayout = slotObject.AddComponent<LayoutElement>();
@@ -317,7 +406,7 @@ namespace ShooterPrototype.UI
             var iconRect = iconObject.GetComponent<RectTransform>();
             iconRect.anchorMin = Vector2.zero;
             iconRect.anchorMax = Vector2.one;
-            iconRect.offsetMin = new Vector2(slotPadding, slotPadding);
+            iconRect.offsetMin = new Vector2(slotPadding, slotPadding + priceBadgeHeight + 6f);
             iconRect.offsetMax = new Vector2(-slotPadding, -slotPadding);
 
             var iconImage = iconObject.AddComponent<Image>();
@@ -325,58 +414,75 @@ namespace ShooterPrototype.UI
             iconImage.raycastTarget = false;
             iconImage.sprite = InventoryIconCatalog.GetSkinIcon(item.PictureResourcePath);
 
-            return new ItemSlotVisual
+            var priceBadgeObject = new GameObject("PriceBadge", typeof(RectTransform));
+            priceBadgeObject.transform.SetParent(slotObject.transform, false);
+
+            var priceBadgeRect = priceBadgeObject.GetComponent<RectTransform>();
+            priceBadgeRect.anchorMin = new Vector2(0.5f, 0f);
+            priceBadgeRect.anchorMax = new Vector2(0.5f, 0f);
+            priceBadgeRect.pivot = new Vector2(0.5f, 0f);
+            priceBadgeRect.anchoredPosition = new Vector2(0f, slotPadding);
+            priceBadgeRect.sizeDelta = new Vector2(Mathf.Max(72f, itemCellWidth * 0.62f), priceBadgeHeight);
+
+            var priceBadge = priceBadgeObject.AddComponent<Image>();
+            priceBadge.sprite = GetWhiteSprite();
+            priceBadge.type = Image.Type.Simple;
+            priceBadge.color = PriceBadgeColor;
+            priceBadge.raycastTarget = false;
+
+            var priceLabelObject = new GameObject("PriceLabel", typeof(RectTransform));
+            priceLabelObject.transform.SetParent(priceBadgeObject.transform, false);
+
+            var priceLabelRect = priceLabelObject.GetComponent<RectTransform>();
+            StretchFull(priceLabelRect);
+            priceLabelRect.offsetMin = new Vector2(8f, 2f);
+            priceLabelRect.offsetMax = new Vector2(-8f, -2f);
+
+            var priceLabel = priceLabelObject.AddComponent<TextMeshProUGUI>();
+            priceLabel.text = FormatPrice(PlayerSkinOwnershipService.GetShopPrice(item));
+            priceLabel.fontSize = priceFontSize;
+            priceLabel.fontStyle = FontStyles.Normal;
+            priceLabel.characterSpacing = 1.5f;
+            priceLabel.alignment = TextAlignmentOptions.Center;
+            priceLabel.verticalAlignment = VerticalAlignmentOptions.Middle;
+            priceLabel.color = PriceTextColor;
+            priceLabel.raycastTarget = false;
+
+            return new ShopSlotVisual
             {
                 Definition = item,
                 Background = background,
-                Button = button
+                Button = button,
+                PriceLabel = priceLabel,
+                PriceBadge = priceBadge
             };
         }
 
         private void OnItemClicked(PlayerSkinDefinition item)
         {
-            if (!PlayerSkinSelectionService.TryResolveSlot(item, out _))
+            if (PlayerSkinOwnershipService.IsOwned(item))
             {
                 return;
             }
 
-            if (!PlayerSkinSelectionService.TryEquip(item))
+            if (!PlayerSkinOwnershipService.TryPurchase(item))
             {
+                uiSound?.PlayButton();
                 return;
             }
 
-            playerPreview?.RefreshSkins();
-            RefreshEquippedVisuals();
             uiSound?.PlayButton();
+            RefreshSlotVisuals();
         }
 
-        private void RefreshEquippedVisuals()
+        private void RefreshAffordability()
         {
-            for (var i = 0; i < itemSlots.Count; i++)
-            {
-                var slot = itemSlots[i];
-                var equipped = PlayerSkinSelectionService.IsEquipped(slot.Definition);
-                var normalColor = equipped ? EquippedBackgroundColor : ItemBackgroundColor;
-                var highlightedColor = equipped ? EquippedHighlightedColor : ItemHighlightedColor;
-                var pressedColor = equipped ? EquippedPressedColor : ItemPressedColor;
+            RefreshSlotVisuals();
+        }
 
-                if (slot.Background != null)
-                {
-                    slot.Background.color = normalColor;
-                }
-
-                if (slot.Button != null)
-                {
-                    var colors = slot.Button.colors;
-                    colors.normalColor = normalColor;
-                    colors.highlightedColor = highlightedColor;
-                    colors.pressedColor = pressedColor;
-                    colors.selectedColor = highlightedColor;
-                    colors.disabledColor = normalColor;
-                    colors.fadeDuration = 0.1f;
-                    slot.Button.colors = colors;
-                }
-            }
+        private static string FormatPrice(int price)
+        {
+            return price.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"));
         }
 
         private void StartTransition(bool show)
@@ -393,8 +499,6 @@ namespace ShooterPrototype.UI
         {
             var fromAlpha = show ? 0f : 1f;
             var toAlpha = show ? 1f : 0f;
-            var fromPos = show ? hiddenAnchoredPosition : shownAnchoredPosition;
-            var toPos = show ? shownAnchoredPosition : hiddenAnchoredPosition;
 
             if (show)
             {
@@ -412,12 +516,10 @@ namespace ShooterPrototype.UI
                 var t = fadeDuration <= 0f ? 1f : Mathf.Clamp01(elapsed / fadeDuration);
                 var eased = EaseInOut(t);
                 panelGroup.alpha = Mathf.Lerp(fromAlpha, toAlpha, eased);
-                panelRect.anchoredPosition = Vector2.Lerp(fromPos, toPos, eased);
                 yield return null;
             }
 
             panelGroup.alpha = toAlpha;
-            panelRect.anchoredPosition = toPos;
             panelGroup.interactable = show;
             panelGroup.blocksRaycasts = show;
             transitionCoroutine = null;

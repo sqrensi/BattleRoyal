@@ -5,6 +5,13 @@ using UnityEngine.UI;
 
 namespace ShooterPrototype.UI
 {
+    public enum MainMenuPanelMode
+    {
+        None = 0,
+        Inventory = 1,
+        Shop = 2
+    }
+
     [DisallowMultipleComponent]
     public sealed class MainMenuSectionController : MonoBehaviour
     {
@@ -16,10 +23,13 @@ namespace ShooterPrototype.UI
         private CanvasGroup backButtonGroup;
         private Button backButton;
         private MainMenuInventoryPanel inventoryPanel;
-        private bool isInventoryOpen;
+        private MainMenuShopPanel shopPanel;
+        private MainMenuPanelMode activePanel = MainMenuPanelMode.None;
         private Coroutine transitionCoroutine;
 
-        public bool IsInventoryOpen => isInventoryOpen;
+        public bool IsPanelOpen => activePanel != MainMenuPanelMode.None;
+        public bool IsInventoryOpen => activePanel == MainMenuPanelMode.Inventory;
+        public bool IsShopOpen => activePanel == MainMenuPanelMode.Shop;
 
         public void Configure(
             MainMenuCameraMotion camera,
@@ -28,15 +38,18 @@ namespace ShooterPrototype.UI
             CanvasGroup startButtonGroup,
             CanvasGroup changeCharacterGroup,
             Button inventoryButton,
+            Button shopButton,
             Button back,
             CanvasGroup backGroup,
-            MainMenuInventoryPanel inventory)
+            MainMenuInventoryPanel inventory,
+            MainMenuShopPanel shop)
         {
             cameraMotion = camera;
             uiSound = sound;
             backButton = back;
             backButtonGroup = backGroup;
             inventoryPanel = inventory;
+            shopPanel = shop;
 
             mainMenuGroups.Clear();
             if (topNavGroup != null)
@@ -59,9 +72,15 @@ namespace ShooterPrototype.UI
                 inventoryButton.onClick.AddListener(EnterInventory);
             }
 
+            if (shopButton != null)
+            {
+                shopButton.onClick.AddListener(EnterShop);
+            }
+
             if (backButton != null)
             {
-                backButton.onClick.AddListener(ExitInventory);
+                backButton.onClick.RemoveListener(ExitActivePanel);
+                backButton.onClick.AddListener(ExitActivePanel);
                 if (uiSound != null)
                 {
                     backButton.onClick.AddListener(uiSound.PlayButton);
@@ -74,28 +93,95 @@ namespace ShooterPrototype.UI
 
         public void EnterInventory()
         {
-            if (isInventoryOpen)
-            {
-                return;
-            }
+            OpenPanel(MainMenuPanelMode.Inventory);
+        }
 
-            isInventoryOpen = true;
-            cameraMotion?.EnterInventoryView();
-            inventoryPanel?.Show();
-            StartTransition(showBackButton: true);
+        public void EnterShop()
+        {
+            OpenPanel(MainMenuPanelMode.Shop);
         }
 
         public void ExitInventory()
         {
-            if (!isInventoryOpen)
+            if (activePanel == MainMenuPanelMode.Inventory)
+            {
+                ExitActivePanel();
+            }
+        }
+
+        public void ExitActivePanel()
+        {
+            if (activePanel == MainMenuPanelMode.None)
             {
                 return;
             }
 
-            isInventoryOpen = false;
-            cameraMotion?.ExitInventoryView();
-            inventoryPanel?.Hide();
+            var wasInventory = activePanel == MainMenuPanelMode.Inventory;
+
+            if (activePanel == MainMenuPanelMode.Inventory)
+            {
+                inventoryPanel?.Hide();
+            }
+            else if (activePanel == MainMenuPanelMode.Shop)
+            {
+                shopPanel?.Hide();
+            }
+
+            activePanel = MainMenuPanelMode.None;
+
+            if (wasInventory)
+            {
+                cameraMotion?.ExitInventoryView();
+            }
+
             StartTransition(showBackButton: false);
+        }
+
+        private void OpenPanel(MainMenuPanelMode panelMode)
+        {
+            if (activePanel == panelMode)
+            {
+                if (panelMode == MainMenuPanelMode.Inventory)
+                {
+                    inventoryPanel?.Show();
+                }
+                else if (panelMode == MainMenuPanelMode.Shop)
+                {
+                    shopPanel?.Show();
+                }
+
+                return;
+            }
+
+            var wasInventory = activePanel == MainMenuPanelMode.Inventory;
+
+            if (activePanel == MainMenuPanelMode.Inventory)
+            {
+                inventoryPanel?.Hide();
+            }
+            else if (activePanel == MainMenuPanelMode.Shop)
+            {
+                shopPanel?.Hide();
+            }
+
+            if (wasInventory && panelMode != MainMenuPanelMode.Inventory)
+            {
+                cameraMotion?.ExitInventoryView();
+            }
+
+            activePanel = panelMode;
+
+            if (panelMode == MainMenuPanelMode.Inventory)
+            {
+                cameraMotion?.EnterInventoryView();
+                inventoryPanel?.Show();
+            }
+            else if (panelMode == MainMenuPanelMode.Shop)
+            {
+                shopPanel?.Show();
+            }
+
+            StartTransition(showBackButton: true);
         }
 
         private void StartTransition(bool showBackButton)

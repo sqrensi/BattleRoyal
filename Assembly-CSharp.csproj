@@ -79,10 +79,12 @@
     <Compile Include="Assets\Scripts\Player\PlayerHeadMaskSelector.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponLoadout.cs" />
     <Compile Include="Assets\Scripts\Matchmaking\QueueServiceMock.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerCurrencyService.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponBlockLayers.cs" />
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_SimpleTranslate.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyFirstPersonArmsPresenter.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\MotionController.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuCurrencyDisplay.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyLocomotionDriver.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponController.cs" />
     <Compile Include="Assets\Scripts\Player\RemotePlayerEditorPreview.cs" />
@@ -112,6 +114,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexZoom.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\WFX_LightFlicker.cs" />
     <Compile Include="Assets\FarlandSkies\Demo\Scripts\Skybox\SkyboxRotator.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerSkinOwnershipService.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextSelector_B.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\SkewTextExample.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\WarpTextExample.cs" />
@@ -122,6 +125,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerSkinResourcePaths.cs" />
     <Compile Include="Assets\Scripts\Player\MatchBattleRoyaleController.cs" />
     <Compile Include="Assets\Scripts\Player\InventoryItemIds.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuShopPanel.cs" />
     <Compile Include="Assets\FarlandSkies\Demo\Scripts\Player\FPSWalkerEnhanced.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponCatalog.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextInfoDebugTool.cs" />

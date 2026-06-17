@@ -37,9 +37,11 @@ namespace ShooterPrototype.UI
         private bool layoutApplied;
         private GameObject topNavBarObject;
         private Button inventoryButton;
+        private Button shopButton;
         private Button backButton;
         private CanvasGroup backButtonGroup;
         private CanvasGroup startButtonGroup;
+        private MainMenuCurrencyDisplay currencyDisplay;
 
         public void ApplyLayout(MainMenuController controller)
         {
@@ -61,6 +63,7 @@ namespace ShooterPrototype.UI
             var uiSound = EnsureUiSound(controller);
             BuildTopNavBar(canvasRect, uiSound);
             CreateBackButton(canvasRect);
+            BuildCurrencyDisplay(controller, canvasRect);
 
             if (controller.StartButton != null)
             {
@@ -95,13 +98,26 @@ namespace ShooterPrototype.UI
                 inventoryPanel = controller.gameObject.AddComponent<MainMenuInventoryPanel>();
             }
 
+            var shopPanel = controller.GetComponent<MainMenuShopPanel>();
+            if (shopPanel == null)
+            {
+                shopPanel = controller.gameObject.AddComponent<MainMenuShopPanel>();
+            }
+
             var canvas = ResolveMenuCanvas(controller);
             if (canvas != null)
             {
-                inventoryPanel.Build(canvas.GetComponent<RectTransform>());
+                var canvasRect = canvas.GetComponent<RectTransform>();
+                inventoryPanel.Build(canvasRect);
+                shopPanel.Build(canvasRect);
+                currencyDisplay?.Build(canvasRect);
             }
 
             inventoryPanel.Configure(
+                controller.GetComponent<MainMenuPlayerPreview>(),
+                controller.GetComponent<MainMenuUiSoundController>());
+
+            shopPanel.Configure(
                 controller.GetComponent<MainMenuPlayerPreview>(),
                 controller.GetComponent<MainMenuUiSoundController>());
 
@@ -116,9 +132,25 @@ namespace ShooterPrototype.UI
                 startButtonGroup,
                 changeCharacterGroup,
                 inventoryButton,
+                shopButton,
                 backButton,
                 backButtonGroup,
-                inventoryPanel);
+                inventoryPanel,
+                shopPanel);
+        }
+
+        private void BuildCurrencyDisplay(MainMenuController controller, RectTransform canvasRect)
+        {
+            if (controller == null || canvasRect == null)
+            {
+                return;
+            }
+
+            currencyDisplay = controller.GetComponent<MainMenuCurrencyDisplay>();
+            if (currencyDisplay == null)
+            {
+                currencyDisplay = controller.gameObject.AddComponent<MainMenuCurrencyDisplay>();
+            }
         }
 
         private void BuildTopNavBar(RectTransform canvasRect, MainMenuUiSoundController uiSound)
@@ -151,7 +183,7 @@ namespace ShooterPrototype.UI
 
             CreateNavButton(topNavBarObject.transform, "Меню", uiSound, selected: true);
             inventoryButton = CreateNavButton(topNavBarObject.transform, "Инвентарь", uiSound);
-            CreateNavButton(topNavBarObject.transform, "Магазин", uiSound);
+            shopButton = CreateNavButton(topNavBarObject.transform, "Магазин", uiSound);
             CreateNavButton(topNavBarObject.transform, "Достижения", uiSound);
             CreateNavButton(topNavBarObject.transform, "Настройки", uiSound);
 

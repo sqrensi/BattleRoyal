@@ -57,6 +57,7 @@ namespace ShooterPrototype.UI
         private void Awake()
         {
             EnsureDependencies();
+            EnsureEconomy();
             EnsureUiLayout();
             EnsureUiSound();
 
@@ -133,7 +134,7 @@ namespace ShooterPrototype.UI
         {
             EnsureDependencies();
 
-            if (GetComponent<MainMenuSectionController>() is { IsInventoryOpen: true })
+            if (GetComponent<MainMenuSectionController>() is { IsPanelOpen: true })
             {
                 return;
             }
@@ -388,6 +389,11 @@ namespace ShooterPrototype.UI
         public void BindStartButtonText(TMP_Text label)
         {
             startButtonText = label;
+        }
+
+        private void EnsureEconomy()
+        {
+            PlayerSkinOwnershipService.EnsureInitialized();
         }
 
         private void EnsureUiSound()
