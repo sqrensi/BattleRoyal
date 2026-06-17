@@ -30,6 +30,16 @@ namespace ShooterPrototype.Player
 
         public void SetAllowPreview(bool allow)
         {
+            if (allowPreview == allow)
+            {
+                if (allow && previewInstance == null)
+                {
+                    SpawnPreview();
+                }
+
+                return;
+            }
+
             allowPreview = allow;
             if (!allowPreview)
             {
@@ -37,7 +47,10 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            Refresh();
+            if (previewInstance == null)
+            {
+                SpawnPreview();
+            }
         }
 
         public void Refresh()
@@ -168,8 +181,7 @@ namespace ShooterPrototype.Player
                 weaponPresentation = root.AddComponent<RemoteWeaponPresentation>();
             }
 
-            weaponPresentation.Configure(thirdPersonBody);
-            weaponPresentation.InvalidateAttachTarget();
+            weaponPresentation.ResetForMenuPreview(thirdPersonBody);
 
             if (!pinnedLobbyWeaponKind.HasValue)
             {

@@ -175,6 +175,7 @@ namespace ShooterPrototype.Player
             gameHud?.ResetMatchOverlay();
             EnsureLocalPlayer();
             ResetLocalSwimmingState();
+            gameHud?.ClearGameplayHints();
         }
 
         private void ResetLocalSwimmingState()
@@ -254,6 +255,7 @@ namespace ShooterPrototype.Player
 
             UpdatePlaneLoopAttenuation();
             TryScheduleDeathGameOver();
+            UpdateBrGameplayHint();
         }
 
         private void TryScheduleDeathGameOver()
@@ -492,7 +494,7 @@ namespace ShooterPrototype.Player
                 if (!matchOutcomeScheduled)
                 {
                     gameHud?.SetVictoryBanner(true, string.Empty);
-                    gameHud?.SetMatchStatusMessage(string.Empty);
+                    gameHud?.ClearGameplayHints();
                     ScheduleMatchOutcome(true);
                 }
 
@@ -509,7 +511,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            gameHud?.SetMatchStatusMessage("Матч завершён.");
+            gameHud?.ClearGameplayHints();
             gameHud?.RequestReturnToMenu(reason);
         }
 
@@ -522,32 +524,19 @@ namespace ShooterPrototype.Player
 
             gameHud.SetKillCount(message.localKillCount);
             UpdateMatchHudStats(message);
+            RefreshMatchWaitStatus(message);
+        }
 
-            if (currentPhase == "ending" || message.phase == "ending")
+        private void RefreshMatchWaitStatus(RealtimeTransportClient.MatchStateMessage message)
+        {
+            if (gameHud == null || message == null)
             {
                 return;
             }
 
-            if (localDropState == LocalDropState.InCombat || message.inCombat || hasLandedLocally)
+            if (currentPhase == "ending" || message.phase == "ending" || matchOutcomeScheduled)
             {
-                gameHud.SetMatchStatusMessage($"В бою. Осталось: {Mathf.Max(0, message.aliveCount)}");
-                return;
-            }
-
-            if (localDropState == LocalDropState.Gliding || (hasJumpedLocally && parachuteDeployed))
-            {
-                gameHud.SetMatchStatusMessage("Планирование: камера + WASD, выберите место посадки");
-                return;
-            }
-
-            if (localDropState == LocalDropState.Falling || (hasJumpedLocally && !parachuteDeployed))
-            {
-                gameHud.SetMatchStatusMessage("[F] — парашют (авто-раскрытие на малой высоте)");
-                return;
-            }
-
-            if (hasJumpedLocally)
-            {
+                gameHud.SetMatchStatusMessage(string.Empty);
                 return;
             }
 
@@ -561,13 +550,32 @@ namespace ShooterPrototype.Player
                     gameHud.SetMatchStatusMessage(
                         $"Старт через {Mathf.Max(0, message.countdownRemainingSeconds)}...");
                     break;
-                case "plane":
-                    gameHud.SetMatchStatusMessage("Вращайте мышью вокруг самолёта. [F] — прыжок");
-                    break;
-                case "playing":
-                    gameHud.SetMatchStatusMessage($"В бою. Осталось: {Mathf.Max(0, message.aliveCount)}");
+                default:
+                    gameHud.SetMatchStatusMessage(string.Empty);
                     break;
             }
+        }
+
+        private void UpdateBrGameplayHint()
+        {
+            if (gameHud == null || matchOutcomeScheduled)
+            {
+                return;
+            }
+
+            if (IsLocalOnPlane && !hasJumpedLocally)
+            {
+                gameHud.SetBrGameplayHint("F - выпрыгнуть");
+                return;
+            }
+
+            if (localDropState == LocalDropState.Falling && !parachuteDeployed)
+            {
+                gameHud.SetBrGameplayHint("F - открыть парашют");
+                return;
+            }
+
+            gameHud.SetBrGameplayHint(string.Empty);
         }
 
         private void EnterMatchEndedState(RealtimeTransportClient.MatchStateMessage message)
@@ -586,13 +594,13 @@ namespace ShooterPrototype.Player
             if (isWinner)
             {
                 gameHud?.SetVictoryBanner(true, string.Empty);
-                gameHud?.SetMatchStatusMessage(string.Empty);
+                gameHud?.ClearGameplayHints();
                 ScheduleMatchOutcome(true);
             }
             else
             {
                 gameHud?.SetVictoryBanner(false);
-                gameHud?.SetMatchStatusMessage(string.Empty);
+                gameHud?.ClearGameplayHints();
                 ScheduleMatchOutcome(false);
             }
         }
@@ -1230,7 +1238,6 @@ namespace ShooterPrototype.Player
             {
                 SetCombatEnabled(true);
                 SetZoneVisualActive(true);
-                gameHud?.SetMatchStatusMessage("В бою.");
             }
 
             landingRoutine = null;

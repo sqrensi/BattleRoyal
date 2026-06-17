@@ -59,6 +59,13 @@ namespace ShooterPrototype.Player
     }
 
     [Serializable]
+    public sealed class PlayerProfileMatchRewardRequest
+    {
+        public int amount;
+        public string sourceId;
+    }
+
+    [Serializable]
     public sealed class PlayerProfileSetNicknameRequest
     {
         public string nickname;
@@ -196,6 +203,26 @@ namespace ShooterPrototype.Player
             var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/equipped";
             yield return SendRequest(
                 UnityWebRequest.kHttpVerbPUT,
+                path,
+                requestBody,
+                (ok, json, error) => ParseProfileResponse(ok, json, error, onCompleted));
+        }
+
+        public IEnumerator GrantMatchReward(
+            string playerId,
+            int amount,
+            string sourceId,
+            Action<bool, PlayerProfileDto, string> onCompleted)
+        {
+            var requestBody = new PlayerProfileMatchRewardRequest
+            {
+                amount = amount,
+                sourceId = sourceId ?? string.Empty
+            };
+
+            var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/match-reward";
+            yield return SendRequest(
+                UnityWebRequest.kHttpVerbPOST,
                 path,
                 requestBody,
                 (ok, json, error) => ParseProfileResponse(ok, json, error, onCompleted));

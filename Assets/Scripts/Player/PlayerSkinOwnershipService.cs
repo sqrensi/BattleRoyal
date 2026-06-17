@@ -36,6 +36,7 @@ namespace ShooterPrototype.Player
         private static readonly Dictionary<string, int> ShopPriceBySkinId = BuildShopPrices();
 
         public static event Action OwnershipChanged;
+        public static event Action EquipmentChanged;
 
         public static void EnsureInitialized()
         {
@@ -142,6 +143,11 @@ namespace ShooterPrototype.Player
         public static void NotifyOwnershipChanged()
         {
             OwnershipChanged?.Invoke();
+        }
+
+        public static void NotifyEquipmentChanged()
+        {
+            EquipmentChanged?.Invoke();
         }
 
         public static IReadOnlyList<PlayerSkinDefinition> GetOwnedOptions(PlayerSkinSlot slot)

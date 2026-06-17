@@ -257,7 +257,6 @@ namespace ShooterPrototype.UI
                 yield break;
             }
 
-            RefreshPlayerPreview(true);
             RefreshNicknameEditor();
 
             if (queueApiClient != null && networkLauncher != null && !string.IsNullOrWhiteSpace(networkLauncher.CurrentTicketId))

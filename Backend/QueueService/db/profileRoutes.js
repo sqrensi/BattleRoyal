@@ -111,6 +111,24 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
       return true;
     }
 
+    if (method === "POST" && path.endsWith("/match-reward")) {
+      const prefix = "/profile/";
+      const suffix = "/match-reward";
+      if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
+        return false;
+      }
+
+      const externalPlayerId = decodeURIComponent(
+        path.slice(prefix.length, path.length - suffix.length)
+      );
+      const body = await readJsonBody(req);
+      const amount = body && body.amount;
+      const sourceId = body && body.sourceId;
+      const result = playerRepository.grantMatchCurrency(externalPlayerId, amount, sourceId);
+      respondJson(res, result.ok ? 200 : 400, result);
+      return true;
+    }
+
     return false;
   };
 }

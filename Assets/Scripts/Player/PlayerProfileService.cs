@@ -36,6 +36,8 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            var previousOwned = new HashSet<string>(OwnedSkinCache, StringComparer.OrdinalIgnoreCase);
+
             CurrentProfile = profile;
             IsServerSynced = markSynced;
             Nickname = profile.nickname ?? string.Empty;
@@ -59,6 +61,19 @@ namespace ShooterPrototype.Player
                 }
             }
 
+            var ownedChanged = previousOwned.Count != OwnedSkinCache.Count;
+            if (!ownedChanged)
+            {
+                foreach (var skinId in OwnedSkinCache)
+                {
+                    if (!previousOwned.Contains(skinId))
+                    {
+                        ownedChanged = true;
+                        break;
+                    }
+                }
+            }
+
             ApplyOwnedSkinsToLocal(profile.ownedSkins);
             ApplyEquippedToLocal(profile.equipped);
 
@@ -69,7 +84,15 @@ namespace ShooterPrototype.Player
             }
 
             PlayerPrefs.Save();
-            PlayerSkinOwnershipService.NotifyOwnershipChanged();
+            if (ownedChanged)
+            {
+                PlayerSkinOwnershipService.NotifyOwnershipChanged();
+            }
+            else
+            {
+                PlayerSkinOwnershipService.NotifyEquipmentChanged();
+            }
+
             ProfileSynced?.Invoke();
         }
 
@@ -284,6 +307,61 @@ namespace ShooterPrototype.Player
             }
 
             onCompleted?.Invoke(false, string.IsNullOrWhiteSpace(error) ? "Equip failed." : error);
+        }
+
+        public static IEnumerator GrantMatchReward(
+            MonoBehaviour runner,
+            PlayerProfileApiClient apiClient,
+            string playerId,
+            int amount,
+            string sourceId,
+            Action<bool, string> onCompleted)
+        {
+            if (amount <= 0)
+            {
+                onCompleted?.Invoke(true, string.Empty);
+                yield break;
+            }
+
+            if (runner == null || apiClient == null || string.IsNullOrWhiteSpace(playerId))
+            {
+                onCompleted?.Invoke(false, "Profile is not synced with server.");
+                yield break;
+            }
+
+            if (string.IsNullOrWhiteSpace(sourceId))
+            {
+                onCompleted?.Invoke(false, "Missing match source id.");
+                yield break;
+            }
+
+            var completed = false;
+            var success = false;
+            var error = string.Empty;
+            PlayerProfileDto profile = null;
+
+            yield return apiClient.GrantMatchReward(playerId, amount, sourceId, (ok, responseProfile, responseError) =>
+            {
+                completed = true;
+                success = ok;
+                profile = responseProfile;
+                error = responseError;
+            });
+
+            if (!completed)
+            {
+                onCompleted?.Invoke(false, "Match reward request did not complete.");
+                yield break;
+            }
+
+            if (success && profile != null)
+            {
+                ApplyProfile(profile);
+                onCompleted?.Invoke(true, string.Empty);
+                yield break;
+            }
+
+            onCompleted?.Invoke(false, string.IsNullOrWhiteSpace(error) ? "Match reward failed." : error);
         }
 
         private static void ApplyOwnedSkinsToLocal(string[] ownedSkins)

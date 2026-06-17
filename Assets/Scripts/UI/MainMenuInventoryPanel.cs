@@ -48,6 +48,8 @@ namespace ShooterPrototype.UI
         private MainMenuUiSoundController uiSound;
         private bool isVisible;
         private Coroutine transitionCoroutine;
+        private Coroutine pulseCoroutine;
+        private string pendingPulseItemId;
 
         private sealed class ItemSlotVisual
         {
@@ -105,11 +107,24 @@ namespace ShooterPrototype.UI
         private void OnEnable()
         {
             PlayerSkinOwnershipService.OwnershipChanged += RebuildItems;
+            PlayerSkinOwnershipService.EquipmentChanged += OnEquipmentChanged;
         }
 
         private void OnDisable()
         {
             PlayerSkinOwnershipService.OwnershipChanged -= RebuildItems;
+            PlayerSkinOwnershipService.EquipmentChanged -= OnEquipmentChanged;
+        }
+
+        private void OnEquipmentChanged()
+        {
+            if (contentRect == null || itemSlots.Count == 0)
+            {
+                return;
+            }
+
+            RefreshEquippedVisuals(pendingPulseItemId);
+            pendingPulseItemId = null;
         }
 
         public void Show()
@@ -345,6 +360,7 @@ namespace ShooterPrototype.UI
                 var menu = FindObjectOfType<MainMenuController>();
                 if (menu != null && menu.ProfileApiClient != null)
                 {
+                    pendingPulseItemId = item.Id;
                     StartCoroutine(EquipFromServerRoutine(menu, item, slot));
                     return;
                 }
@@ -356,7 +372,9 @@ namespace ShooterPrototype.UI
             }
 
             playerPreview?.RefreshSkins();
-            RefreshEquippedVisuals();
+            pendingPulseItemId = item.Id;
+            RefreshEquippedVisuals(pendingPulseItemId);
+            pendingPulseItemId = null;
             uiSound?.PlayButton();
         }
 
@@ -383,15 +401,15 @@ namespace ShooterPrototype.UI
 
             if (!success)
             {
+                pendingPulseItemId = null;
                 yield break;
             }
 
             playerPreview?.RefreshSkins();
-            RefreshEquippedVisuals();
             uiSound?.PlayButton();
         }
 
-        private void RefreshEquippedVisuals()
+        private void RefreshEquippedVisuals(string pulseItemId = null)
         {
             for (var i = 0; i < itemSlots.Count; i++)
             {
@@ -414,10 +432,54 @@ namespace ShooterPrototype.UI
                     colors.pressedColor = pressedColor;
                     colors.selectedColor = highlightedColor;
                     colors.disabledColor = normalColor;
-                    colors.fadeDuration = 0.1f;
+                    colors.fadeDuration = 0f;
                     slot.Button.colors = colors;
                 }
             }
+
+            if (!string.IsNullOrWhiteSpace(pulseItemId))
+            {
+                PulseItem(pulseItemId);
+            }
+        }
+
+        private void PulseItem(string itemId)
+        {
+            if (pulseCoroutine != null)
+            {
+                StopCoroutine(pulseCoroutine);
+            }
+
+            pulseCoroutine = StartCoroutine(PulseItemRoutine(itemId));
+        }
+
+        private IEnumerator PulseItemRoutine(string itemId)
+        {
+            ItemSlotVisual targetSlot = null;
+            for (var i = 0; i < itemSlots.Count; i++)
+            {
+                if (itemSlots[i].Definition.IsValid &&
+                    string.Equals(itemSlots[i].Definition.Id, itemId, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    targetSlot = itemSlots[i];
+                    break;
+                }
+            }
+
+            if (targetSlot?.Background == null)
+            {
+                pulseCoroutine = null;
+                yield break;
+            }
+
+            var equipped = PlayerSkinSelectionService.IsEquipped(targetSlot.Definition);
+            var baseColor = equipped ? EquippedBackgroundColor : ItemBackgroundColor;
+            var pulseColor = equipped ? EquippedHighlightedColor : ItemHighlightedColor;
+
+            targetSlot.Background.color = pulseColor;
+            yield return new WaitForSecondsRealtime(0.1f);
+            targetSlot.Background.color = baseColor;
+            pulseCoroutine = null;
         }
 
         private void StartTransition(bool show)

@@ -527,6 +527,70 @@ function playerOwnsSkin(externalPlayerId, skinId) {
   return owned.includes(normalizedSkinId);
 }
 
+function grantMatchCurrency(externalPlayerId, amount, sourceId) {
+  const normalizedAmount = Math.floor(Number(amount));
+  if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+    return { ok: false, error: "InvalidAmount", message: "Reward amount must be positive." };
+  }
+
+  const normalizedSourceId = String(sourceId || "").trim();
+  if (!normalizedSourceId) {
+    return { ok: false, error: "MissingSourceId", message: "Match source id is required." };
+  }
+
+  const playerRow = getPlayerByExternalId(externalPlayerId);
+  if (!playerRow) {
+    return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
+  }
+
+  const db = openDatabase();
+  const timestamp = nowMs();
+  const grantType = "match_reward";
+
+  try {
+    const alreadyGranted = db.transaction(() => {
+      const existing = db
+        .prepare(
+          `SELECT id
+           FROM player_currency_grants
+           WHERE player_id = ? AND grant_type = ? AND source_id = ?`
+        )
+        .get(playerRow.id, grantType, normalizedSourceId);
+
+      if (existing) {
+        return true;
+      }
+
+      db.prepare(
+        `UPDATE player_profiles
+         SET currency_balance = currency_balance + ?,
+             updated_at = ?
+         WHERE player_id = ?`
+      ).run(normalizedAmount, timestamp, playerRow.id);
+
+      db.prepare(
+        `INSERT INTO player_currency_grants
+         (player_id, grant_type, source_id, amount, granted_at)
+         VALUES (?, ?, ?, ?, ?)`
+      ).run(playerRow.id, grantType, normalizedSourceId, normalizedAmount, timestamp);
+
+      return false;
+    })();
+
+    return {
+      ok: true,
+      alreadyGranted,
+      profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: "GrantFailed",
+      message: error && error.message ? error.message : "Failed to grant match reward.",
+    };
+  }
+}
+
 module.exports = {
   ensurePlayer,
   getProfile: (externalPlayerId) => {
@@ -543,6 +607,7 @@ module.exports = {
   setEquippedSlot,
   setNickname,
   setSelectedCharacterModel,
+  grantMatchCurrency,
   playerOwnsSkin,
   isNicknameAvailable,
   resolvePlayerNickname,

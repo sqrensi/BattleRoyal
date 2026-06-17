@@ -86,6 +86,16 @@ CREATE TABLE IF NOT EXISTS player_nickname_history (
   changed_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS player_currency_grants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  grant_type TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  amount INTEGER NOT NULL CHECK (amount > 0),
+  granted_at INTEGER NOT NULL,
+  UNIQUE(player_id, grant_type, source_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_players_external_player_id ON players(external_player_id);
 CREATE INDEX IF NOT EXISTS idx_player_owned_items_player_id ON player_owned_items(player_id);
 CREATE INDEX IF NOT EXISTS idx_player_achievements_player_id ON player_achievements(player_id);

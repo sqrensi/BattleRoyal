@@ -38,6 +38,7 @@ namespace ShooterPrototype.Player
         private PickupSpawnManager pickupSpawnManager;
         private Transform pickupOrigin;
         private Camera playerCamera;
+        private GameHudController gameHud;
         private string pendingSpawnId = string.Empty;
 
         private void Awake()
@@ -120,6 +121,8 @@ namespace ShooterPrototype.Player
 
         private void Update()
         {
+            RefreshPickupHint();
+
             if (medkitController != null && medkitController.IsUsingMedkit)
             {
                 return;
@@ -136,6 +139,37 @@ namespace ShooterPrototype.Player
             }
 
             TryPickupBestNearby();
+        }
+
+        private void RefreshPickupHint()
+        {
+            EnsureGameHud();
+
+            if (PlayerInventoryPanelController.IsOpen ||
+                (medkitController != null && medkitController.IsUsingMedkit) ||
+                (health != null && health.IsDead))
+            {
+                gameHud?.SetPickupGameplayHint(string.Empty);
+                return;
+            }
+
+            var pickup = FindBestPickup();
+            if (pickup == null)
+            {
+                gameHud?.SetPickupGameplayHint(string.Empty);
+                return;
+            }
+
+            var itemName = PickupDisplayNames.Resolve(pickup.Definition);
+            gameHud?.SetPickupGameplayHint($"F - подобрать {itemName}");
+        }
+
+        private void EnsureGameHud()
+        {
+            if (gameHud == null)
+            {
+                gameHud = FindFirstObjectByType<GameHudController>();
+            }
         }
 
         public void CollectNearbyPickups(List<NearbyPickupInfo> buffer, float radius = -1f)

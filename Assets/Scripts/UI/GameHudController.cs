@@ -20,10 +20,14 @@ namespace ShooterPrototype.UI
         public const string RuntimeCanvasObjectName = CanvasObjectName;
         private const string MutePrefKey = "client_audio_muted";
         private const int CornerStatsLayoutVersion = 2;
-        private const int MatchCornerStatsLayoutVersion = 1;
+        private const int MatchCornerStatsLayoutVersion = 2;
         private const float GameOverPanelDelaySeconds = 5f;
         private const float GameOverAutoExitSeconds = 15f;
         private const int GameOverPanelLayoutVersion = 3;
+        private const int GameplayHintLayoutVersion = 2;
+        private const int MatchWaitStatusLayoutVersion = 3;
+        private const float GameplayHintOffsetX = 72f;
+        private const float GameplayHintOffsetY = -48f;
 
         private NetworkLauncher networkLauncher;
         private QueueApiClient queueApiClient;
@@ -52,6 +56,10 @@ namespace ShooterPrototype.UI
         private Text inventoryText;
         private GameObject legacyInventoryPanel;
         private Text matchStatusText;
+        private GameObject gameplayHintPanel;
+        private Text gameplayHintText;
+        private string brGameplayHint = string.Empty;
+        private string pickupGameplayHint = string.Empty;
         private Text victoryBannerText;
         private Text victorySubtitleText;
         private GameObject gameOverPanel;
@@ -66,6 +74,7 @@ namespace ShooterPrototype.UI
         private bool gameOverPanelVisible;
         private MatchOutcomeSummary pendingMatchOutcome;
         private bool matchRewardGranted;
+        private Coroutine matchRewardCoroutine;
         private bool gameOverInputLocked;
         private GameObject pauseMenuPanel;
         private GameObject pauseSettingsPanel;
@@ -319,8 +328,53 @@ namespace ShooterPrototype.UI
 
             if (matchStatusText != null)
             {
-                matchStatusText.text = string.IsNullOrWhiteSpace(message) ? string.Empty : message;
-                matchStatusText.gameObject.SetActive(!string.IsNullOrWhiteSpace(message));
+                var visible = !string.IsNullOrWhiteSpace(message);
+                matchStatusText.text = visible ? message : string.Empty;
+                ApplyBoldHudText(matchStatusText);
+                matchStatusText.gameObject.SetActive(visible);
+            }
+        }
+
+        public void SetBrGameplayHint(string hint)
+        {
+            brGameplayHint = hint ?? string.Empty;
+            RefreshGameplayHint();
+        }
+
+        public void SetPickupGameplayHint(string hint)
+        {
+            pickupGameplayHint = hint ?? string.Empty;
+            RefreshGameplayHint();
+        }
+
+        public void ClearGameplayHints()
+        {
+            brGameplayHint = string.Empty;
+            pickupGameplayHint = string.Empty;
+            RefreshGameplayHint();
+        }
+
+        private void RefreshGameplayHint()
+        {
+            if (gameplayHintText == null)
+            {
+                EnsureHudExists();
+            }
+
+            if (gameplayHintText == null)
+            {
+                return;
+            }
+
+            var text = !string.IsNullOrWhiteSpace(pickupGameplayHint)
+                ? pickupGameplayHint
+                : brGameplayHint;
+            var visible = !string.IsNullOrWhiteSpace(text);
+            gameplayHintText.text = visible ? text : string.Empty;
+            ApplyBoldHudText(gameplayHintText);
+            if (gameplayHintPanel != null)
+            {
+                gameplayHintPanel.SetActive(visible);
             }
         }
 
@@ -374,6 +428,7 @@ namespace ShooterPrototype.UI
 
             matchCornerStatsText.text =
                 $"Киллы: {matchCornerKillCount}\nВыживших: {matchCornerAliveCount}";
+            ApplyBoldHudText(matchCornerStatsText);
         }
 
         public void ResetMatchOverlay()
@@ -383,6 +438,8 @@ namespace ShooterPrototype.UI
             SetMatchStatusMessage(string.Empty);
             SetKillCount(0);
             SetMatchCornerStats(0, 0);
+            SetMatchStatusMessage(string.Empty);
+            ClearGameplayHints();
             HideGameOverPanel();
             SetPauseMenuOpen(false);
             pendingMatchOutcome = default;
@@ -401,6 +458,7 @@ namespace ShooterPrototype.UI
             pendingMatchOutcome = summary;
             gameOverFlowStarted = true;
             SetPauseMenuOpen(false);
+            ClearGameplayHints();
             gameOverFlowCoroutine = StartCoroutine(GameOverFlowRoutine(won, summary));
         }
 
@@ -446,8 +504,13 @@ namespace ShooterPrototype.UI
 
             if (!matchRewardGranted && summary.CoinReward > 0)
             {
-                PlayerCurrencyService.AddCurrency(summary.CoinReward);
                 matchRewardGranted = true;
+                if (matchRewardCoroutine != null)
+                {
+                    StopCoroutine(matchRewardCoroutine);
+                }
+
+                matchRewardCoroutine = StartCoroutine(GrantMatchRewardRoutine(summary.CoinReward));
             }
 
             SetVictoryBanner(false);
@@ -497,6 +560,46 @@ namespace ShooterPrototype.UI
             {
                 gameOverExitButton.interactable = true;
             }
+        }
+
+        private IEnumerator GrantMatchRewardRoutine(int amount)
+        {
+            var apiClient = FindObjectOfType<PlayerProfileApiClient>();
+            var playerId = PlayerIdentityService.GetOrCreatePlayerId();
+            var sourceId = ResolveMatchRewardSourceId();
+
+            if (apiClient == null || string.IsNullOrWhiteSpace(playerId))
+            {
+                PlayerCurrencyService.AddCurrency(amount);
+                matchRewardCoroutine = null;
+                yield break;
+            }
+
+            var success = false;
+            yield return PlayerProfileService.GrantMatchReward(
+                this,
+                apiClient,
+                playerId,
+                amount,
+                sourceId,
+                (ok, _) => success = ok);
+
+            if (!success)
+            {
+                PlayerCurrencyService.AddCurrency(amount);
+            }
+
+            matchRewardCoroutine = null;
+        }
+
+        private string ResolveMatchRewardSourceId()
+        {
+            if (networkLauncher != null && !string.IsNullOrWhiteSpace(networkLauncher.CurrentTicketId))
+            {
+                return networkLauncher.CurrentTicketId.Trim();
+            }
+
+            return $"local-match-{System.Guid.NewGuid():N}";
         }
 
         private void ApplyGameOverInputLock(bool locked)
@@ -679,6 +782,7 @@ namespace ShooterPrototype.UI
                 EnsureCornerStatsPanel(canvas.transform);
                 EnsureMatchCornerStatsPanel(canvas.transform);
                 EnsureMatchOverlayElements(canvas.transform);
+                EnsureGameplayHintPanel(canvas.transform);
                 EnsurePauseMenuPanel(canvas.transform);
             }
 
@@ -833,24 +937,7 @@ namespace ShooterPrototype.UI
 
         private void EnsureMatchOverlayElements(Transform root)
         {
-            if (matchStatusText == null)
-            {
-                var matchStatusObject = new GameObject("MatchStatusText");
-                matchStatusObject.transform.SetParent(root, false);
-                var matchStatusRect = matchStatusObject.AddComponent<RectTransform>();
-                matchStatusRect.anchorMin = new Vector2(0.5f, 0.5f);
-                matchStatusRect.anchorMax = new Vector2(0.5f, 0.5f);
-                matchStatusRect.pivot = new Vector2(0.5f, 0.5f);
-                matchStatusRect.sizeDelta = new Vector2(640f, 48f);
-                matchStatusRect.anchoredPosition = new Vector2(0f, 120f);
-                matchStatusText = matchStatusObject.AddComponent<Text>();
-                matchStatusText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-                matchStatusText.fontSize = 24;
-                matchStatusText.alignment = TextAnchor.MiddleCenter;
-                matchStatusText.color = Color.white;
-                matchStatusText.text = string.Empty;
-                matchStatusObject.SetActive(false);
-            }
+            EnsureMatchWaitStatusText(root);
 
             if (victoryBannerText == null)
             {
@@ -892,6 +979,118 @@ namespace ShooterPrototype.UI
             }
 
             EnsureGameOverPanel(root);
+        }
+
+        private void EnsureMatchWaitStatusText(Transform root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var existing = root.Find("MatchStatusText");
+            if (existing != null)
+            {
+                var versionMarker = existing.GetComponent<MatchWaitStatusLayoutMarker>();
+                if (versionMarker != null &&
+                    versionMarker.Version >= MatchWaitStatusLayoutVersion &&
+                    matchStatusText != null)
+                {
+                    ApplyBoldHudText(matchStatusText);
+                    return;
+                }
+
+                matchStatusText = null;
+                Destroy(existing.gameObject);
+            }
+
+            var matchStatusObject = new GameObject("MatchStatusText");
+            matchStatusObject.transform.SetParent(root, false);
+            matchStatusObject.AddComponent<MatchWaitStatusLayoutMarker>().Version = MatchWaitStatusLayoutVersion;
+
+            var matchStatusRect = matchStatusObject.AddComponent<RectTransform>();
+            matchStatusRect.anchorMin = new Vector2(0.5f, 0.5f);
+            matchStatusRect.anchorMax = new Vector2(0.5f, 0.5f);
+            matchStatusRect.pivot = new Vector2(0.5f, 0.5f);
+            matchStatusRect.sizeDelta = new Vector2(900f, 72f);
+            matchStatusRect.anchoredPosition = Vector2.zero;
+
+            matchStatusText = matchStatusObject.AddComponent<Text>();
+            ApplyBoldHudText(matchStatusText);
+            matchStatusText.fontSize = 40;
+            matchStatusText.alignment = TextAnchor.MiddleCenter;
+            matchStatusText.color = new Color(0.96f, 0.97f, 0.99f, 0.98f);
+            matchStatusText.text = string.Empty;
+            matchStatusObject.SetActive(false);
+        }
+
+        private void EnsureGameplayHintPanel(Transform root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var existingPanel = root.Find("GameplayHintPanel");
+            if (existingPanel != null)
+            {
+                var versionMarker = existingPanel.GetComponent<GameplayHintLayoutMarker>();
+                if (versionMarker != null &&
+                    versionMarker.Version >= GameplayHintLayoutVersion &&
+                    gameplayHintText != null)
+                {
+                    ApplyBoldHudText(gameplayHintText);
+                    return;
+                }
+
+                gameplayHintPanel = null;
+                gameplayHintText = null;
+                Destroy(existingPanel.gameObject);
+            }
+
+            BuildGameplayHintPanel(root);
+        }
+
+        private void BuildGameplayHintPanel(Transform root)
+        {
+            if (gameplayHintText != null)
+            {
+                return;
+            }
+
+            var panelObject = new GameObject("GameplayHintPanel");
+            panelObject.transform.SetParent(root, false);
+            panelObject.AddComponent<GameplayHintLayoutMarker>().Version = GameplayHintLayoutVersion;
+            gameplayHintPanel = panelObject;
+
+            var panelRect = panelObject.AddComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            panelRect.pivot = new Vector2(0f, 0.5f);
+            panelRect.anchoredPosition = new Vector2(GameplayHintOffsetX, GameplayHintOffsetY);
+            panelRect.sizeDelta = new Vector2(420f, 40f);
+
+            var panelImage = panelObject.AddComponent<Image>();
+            panelImage.color = new Color(0f, 0f, 0f, 0.38f);
+            panelImage.raycastTarget = false;
+
+            var labelObject = new GameObject("HintText");
+            labelObject.transform.SetParent(panelObject.transform, false);
+            var labelRect = labelObject.AddComponent<RectTransform>();
+            labelRect.anchorMin = Vector2.zero;
+            labelRect.anchorMax = Vector2.one;
+            labelRect.offsetMin = new Vector2(14f, 6f);
+            labelRect.offsetMax = new Vector2(-14f, -6f);
+
+            gameplayHintText = labelObject.AddComponent<Text>();
+            ApplyBoldHudText(gameplayHintText);
+            gameplayHintText.fontSize = 22;
+            gameplayHintText.alignment = TextAnchor.MiddleLeft;
+            gameplayHintText.color = new Color(0.94f, 0.96f, 0.98f, 0.96f);
+            gameplayHintText.horizontalOverflow = HorizontalWrapMode.Overflow;
+            gameplayHintText.verticalOverflow = VerticalWrapMode.Overflow;
+
+            panelObject.SetActive(false);
         }
 
         private void EnsureGameOverPanel(Transform root)
@@ -1102,6 +1301,7 @@ namespace ShooterPrototype.UI
                     versionMarker.Version >= MatchCornerStatsLayoutVersion &&
                     matchCornerStatsText != null)
                 {
+                    ApplyBoldHudText(matchCornerStatsText);
                     return;
                 }
 
@@ -1143,9 +1343,8 @@ namespace ShooterPrototype.UI
             labelRect.offsetMax = new Vector2(-10f, -6f);
 
             matchCornerStatsText = labelObject.AddComponent<Text>();
-            matchCornerStatsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            ApplyBoldHudText(matchCornerStatsText);
             matchCornerStatsText.fontSize = 16;
-            matchCornerStatsText.fontStyle = FontStyle.Bold;
             matchCornerStatsText.alignment = TextAnchor.UpperLeft;
             matchCornerStatsText.color = Color.white;
             matchCornerStatsText.lineSpacing = 1f;
@@ -1303,6 +1502,25 @@ namespace ShooterPrototype.UI
                 perfButton.gameObject.SetActive(false);
                 return;
             }
+        }
+
+        private static Font GetBoldHudFont()
+        {
+            var font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            return font != null
+                ? font
+                : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        }
+
+        private static void ApplyBoldHudText(Text text)
+        {
+            if (text == null)
+            {
+                return;
+            }
+
+            text.font = GetBoldHudFont();
+            text.fontStyle = FontStyle.Bold;
         }
 
         private Text CreateLabel(Transform parent, string objectName, Vector2 anchoredPosition, string textValue)
@@ -1742,6 +1960,16 @@ namespace ShooterPrototype.UI
         }
 
         private sealed class GameOverPanelLayoutMarker : MonoBehaviour
+        {
+            public int Version;
+        }
+
+        private sealed class GameplayHintLayoutMarker : MonoBehaviour
+        {
+            public int Version;
+        }
+
+        private sealed class MatchWaitStatusLayoutMarker : MonoBehaviour
         {
             public int Version;
         }

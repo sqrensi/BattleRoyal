@@ -466,6 +466,26 @@ namespace ShooterPrototype.Player
             }
         }
 
+        public void ResetForMenuPreview(Transform body)
+        {
+            ClearWeaponInstance();
+            thirdPersonBody = body;
+            attachTarget = null;
+            hasBaseAttachPose = false;
+            Configure(body);
+        }
+
+        public void ClearWeaponInstance()
+        {
+            if (IsWeaponRootAlive())
+            {
+                Destroy(weaponRoot.gameObject);
+            }
+
+            weaponRoot = null;
+            hasHandPoseSnapshot = false;
+        }
+
         public void EnsureAttached()
         {
             if (thirdPersonBody == null)
