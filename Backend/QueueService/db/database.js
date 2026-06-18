@@ -52,6 +52,142 @@ function applyMigrations(db) {
     "INSERT OR IGNORE INTO schema_migrations (name, applied_at) VALUES (?, ?)"
   );
   insertMigration.run("001_initial_schema", nowMs());
+  applyOwnedItemQuantityMigration(db, insertMigration);
+  applyAchievementDefinitionSyncMigration(db, insertMigration);
+  applyPlayerMatchStatsMigration(db, insertMigration);
+  applyPlayerAchievementClaimedAtMigration(db, insertMigration);
+}
+
+function applyPlayerMatchStatsMigration(db, insertMigration) {
+  const migrationName = "004_player_match_stats";
+  const applied = db
+    .prepare("SELECT 1 AS ok FROM schema_migrations WHERE name = ?")
+    .get(migrationName);
+  if (applied) {
+    return;
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS player_match_stats (
+      player_id TEXT PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,
+      match_count INTEGER NOT NULL DEFAULT 0 CHECK (match_count >= 0),
+      total_kills INTEGER NOT NULL DEFAULT 0 CHECK (total_kills >= 0),
+      total_deaths INTEGER NOT NULL DEFAULT 0 CHECK (total_deaths >= 0),
+      total_wins INTEGER NOT NULL DEFAULT 0 CHECK (total_wins >= 0),
+      total_placement_sum INTEGER NOT NULL DEFAULT 0 CHECK (total_placement_sum >= 0),
+      total_damage INTEGER NOT NULL DEFAULT 0 CHECK (total_damage >= 0),
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS player_match_stat_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+      source_id TEXT NOT NULL,
+      reported_at INTEGER NOT NULL,
+      UNIQUE(player_id, source_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_player_match_stat_reports_player_id
+    ON player_match_stat_reports(player_id);
+  `);
+
+  insertMigration.run(migrationName, nowMs());
+}
+
+function applyAchievementDefinitionSyncMigration(db, insertMigration) {
+  const migrationName = "003_sync_achievement_definitions";
+  const applied = db
+    .prepare("SELECT 1 AS ok FROM schema_migrations WHERE name = ?")
+    .get(migrationName);
+  if (applied) {
+    syncAchievementDefinitions(db);
+    return;
+  }
+
+  syncAchievementDefinitions(db);
+  insertMigration.run(migrationName, nowMs());
+}
+
+function syncAchievementDefinitions(db) {
+  let getAllAchievements;
+  try {
+    ({ getAllAchievements } = require("../data/achievement-catalog"));
+  } catch (error) {
+    return;
+  }
+
+  const achievements = getAllAchievements();
+  if (!Array.isArray(achievements) || achievements.length === 0) {
+    return;
+  }
+
+  const timestamp = nowMs();
+  const upsert = db.prepare(
+    `INSERT INTO achievement_definitions
+     (id, code, title, description, category, sort_order, is_hidden, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       code = excluded.code,
+       title = excluded.title,
+       description = excluded.description,
+       category = excluded.category,
+       sort_order = excluded.sort_order`
+  );
+
+  for (let i = 0; i < achievements.length; i++) {
+    const entry = achievements[i];
+    if (!entry || !entry.achievementId) {
+      continue;
+    }
+
+    upsert.run(
+      entry.achievementId,
+      entry.code || entry.achievementId,
+      entry.title || entry.achievementId,
+      entry.description || "",
+      entry.eventType || "",
+      Number.isFinite(entry.sortOrder) ? entry.sortOrder : 0,
+      timestamp
+    );
+  }
+}
+
+function applyOwnedItemQuantityMigration(db, insertMigration) {
+  const migrationName = "002_owned_item_quantity";
+  const applied = db
+    .prepare("SELECT 1 AS ok FROM schema_migrations WHERE name = ?")
+    .get(migrationName);
+  if (applied) {
+    return;
+  }
+
+  const columns = db.prepare("PRAGMA table_info(player_owned_items)").all();
+  const hasQuantity = columns.some((column) => column.name === "quantity");
+  if (!hasQuantity) {
+    db.exec(
+      "ALTER TABLE player_owned_items ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0)"
+    );
+  }
+
+  insertMigration.run(migrationName, nowMs());
+}
+
+function applyPlayerAchievementClaimedAtMigration(db, insertMigration) {
+  const migrationName = "005_player_achievement_claimed_at";
+  const applied = db
+    .prepare("SELECT 1 AS ok FROM schema_migrations WHERE name = ?")
+    .get(migrationName);
+  if (applied) {
+    return;
+  }
+
+  const columns = db.prepare("PRAGMA table_info(player_achievements)").all();
+  const hasClaimedAt = columns.some((column) => column.name === "claimed_at");
+  if (!hasClaimedAt) {
+    db.exec("ALTER TABLE player_achievements ADD COLUMN claimed_at INTEGER;");
+  }
+
+  insertMigration.run(migrationName, nowMs());
 }
 
 function closeDatabase() {

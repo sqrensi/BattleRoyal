@@ -12,6 +12,10 @@ namespace ShooterPrototype.Player
         private const string NicknamePrefKey = "player_nickname_v1";
 
         private static readonly HashSet<string> OwnedSkinCache = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, int> OwnedSkinQuantityCache =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, int> OwnedCaseQuantityCache =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         public static bool IsServerSynced { get; private set; }
         public static string Nickname { get; private set; } = string.Empty;
@@ -25,6 +29,8 @@ namespace ShooterPrototype.Player
             IsServerSynced = false;
             CurrentProfile = null;
             OwnedSkinCache.Clear();
+            OwnedSkinQuantityCache.Clear();
+            OwnedCaseQuantityCache.Clear();
             Nickname = PlayerPrefs.GetString(NicknamePrefKey, string.Empty);
             PlayerSkinOwnershipService.EnsureInitialized();
         }
@@ -37,6 +43,7 @@ namespace ShooterPrototype.Player
             }
 
             var previousOwned = new HashSet<string>(OwnedSkinCache, StringComparer.OrdinalIgnoreCase);
+            var previousQuantities = new Dictionary<string, int>(OwnedSkinQuantityCache);
 
             CurrentProfile = profile;
             IsServerSynced = markSynced;
@@ -49,32 +56,14 @@ namespace ShooterPrototype.Player
             PlayerCurrencyService.ApplyFromServer(profile.currencyBalance);
 
             OwnedSkinCache.Clear();
-            if (profile.ownedSkins != null)
-            {
-                for (var i = 0; i < profile.ownedSkins.Length; i++)
-                {
-                    var skinId = profile.ownedSkins[i];
-                    if (!string.IsNullOrWhiteSpace(skinId))
-                    {
-                        OwnedSkinCache.Add(skinId.Trim());
-                    }
-                }
-            }
+            OwnedSkinQuantityCache.Clear();
+            OwnedCaseQuantityCache.Clear();
+            ApplyOwnedQuantities(profile.ownedSkinQuantities, profile.ownedSkins);
+            ApplyOwnedCaseQuantities(profile.ownedCaseQuantities);
 
-            var ownedChanged = previousOwned.Count != OwnedSkinCache.Count;
-            if (!ownedChanged)
-            {
-                foreach (var skinId in OwnedSkinCache)
-                {
-                    if (!previousOwned.Contains(skinId))
-                    {
-                        ownedChanged = true;
-                        break;
-                    }
-                }
-            }
+            var ownedChanged = HasOwnedInventoryChanged(previousOwned, previousQuantities);
 
-            ApplyOwnedSkinsToLocal(profile.ownedSkins);
+            ApplyOwnedSkinsToLocal(profile.ownedSkins, profile.ownedSkinQuantities);
             ApplyEquippedToLocal(profile.equipped);
 
             if (profile.starterPackGranted)
@@ -101,6 +90,240 @@ namespace ShooterPrototype.Player
             }
 
             return OwnedSkinCache.Contains(skinId.Trim());
+        }
+
+        public static int GetOwnedQuantity(string skinId)
+        {
+            if (string.IsNullOrWhiteSpace(skinId))
+            {
+                return 0;
+            }
+
+            if (IsServerSynced)
+            {
+                return OwnedSkinQuantityCache.TryGetValue(skinId.Trim(), out var quantity) ? quantity : 0;
+            }
+
+            return PlayerSkinOwnershipService.GetOwnedCount(skinId);
+        }
+
+        public static int GetOwnedCaseQuantity(string caseId)
+        {
+            if (string.IsNullOrWhiteSpace(caseId))
+            {
+                return 0;
+            }
+
+            if (IsServerSynced)
+            {
+                return OwnedCaseQuantityCache.TryGetValue(caseId.Trim(), out var quantity) ? quantity : 0;
+            }
+
+            return CaseOpeningService.GetLocalOwnedQuantity(caseId);
+        }
+
+        public static IReadOnlyList<PlayerAchievementEntry> GetActiveAchievements()
+        {
+            if (!IsServerSynced || CurrentProfile?.achievements == null)
+            {
+                return Array.Empty<PlayerAchievementEntry>();
+            }
+
+            return CurrentProfile.achievements;
+        }
+
+        public static PlayerMatchStatsDto GetMatchStats()
+        {
+            if (!IsServerSynced || CurrentProfile?.stats == null)
+            {
+                return new PlayerMatchStatsDto();
+            }
+
+            return CurrentProfile.stats;
+        }
+
+        public static IEnumerator PurchaseCase(
+            MonoBehaviour runner,
+            PlayerProfileApiClient apiClient,
+            string playerId,
+            string caseId,
+            Action<bool, string> onCompleted)
+        {
+            if (!IsServerSynced || runner == null || apiClient == null)
+            {
+                onCompleted?.Invoke(false, "Profile is not synced with server.");
+                yield break;
+            }
+
+            var completed = false;
+            var success = false;
+            var error = string.Empty;
+            PlayerProfileDto profile = null;
+
+            yield return apiClient.PurchaseCase(playerId, caseId, (ok, responseProfile, responseError) =>
+            {
+                completed = true;
+                success = ok;
+                profile = responseProfile;
+                error = responseError;
+            });
+
+            if (!completed)
+            {
+                onCompleted?.Invoke(false, "Case purchase request did not complete.");
+                yield break;
+            }
+
+            if (success && profile != null)
+            {
+                ApplyProfile(profile);
+                onCompleted?.Invoke(true, string.Empty);
+                yield break;
+            }
+
+            onCompleted?.Invoke(false, string.IsNullOrWhiteSpace(error) ? "Case purchase failed." : error);
+        }
+
+        public static IEnumerator OpenCase(
+            MonoBehaviour runner,
+            PlayerProfileApiClient apiClient,
+            string playerId,
+            string caseId,
+            Action<bool, string, string> onCompleted)
+        {
+            if (!IsServerSynced || runner == null || apiClient == null)
+            {
+                onCompleted?.Invoke(false, "Profile is not synced with server.", string.Empty);
+                yield break;
+            }
+
+            var completed = false;
+            var success = false;
+            var error = string.Empty;
+            var rolledSkinId = string.Empty;
+            PlayerProfileDto profile = null;
+
+            yield return apiClient.OpenCase(playerId, caseId, (ok, responseProfile, responseError, rolled) =>
+            {
+                completed = true;
+                success = ok;
+                profile = responseProfile;
+                error = responseError;
+                rolledSkinId = rolled;
+            });
+
+            if (!completed)
+            {
+                onCompleted?.Invoke(false, "Case open request did not complete.", string.Empty);
+                yield break;
+            }
+
+            if (success && profile != null)
+            {
+                ApplyProfile(profile);
+                onCompleted?.Invoke(true, string.Empty, rolledSkinId);
+                yield break;
+            }
+
+            onCompleted?.Invoke(false, string.IsNullOrWhiteSpace(error) ? "Case open failed." : error, string.Empty);
+        }
+
+        public static IEnumerator ReportAchievementEvent(
+            MonoBehaviour runner,
+            PlayerProfileApiClient apiClient,
+            string playerId,
+            string eventType,
+            int amount,
+            Action<bool, AchievementCompletedEntry[], string> onCompleted)
+        {
+            if (runner == null || apiClient == null || string.IsNullOrWhiteSpace(playerId))
+            {
+                onCompleted?.Invoke(false, null, "Profile is not synced with server.");
+                yield break;
+            }
+
+            if (string.IsNullOrWhiteSpace(eventType))
+            {
+                onCompleted?.Invoke(false, null, "Missing event type.");
+                yield break;
+            }
+
+            var completed = false;
+            var success = false;
+            var error = string.Empty;
+            AchievementCompletedEntry[] newlyCompleted = null;
+
+            yield return apiClient.ReportAchievementEvent(
+                playerId,
+                eventType,
+                amount,
+                (ok, profile, completedEntries, responseError) =>
+                {
+                    completed = true;
+                    success = ok;
+                    error = responseError;
+                    newlyCompleted = completedEntries;
+                    if (ok && profile != null)
+                    {
+                        ApplyProfile(profile, markSynced: true);
+                    }
+                });
+
+            if (!completed)
+            {
+                onCompleted?.Invoke(false, null, "Achievement event request did not complete.");
+                yield break;
+            }
+
+            if (success)
+            {
+                onCompleted?.Invoke(true, newlyCompleted ?? Array.Empty<AchievementCompletedEntry>(), string.Empty);
+                yield break;
+            }
+
+            onCompleted?.Invoke(false, null, string.IsNullOrWhiteSpace(error) ? "Achievement event failed." : error);
+        }
+
+        public static IEnumerator ClaimAchievement(
+            MonoBehaviour runner,
+            PlayerProfileApiClient apiClient,
+            string playerId,
+            string achievementId,
+            Action<bool, string> onCompleted)
+        {
+            if (!IsServerSynced || runner == null || apiClient == null)
+            {
+                onCompleted?.Invoke(false, "Profile is not synced with server.");
+                yield break;
+            }
+
+            var completed = false;
+            var success = false;
+            var error = string.Empty;
+            PlayerProfileDto profile = null;
+
+            yield return apiClient.ClaimAchievement(playerId, achievementId, (ok, responseProfile, responseError) =>
+            {
+                completed = true;
+                success = ok;
+                profile = responseProfile;
+                error = responseError;
+            });
+
+            if (!completed)
+            {
+                onCompleted?.Invoke(false, "Claim achievement request did not complete.");
+                yield break;
+            }
+
+            if (success && profile != null)
+            {
+                ApplyProfile(profile);
+                onCompleted?.Invoke(true, string.Empty);
+                yield break;
+            }
+
+            onCompleted?.Invoke(false, string.IsNullOrWhiteSpace(error) ? "Claim achievement failed." : error);
         }
 
         public static IEnumerator SyncProfile(
@@ -361,8 +584,87 @@ namespace ShooterPrototype.Player
             onCompleted?.Invoke(false, string.IsNullOrWhiteSpace(error) ? "Match reward failed." : error);
         }
 
-        private static void ApplyOwnedSkinsToLocal(string[] ownedSkins)
+        public static IEnumerator RecordMatchStats(
+            MonoBehaviour runner,
+            PlayerProfileApiClient apiClient,
+            string playerId,
+            string sourceId,
+            int kills,
+            int deaths,
+            int placement,
+            bool won,
+            int damageDealt,
+            Action<bool, string> onCompleted)
         {
+            if (runner == null || apiClient == null || string.IsNullOrWhiteSpace(playerId))
+            {
+                onCompleted?.Invoke(false, "Profile is not synced with server.");
+                yield break;
+            }
+
+            if (string.IsNullOrWhiteSpace(sourceId))
+            {
+                onCompleted?.Invoke(false, "Missing match source id.");
+                yield break;
+            }
+
+            var completed = false;
+            var success = false;
+            var error = string.Empty;
+            PlayerProfileDto profile = null;
+
+            var request = new PlayerProfileMatchStatsRequest
+            {
+                sourceId = sourceId,
+                kills = Mathf.Max(0, kills),
+                deaths = Mathf.Max(0, deaths),
+                placement = Mathf.Max(1, placement),
+                won = won,
+                damageDealt = Mathf.Max(0, damageDealt)
+            };
+
+            yield return apiClient.RecordMatchStats(playerId, request, (ok, responseProfile, responseError) =>
+            {
+                completed = true;
+                success = ok;
+                profile = responseProfile;
+                error = responseError;
+            });
+
+            if (!completed)
+            {
+                onCompleted?.Invoke(false, "Match stats request did not complete.");
+                yield break;
+            }
+
+            if (success && profile != null)
+            {
+                ApplyProfile(profile);
+                onCompleted?.Invoke(true, string.Empty);
+                yield break;
+            }
+
+            onCompleted?.Invoke(false, string.IsNullOrWhiteSpace(error) ? "Match stats failed." : error);
+        }
+
+        private static void ApplyOwnedSkinsToLocal(string[] ownedSkins, SkinQuantityEntry[] ownedSkinQuantities)
+        {
+            if (ownedSkinQuantities != null && ownedSkinQuantities.Length > 0)
+            {
+                for (var i = 0; i < ownedSkinQuantities.Length; i++)
+                {
+                    var entry = ownedSkinQuantities[i];
+                    if (entry == null || string.IsNullOrWhiteSpace(entry.skinId))
+                    {
+                        continue;
+                    }
+
+                    PlayerSkinOwnershipService.ApplyOwnedQuantityFromServer(entry.skinId, entry.quantity);
+                }
+
+                return;
+            }
+
             if (ownedSkins == null)
             {
                 return;
@@ -376,6 +678,103 @@ namespace ShooterPrototype.Player
                     PlayerSkinOwnershipService.MarkOwnedFromServer(skinId);
                 }
             }
+        }
+
+        private static void ApplyOwnedQuantities(
+            SkinQuantityEntry[] ownedSkinQuantities,
+            string[] ownedSkins)
+        {
+            if (ownedSkinQuantities != null && ownedSkinQuantities.Length > 0)
+            {
+                for (var i = 0; i < ownedSkinQuantities.Length; i++)
+                {
+                    var entry = ownedSkinQuantities[i];
+                    if (entry == null || string.IsNullOrWhiteSpace(entry.skinId))
+                    {
+                        continue;
+                    }
+
+                    var skinId = entry.skinId.Trim();
+                    var quantity = entry.quantity > 0 ? entry.quantity : 1;
+                    OwnedSkinCache.Add(skinId);
+                    OwnedSkinQuantityCache[skinId] = quantity;
+                }
+
+                return;
+            }
+
+            if (ownedSkins == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < ownedSkins.Length; i++)
+            {
+                var skinId = ownedSkins[i];
+                if (string.IsNullOrWhiteSpace(skinId))
+                {
+                    continue;
+                }
+
+                var normalized = skinId.Trim();
+                OwnedSkinCache.Add(normalized);
+                OwnedSkinQuantityCache[normalized] = 1;
+            }
+        }
+
+        private static void ApplyOwnedCaseQuantities(CaseQuantityEntry[] ownedCaseQuantities)
+        {
+            if (ownedCaseQuantities == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < ownedCaseQuantities.Length; i++)
+            {
+                var entry = ownedCaseQuantities[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.caseId))
+                {
+                    continue;
+                }
+
+                var caseId = entry.caseId.Trim();
+                var quantity = entry.quantity > 0 ? entry.quantity : 1;
+                OwnedCaseQuantityCache[caseId] = quantity;
+            }
+        }
+
+        private static bool HasOwnedInventoryChanged(
+            HashSet<string> previousOwned,
+            Dictionary<string, int> previousQuantities)
+        {
+            if (previousOwned.Count != OwnedSkinCache.Count)
+            {
+                return true;
+            }
+
+            foreach (var skinId in OwnedSkinCache)
+            {
+                if (!previousOwned.Contains(skinId))
+                {
+                    return true;
+                }
+            }
+
+            if (previousQuantities.Count != OwnedSkinQuantityCache.Count)
+            {
+                return true;
+            }
+
+            foreach (var pair in OwnedSkinQuantityCache)
+            {
+                if (!previousQuantities.TryGetValue(pair.Key, out var previousQuantity) ||
+                    previousQuantity != pair.Value)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static void ApplyEquippedToLocal(PlayerProfileEquippedDto equipped)

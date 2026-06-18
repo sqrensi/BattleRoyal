@@ -29,13 +29,28 @@ namespace ShooterPrototype.UI
         [SerializeField] private float fadeDuration = 0.38f;
         [SerializeField] private float slideOffset = 56f;
         [SerializeField] private float itemSpacing = 14f;
-        [SerializeField] private float headerHeight = 76f;
+        [SerializeField] private float headerHeight = 110f;
         [SerializeField] private float scrollbarWidth = 12f;
         [SerializeField] private float scrollbarGap = 8f;
         [SerializeField] private float titleFontSize = 28f;
         [SerializeField] private float slotPadding = 12f;
 
         private readonly List<ItemSlotVisual> itemSlots = new List<ItemSlotVisual>(32);
+        private readonly List<CaseSlotVisual> caseSlots = new List<CaseSlotVisual>(8);
+
+        private enum InventoryTab
+        {
+            Skins = 0,
+            Cases = 1
+        }
+
+        private InventoryTab activeTab = InventoryTab.Skins;
+        private Button skinsTabButton;
+        private Button casesTabButton;
+        private GameObject skinsScrollObject;
+        private GameObject casesScrollObject;
+        private RectTransform casesContentRect;
+        private bool caseOpenInProgress;
 
         private CanvasGroup panelGroup;
         private RectTransform panelRect;
@@ -56,6 +71,15 @@ namespace ShooterPrototype.UI
             public PlayerSkinDefinition Definition;
             public Image Background;
             public Button Button;
+            public TMP_Text QuantityLabel;
+        }
+
+        private sealed class CaseSlotVisual
+        {
+            public CaseDefinition Definition;
+            public Image Background;
+            public Button OpenButton;
+            public TMP_Text QuantityLabel;
         }
 
         public void Configure(MainMenuPlayerPreview preview, MainMenuUiSoundController sound)
@@ -102,23 +126,43 @@ namespace ShooterPrototype.UI
 
             BuildHeader(panelObject.transform);
             BuildItemsGrid(panelObject.transform);
+            BuildCasesGrid(panelObject.transform);
+            SetActiveTab(InventoryTab.Skins);
         }
 
         private void OnEnable()
         {
             PlayerSkinOwnershipService.OwnershipChanged += RebuildItems;
             PlayerSkinOwnershipService.EquipmentChanged += OnEquipmentChanged;
+            PlayerProfileService.ProfileSynced += OnProfileSynced;
         }
 
         private void OnDisable()
         {
             PlayerSkinOwnershipService.OwnershipChanged -= RebuildItems;
             PlayerSkinOwnershipService.EquipmentChanged -= OnEquipmentChanged;
+            PlayerProfileService.ProfileSynced -= OnProfileSynced;
+        }
+
+        private void OnProfileSynced()
+        {
+            if (isVisible && activeTab == InventoryTab.Cases)
+            {
+                RebuildCases();
+            }
         }
 
         private void OnEquipmentChanged()
         {
-            playerPreview?.RefreshSkins();
+            if (!string.IsNullOrWhiteSpace(pendingPulseItemId) &&
+                PlayerSkinSelectionService.TryGetDefinitionById(pendingPulseItemId, out var definition))
+            {
+                PreviewInventoryItem(definition);
+            }
+            else
+            {
+                ResolvePlayerPreview()?.RefreshSkins();
+            }
 
             if (contentRect == null || itemSlots.Count == 0)
             {
@@ -126,35 +170,51 @@ namespace ShooterPrototype.UI
             }
 
             RefreshEquippedVisuals(pendingPulseItemId);
-            TryRefreshPreviewWeapon(pendingPulseItemId);
             pendingPulseItemId = null;
         }
 
-        private void TryRefreshPreviewWeapon(string itemId)
+        private void PreviewInventoryItem(PlayerSkinDefinition item)
         {
-            if (string.IsNullOrWhiteSpace(itemId) ||
-                !PlayerSkinSelectionService.TryGetDefinitionById(itemId, out var definition))
+            if (!item.IsValid)
             {
                 return;
             }
 
-            if (PlayerSkinSelectionService.TryResolveWeaponKind(definition, out var weaponKind))
+            ResolvePlayerPreview()?.PreviewInventoryItem(item);
+        }
+
+        private MainMenuPlayerPreview ResolvePlayerPreview()
+        {
+            if (playerPreview != null)
             {
-                playerPreview?.ShowWeaponWithSkin(weaponKind);
+                return playerPreview;
             }
+
+            var controller = FindObjectOfType<MainMenuController>();
+            playerPreview = controller != null ? controller.GetComponent<MainMenuPlayerPreview>() : null;
+            return playerPreview;
         }
 
         public void Show()
         {
             if (isVisible)
             {
-                RebuildItems();
-                RefreshEquippedVisuals();
+                if (activeTab == InventoryTab.Skins)
+                {
+                    RebuildItems();
+                    RefreshEquippedVisuals();
+                }
+                else
+                {
+                    RebuildCases();
+                }
+
                 return;
             }
 
             isVisible = true;
             RebuildItems();
+            RebuildCases();
             StartTransition(show: true);
         }
 
@@ -188,20 +248,116 @@ namespace ShooterPrototype.UI
             title.alignment = TextAlignmentOptions.Center;
             title.color = TitleColor;
             title.raycastTarget = false;
+
+            var tabsObject = new GameObject("Tabs");
+            tabsObject.transform.SetParent(headerObject.transform, false);
+            var tabsRect = tabsObject.AddComponent<RectTransform>();
+            tabsRect.anchorMin = new Vector2(0f, 0f);
+            tabsRect.anchorMax = new Vector2(1f, 0f);
+            tabsRect.pivot = new Vector2(0.5f, 0f);
+            tabsRect.offsetMin = new Vector2(0f, 0f);
+            tabsRect.offsetMax = new Vector2(0f, 28f);
+
+            var tabsLayout = tabsObject.AddComponent<HorizontalLayoutGroup>();
+            tabsLayout.spacing = 8f;
+            tabsLayout.childAlignment = TextAnchor.MiddleCenter;
+            tabsLayout.childControlWidth = true;
+            tabsLayout.childControlHeight = true;
+            tabsLayout.childForceExpandWidth = true;
+            tabsLayout.childForceExpandHeight = true;
+
+            skinsTabButton = CreateTabButton(tabsObject.transform, "Скины", () => SetActiveTab(InventoryTab.Skins));
+            casesTabButton = CreateTabButton(tabsObject.transform, "Кейсы", () => SetActiveTab(InventoryTab.Cases));
+        }
+
+        private Button CreateTabButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick)
+        {
+            var buttonObject = new GameObject(label + "Tab");
+            buttonObject.transform.SetParent(parent, false);
+
+            var image = buttonObject.AddComponent<Image>();
+            image.sprite = GetWhiteSprite();
+            image.type = Image.Type.Simple;
+            image.color = ItemBackgroundColor;
+
+            var button = buttonObject.AddComponent<Button>();
+            button.targetGraphic = image;
+            button.onClick.AddListener(onClick);
+            if (uiSound != null)
+            {
+                button.onClick.AddListener(uiSound.PlayButton);
+            }
+
+            var labelObject = new GameObject("Label", typeof(RectTransform));
+            labelObject.transform.SetParent(buttonObject.transform, false);
+            var labelRect = labelObject.GetComponent<RectTransform>();
+            StretchFull(labelRect);
+
+            var text = labelObject.AddComponent<TextMeshProUGUI>();
+            text.text = label;
+            text.fontSize = 18f;
+            text.fontStyle = FontStyles.Bold;
+            text.alignment = TextAlignmentOptions.Center;
+            text.color = TitleColor;
+            text.raycastTarget = false;
+
+            return button;
+        }
+
+        private void SetActiveTab(InventoryTab tab)
+        {
+            activeTab = tab;
+            var skinsActive = tab == InventoryTab.Skins;
+            if (skinsScrollObject != null)
+            {
+                skinsScrollObject.SetActive(skinsActive);
+            }
+
+            if (casesScrollObject != null)
+            {
+                casesScrollObject.SetActive(!skinsActive);
+            }
+
+            StyleTabButton(skinsTabButton, skinsActive);
+            StyleTabButton(casesTabButton, !skinsActive);
+
+            if (skinsActive)
+            {
+                RebuildItems();
+                RefreshEquippedVisuals();
+            }
+            else
+            {
+                RebuildCases();
+            }
+        }
+
+        private static void StyleTabButton(Button button, bool selected)
+        {
+            if (button == null)
+            {
+                return;
+            }
+
+            var image = button.GetComponent<Image>();
+            if (image != null)
+            {
+                image.color = selected ? EquippedBackgroundColor : ItemBackgroundColor;
+            }
         }
 
         private void BuildItemsGrid(Transform parent)
         {
-            var scrollObject = new GameObject("ItemsScroll");
-            scrollObject.transform.SetParent(parent, false);
+            skinsScrollObject = new GameObject("ItemsScroll");
+            skinsScrollObject.transform.SetParent(parent, false);
 
-            var scrollRectTransform = scrollObject.AddComponent<RectTransform>();
+            var scrollRectTransform = skinsScrollObject.AddComponent<RectTransform>();
             scrollRectTransform.anchorMin = Vector2.zero;
             scrollRectTransform.anchorMax = Vector2.one;
             scrollRectTransform.offsetMin = new Vector2(innerPadding, innerPadding);
             scrollRectTransform.offsetMax = new Vector2(-innerPadding, -(headerHeight + innerPadding));
 
-            var scroll = scrollObject.AddComponent<ScrollRect>();
+            var scroll = skinsScrollObject.AddComponent<ScrollRect>();
             scroll.horizontal = false;
             scroll.vertical = true;
             scroll.movementType = ScrollRect.MovementType.Clamped;
@@ -210,7 +366,7 @@ namespace ShooterPrototype.UI
             scroll.decelerationRate = 0.135f;
 
             var viewportObject = new GameObject("Viewport");
-            viewportObject.transform.SetParent(scrollObject.transform, false);
+            viewportObject.transform.SetParent(skinsScrollObject.transform, false);
             var viewportRect = viewportObject.AddComponent<RectTransform>();
             viewportRect.anchorMin = Vector2.zero;
             viewportRect.anchorMax = Vector2.one;
@@ -219,7 +375,7 @@ namespace ShooterPrototype.UI
             viewportObject.AddComponent<RectMask2D>();
             EnableViewportScrollCapture(viewportObject);
 
-            var scrollbar = CreateVerticalScrollbar(scrollObject.transform);
+            var scrollbar = CreateVerticalScrollbar(skinsScrollObject.transform);
             scroll.verticalScrollbar = scrollbar;
             scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
 
@@ -253,6 +409,323 @@ namespace ShooterPrototype.UI
             scroll.content = contentRect;
 
             RebuildItems();
+        }
+
+        private void BuildCasesGrid(Transform parent)
+        {
+            casesScrollObject = new GameObject("CasesScroll");
+            casesScrollObject.transform.SetParent(parent, false);
+
+            var scrollRectTransform = casesScrollObject.AddComponent<RectTransform>();
+            scrollRectTransform.anchorMin = Vector2.zero;
+            scrollRectTransform.anchorMax = Vector2.one;
+            scrollRectTransform.offsetMin = new Vector2(innerPadding, innerPadding);
+            scrollRectTransform.offsetMax = new Vector2(-innerPadding, -(headerHeight + innerPadding));
+
+            var scroll = casesScrollObject.AddComponent<ScrollRect>();
+            scroll.horizontal = false;
+            scroll.vertical = true;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+            scroll.scrollSensitivity = 28f;
+            scroll.inertia = true;
+            scroll.decelerationRate = 0.135f;
+
+            var viewportObject = new GameObject("Viewport");
+            viewportObject.transform.SetParent(casesScrollObject.transform, false);
+            var viewportRect = viewportObject.AddComponent<RectTransform>();
+            viewportRect.anchorMin = Vector2.zero;
+            viewportRect.anchorMax = Vector2.one;
+            viewportRect.offsetMin = Vector2.zero;
+            viewportRect.offsetMax = new Vector2(-(scrollbarWidth + scrollbarGap), 0f);
+            viewportObject.AddComponent<RectMask2D>();
+            EnableViewportScrollCapture(viewportObject);
+
+            var scrollbar = CreateVerticalScrollbar(casesScrollObject.transform);
+            scroll.verticalScrollbar = scrollbar;
+            scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+
+            var contentObject = new GameObject("Content");
+            contentObject.transform.SetParent(viewportObject.transform, false);
+            casesContentRect = contentObject.AddComponent<RectTransform>();
+            casesContentRect.anchorMin = new Vector2(0f, 1f);
+            casesContentRect.anchorMax = new Vector2(1f, 1f);
+            casesContentRect.pivot = new Vector2(0.5f, 1f);
+            casesContentRect.anchoredPosition = Vector2.zero;
+            casesContentRect.sizeDelta = new Vector2(0f, 0f);
+
+            var contentBackground = contentObject.AddComponent<Image>();
+            contentBackground.sprite = GetWhiteSprite();
+            contentBackground.color = Color.clear;
+            contentBackground.raycastTarget = true;
+
+            var grid = contentObject.AddComponent<GridLayoutGroup>();
+            grid.cellSize = new Vector2(itemCellWidth, itemCellHeight);
+            grid.spacing = new Vector2(itemSpacing, itemSpacing);
+            grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+            grid.constraintCount = 2;
+            grid.childAlignment = TextAnchor.UpperCenter;
+            grid.padding = new RectOffset(0, 0, 4, 8);
+
+            var fitter = contentObject.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            scroll.viewport = viewportRect;
+            scroll.content = casesContentRect;
+
+            casesScrollObject.SetActive(false);
+            RebuildCases();
+        }
+
+        private void RebuildCases()
+        {
+            if (casesContentRect == null)
+            {
+                return;
+            }
+
+            for (var i = casesContentRect.childCount - 1; i >= 0; i--)
+            {
+                var child = casesContentRect.GetChild(i);
+                if (child != null)
+                {
+                    Destroy(child.gameObject);
+                }
+            }
+
+            caseSlots.Clear();
+            CaseCatalogService.EnsureLoaded();
+
+            var ownedCases = new List<(CaseDefinition definition, int quantity)>(8);
+            var shopCases = CaseCatalogService.GetShopCases();
+            for (var i = 0; i < shopCases.Count; i++)
+            {
+                var caseDefinition = shopCases[i];
+                var quantity = PlayerProfileService.GetOwnedCaseQuantity(caseDefinition.Id);
+                if (quantity > 0)
+                {
+                    ownedCases.Add((caseDefinition, quantity));
+                }
+            }
+
+            for (var i = 0; i < ownedCases.Count; i++)
+            {
+                caseSlots.Add(CreateCaseSlot(casesContentRect, ownedCases[i].definition, ownedCases[i].quantity));
+            }
+        }
+
+        private CaseSlotVisual CreateCaseSlot(Transform parent, CaseDefinition caseDefinition, int quantity)
+        {
+            var slotObject = new GameObject("Case_" + caseDefinition.Id);
+            slotObject.transform.SetParent(parent, false);
+
+            var slotLayout = slotObject.AddComponent<LayoutElement>();
+            slotLayout.preferredWidth = itemCellWidth;
+            slotLayout.preferredHeight = itemCellHeight;
+            slotLayout.minWidth = itemCellWidth;
+            slotLayout.minHeight = itemCellHeight;
+
+            var background = slotObject.AddComponent<Image>();
+            background.sprite = GetWhiteSprite();
+            background.type = Image.Type.Simple;
+            background.color = ItemBackgroundColor;
+
+            var iconObject = new GameObject("Icon", typeof(RectTransform));
+            iconObject.transform.SetParent(slotObject.transform, false);
+            var iconRect = iconObject.GetComponent<RectTransform>();
+            iconRect.anchorMin = Vector2.zero;
+            iconRect.anchorMax = Vector2.one;
+            iconRect.offsetMin = new Vector2(slotPadding, slotPadding + 34f);
+            iconRect.offsetMax = new Vector2(-slotPadding, -slotPadding);
+
+            var iconImage = iconObject.AddComponent<Image>();
+            iconImage.preserveAspect = true;
+            iconImage.raycastTarget = false;
+            iconImage.sprite = InventoryIconCatalog.GetCaseIcon(caseDefinition.PictureResourcePath);
+
+            var openButtonObject = new GameObject("OpenButton", typeof(RectTransform));
+            openButtonObject.transform.SetParent(slotObject.transform, false);
+            var openButtonRect = openButtonObject.GetComponent<RectTransform>();
+            openButtonRect.anchorMin = new Vector2(0.5f, 0f);
+            openButtonRect.anchorMax = new Vector2(0.5f, 0f);
+            openButtonRect.pivot = new Vector2(0.5f, 0f);
+            openButtonRect.anchoredPosition = new Vector2(0f, slotPadding);
+            openButtonRect.sizeDelta = new Vector2(Mathf.Max(88f, itemCellWidth * 0.72f), 28f);
+
+            var openButtonImage = openButtonObject.AddComponent<Image>();
+            openButtonImage.sprite = GetWhiteSprite();
+            openButtonImage.color = EquippedBackgroundColor;
+
+            var openButton = openButtonObject.AddComponent<Button>();
+            openButton.targetGraphic = openButtonImage;
+            openButton.onClick.AddListener(() => OnCaseOpenClicked(caseDefinition));
+
+            var openLabelObject = new GameObject("Label", typeof(RectTransform));
+            openLabelObject.transform.SetParent(openButtonObject.transform, false);
+            var openLabelRect = openLabelObject.GetComponent<RectTransform>();
+            StretchFull(openLabelRect);
+            var openLabel = openLabelObject.AddComponent<TextMeshProUGUI>();
+            openLabel.text = "Открыть";
+            openLabel.fontSize = 16f;
+            openLabel.fontStyle = FontStyles.Bold;
+            openLabel.alignment = TextAlignmentOptions.Center;
+            openLabel.color = TitleColor;
+            openLabel.raycastTarget = false;
+
+            var quantityObject = new GameObject("QuantityBadge", typeof(RectTransform));
+            quantityObject.transform.SetParent(slotObject.transform, false);
+            var quantityRect = quantityObject.GetComponent<RectTransform>();
+            quantityRect.anchorMin = new Vector2(1f, 1f);
+            quantityRect.anchorMax = new Vector2(1f, 1f);
+            quantityRect.pivot = new Vector2(1f, 1f);
+            quantityRect.anchoredPosition = new Vector2(-8f, -8f);
+            quantityRect.sizeDelta = new Vector2(42f, 28f);
+
+            var quantityBackground = quantityObject.AddComponent<Image>();
+            quantityBackground.sprite = GetWhiteSprite();
+            quantityBackground.color = new Color(0.08f, 0.09f, 0.11f, 0.92f);
+            quantityBackground.raycastTarget = false;
+
+            var quantityLabelObject = new GameObject("QuantityLabel", typeof(RectTransform));
+            quantityLabelObject.transform.SetParent(quantityObject.transform, false);
+            var quantityLabelRect = quantityLabelObject.GetComponent<RectTransform>();
+            StretchFull(quantityLabelRect);
+            var quantityLabel = quantityLabelObject.AddComponent<TextMeshProUGUI>();
+            quantityLabel.fontSize = 16f;
+            quantityLabel.fontStyle = FontStyles.Bold;
+            quantityLabel.alignment = TextAlignmentOptions.Center;
+            quantityLabel.color = TitleColor;
+            quantityLabel.raycastTarget = false;
+            quantityLabel.text = quantity > 1 ? "x" + quantity : string.Empty;
+            quantityObject.SetActive(quantity > 1);
+
+            return new CaseSlotVisual
+            {
+                Definition = caseDefinition,
+                Background = background,
+                OpenButton = openButton,
+                QuantityLabel = quantityLabel
+            };
+        }
+
+        private void OnCaseOpenClicked(CaseDefinition caseDefinition)
+        {
+            if (!caseDefinition.IsValid || caseOpenInProgress)
+            {
+                return;
+            }
+
+            if (PlayerProfileService.GetOwnedCaseQuantity(caseDefinition.Id) <= 0)
+            {
+                uiSound?.PlayButton();
+                return;
+            }
+
+            if (PlayerProfileService.IsServerSynced)
+            {
+                var menu = FindObjectOfType<MainMenuController>();
+                if (menu != null && menu.ProfileApiClient != null)
+                {
+                    StartCoroutine(OpenCaseFromServerRoutine(menu, caseDefinition));
+                    return;
+                }
+            }
+
+            if (!CaseOpeningService.TryOpenLocal(caseDefinition, out var rolledSkinId))
+            {
+                uiSound?.PlayButton();
+                return;
+            }
+
+            uiSound?.PlayButton();
+            RebuildCases();
+            ShowCaseOpeningOverlay(caseDefinition, rolledSkinId);
+        }
+
+        private IEnumerator OpenCaseFromServerRoutine(MainMenuController menu, CaseDefinition caseDefinition)
+        {
+            caseOpenInProgress = true;
+            RefreshCaseOpenButtons(false);
+
+            var success = false;
+            var rolledSkinId = string.Empty;
+            yield return PlayerProfileService.OpenCase(
+                this,
+                menu.ProfileApiClient,
+                menu.LocalPlayerId,
+                caseDefinition.Id,
+                (ok, _, rolled) =>
+                {
+                    success = ok;
+                    rolledSkinId = rolled;
+                });
+
+            caseOpenInProgress = false;
+            uiSound?.PlayButton();
+            RebuildCases();
+            RefreshCaseOpenButtons(true);
+
+            if (success)
+            {
+                ShowCaseOpeningOverlay(caseDefinition, rolledSkinId);
+            }
+        }
+
+        private void RefreshCaseOpenButtons(bool interactable)
+        {
+            for (var i = 0; i < caseSlots.Count; i++)
+            {
+                if (caseSlots[i].OpenButton != null)
+                {
+                    caseSlots[i].OpenButton.interactable = interactable && !caseOpenInProgress;
+                }
+            }
+        }
+
+        private void ShowCaseOpeningOverlay(CaseDefinition caseDefinition, string rolledSkinId)
+        {
+            var canvasRect = panelRect != null ? panelRect.parent as RectTransform : null;
+            if (canvasRect == null)
+            {
+                var controller = FindObjectOfType<MainMenuController>();
+                canvasRect = controller != null
+                    ? controller.GetComponentInChildren<Canvas>()?.GetComponent<RectTransform>()
+                    : null;
+            }
+
+            if (canvasRect == null)
+            {
+                return;
+            }
+
+            if (panelGroup != null)
+            {
+                panelGroup.interactable = false;
+                panelGroup.blocksRaycasts = false;
+            }
+
+            var sectionController = FindObjectOfType<MainMenuSectionController>();
+            sectionController?.SetBackNavigationVisible(false);
+
+            MainMenuCaseOpeningOverlay.Show(
+                canvasRect,
+                caseDefinition,
+                rolledSkinId,
+                () =>
+                {
+                    if (isVisible && panelGroup != null)
+                    {
+                        panelGroup.interactable = true;
+                        panelGroup.blocksRaycasts = true;
+                    }
+
+                    sectionController?.SetBackNavigationVisible(true);
+
+                    if (PlayerSkinSelectionService.TryGetDefinitionById(rolledSkinId, out var item))
+                    {
+                        playerPreview?.PreviewInventoryItem(item);
+                    }
+                });
         }
 
         private void RebuildItems()
@@ -357,12 +830,61 @@ namespace ShooterPrototype.UI
             iconImage.raycastTarget = false;
             iconImage.sprite = InventoryIconCatalog.GetSkinIcon(item.PictureResourcePath);
 
+            var quantityObject = new GameObject("QuantityBadge", typeof(RectTransform));
+            quantityObject.transform.SetParent(slotObject.transform, false);
+            var quantityRect = quantityObject.GetComponent<RectTransform>();
+            quantityRect.anchorMin = new Vector2(1f, 1f);
+            quantityRect.anchorMax = new Vector2(1f, 1f);
+            quantityRect.pivot = new Vector2(1f, 1f);
+            quantityRect.anchoredPosition = new Vector2(-8f, -8f);
+            quantityRect.sizeDelta = new Vector2(42f, 28f);
+
+            var quantityBackground = quantityObject.AddComponent<Image>();
+            quantityBackground.sprite = GetWhiteSprite();
+            quantityBackground.color = new Color(0.08f, 0.09f, 0.11f, 0.92f);
+            quantityBackground.raycastTarget = false;
+
+            var quantityLabelObject = new GameObject("QuantityLabel", typeof(RectTransform));
+            quantityLabelObject.transform.SetParent(quantityObject.transform, false);
+            var quantityLabelRect = quantityLabelObject.GetComponent<RectTransform>();
+            quantityLabelRect.anchorMin = Vector2.zero;
+            quantityLabelRect.anchorMax = Vector2.one;
+            quantityLabelRect.offsetMin = Vector2.zero;
+            quantityLabelRect.offsetMax = Vector2.zero;
+
+            var quantityLabel = quantityLabelObject.AddComponent<TextMeshProUGUI>();
+            quantityLabel.fontSize = 16f;
+            quantityLabel.fontStyle = FontStyles.Bold;
+            quantityLabel.alignment = TextAlignmentOptions.Center;
+            quantityLabel.color = TitleColor;
+            quantityLabel.raycastTarget = false;
+
             return new ItemSlotVisual
             {
                 Definition = item,
                 Background = background,
-                Button = button
+                Button = button,
+                QuantityLabel = quantityLabel
             };
+        }
+
+        private static void RefreshQuantityBadge(ItemSlotVisual slot)
+        {
+            if (slot?.QuantityLabel == null)
+            {
+                return;
+            }
+
+            var count = PlayerSkinOwnershipService.GetOwnedCount(slot.Definition.Id);
+            if (count > 1)
+            {
+                slot.QuantityLabel.transform.parent.gameObject.SetActive(true);
+                slot.QuantityLabel.text = "x" + count;
+            }
+            else
+            {
+                slot.QuantityLabel.transform.parent.gameObject.SetActive(false);
+            }
         }
 
         private void OnItemClicked(PlayerSkinDefinition item)
@@ -389,8 +911,7 @@ namespace ShooterPrototype.UI
             }
 
             pendingPulseItemId = item.Id;
-            TryRefreshPreviewWeapon(item.Id);
-            playerPreview?.RefreshSkins();
+            PreviewInventoryItem(item);
             RefreshEquippedVisuals(pendingPulseItemId);
             pendingPulseItemId = null;
             uiSound?.PlayButton();
@@ -424,9 +945,9 @@ namespace ShooterPrototype.UI
             }
 
             RefreshEquippedVisuals(pendingPulseItemId);
-            TryRefreshPreviewWeapon(item.Id);
-            playerPreview?.RefreshSkins();
+            PreviewInventoryItem(item);
             uiSound?.PlayButton();
+            pendingPulseItemId = null;
         }
 
         private void RefreshEquippedVisuals(string pulseItemId = null)
@@ -455,6 +976,8 @@ namespace ShooterPrototype.UI
                     colors.fadeDuration = 0f;
                     slot.Button.colors = colors;
                 }
+
+                RefreshQuantityBadge(slot);
             }
 
             if (!string.IsNullOrWhiteSpace(pulseItemId))

@@ -7,47 +7,17 @@ namespace ShooterPrototype.Player
     public static class PlayerSkinOwnershipService
     {
         private const string OwnedPrefPrefix = "player_skin_owned_";
+        private const string OwnedCountPrefPrefix = "player_skin_count_";
         private const string OwnershipInitKey = "player_skin_ownership_initialized_v1";
         private const string CurrencyGrantKey = "player_currency_grant_100k_v1";
-        private const int ShopBasePrice = 500;
-        private const int ShopPriceStep = 250;
-
-        private static readonly string[] DefaultOwnedSkinIds =
-        {
-            PlayerSkinResourcePaths.BuildSkinId("tshirts", "001"),
-            PlayerSkinResourcePaths.BuildSkinId("pants", "001"),
-            PlayerSkinResourcePaths.BuildSkinId("shoes", "001"),
-            PlayerSkinResourcePaths.BuildSkinId("gloves", "001"),
-            PlayerSkinResourcePaths.BuildAttachmentSkinId("face", "001"),
-            PlayerSkinResourcePaths.BuildAttachmentSkinId("hair", "003"),
-            WeaponSkinResourcePaths.BuildSkinId(WeaponKind.AssaultRifle, "000"),
-            WeaponSkinResourcePaths.BuildSkinId(WeaponKind.SniperRifle, "000"),
-            WeaponSkinResourcePaths.BuildSkinId(WeaponKind.Pistol, "000"),
-            WeaponSkinResourcePaths.BuildSkinId(WeaponKind.Mp7, "000")
-        };
-
-        private static readonly Dictionary<PlayerSkinSlot, string> DefaultEquippedSkinIds =
-            new Dictionary<PlayerSkinSlot, string>
-            {
-                { PlayerSkinSlot.Shirt, PlayerSkinResourcePaths.BuildSkinId("tshirts", "001") },
-                { PlayerSkinSlot.Pants, PlayerSkinResourcePaths.BuildSkinId("pants", "001") },
-                { PlayerSkinSlot.Boots, PlayerSkinResourcePaths.BuildSkinId("shoes", "001") },
-                { PlayerSkinSlot.Gloves, PlayerSkinResourcePaths.BuildSkinId("gloves", "001") },
-                { PlayerSkinSlot.Face, PlayerSkinResourcePaths.BuildAttachmentSkinId("face", "001") },
-                { PlayerSkinSlot.Hair, PlayerSkinResourcePaths.BuildAttachmentSkinId("hair", "003") },
-                { PlayerSkinSlot.WeaponAssaultRifle, WeaponSkinResourcePaths.BuildSkinId(WeaponKind.AssaultRifle, "000") },
-                { PlayerSkinSlot.WeaponSniperRifle, WeaponSkinResourcePaths.BuildSkinId(WeaponKind.SniperRifle, "000") },
-                { PlayerSkinSlot.WeaponPistol, WeaponSkinResourcePaths.BuildSkinId(WeaponKind.Pistol, "000") },
-                { PlayerSkinSlot.WeaponMp7, WeaponSkinResourcePaths.BuildSkinId(WeaponKind.Mp7, "000") }
-            };
-
-        private static readonly Dictionary<string, int> ShopPriceBySkinId = BuildShopPrices();
 
         public static event Action OwnershipChanged;
         public static event Action EquipmentChanged;
 
         public static void EnsureInitialized()
         {
+            ShopCatalogService.EnsureLoaded();
+
             if (!PlayerPrefs.HasKey(CurrencyGrantKey))
             {
                 PlayerCurrencyService.AddCurrency(100000);
@@ -62,9 +32,10 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            for (var i = 0; i < DefaultOwnedSkinIds.Length; i++)
+            var defaultOwned = ShopCatalogService.GetDefaultOwnedSkinIds();
+            for (var i = 0; i < defaultOwned.Count; i++)
             {
-                MarkOwned(DefaultOwnedSkinIds[i], persist: false);
+                MarkOwned(defaultOwned[i], persist: false);
             }
 
             EnsureDefaultEquipped();
@@ -85,7 +56,70 @@ namespace ShooterPrototype.Player
                 return PlayerProfileService.IsOwned(skinId);
             }
 
-            return PlayerPrefs.GetInt(OwnedPrefPrefix + skinId, 0) == 1;
+            return PlayerPrefs.GetInt(OwnedPrefPrefix + skinId, 0) == 1 ||
+                   GetOwnedCount(skinId) > 0;
+        }
+
+        public static int GetOwnedCount(string skinId)
+        {
+            if (string.IsNullOrWhiteSpace(skinId))
+            {
+                return 0;
+            }
+
+            if (PlayerProfileService.IsServerSynced)
+            {
+                return PlayerProfileService.GetOwnedQuantity(skinId);
+            }
+
+            var count = PlayerPrefs.GetInt(OwnedCountPrefPrefix + skinId, 0);
+            if (count > 0)
+            {
+                return count;
+            }
+
+            return PlayerPrefs.GetInt(OwnedPrefPrefix + skinId, 0) == 1 ? 1 : 0;
+        }
+
+        public static void GrantOwnedSkin(string skinId, bool allowDuplicate = false)
+        {
+            if (string.IsNullOrWhiteSpace(skinId))
+            {
+                return;
+            }
+
+            if (PlayerProfileService.IsServerSynced)
+            {
+                return;
+            }
+
+            var normalized = skinId.Trim();
+            var currentCount = GetOwnedCount(normalized);
+            if (currentCount <= 0)
+            {
+                MarkOwned(normalized, persist: true, quantity: 1);
+                return;
+            }
+
+            if (!allowDuplicate)
+            {
+                return;
+            }
+
+            MarkOwned(normalized, persist: true, quantity: currentCount + 1);
+        }
+
+        public static void ApplyOwnedQuantityFromServer(string skinId, int quantity)
+        {
+            if (string.IsNullOrWhiteSpace(skinId))
+            {
+                return;
+            }
+
+            var normalized = skinId.Trim();
+            var safeQuantity = Mathf.Max(1, quantity);
+            PlayerPrefs.SetInt(OwnedPrefPrefix + normalized, 1);
+            PlayerPrefs.SetInt(OwnedCountPrefPrefix + normalized, safeQuantity);
         }
 
         public static bool IsOwned(PlayerSkinDefinition item)
@@ -102,25 +136,17 @@ namespace ShooterPrototype.Player
 
         public static bool IsShopCatalogItem(PlayerSkinDefinition item)
         {
-            return item.IsValid && !IsDefaultOwnedSkin(item.Id);
+            return ShopCatalogService.IsShopItem(item);
         }
 
         public static IReadOnlyList<PlayerSkinDefinition> GetShopCatalogItems()
         {
-            var shopItems = new List<PlayerSkinDefinition>(64);
-            AppendShopFromSlots(shopItems);
-            shopItems.Sort(CompareShopItems);
-            return shopItems;
+            return ShopCatalogService.GetShopDefinitions();
         }
 
         public static int GetShopPrice(PlayerSkinDefinition item)
         {
-            if (!item.IsValid)
-            {
-                return 0;
-            }
-
-            return ShopPriceBySkinId.TryGetValue(item.Id, out var price) ? price : ShopBasePrice;
+            return ShopCatalogService.GetPrice(item);
         }
 
         public static bool TryPurchase(PlayerSkinDefinition item)
@@ -177,7 +203,7 @@ namespace ShooterPrototype.Player
 
         public static bool TryGetDefaultEquipped(PlayerSkinSlot slot, out PlayerSkinDefinition definition)
         {
-            if (DefaultEquippedSkinIds.TryGetValue(slot, out var skinId) &&
+            if (ShopCatalogService.TryGetDefaultEquippedSkinId(slot, out var skinId) &&
                 PlayerSkinSelectionService.TryGetDefinitionById(skinId, out definition) &&
                 IsOwned(definition))
             {
@@ -222,84 +248,22 @@ namespace ShooterPrototype.Player
             AppendOwnedFromSlots(PlayerSkinSelectionService.GetDisplaySlotOrder(), owned);
         }
 
-        private static void AppendShopFromSlots(List<PlayerSkinDefinition> shopItems)
-        {
-            var order = PlayerSkinSelectionService.GetDisplaySlotOrder();
-            for (var i = 0; i < order.Length; i++)
-            {
-                var options = PlayerSkinSelectionService.GetCatalogOptions(order[i]);
-                for (var j = 0; j < options.Count; j++)
-                {
-                    if (IsShopCatalogItem(options[j]))
-                    {
-                        shopItems.Add(options[j]);
-                    }
-                }
-            }
-        }
-
-        private static int CompareShopItems(PlayerSkinDefinition a, PlayerSkinDefinition b)
-        {
-            var ownedCompare = IsOwned(a).CompareTo(IsOwned(b));
-            if (ownedCompare != 0)
-            {
-                return ownedCompare;
-            }
-
-            var priceCompare = GetShopPrice(a).CompareTo(GetShopPrice(b));
-            if (priceCompare != 0)
-            {
-                return priceCompare;
-            }
-
-            return string.Compare(a.Id, b.Id, StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static Dictionary<string, int> BuildShopPrices()
-        {
-            var prices = new Dictionary<string, int>(64);
-            var index = 0;
-            var order = PlayerSkinSelectionService.GetDisplaySlotOrder();
-            for (var i = 0; i < order.Length; i++)
-            {
-                var options = PlayerSkinSelectionService.GetCatalogOptions(order[i]);
-                for (var j = 0; j < options.Count; j++)
-                {
-                    var item = options[j];
-                    if (IsDefaultOwnedSkin(item.Id))
-                    {
-                        continue;
-                    }
-
-                    prices[item.Id] = ShopBasePrice + index * ShopPriceStep;
-                    index++;
-                }
-            }
-
-            return prices;
-        }
-
         private static bool IsDefaultOwnedSkin(string skinId)
         {
-            for (var i = 0; i < DefaultOwnedSkinIds.Length; i++)
-            {
-                if (string.Equals(DefaultOwnedSkinIds[i], skinId, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return ShopCatalogService.IsDefaultOwnedSkin(skinId);
         }
 
-        private static void MarkOwned(string skinId, bool persist = true)
+        private static void MarkOwned(string skinId, bool persist = true, int quantity = 1)
         {
             if (string.IsNullOrWhiteSpace(skinId))
             {
                 return;
             }
 
-            PlayerPrefs.SetInt(OwnedPrefPrefix + skinId, 1);
+            var normalized = skinId.Trim();
+            var safeQuantity = Mathf.Max(1, quantity);
+            PlayerPrefs.SetInt(OwnedPrefPrefix + normalized, 1);
+            PlayerPrefs.SetInt(OwnedCountPrefPrefix + normalized, safeQuantity);
             if (persist)
             {
                 PlayerPrefs.Save();
@@ -322,17 +286,17 @@ namespace ShooterPrototype.Player
 
         private static void EnsureDefaultWeaponOwnership()
         {
-            var weaponDefaults = new[]
+            var weaponDefaults = ShopCatalogService.GetDefaultOwnedSkinIds();
+            for (var i = 0; i < weaponDefaults.Count; i++)
             {
-                WeaponSkinResourcePaths.BuildSkinId(WeaponKind.AssaultRifle, "000"),
-                WeaponSkinResourcePaths.BuildSkinId(WeaponKind.SniperRifle, "000"),
-                WeaponSkinResourcePaths.BuildSkinId(WeaponKind.Pistol, "000"),
-                WeaponSkinResourcePaths.BuildSkinId(WeaponKind.Mp7, "000")
-            };
+                var skinId = weaponDefaults[i];
+                if (string.IsNullOrWhiteSpace(skinId) ||
+                    skinId.IndexOf("weapon_", StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
 
-            for (var i = 0; i < weaponDefaults.Length; i++)
-            {
-                MarkOwned(weaponDefaults[i], persist: false);
+                MarkOwned(skinId, persist: false);
             }
 
             foreach (PlayerSkinSlot slot in Enum.GetValues(typeof(PlayerSkinSlot)))

@@ -56,6 +56,9 @@ namespace ShooterPrototype.Player
         private static AudioClip pistolReloadInsertCache;
         private static AudioClip mp7ReloadInsertCache;
 
+        private const string PrefabRegistryResourcePath = "Weapons/WeaponPrefabRegistry";
+        private static bool runtimePrefabsRegistered;
+
         public static WeaponKind ResolveKindFromItemId(string itemId)
         {
             if (string.IsNullOrWhiteSpace(itemId))
@@ -145,6 +148,8 @@ namespace ShooterPrototype.Player
 
         public static GameObject GetWeaponPrefab(WeaponKind kind)
         {
+            EnsureRuntimePrefabsRegistered();
+
             switch (kind)
             {
                 case WeaponKind.SniperRifle:
@@ -305,12 +310,36 @@ namespace ShooterPrototype.Player
             }
         }
 
+        private static void EnsureRuntimePrefabsRegistered()
+        {
+            if (runtimePrefabsRegistered)
+            {
+                return;
+            }
+
+            runtimePrefabsRegistered = true;
+
+#if !UNITY_EDITOR
+            var registry = Resources.Load<WeaponPrefabRegistry>(PrefabRegistryResourcePath);
+            if (registry != null)
+            {
+                registry.RegisterAll();
+            }
+            else
+            {
+                Debug.LogWarning(
+                    $"[WeaponCatalog] Missing Resources/{PrefabRegistryResourcePath}. " +
+                    "Weapon prefabs will not load in builds.");
+            }
+#endif
+        }
+
         private static T LoadAsset<T>(string assetPath) where T : Object
         {
 #if UNITY_EDITOR
             return AssetDatabase.LoadAssetAtPath<T>(assetPath);
 #else
-            return Resources.Load<T>(assetPath);
+            return null;
 #endif
         }
     }

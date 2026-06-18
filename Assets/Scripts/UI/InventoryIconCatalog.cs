@@ -58,6 +58,11 @@ namespace ShooterPrototype.UI
             return LoadSpriteFromResources(pictureResourcePath);
         }
 
+        public static Sprite GetCaseIcon(string pictureResourcePath)
+        {
+            return LoadSpriteFromResources(pictureResourcePath);
+        }
+
         public static void ClearCache()
         {
             SpriteCache.Clear();

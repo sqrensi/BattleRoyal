@@ -75,6 +75,8 @@ namespace ShooterPrototype.UI
         private MatchOutcomeSummary pendingMatchOutcome;
         private bool matchRewardGranted;
         private Coroutine matchRewardCoroutine;
+        private bool matchStatsReported;
+        private Coroutine matchStatsCoroutine;
         private bool gameOverInputLocked;
         private GameObject pauseMenuPanel;
         private GameObject pauseSettingsPanel;
@@ -444,6 +446,7 @@ namespace ShooterPrototype.UI
             SetPauseMenuOpen(false);
             pendingMatchOutcome = default;
             matchRewardGranted = false;
+            matchStatsReported = false;
             ApplyGameOverInputLock(false);
         }
 
@@ -511,6 +514,17 @@ namespace ShooterPrototype.UI
                 }
 
                 matchRewardCoroutine = StartCoroutine(GrantMatchRewardRoutine(summary.CoinReward));
+            }
+
+            if (!matchStatsReported)
+            {
+                matchStatsReported = true;
+                if (matchStatsCoroutine != null)
+                {
+                    StopCoroutine(matchStatsCoroutine);
+                }
+
+                matchStatsCoroutine = StartCoroutine(RecordMatchStatsRoutine(won, summary));
             }
 
             SetVictoryBanner(false);
@@ -590,6 +604,35 @@ namespace ShooterPrototype.UI
             }
 
             matchRewardCoroutine = null;
+        }
+
+        private IEnumerator RecordMatchStatsRoutine(bool won, MatchOutcomeSummary summary)
+        {
+            var apiClient = FindObjectOfType<PlayerProfileApiClient>();
+            var playerId = PlayerIdentityService.GetOrCreatePlayerId();
+            var sourceId = ResolveMatchRewardSourceId();
+            var deaths = won ? 0 : 1;
+            var damageDealt = MatchStatsTracker.DamageDealtThisMatch;
+
+            if (apiClient == null || string.IsNullOrWhiteSpace(playerId))
+            {
+                matchStatsCoroutine = null;
+                yield break;
+            }
+
+            yield return PlayerProfileService.RecordMatchStats(
+                this,
+                apiClient,
+                playerId,
+                sourceId,
+                summary.KillCount,
+                deaths,
+                summary.Placement,
+                won,
+                damageDealt,
+                (_, __) => { });
+
+            matchStatsCoroutine = null;
         }
 
         private string ResolveMatchRewardSourceId()

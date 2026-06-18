@@ -7,11 +7,18 @@ const {
   getShopPrice,
   slotForSkinId,
 } = require("../data/shop-catalog");
+const { getCaseDefinition, rollCaseLoot } = require("../data/case-catalog");
+const {
+  getAchievementDefinition,
+  getAchievementsByEventType,
+  getAllAchievements,
+} = require("../data/achievement-catalog");
 const crypto = require("crypto");
 const { openDatabase, nowMs, newId } = require("./database");
 
 const STARTER_CURRENCY = 100000;
 const ITEM_TYPE_SKIN = "skin";
+const ITEM_TYPE_CASE = "case";
 const UNEQUIPPED_ATTACHMENT = "__none__";
 
 function normalizeExternalPlayerId(value) {
@@ -130,16 +137,151 @@ function getPlayerByExternalId(externalPlayerId) {
 }
 
 function getOwnedSkinIds(playerId) {
+  return getOwnedSkinQuantities(playerId).map((entry) => entry.skinId);
+}
+
+function getOwnedSkinQuantities(playerId) {
   const db = openDatabase();
   const rows = db
     .prepare(
-      `SELECT item_id
+      `SELECT item_id, quantity
        FROM player_owned_items
        WHERE player_id = ? AND item_type = ?
        ORDER BY item_id ASC`
     )
     .all(playerId, ITEM_TYPE_SKIN);
-  return rows.map((row) => row.item_id);
+
+  return rows.map((row) => ({
+    skinId: row.item_id,
+    quantity: Number.isFinite(row.quantity) && row.quantity > 0 ? row.quantity : 1,
+  }));
+}
+
+function grantOwnedSkin(playerId, skinId, source, allowDuplicateIncrement) {
+  const normalizedSkinId = String(skinId || "").trim();
+  if (!normalizedSkinId || !isKnownSkinId(normalizedSkinId)) {
+    return false;
+  }
+
+  const db = openDatabase();
+  const timestamp = nowMs();
+  const existing = db
+    .prepare(
+      `SELECT id, quantity
+       FROM player_owned_items
+       WHERE player_id = ? AND item_type = ? AND item_id = ?`
+    )
+    .get(playerId, ITEM_TYPE_SKIN, normalizedSkinId);
+
+  if (existing) {
+    if (!allowDuplicateIncrement) {
+      return false;
+    }
+
+    db.prepare(
+      `UPDATE player_owned_items
+       SET quantity = quantity + 1,
+           source = ?,
+           acquired_at = ?
+       WHERE id = ?`
+    ).run(source, timestamp, existing.id);
+    return true;
+  }
+
+  db.prepare(
+    `INSERT INTO player_owned_items
+     (player_id, item_type, item_id, source, acquired_at, quantity)
+     VALUES (?, ?, ?, ?, ?, 1)`
+  ).run(playerId, ITEM_TYPE_SKIN, normalizedSkinId, source, timestamp);
+  return true;
+}
+
+function getOwnedCaseQuantities(playerId) {
+  const db = openDatabase();
+  const rows = db
+    .prepare(
+      `SELECT item_id, quantity
+       FROM player_owned_items
+       WHERE player_id = ? AND item_type = ?
+       ORDER BY item_id ASC`
+    )
+    .all(playerId, ITEM_TYPE_CASE);
+
+  return rows.map((row) => ({
+    caseId: row.item_id,
+    quantity: Number.isFinite(row.quantity) && row.quantity > 0 ? row.quantity : 1,
+  }));
+}
+
+function grantOwnedCase(playerId, caseId, source, allowDuplicateIncrement) {
+  const normalizedCaseId = String(caseId || "").trim();
+  if (!normalizedCaseId || !getCaseDefinition(normalizedCaseId)) {
+    return false;
+  }
+
+  const db = openDatabase();
+  const timestamp = nowMs();
+  const existing = db
+    .prepare(
+      `SELECT id, quantity
+       FROM player_owned_items
+       WHERE player_id = ? AND item_type = ? AND item_id = ?`
+    )
+    .get(playerId, ITEM_TYPE_CASE, normalizedCaseId);
+
+  if (existing) {
+    if (!allowDuplicateIncrement) {
+      return false;
+    }
+
+    db.prepare(
+      `UPDATE player_owned_items
+       SET quantity = quantity + 1,
+           source = ?,
+           acquired_at = ?
+       WHERE id = ?`
+    ).run(source, timestamp, existing.id);
+    return true;
+  }
+
+  db.prepare(
+    `INSERT INTO player_owned_items
+     (player_id, item_type, item_id, source, acquired_at, quantity)
+     VALUES (?, ?, ?, ?, ?, 1)`
+  ).run(playerId, ITEM_TYPE_CASE, normalizedCaseId, source, timestamp);
+  return true;
+}
+
+function consumeOwnedCase(playerId, caseId) {
+  const normalizedCaseId = String(caseId || "").trim();
+  if (!normalizedCaseId) {
+    return false;
+  }
+
+  const db = openDatabase();
+  const existing = db
+    .prepare(
+      `SELECT id, quantity
+       FROM player_owned_items
+       WHERE player_id = ? AND item_type = ? AND item_id = ?`
+    )
+    .get(playerId, ITEM_TYPE_CASE, normalizedCaseId);
+
+  if (!existing || existing.quantity <= 0) {
+    return false;
+  }
+
+  if (existing.quantity <= 1) {
+    db.prepare(`DELETE FROM player_owned_items WHERE id = ?`).run(existing.id);
+  } else {
+    db.prepare(
+      `UPDATE player_owned_items
+       SET quantity = quantity - 1
+       WHERE id = ?`
+    ).run(existing.id);
+  }
+
+  return true;
 }
 
 function getEquippedMap(playerId) {
@@ -254,11 +396,165 @@ function buildProfileResponse(playerRow) {
       ? playerRow.currency_balance
       : 0,
     starterPackGranted: !!playerRow.starter_pack_granted,
-    ownedSkins,
+    ownedSkins: ownedSkins,
+    ownedSkinQuantities: getOwnedSkinQuantities(playerRow.id),
+    ownedCaseQuantities: getOwnedCaseQuantities(playerRow.id),
     equipped,
     achievements: listPlayerAchievements(playerRow.id),
     claimedRewards: listPlayerRewardClaims(playerRow.id),
+    stats: getPlayerMatchStats(playerRow.id),
   };
+}
+
+function ensurePlayerMatchStats(playerId) {
+  if (!playerId) {
+    return;
+  }
+
+  const db = openDatabase();
+  db.prepare(
+    `INSERT OR IGNORE INTO player_match_stats
+     (player_id, match_count, total_kills, total_deaths, total_wins,
+      total_placement_sum, total_damage, updated_at)
+     VALUES (?, 0, 0, 0, 0, 0, 0, ?)`
+  ).run(playerId, nowMs());
+}
+
+function getPlayerMatchStats(playerId) {
+  ensurePlayerMatchStats(playerId);
+  const db = openDatabase();
+  const row = db
+    .prepare(
+      `SELECT match_count, total_kills, total_deaths, total_wins,
+              total_placement_sum, total_damage
+       FROM player_match_stats
+       WHERE player_id = ?`
+    )
+    .get(playerId);
+
+  const matchCount = row && Number.isFinite(row.match_count) ? row.match_count : 0;
+  const totalKills = row && Number.isFinite(row.total_kills) ? row.total_kills : 0;
+  const totalDeaths = row && Number.isFinite(row.total_deaths) ? row.total_deaths : 0;
+  const totalWins = row && Number.isFinite(row.total_wins) ? row.total_wins : 0;
+  const totalPlacementSum =
+    row && Number.isFinite(row.total_placement_sum) ? row.total_placement_sum : 0;
+  const totalDamage = row && Number.isFinite(row.total_damage) ? row.total_damage : 0;
+
+  const avgPlacement = matchCount > 0 ? totalPlacementSum / matchCount : 0;
+  const avgDamage = matchCount > 0 ? totalDamage / matchCount : 0;
+  const kdRatio = totalDeaths > 0 ? totalKills / totalDeaths : totalKills;
+
+  return {
+    matchCount,
+    totalKills,
+    totalDeaths,
+    totalWins,
+    avgPlacement,
+    avgDamage,
+    kdRatio,
+  };
+}
+
+function recordMatchStats(externalPlayerId, payload) {
+  const normalizedSourceId = String(payload && payload.sourceId ? payload.sourceId : "").trim();
+  if (!normalizedSourceId) {
+    return { ok: false, error: "MissingSourceId", message: "Match source id is required." };
+  }
+
+  const kills = Math.max(0, Math.floor(Number(payload && payload.kills)));
+  const deaths = Math.max(0, Math.floor(Number(payload && payload.deaths)));
+  const placement = Math.max(1, Math.floor(Number(payload && payload.placement)));
+  const won = !!(payload && payload.won);
+  const damageDealt = Math.max(0, Math.floor(Number(payload && payload.damageDealt)));
+
+  if (!Number.isFinite(kills) || !Number.isFinite(deaths) || !Number.isFinite(placement)) {
+    return { ok: false, error: "InvalidStats", message: "Match stats payload is invalid." };
+  }
+
+  const playerRow = getPlayerByExternalId(externalPlayerId);
+  if (!playerRow) {
+    return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
+  }
+
+  ensurePlayerMatchStats(playerRow.id);
+  const db = openDatabase();
+  const timestamp = nowMs();
+
+  try {
+    const alreadyReported = db.transaction(() => {
+      const existing = db
+        .prepare(
+          `SELECT id
+           FROM player_match_stat_reports
+           WHERE player_id = ? AND source_id = ?`
+        )
+        .get(playerRow.id, normalizedSourceId);
+
+      if (existing) {
+        return true;
+      }
+
+      db.prepare(
+        `UPDATE player_match_stats
+         SET match_count = match_count + 1,
+             total_kills = total_kills + ?,
+             total_deaths = total_deaths + ?,
+             total_wins = total_wins + ?,
+             total_placement_sum = total_placement_sum + ?,
+             total_damage = total_damage + ?,
+             updated_at = ?
+         WHERE player_id = ?`
+      ).run(kills, deaths, won ? 1 : 0, placement, damageDealt, timestamp, playerRow.id);
+
+      db.prepare(
+        `INSERT INTO player_match_stat_reports
+         (player_id, source_id, reported_at)
+         VALUES (?, ?, ?)`
+      ).run(playerRow.id, normalizedSourceId, timestamp);
+
+      return false;
+    })();
+
+    return {
+      ok: true,
+      alreadyReported,
+      profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: "RecordFailed",
+      message: error && error.message ? error.message : "Failed to record match stats.",
+    };
+  }
+}
+
+function syncPlayerAchievements(playerId) {
+  if (!playerId) {
+    return;
+  }
+
+  const db = openDatabase();
+  const achievements = getAllAchievements();
+  if (!Array.isArray(achievements) || achievements.length === 0) {
+    return;
+  }
+
+  const timestamp = nowMs();
+  const insert = db.prepare(
+    `INSERT OR IGNORE INTO player_achievements
+     (player_id, achievement_id, progress, target, completed_at, updated_at)
+     VALUES (?, ?, 0, ?, NULL, ?)`
+  );
+
+  for (let i = 0; i < achievements.length; i++) {
+    const entry = achievements[i];
+    if (!entry || !entry.achievementId) {
+      continue;
+    }
+
+    insert.run(playerId, entry.achievementId, entry.target, timestamp);
+  }
 }
 
 function assignDefaultNicknameIfMissing(internalPlayerId) {
@@ -293,6 +589,8 @@ function ensurePlayer(externalPlayerId) {
       grantStarterPack(playerRow.id);
       playerRow = getPlayerByExternalId(normalizedExternalId);
     }
+    syncPlayerAchievements(playerRow.id);
+    ensurePlayerMatchStats(playerRow.id);
     return buildProfileResponse(playerRow);
   }
 
@@ -318,6 +616,8 @@ function ensurePlayer(externalPlayerId) {
 
   createPlayer();
   playerRow = getPlayerByExternalId(normalizedExternalId);
+  syncPlayerAchievements(playerRow.id);
+  ensurePlayerMatchStats(playerRow.id);
   return buildProfileResponse(playerRow);
 }
 
@@ -424,6 +724,136 @@ function purchaseSkin(externalPlayerId, skinId) {
   }
 
   return { ok: true, profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)) };
+}
+
+function purchaseCase(externalPlayerId, caseId) {
+  const normalizedCaseId = String(caseId || "").trim();
+  const caseDefinition = getCaseDefinition(normalizedCaseId);
+  if (!caseDefinition) {
+    return { ok: false, error: "UnknownCase", message: "Unknown case id." };
+  }
+
+  if (!Array.isArray(caseDefinition.lootPool) || caseDefinition.lootPool.length === 0) {
+    return { ok: false, error: "EmptyCase", message: "Case loot pool is empty." };
+  }
+
+  const price = caseDefinition.price;
+  if (price <= 0) {
+    return { ok: false, error: "NotForSale", message: "Case is not sold in shop." };
+  }
+
+  const playerRow = getPlayerByExternalId(externalPlayerId);
+  if (!playerRow) {
+    return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
+  }
+
+  const db = openDatabase();
+  const timestamp = nowMs();
+
+  try {
+    const purchase = db.transaction(() => {
+      const profile = db
+        .prepare(
+          `SELECT currency_balance
+           FROM player_profiles
+           WHERE player_id = ?`
+        )
+        .get(playerRow.id);
+
+      if (!profile || profile.currency_balance < price) {
+        throw new Error("INSUFFICIENT_FUNDS");
+      }
+
+      db.prepare(
+        `UPDATE player_profiles
+         SET currency_balance = currency_balance - ?,
+             updated_at = ?
+         WHERE player_id = ?`
+      ).run(price, timestamp, playerRow.id);
+
+      if (!grantOwnedCase(playerRow.id, normalizedCaseId, "purchase", true)) {
+        throw new Error("GRANT_FAILED");
+      }
+    });
+
+    purchase();
+  } catch (error) {
+    if (String(error.message || error) === "INSUFFICIENT_FUNDS") {
+      return { ok: false, error: "InsufficientFunds", message: "Not enough currency." };
+    }
+
+    if (String(error.message || error) === "GRANT_FAILED") {
+      return { ok: false, error: "GrantFailed", message: "Failed to grant purchased case." };
+    }
+
+    throw error;
+  }
+
+  return {
+    ok: true,
+    profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)),
+  };
+}
+
+function openCase(externalPlayerId, caseId) {
+  const normalizedCaseId = String(caseId || "").trim();
+  const caseDefinition = getCaseDefinition(normalizedCaseId);
+  if (!caseDefinition) {
+    return { ok: false, error: "UnknownCase", message: "Unknown case id." };
+  }
+
+  if (!Array.isArray(caseDefinition.lootPool) || caseDefinition.lootPool.length === 0) {
+    return { ok: false, error: "EmptyCase", message: "Case loot pool is empty." };
+  }
+
+  const playerRow = getPlayerByExternalId(externalPlayerId);
+  if (!playerRow) {
+    return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
+  }
+
+  const rolledSkinId = rollCaseLoot(normalizedCaseId);
+  if (!rolledSkinId || !isKnownSkinId(rolledSkinId)) {
+    return { ok: false, error: "RollFailed", message: "Failed to roll case reward." };
+  }
+
+  const db = openDatabase();
+  const timestamp = nowMs();
+
+  try {
+    const open = db.transaction(() => {
+      if (!consumeOwnedCase(playerRow.id, normalizedCaseId)) {
+        throw new Error("CASE_NOT_OWNED");
+      }
+
+      if (!grantOwnedSkin(playerRow.id, rolledSkinId, "case_open", true)) {
+        throw new Error("GRANT_FAILED");
+      }
+
+      db.prepare(
+        `UPDATE player_profiles
+         SET updated_at = ?
+         WHERE player_id = ?`
+      ).run(timestamp, playerRow.id);
+    });
+
+    open();
+  } catch (error) {
+    if (String(error.message || error) === "CASE_NOT_OWNED") {
+      return { ok: false, error: "CaseNotOwned", message: "Case is not in inventory." };
+    }
+
+    if (String(error.message || error) === "GRANT_FAILED") {
+      return { ok: false, error: "GrantFailed", message: "Failed to grant rolled skin." };
+    }
+
+    throw error;
+  }
+
+  return {
+    ok: true,
+    rolledSkinId,
+    profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)),
+  };
 }
 
 function setEquippedSlot(externalPlayerId, slotKey, itemId) {
@@ -542,27 +972,187 @@ function listPlayerAchievements(playerId) {
   const db = openDatabase();
   const rows = db
     .prepare(
-      `SELECT pa.achievement_id, pa.progress, pa.target, pa.completed_at,
+      `SELECT pa.achievement_id, pa.progress, pa.target, pa.completed_at, pa.claimed_at,
               ad.code, ad.title, ad.description, ad.category, ad.is_hidden
        FROM player_achievements pa
        JOIN achievement_definitions ad ON ad.id = pa.achievement_id
-       WHERE pa.player_id = ?
+       WHERE pa.player_id = ? AND pa.claimed_at IS NULL
        ORDER BY ad.sort_order ASC, ad.title ASC`
     )
     .all(playerId);
 
-  return rows.map((row) => ({
-    achievementId: row.achievement_id,
-    code: row.code,
-    title: row.title,
-    description: row.description || "",
-    category: row.category || "",
-    isHidden: !!row.is_hidden,
-    progress: row.progress,
-    target: row.target,
-    completed: !!row.completed_at,
-    completedAt: row.completed_at || 0,
-  }));
+  return rows.map((row) => {
+    const definition = getAchievementDefinition(row.achievement_id);
+    const reward = definition ? definition.reward : null;
+    return {
+      achievementId: row.achievement_id,
+      code: row.code,
+      title: row.title,
+      description: row.description || "",
+      category: row.category || "",
+      isHidden: !!row.is_hidden,
+      progress: row.progress,
+      target: row.target,
+      completed: !!row.completed_at,
+      completedAt: row.completed_at || 0,
+      rewardType: reward ? reward.type : "",
+      rewardAmount: reward
+        ? reward.type === "currency"
+          ? reward.amount
+          : reward.amount
+        : 0,
+      rewardCaseId: reward && reward.type === "case" ? reward.caseId : "",
+    };
+  });
+}
+
+function reportAchievementEvent(externalPlayerId, eventType, amount) {
+  const normalizedEventType = String(eventType || "").trim();
+  if (!normalizedEventType) {
+    return { ok: false, error: "MissingEventType", message: "Event type is required." };
+  }
+
+  const increment = Math.max(1, Math.floor(Number(amount) || 1));
+  const playerRow = getPlayerByExternalId(externalPlayerId);
+  if (!playerRow) {
+    return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
+  }
+
+  syncPlayerAchievements(playerRow.id);
+  const matching = getAchievementsByEventType(normalizedEventType);
+  if (!Array.isArray(matching) || matching.length === 0) {
+    return {
+      ok: true,
+      newlyCompleted: [],
+      profile: buildProfileResponse(playerRow),
+    };
+  }
+
+  const db = openDatabase();
+  const timestamp = nowMs();
+  const newlyCompleted = [];
+
+  const report = db.transaction(() => {
+    for (let i = 0; i < matching.length; i++) {
+      const definition = matching[i];
+      const row = db
+        .prepare(
+          `SELECT progress, target, completed_at, claimed_at
+           FROM player_achievements
+           WHERE player_id = ? AND achievement_id = ?`
+        )
+        .get(playerRow.id, definition.achievementId);
+
+      if (!row || row.completed_at || row.claimed_at) {
+        continue;
+      }
+
+      const target = Math.max(1, Number(row.target) || definition.target || 1);
+      const nextProgress = Math.min(target, (Number(row.progress) || 0) + increment);
+      const completedAt = nextProgress >= target ? timestamp : null;
+
+      db.prepare(
+        `UPDATE player_achievements
+         SET progress = ?,
+             target = ?,
+             completed_at = COALESCE(completed_at, ?),
+             updated_at = ?
+         WHERE player_id = ? AND achievement_id = ?`
+      ).run(nextProgress, target, completedAt, timestamp, playerRow.id, definition.achievementId);
+
+      if (completedAt && !row.completed_at) {
+        newlyCompleted.push({
+          achievementId: definition.achievementId,
+          title: definition.title,
+          description: definition.description || "",
+        });
+      }
+    }
+  });
+
+  report();
+
+  return {
+    ok: true,
+    newlyCompleted,
+    profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)),
+  };
+}
+
+function claimAchievement(externalPlayerId, achievementId) {
+  const normalizedAchievementId = String(achievementId || "").trim();
+  const definition = getAchievementDefinition(normalizedAchievementId);
+  if (!definition) {
+    return { ok: false, error: "UnknownAchievement", message: "Unknown achievement id." };
+  }
+
+  const playerRow = getPlayerByExternalId(externalPlayerId);
+  if (!playerRow) {
+    return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
+  }
+
+  const db = openDatabase();
+  const timestamp = nowMs();
+  const row = db
+    .prepare(
+      `SELECT completed_at, claimed_at
+       FROM player_achievements
+       WHERE player_id = ? AND achievement_id = ?`
+    )
+    .get(playerRow.id, normalizedAchievementId);
+
+  if (!row || !row.completed_at) {
+    return { ok: false, error: "NotCompleted", message: "Achievement is not completed yet." };
+  }
+
+  if (row.claimed_at) {
+    return { ok: false, error: "AlreadyClaimed", message: "Achievement reward already claimed." };
+  }
+
+  try {
+    const claim = db.transaction(() => {
+      if (definition.reward.type === "currency") {
+        db.prepare(
+          `UPDATE player_profiles
+           SET currency_balance = currency_balance + ?,
+               updated_at = ?
+           WHERE player_id = ?`
+        ).run(definition.reward.amount, timestamp, playerRow.id);
+      } else if (definition.reward.type === "case") {
+        for (let i = 0; i < definition.reward.amount; i++) {
+          if (!grantOwnedCase(playerRow.id, definition.reward.caseId, "achievement", true)) {
+            throw new Error("GRANT_FAILED");
+          }
+        }
+      } else {
+        throw new Error("UNKNOWN_REWARD");
+      }
+
+      db.prepare(
+        `UPDATE player_achievements
+         SET claimed_at = ?,
+             updated_at = ?
+         WHERE player_id = ? AND achievement_id = ?`
+      ).run(timestamp, timestamp, playerRow.id, normalizedAchievementId);
+    });
+
+    claim();
+  } catch (error) {
+    if (String(error.message || error) === "GRANT_FAILED") {
+      return { ok: false, error: "GrantFailed", message: "Failed to grant achievement reward." };
+    }
+
+    if (String(error.message || error) === "UNKNOWN_REWARD") {
+      return { ok: false, error: "UnknownReward", message: "Unsupported achievement reward." };
+    }
+
+    throw error;
+  }
+
+  return {
+    ok: true,
+    profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)),
+  };
 }
 
 function listPlayerRewardClaims(playerId) {
@@ -676,13 +1266,20 @@ module.exports = {
     if (!playerRow.starter_pack_granted) {
       grantStarterPack(playerRow.id);
     }
+    syncPlayerAchievements(playerRow.id);
+    ensurePlayerMatchStats(playerRow.id);
     return buildProfileResponse(getPlayerByExternalId(externalPlayerId));
   },
   purchaseSkin,
+  purchaseCase,
+  openCase,
+  reportAchievementEvent,
+  claimAchievement,
   setEquippedSlot,
   setNickname,
   setSelectedCharacterModel,
   grantMatchCurrency,
+  recordMatchStats,
   playerOwnsSkin,
   isNicknameAvailable,
   resolvePlayerNickname,

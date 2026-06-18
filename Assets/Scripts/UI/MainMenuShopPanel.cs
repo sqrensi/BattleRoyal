@@ -43,6 +43,7 @@ namespace ShooterPrototype.UI
         [SerializeField] private float priceFontSize = 20f;
 
         private readonly List<ShopSlotVisual> itemSlots = new List<ShopSlotVisual>(64);
+        private readonly List<CaseSlotVisual> caseSlots = new List<CaseSlotVisual>(8);
 
         private CanvasGroup panelGroup;
         private RectTransform panelRect;
@@ -52,7 +53,9 @@ namespace ShooterPrototype.UI
         private float itemCellWidth;
         private float itemCellHeight;
         private MainMenuUiSoundController uiSound;
+        private MainMenuPlayerPreview playerPreview;
         private bool isVisible;
+        private bool casePurchaseInProgress;
         private Coroutine transitionCoroutine;
 
         private sealed class ShopSlotVisual
@@ -64,8 +67,18 @@ namespace ShooterPrototype.UI
             public Image PriceBadge;
         }
 
+        private sealed class CaseSlotVisual
+        {
+            public CaseDefinition Definition;
+            public Image Background;
+            public Button Button;
+            public TMP_Text PriceLabel;
+            public Image PriceBadge;
+        }
+
         public void Configure(MainMenuPlayerPreview preview, MainMenuUiSoundController sound)
         {
+            playerPreview = preview;
             uiSound = sound;
         }
 
@@ -104,6 +117,8 @@ namespace ShooterPrototype.UI
 
         public void Show()
         {
+            UpdateGridCellSize();
+
             if (isVisible)
             {
                 RebuildItems();
@@ -149,6 +164,17 @@ namespace ShooterPrototype.UI
             var columns = Mathf.Max(3, gridColumns);
             itemCellWidth = (scrollAreaWidth - itemSpacing * (columns - 1)) / columns;
             itemCellHeight = itemCellWidth;
+        }
+
+        private void UpdateGridCellSize()
+        {
+            if (panelRect == null || itemGrid == null)
+            {
+                return;
+            }
+
+            ComputeCellSize(panelRect.rect.width);
+            itemGrid.cellSize = new Vector2(itemCellWidth, itemCellHeight);
         }
 
         private void BuildHeader(Transform parent)
@@ -243,6 +269,8 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            UpdateGridCellSize();
+
             for (var i = contentRect.childCount - 1; i >= 0; i--)
             {
                 var child = contentRect.GetChild(i);
@@ -253,6 +281,15 @@ namespace ShooterPrototype.UI
             }
 
             itemSlots.Clear();
+            caseSlots.Clear();
+
+            CaseCatalogService.EnsureLoaded();
+            var shopCases = CaseCatalogService.GetShopCases();
+            for (var i = 0; i < shopCases.Count; i++)
+            {
+                caseSlots.Add(CreateCaseSlot(contentRect, shopCases[i]));
+            }
+
             var shopItems = PlayerSkinOwnershipService.GetShopCatalogItems();
             for (var i = 0; i < shopItems.Count; i++)
             {
@@ -264,6 +301,8 @@ namespace ShooterPrototype.UI
 
         private void RefreshSlotVisuals()
         {
+            RefreshCaseSlotVisuals();
+
             var balance = PlayerCurrencyService.Balance;
             for (var i = 0; i < itemSlots.Count; i++)
             {
@@ -335,6 +374,180 @@ namespace ShooterPrototype.UI
                 {
                     slot.PriceBadge.color = canAfford ? PriceBadgeColor : new Color(0.12f, 0.1f, 0.1f, 0.92f);
                 }
+            }
+        }
+
+        private void RefreshCaseSlotVisuals()
+        {
+            var balance = PlayerCurrencyService.Balance;
+            for (var i = 0; i < caseSlots.Count; i++)
+            {
+                var slot = caseSlots[i];
+                var price = CaseCatalogService.GetPrice(slot.Definition);
+                var canAfford = balance >= price && !casePurchaseInProgress;
+                var normalColor = canAfford ? ItemBackgroundColor : UnaffordableColor;
+
+                if (slot.Background != null)
+                {
+                    slot.Background.color = normalColor;
+                }
+
+                if (slot.Button != null)
+                {
+                    slot.Button.interactable = canAfford;
+                    var colors = slot.Button.colors;
+                    colors.normalColor = normalColor;
+                    colors.highlightedColor = canAfford ? ItemHighlightedColor : UnaffordableColor;
+                    colors.pressedColor = canAfford ? ItemPressedColor : UnaffordableColor;
+                    colors.selectedColor = colors.highlightedColor;
+                    colors.disabledColor = normalColor;
+                    colors.fadeDuration = 0.1f;
+                    slot.Button.colors = colors;
+                }
+
+                if (slot.PriceLabel != null)
+                {
+                    slot.PriceLabel.text = FormatPrice(price);
+                    slot.PriceLabel.color = canAfford ? PriceTextColor : PriceMutedColor;
+                }
+
+                if (slot.PriceBadge != null)
+                {
+                    slot.PriceBadge.color = canAfford ? PriceBadgeColor : new Color(0.12f, 0.1f, 0.1f, 0.92f);
+                }
+            }
+        }
+
+        private CaseSlotVisual CreateCaseSlot(Transform parent, CaseDefinition caseDefinition)
+        {
+            var slotObject = new GameObject("ShopCase_" + caseDefinition.Id);
+            slotObject.transform.SetParent(parent, false);
+
+            var slotLayout = slotObject.AddComponent<LayoutElement>();
+            slotLayout.preferredWidth = itemCellWidth;
+            slotLayout.preferredHeight = itemCellHeight;
+            slotLayout.minWidth = itemCellWidth;
+            slotLayout.minHeight = itemCellHeight;
+
+            var background = slotObject.AddComponent<Image>();
+            background.sprite = GetWhiteSprite();
+            background.type = Image.Type.Simple;
+            background.color = ItemBackgroundColor;
+
+            var button = slotObject.AddComponent<Button>();
+            button.targetGraphic = background;
+            button.onClick.AddListener(() => OnCaseClicked(caseDefinition));
+
+            var iconObject = new GameObject("Icon", typeof(RectTransform));
+            iconObject.transform.SetParent(slotObject.transform, false);
+
+            var iconRect = iconObject.GetComponent<RectTransform>();
+            iconRect.anchorMin = Vector2.zero;
+            iconRect.anchorMax = Vector2.one;
+            iconRect.offsetMin = new Vector2(slotPadding, slotPadding + priceBadgeHeight + 6f);
+            iconRect.offsetMax = new Vector2(-slotPadding, -slotPadding);
+
+            var iconImage = iconObject.AddComponent<Image>();
+            iconImage.preserveAspect = true;
+            iconImage.raycastTarget = false;
+            iconImage.sprite = InventoryIconCatalog.GetCaseIcon(caseDefinition.PictureResourcePath);
+
+            var priceBadgeObject = new GameObject("PriceBadge", typeof(RectTransform));
+            priceBadgeObject.transform.SetParent(slotObject.transform, false);
+
+            var priceBadgeRect = priceBadgeObject.GetComponent<RectTransform>();
+            priceBadgeRect.anchorMin = new Vector2(0.5f, 0f);
+            priceBadgeRect.anchorMax = new Vector2(0.5f, 0f);
+            priceBadgeRect.pivot = new Vector2(0.5f, 0f);
+            priceBadgeRect.anchoredPosition = new Vector2(0f, slotPadding);
+            priceBadgeRect.sizeDelta = new Vector2(Mathf.Max(72f, itemCellWidth * 0.62f), priceBadgeHeight);
+
+            var priceBadge = priceBadgeObject.AddComponent<Image>();
+            priceBadge.sprite = GetWhiteSprite();
+            priceBadge.type = Image.Type.Simple;
+            priceBadge.color = PriceBadgeColor;
+            priceBadge.raycastTarget = false;
+
+            var priceLabelObject = new GameObject("PriceLabel", typeof(RectTransform));
+            priceLabelObject.transform.SetParent(priceBadgeObject.transform, false);
+
+            var priceLabelRect = priceLabelObject.GetComponent<RectTransform>();
+            StretchFull(priceLabelRect);
+            priceLabelRect.offsetMin = new Vector2(8f, 2f);
+            priceLabelRect.offsetMax = new Vector2(-8f, -2f);
+
+            var priceLabel = priceLabelObject.AddComponent<TextMeshProUGUI>();
+            priceLabel.text = FormatPrice(CaseCatalogService.GetPrice(caseDefinition));
+            priceLabel.fontSize = priceFontSize;
+            priceLabel.fontStyle = FontStyles.Normal;
+            priceLabel.characterSpacing = 1.5f;
+            priceLabel.alignment = TextAlignmentOptions.Center;
+            priceLabel.verticalAlignment = VerticalAlignmentOptions.Middle;
+            priceLabel.color = PriceTextColor;
+            priceLabel.raycastTarget = false;
+
+            return new CaseSlotVisual
+            {
+                Definition = caseDefinition,
+                Background = background,
+                Button = button,
+                PriceLabel = priceLabel,
+                PriceBadge = priceBadge
+            };
+        }
+
+        private void OnCaseClicked(CaseDefinition caseDefinition)
+        {
+            if (!caseDefinition.IsValid || casePurchaseInProgress)
+            {
+                return;
+            }
+
+            var price = CaseCatalogService.GetPrice(caseDefinition);
+            if (PlayerCurrencyService.Balance < price)
+            {
+                uiSound?.PlayButton();
+                return;
+            }
+
+            if (PlayerProfileService.IsServerSynced)
+            {
+                var menu = FindObjectOfType<MainMenuController>();
+                if (menu != null && menu.ProfileApiClient != null)
+                {
+                    StartCoroutine(PurchaseCaseFromServerRoutine(menu, caseDefinition));
+                    return;
+                }
+            }
+
+            if (!CaseOpeningService.TryPurchaseLocal(caseDefinition))
+            {
+                uiSound?.PlayButton();
+                return;
+            }
+
+            uiSound?.PlayButton();
+            RefreshSlotVisuals();
+        }
+
+        private IEnumerator PurchaseCaseFromServerRoutine(MainMenuController menu, CaseDefinition caseDefinition)
+        {
+            casePurchaseInProgress = true;
+            RefreshCaseSlotVisuals();
+
+            var success = false;
+            yield return PlayerProfileService.PurchaseCase(
+                this,
+                menu.ProfileApiClient,
+                menu.LocalPlayerId,
+                caseDefinition.Id,
+                (ok, _) => success = ok);
+
+            casePurchaseInProgress = false;
+            uiSound?.PlayButton();
+            if (success)
+            {
+                RefreshSlotVisuals();
             }
         }
 
@@ -499,6 +712,7 @@ namespace ShooterPrototype.UI
             if (success)
             {
                 RefreshSlotVisuals();
+                playerPreview?.PreviewInventoryItem(item);
             }
         }
 

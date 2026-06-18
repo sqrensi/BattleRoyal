@@ -1,0 +1,44 @@
+{
+  "achievements": [
+    {
+      "achievementId": "ach_kill_player",
+      "code": "kill_player",
+      "title": "Первый фраг",
+      "description": "Убейте одного игрока",
+      "target": 1,
+      "sortOrder": 1,
+      "eventType": "kill_player",
+      "reward": {
+        "type": "currency",
+        "amount": 5000
+      }
+    },
+    {
+      "achievementId": "ach_plane_landed",
+      "code": "plane_landed",
+      "title": "Высадка",
+      "description": "Высадитесь из самолёта",
+      "target": 1,
+      "sortOrder": 2,
+      "eventType": "plane_landed",
+      "reward": {
+        "type": "case",
+        "caseId": "case_001",
+        "amount": 1
+      }
+    },
+    {
+      "achievementId": "ach_kill_player_5",
+      "code": "kill_player_5",
+      "title": "Пятерка",
+      "description": "Убейте 5 игроков",
+      "target": 5,
+      "sortOrder": 3,
+      "eventType": "kill_player",
+      "reward": {
+        "type": "currency",
+        "amount": 10000
+      }
+    }
+  ]
+}

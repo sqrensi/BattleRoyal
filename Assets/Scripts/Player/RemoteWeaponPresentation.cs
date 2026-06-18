@@ -285,6 +285,20 @@ namespace ShooterPrototype.Player
             return TryGetWeaponRootKind(weaponRoot, out kind);
         }
 
+        public bool TryEnsureMenuAttachTarget()
+        {
+            thirdPersonBody = thirdPersonBody != null
+                ? thirdPersonBody
+                : transform.Find("ThirdPersonBody");
+            if (thirdPersonBody == null)
+            {
+                return false;
+            }
+
+            EnsureAttachTarget(thirdPersonBody);
+            return attachTarget != null;
+        }
+
         /// <summary>
         /// Synchronous main-menu path: always destroys the previous hand model and spawns the
         /// requested weapon prefab before applying the equipped inventory skin.

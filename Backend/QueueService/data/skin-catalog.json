@@ -1,0 +1,44 @@
+{
+  "defaultOwnedSkinIds": [
+    "tshirts_001",
+    "pants_001",
+    "shoes_001",
+    "gloves_001",
+    "attachment_face_001",
+    "attachment_hair_003",
+    "weapon_ak47_000",
+    "weapon_sniper_000",
+    "weapon_pistol_000",
+    "weapon_mp7_000"
+  ],
+  "defaultEquipped": {
+    "shirt": "tshirts_001",
+    "pants": "pants_001",
+    "boots": "shoes_001",
+    "gloves": "gloves_001",
+    "face": "attachment_face_001",
+    "hair": "attachment_hair_003",
+    "weapon_assault": "weapon_ak47_000",
+    "weapon_sniper": "weapon_sniper_000",
+    "weapon_pistol": "weapon_pistol_000",
+    "weapon_mp7": "weapon_mp7_000"
+  },
+  "shopItems": [
+    { "skinId": "tshirts_002", "price": 500 },
+    { "skinId": "tshirts_003", "price": 750 },
+    { "skinId": "pants_002", "price": 1000 },
+    { "skinId": "pants_003", "price": 1250 },
+    { "skinId": "shoes_002", "price": 1500 },
+    { "skinId": "shoes_003", "price": 1750 },
+    { "skinId": "gloves_002", "price": 2000 },
+    { "skinId": "gloves_003", "price": 2250 },
+    { "skinId": "attachment_face_002", "price": 2500 },
+    { "skinId": "attachment_face_003", "price": 2750 },
+    { "skinId": "attachment_hair_001", "price": 3000 },
+    { "skinId": "attachment_hair_002", "price": 3250 },
+    { "skinId": "weapon_ak47_001", "price": 3500 },
+    { "skinId": "weapon_sniper_001", "price": 3750 },
+    { "skinId": "weapon_pistol_001", "price": 4000 },
+    { "skinId": "weapon_mp7_001", "price": 4250 }
+  ]
+}

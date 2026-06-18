@@ -1,31 +1,8 @@
+const catalog = require("./skin-catalog.json");
+
 const SHOP_BASE_PRICE = 500;
-const SHOP_PRICE_STEP = 250;
-
-const DEFAULT_OWNED_SKIN_IDS = [
-  "tshirts_001",
-  "pants_001",
-  "shoes_001",
-  "gloves_001",
-  "attachment_face_001",
-  "attachment_hair_003",
-  "weapon_ak47_000",
-  "weapon_sniper_000",
-  "weapon_pistol_000",
-  "weapon_mp7_000",
-];
-
-const DEFAULT_EQUIPPED = {
-  shirt: "tshirts_001",
-  pants: "pants_001",
-  boots: "shoes_001",
-  gloves: "gloves_001",
-  face: "attachment_face_001",
-  hair: "attachment_hair_003",
-  weapon_assault: "weapon_ak47_000",
-  weapon_sniper: "weapon_sniper_000",
-  weapon_pistol: "weapon_pistol_000",
-  weapon_mp7: "weapon_mp7_000",
-};
+const DEFAULT_OWNED_SKIN_IDS = catalog.defaultOwnedSkinIds || [];
+const DEFAULT_EQUIPPED = normalizeDefaultEquipped(catalog.defaultEquipped || {});
 
 const EQUIPMENT_SLOTS = [
   "shirt",
@@ -43,31 +20,32 @@ const EQUIPMENT_SLOTS = [
 const SKIN_ID_PATTERN =
   /^(tshirts|pants|shoes|gloves)_\d{3}$|^attachment_(face|hair)_\d{3}$|^weapon_(ak47|sniper|pistol|mp7)_\d{3}$/;
 
-const SHOP_SKIN_IDS = [
-  "tshirts_002",
-  "tshirts_003",
-  "pants_002",
-  "pants_003",
-  "shoes_002",
-  "shoes_003",
-  "gloves_002",
-  "gloves_003",
-  "attachment_face_002",
-  "attachment_face_003",
-  "attachment_hair_001",
-  "attachment_hair_002",
-  "weapon_ak47_001",
-  "weapon_sniper_001",
-  "weapon_pistol_001",
-  "weapon_mp7_001",
-];
+const SHOP_PRICE_BY_SKIN_ID = buildShopPrices(catalog.shopItems || []);
 
-const SHOP_PRICE_BY_SKIN_ID = buildShopPrices();
+function normalizeDefaultEquipped(raw) {
+  return {
+    shirt: raw.shirt || "",
+    pants: raw.pants || "",
+    boots: raw.boots || "",
+    gloves: raw.gloves || "",
+    face: raw.face || "",
+    hair: raw.hair || "",
+    weapon_assault: raw.weapon_assault || raw.weaponAssault || "",
+    weapon_sniper: raw.weapon_sniper || raw.weaponSniper || "",
+    weapon_pistol: raw.weapon_pistol || raw.weaponPistol || "",
+    weapon_mp7: raw.weapon_mp7 || raw.weaponMp7 || "",
+  };
+}
 
-function buildShopPrices() {
+function buildShopPrices(shopItems) {
   const prices = {};
-  for (let i = 0; i < SHOP_SKIN_IDS.length; i++) {
-    prices[SHOP_SKIN_IDS[i]] = SHOP_BASE_PRICE + i * SHOP_PRICE_STEP;
+  for (let i = 0; i < shopItems.length; i++) {
+    const entry = shopItems[i];
+    if (!entry || !entry.skinId) {
+      continue;
+    }
+    prices[String(entry.skinId).trim()] =
+      typeof entry.price === "number" ? entry.price : SHOP_BASE_PRICE;
   }
   return prices;
 }
@@ -80,7 +58,7 @@ function isKnownSkinId(skinId) {
   if (DEFAULT_OWNED_SKIN_IDS.includes(normalized)) {
     return true;
   }
-  if (SHOP_SKIN_IDS.includes(normalized)) {
+  if (Object.prototype.hasOwnProperty.call(SHOP_PRICE_BY_SKIN_ID, normalized)) {
     return true;
   }
   return SKIN_ID_PATTERN.test(normalized);

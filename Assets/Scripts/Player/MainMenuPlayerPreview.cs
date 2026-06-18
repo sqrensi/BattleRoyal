@@ -16,7 +16,7 @@ namespace ShooterPrototype.Player
         [SerializeField] private GameObject remotePlayerPrefab;
         [SerializeField] private string charactersResourcesFolder = "Characters";
         [SerializeField] private bool playIdleAnimation = true;
-        [SerializeField] private bool equipRandomLobbyWeapon = true;
+        [SerializeField] private bool equipRandomLobbyWeapon = false;
 
         private static readonly WeaponKind[] LobbyWeaponKinds =
         {
@@ -29,8 +29,38 @@ namespace ShooterPrototype.Player
         private GameObject previewInstance;
         private WeaponKind? pinnedLobbyWeaponKind;
         private Coroutine equipWeaponCoroutine;
+        private Coroutine spawnPreviewCoroutine;
 
         private bool allowPreview;
+
+        public void PreviewInventoryItem(PlayerSkinDefinition item)
+        {
+            if (!item.IsValid)
+            {
+                return;
+            }
+
+            if (PlayerSkinSelectionService.TryResolveWeaponKind(item, out _))
+            {
+                pinnedLobbyWeaponKind = null;
+            }
+
+            if (!allowPreview)
+            {
+                SetAllowPreview(true);
+                return;
+            }
+
+            if (previewInstance == null)
+            {
+                RequestSpawnPreview();
+                return;
+            }
+
+            PlayerSkinSelectionService.ApplyToPlayer(previewInstance, forceReapply: true);
+            EnsurePreviewBodyVisible(previewInstance);
+            ClearMenuWeaponPresentation(previewInstance);
+        }
 
         public void SetAllowPreview(bool allow)
         {
@@ -38,14 +68,7 @@ namespace ShooterPrototype.Player
             {
                 if (allow)
                 {
-                    if (previewInstance == null)
-                    {
-                        SpawnPreview();
-                    }
-                    else
-                    {
-                        RefreshSkins();
-                    }
+                    RequestSpawnPreview();
                 }
 
                 return;
@@ -54,24 +77,19 @@ namespace ShooterPrototype.Player
             allowPreview = allow;
             if (!allowPreview)
             {
+                CancelSpawnPreviewCoroutine();
                 DestroyPreviewInstance();
                 return;
             }
 
-            if (previewInstance == null)
-            {
-                SpawnPreview();
-            }
-            else
-            {
-                RefreshSkins();
-            }
+            RequestSpawnPreview();
         }
 
         public void Refresh()
         {
+            CancelSpawnPreviewCoroutine();
             DestroyPreviewInstance();
-            SpawnPreview();
+            RequestSpawnPreview();
         }
 
         public void RefreshSkins()
@@ -83,30 +101,79 @@ namespace ShooterPrototype.Player
 
             if (previewInstance == null)
             {
-                SpawnPreview();
+                RequestSpawnPreview();
                 return;
             }
 
             PlayerSkinSelectionService.ApplyToPlayer(previewInstance, forceReapply: true);
             EnsurePreviewBodyVisible(previewInstance);
-            RefreshPinnedWeaponPreview();
+            ClearMenuWeaponPresentation(previewInstance);
         }
 
         public void ShowWeaponWithSkin(WeaponKind kind)
         {
-            pinnedLobbyWeaponKind = kind;
+            RefreshSkins();
+        }
+
+        private void RequestSpawnPreview()
+        {
             if (!allowPreview)
             {
                 return;
             }
 
-            if (previewInstance == null)
+            if (spawnPreviewCoroutine != null)
             {
-                SpawnPreview();
-                return;
+                StopCoroutine(spawnPreviewCoroutine);
             }
 
-            RequestEquipPinnedWeapon(forceReequip: true);
+            spawnPreviewCoroutine = StartCoroutine(SpawnPreviewWhenReady());
+        }
+
+        private void CancelSpawnPreviewCoroutine()
+        {
+            if (spawnPreviewCoroutine != null)
+            {
+                StopCoroutine(spawnPreviewCoroutine);
+                spawnPreviewCoroutine = null;
+            }
+        }
+
+        private IEnumerator SpawnPreviewWhenReady()
+        {
+            for (var attempt = 0; attempt < 90; attempt++)
+            {
+                if (!allowPreview)
+                {
+                    spawnPreviewCoroutine = null;
+                    yield break;
+                }
+
+                ResolveRemotePrefab();
+                if (remotePlayerPrefab != null && ResolveSpawnPoint() != null)
+                {
+                    break;
+                }
+
+                yield return null;
+            }
+
+            spawnPreviewCoroutine = null;
+
+            if (!allowPreview || remotePlayerPrefab == null)
+            {
+                Debug.LogWarning("[MainMenuPlayerPreview] Remote player prefab was not ready for preview spawn.");
+                yield break;
+            }
+
+            if (previewInstance == null)
+            {
+                SpawnPreviewInternal();
+            }
+            else
+            {
+                RefreshSkins();
+            }
         }
 
         private void OnEnable()
@@ -119,6 +186,7 @@ namespace ShooterPrototype.Player
         {
             PlayerProfileService.ProfileSynced -= HandleProfileSynced;
             PlayerSkinOwnershipService.EquipmentChanged -= HandleEquipmentChanged;
+            CancelSpawnPreviewCoroutine();
             if (equipWeaponCoroutine != null)
             {
                 StopCoroutine(equipWeaponCoroutine);
@@ -140,7 +208,7 @@ namespace ShooterPrototype.Player
 
         private void HandleEquipmentChanged()
         {
-            if (!allowPreview || previewInstance == null)
+            if (!allowPreview)
             {
                 return;
             }
@@ -148,7 +216,7 @@ namespace ShooterPrototype.Player
             RefreshSkins();
         }
 
-        private void SpawnPreview()
+        private void SpawnPreviewInternal()
         {
             if (!allowPreview)
             {
@@ -184,16 +252,7 @@ namespace ShooterPrototype.Player
                 FinalizeMenuPreviewPresentation(previewInstance);
                 EnsurePreviewBodyVisible(previewInstance);
                 ApplyIdlePose(previewInstance);
-
-                if (equipRandomLobbyWeapon)
-                {
-                    if (!pinnedLobbyWeaponKind.HasValue)
-                    {
-                        pinnedLobbyWeaponKind = LobbyWeaponKinds[Random.Range(0, LobbyWeaponKinds.Length)];
-                    }
-
-                    RequestEquipPinnedWeapon(forceReequip: true);
-                }
+                ClearMenuWeaponPresentation(previewInstance);
             }
             finally
             {
@@ -221,7 +280,7 @@ namespace ShooterPrototype.Player
             yield return null;
             yield return new WaitForEndOfFrame();
 
-            for (var attempt = 0; attempt < 30; attempt++)
+            for (var attempt = 0; attempt < 60; attempt++)
             {
                 if (previewInstance == null || !equipRandomLobbyWeapon)
                 {
@@ -280,6 +339,14 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            weaponPresentation.InvalidateAttachTarget();
+            previewInstance.GetComponent<RemoteThirdPersonPlayerBootstrap>()?.ApplyRemoteThirdPersonMode();
+
+            if (!weaponPresentation.TryEnsureMenuAttachTarget())
+            {
+                return;
+            }
+
             var kind = pinnedLobbyWeaponKind.Value;
             if (!forceReequip &&
                 weaponPresentation.TryGetHandWeaponKind(out var visibleKind) &&
@@ -330,6 +397,14 @@ namespace ShooterPrototype.Player
             {
                 remotePlayerPrefab = spawnManager.GetRemotePlayerPrefabForPreview();
             }
+
+#if UNITY_EDITOR
+            if (remotePlayerPrefab == null)
+            {
+                remotePlayerPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                    "Assets/Prefabs/Player/PlayerCleanRemote.prefab");
+            }
+#endif
         }
 
         private Transform ResolveSpawnPoint()
@@ -379,6 +454,30 @@ namespace ShooterPrototype.Player
             }
 
             ResolveWeaponPresentation(root)?.SetMenuPreviewMode(true);
+            ClearMenuWeaponPresentation(root);
+        }
+
+        private static void ClearMenuWeaponPresentation(GameObject root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var thirdPersonBody = root.transform.Find("ThirdPersonBody");
+            var weaponPresentation = ResolveWeaponPresentation(root);
+            if (weaponPresentation == null)
+            {
+                return;
+            }
+
+            weaponPresentation.SetMenuPreviewMode(true);
+            if (thirdPersonBody != null)
+            {
+                weaponPresentation.ResetForMenuPreview(thirdPersonBody);
+            }
+
+            weaponPresentation.SetMenuPreviewMode(true);
         }
 
         private void ApplyIdlePose(GameObject root)

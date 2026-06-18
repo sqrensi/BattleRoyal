@@ -1,0 +1,20 @@
+{
+  "shopCases": [
+    {
+      "caseId": "case_001",
+      "displayName": "Оружейный кейс",
+      "pictureFolder": "001",
+      "price": 5000,
+      "lootPool": [
+        "weapon_ak47_000",
+        "weapon_ak47_001",
+        "weapon_sniper_000",
+        "weapon_sniper_001",
+        "weapon_pistol_000",
+        "weapon_pistol_001",
+        "weapon_mp7_000",
+        "weapon_mp7_001"
+      ]
+    }
+  ]
+}

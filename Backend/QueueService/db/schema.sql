@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS player_owned_items (
   item_id TEXT NOT NULL,
   source TEXT NOT NULL DEFAULT 'unknown',
   acquired_at INTEGER NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
   UNIQUE(player_id, item_type, item_id)
 );
 
@@ -57,6 +58,7 @@ CREATE TABLE IF NOT EXISTS player_achievements (
   progress INTEGER NOT NULL DEFAULT 0,
   target INTEGER NOT NULL DEFAULT 1,
   completed_at INTEGER,
+  claimed_at INTEGER,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (player_id, achievement_id)
 );

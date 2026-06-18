@@ -41,6 +41,75 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
       return true;
     }
 
+    if (method === "POST" && path.endsWith("/open-case")) {
+      const prefix = "/profile/";
+      const suffix = "/open-case";
+      if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
+        return false;
+      }
+
+      const externalPlayerId = decodeURIComponent(
+        path.slice(prefix.length, path.length - suffix.length)
+      );
+      const body = await readJsonBody(req);
+      const caseId = body && body.caseId;
+      const result = playerRepository.openCase(externalPlayerId, caseId);
+      respondJson(res, result.ok ? 200 : 400, result);
+      return true;
+    }
+
+    if (method === "POST" && path.endsWith("/achievement-event")) {
+      const prefix = "/profile/";
+      const suffix = "/achievement-event";
+      if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
+        return false;
+      }
+
+      const externalPlayerId = decodeURIComponent(
+        path.slice(prefix.length, path.length - suffix.length)
+      );
+      const body = await readJsonBody(req);
+      const eventType = body && body.eventType;
+      const amount = body && body.amount;
+      const result = playerRepository.reportAchievementEvent(externalPlayerId, eventType, amount);
+      respondJson(res, result.ok ? 200 : 400, result);
+      return true;
+    }
+
+    if (method === "POST" && path.endsWith("/claim-achievement")) {
+      const prefix = "/profile/";
+      const suffix = "/claim-achievement";
+      if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
+        return false;
+      }
+
+      const externalPlayerId = decodeURIComponent(
+        path.slice(prefix.length, path.length - suffix.length)
+      );
+      const body = await readJsonBody(req);
+      const achievementId = body && body.achievementId;
+      const result = playerRepository.claimAchievement(externalPlayerId, achievementId);
+      respondJson(res, result.ok ? 200 : 400, result);
+      return true;
+    }
+
+    if (method === "POST" && path.endsWith("/purchase-case")) {
+      const prefix = "/profile/";
+      const suffix = "/purchase-case";
+      if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
+        return false;
+      }
+
+      const externalPlayerId = decodeURIComponent(
+        path.slice(prefix.length, path.length - suffix.length)
+      );
+      const body = await readJsonBody(req);
+      const caseId = body && body.caseId;
+      const result = playerRepository.purchaseCase(externalPlayerId, caseId);
+      respondJson(res, result.ok ? 200 : 400, result);
+      return true;
+    }
+
     if (method === "POST" && path.endsWith("/purchase")) {
       const prefix = "/profile/";
       const suffix = "/purchase";
@@ -107,6 +176,22 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         externalPlayerId,
         body && body.selectedCharacterModel
       );
+      respondJson(res, result.ok ? 200 : 400, result);
+      return true;
+    }
+
+    if (method === "POST" && path.endsWith("/match-stats")) {
+      const prefix = "/profile/";
+      const suffix = "/match-stats";
+      if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
+        return false;
+      }
+
+      const externalPlayerId = decodeURIComponent(
+        path.slice(prefix.length, path.length - suffix.length)
+      );
+      const body = await readJsonBody(req);
+      const result = playerRepository.recordMatchStats(externalPlayerId, body);
       respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }

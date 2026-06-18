@@ -110,6 +110,8 @@ namespace ShooterPrototype.Player
         private int localPlacement;
         private int displayKillCount;
         private int displayAliveCount;
+        private int lastReportedKillCount;
+        private bool planeLandingAchievementReported;
         private float matchPlayingStartRealtime = -1f;
         private float matchDeathRealtime = -1f;
         private MatchOutcomeSummary? capturedOutcome;
@@ -169,6 +171,9 @@ namespace ShooterPrototype.Player
             localPlacement = 0;
             displayKillCount = 0;
             displayAliveCount = 0;
+            lastReportedKillCount = 0;
+            planeLandingAchievementReported = false;
+            MatchStatsTracker.ResetForNewMatch();
             matchPlayingStartRealtime = -1f;
             matchDeathRealtime = -1f;
             capturedOutcome = null;
@@ -327,6 +332,13 @@ namespace ShooterPrototype.Player
             displayKillCount = message.localKillCount;
             displayAliveCount = message.aliveCount;
             gameHud?.SetMatchCornerStats(displayKillCount, displayAliveCount);
+
+            if (displayKillCount > lastReportedKillCount)
+            {
+                var delta = displayKillCount - lastReportedKillCount;
+                lastReportedKillCount = displayKillCount;
+                MatchAchievementReporter.ReportEvent(this, "kill_player", delta);
+            }
 
             if (string.Equals(message.phase, "playing", StringComparison.Ordinal) && matchPlayingStartRealtime < 0f)
             {
@@ -1214,6 +1226,11 @@ namespace ShooterPrototype.Player
 
             presenceSync?.FlushLocalPose();
             transportClient?.SendPlaneLanded();
+            if (!planeLandingAchievementReported)
+            {
+                planeLandingAchievementReported = true;
+                MatchAchievementReporter.ReportEvent(this, "plane_landed", 1);
+            }
             yield return null;
             presenceSync?.FlushLocalPose();
             yield return new WaitForSecondsRealtime(0.06f);

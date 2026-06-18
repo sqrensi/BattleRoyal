@@ -22,6 +22,56 @@ namespace ShooterPrototype.Player
     }
 
     [Serializable]
+    public sealed class SkinQuantityEntry
+    {
+        public string skinId;
+        public int quantity;
+    }
+
+    [Serializable]
+    public sealed class CaseQuantityEntry
+    {
+        public string caseId;
+        public int quantity;
+    }
+
+    [Serializable]
+    public sealed class PlayerAchievementEntry
+    {
+        public string achievementId;
+        public string code;
+        public string title;
+        public string description;
+        public int progress;
+        public int target;
+        public bool completed;
+        public long completedAt;
+        public string rewardType;
+        public int rewardAmount;
+        public string rewardCaseId;
+    }
+
+    [Serializable]
+    public sealed class AchievementCompletedEntry
+    {
+        public string achievementId;
+        public string title;
+        public string description;
+    }
+
+    [Serializable]
+    public sealed class PlayerMatchStatsDto
+    {
+        public int matchCount;
+        public int totalKills;
+        public int totalDeaths;
+        public int totalWins;
+        public float avgPlacement;
+        public float avgDamage;
+        public float kdRatio;
+    }
+
+    [Serializable]
     public sealed class PlayerProfileDto
     {
         public string playerId;
@@ -31,7 +81,11 @@ namespace ShooterPrototype.Player
         public int currencyBalance;
         public bool starterPackGranted;
         public string[] ownedSkins;
+        public SkinQuantityEntry[] ownedSkinQuantities;
+        public CaseQuantityEntry[] ownedCaseQuantities;
         public PlayerProfileEquippedDto equipped;
+        public PlayerAchievementEntry[] achievements;
+        public PlayerMatchStatsDto stats;
     }
 
     [Serializable]
@@ -56,6 +110,45 @@ namespace ShooterPrototype.Player
     }
 
     [Serializable]
+    public sealed class PlayerProfilePurchaseCaseRequest
+    {
+        public string caseId;
+    }
+
+    [Serializable]
+    public sealed class PlayerProfileCaseOpenResponse
+    {
+        public bool ok;
+        public string error;
+        public string message;
+        public string rolledSkinId;
+        public PlayerProfileDto profile;
+    }
+
+    [Serializable]
+    public sealed class PlayerProfileAchievementEventRequest
+    {
+        public string eventType;
+        public int amount;
+    }
+
+    [Serializable]
+    public sealed class PlayerProfileAchievementEventResponse
+    {
+        public bool ok;
+        public string error;
+        public string message;
+        public AchievementCompletedEntry[] newlyCompleted;
+        public PlayerProfileDto profile;
+    }
+
+    [Serializable]
+    public sealed class PlayerProfileClaimAchievementRequest
+    {
+        public string achievementId;
+    }
+
+    [Serializable]
     public sealed class PlayerProfileEquipRequest
     {
         public string slot;
@@ -67,6 +160,17 @@ namespace ShooterPrototype.Player
     {
         public int amount;
         public string sourceId;
+    }
+
+    [Serializable]
+    public sealed class PlayerProfileMatchStatsRequest
+    {
+        public string sourceId;
+        public int kills;
+        public int deaths;
+        public int placement;
+        public bool won;
+        public int damageDealt;
     }
 
     [Serializable]
@@ -125,6 +229,105 @@ namespace ShooterPrototype.Player
             };
 
             var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/purchase";
+            yield return SendRequest(
+                UnityWebRequest.kHttpVerbPOST,
+                path,
+                requestBody,
+                (ok, json, error) => ParseProfileResponse(ok, json, error, onCompleted));
+        }
+
+        public IEnumerator PurchaseCase(
+            string playerId,
+            string caseId,
+            Action<bool, PlayerProfileDto, string> onCompleted)
+        {
+            var requestBody = new PlayerProfilePurchaseCaseRequest
+            {
+                caseId = caseId
+            };
+
+            var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/purchase-case";
+            yield return SendRequest(
+                UnityWebRequest.kHttpVerbPOST,
+                path,
+                requestBody,
+                (ok, json, error) => ParseProfileResponse(ok, json, error, onCompleted));
+        }
+
+        public IEnumerator OpenCase(
+            string playerId,
+            string caseId,
+            Action<bool, PlayerProfileDto, string, string> onCompleted)
+        {
+            var requestBody = new PlayerProfilePurchaseCaseRequest
+            {
+                caseId = caseId
+            };
+
+            var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/open-case";
+            yield return SendRequest(
+                UnityWebRequest.kHttpVerbPOST,
+                path,
+                requestBody,
+                (ok, json, error) => ParseCaseOpenResponse(ok, json, error, onCompleted));
+        }
+
+        public IEnumerator ReportAchievementEvent(
+            string playerId,
+            string eventType,
+            int amount,
+            Action<bool, PlayerProfileDto, AchievementCompletedEntry[], string> onCompleted)
+        {
+            var requestBody = new PlayerProfileAchievementEventRequest
+            {
+                eventType = eventType,
+                amount = amount
+            };
+
+            var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/achievement-event";
+            yield return SendRequest(
+                UnityWebRequest.kHttpVerbPOST,
+                path,
+                requestBody,
+                (ok, json, error) =>
+                {
+                    if (!ok)
+                    {
+                        onCompleted?.Invoke(false, null, null, ExtractErrorMessage(json, error));
+                        return;
+                    }
+
+                    var response = ParseJson<PlayerProfileAchievementEventResponse>(json);
+                    if (response == null || !response.ok || response.profile == null)
+                    {
+                        var message = response != null && !string.IsNullOrWhiteSpace(response.message)
+                            ? response.message
+                            : response != null && !string.IsNullOrWhiteSpace(response.error)
+                                ? response.error
+                                : "Achievement event failed.";
+                        onCompleted?.Invoke(false, null, null, message);
+                        return;
+                    }
+
+                    onCompleted?.Invoke(
+                        true,
+                        response.profile,
+                        response.newlyCompleted,
+                        string.Empty);
+                });
+        }
+
+        public IEnumerator ClaimAchievement(
+            string playerId,
+            string achievementId,
+            Action<bool, PlayerProfileDto, string> onCompleted)
+        {
+            var requestBody = new PlayerProfileClaimAchievementRequest
+            {
+                achievementId = achievementId
+            };
+
+            var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/claim-achievement";
             yield return SendRequest(
                 UnityWebRequest.kHttpVerbPOST,
                 path,
@@ -232,6 +435,19 @@ namespace ShooterPrototype.Player
                 (ok, json, error) => ParseProfileResponse(ok, json, error, onCompleted));
         }
 
+        public IEnumerator RecordMatchStats(
+            string playerId,
+            PlayerProfileMatchStatsRequest request,
+            Action<bool, PlayerProfileDto, string> onCompleted)
+        {
+            var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/match-stats";
+            yield return SendRequest(
+                UnityWebRequest.kHttpVerbPOST,
+                path,
+                request,
+                (ok, json, error) => ParseProfileResponse(ok, json, error, onCompleted));
+        }
+
         private static void ParseProfileResponse(
             bool ok,
             string json,
@@ -263,6 +479,43 @@ namespace ShooterPrototype.Player
             }
 
             onCompleted?.Invoke(true, response.profile, string.Empty);
+        }
+
+        private static void ParseCaseOpenResponse(
+            bool ok,
+            string json,
+            string error,
+            Action<bool, PlayerProfileDto, string, string> onCompleted)
+        {
+            if (!ok)
+            {
+                onCompleted?.Invoke(false, null, ExtractErrorMessage(json, error), string.Empty);
+                return;
+            }
+
+            var response = ParseJson<PlayerProfileCaseOpenResponse>(json);
+            if (response == null)
+            {
+                onCompleted?.Invoke(false, null, "Invalid case open response.", string.Empty);
+                return;
+            }
+
+            if (!response.ok || response.profile == null)
+            {
+                var message = !string.IsNullOrWhiteSpace(response.message)
+                    ? response.message
+                    : !string.IsNullOrWhiteSpace(response.error)
+                        ? response.error
+                        : "Case purchase failed.";
+                onCompleted?.Invoke(false, null, message, string.Empty);
+                return;
+            }
+
+            onCompleted?.Invoke(
+                true,
+                response.profile,
+                string.Empty,
+                response.rolledSkinId ?? string.Empty);
         }
 
         private IEnumerator SendRequest(

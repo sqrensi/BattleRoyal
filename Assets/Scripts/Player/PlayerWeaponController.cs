@@ -1083,9 +1083,11 @@ namespace ShooterPrototype.Player
             }
 
             var shotTick = realtimeClient != null ? realtimeClient.LatestServerTick : 0;
+            var damage = ResolveDamage(hitZone);
+            MatchStatsTracker.AddDamageDealt(damage);
             realtimeClient?.SendHit(
                 identity.TicketId,
-                ResolveDamage(hitZone),
+                damage,
                 shotDirection,
                 shotSequence,
                 shotTick,
