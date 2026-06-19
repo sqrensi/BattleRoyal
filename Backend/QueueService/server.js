@@ -40,6 +40,8 @@ const handleProfileRoutes = registerProfileRoutes({
   getRequestUrl: (req) => new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`),
 });
 const killFeedSeqByMatchId = new Map();
+const PLAYER_DEATH_CAUSE_PLAYER = "player";
+const PLAYER_DEATH_CAUSE_ZONE = "zone";
 const MAX_PLAYER_SPEED = Number.isFinite(Number(process.env.MAX_PLAYER_SPEED))
   ? Math.max(4, Number(process.env.MAX_PLAYER_SPEED))
   : 12.5;
@@ -535,6 +537,26 @@ function resolveTicketNickname(ticket) {
   return ticket.nickname || "Игрок";
 }
 
+function markTicketDeathCause(ticket, cause) {
+  if (!ticket || !cause) {
+    return;
+  }
+
+  ticket.deathCause = cause;
+}
+
+function wasKilledByPlayer(ticket) {
+  return !!ticket && ticket.deathCause === PLAYER_DEATH_CAUSE_PLAYER;
+}
+
+function shouldLockBattleRoyaleDeathState(ticket, prevWasDead) {
+  if (!ticket || !isBattleRoyaleRespawnBlocked(ticket)) {
+    return false;
+  }
+
+  return !!prevWasDead || !!ticket.deathCause;
+}
+
 function broadcastKillFeed(matchId, payload) {
   if (!matchId) {
     return;
@@ -588,7 +610,8 @@ function createQueuedTicket(playerId) {
       lastWsCloseMs: 0
     },
     serverAddress: "",
-    serverPort: 0
+    serverPort: 0,
+    deathCause: "",
   };
 
   ticketsById.set(ticketId, ticket);
@@ -851,6 +874,7 @@ function matchTicketToSession(ticket, session, nowMs) {
   ticket.status = "Matched";
   ticket.matchedAtMs = nowMs;
   ticket.matchId = session.matchId;
+  ticket.deathCause = "";
   ticket.serverAddress = MATCH_SERVER_ADDRESS;
   ticket.serverPort = MATCH_SERVER_PORT;
   session.ticketIds.add(ticket.ticketId);
@@ -1896,7 +1920,11 @@ function handleWsPose(socket, message) {
   presence.isSprinting = isSprinting;
   presence.isSwimming = isSwimming;
   presence.wallAvoidBlend = wallAvoidBlend;
-  presence.isDead = isDead;
+  const lockServerDeath = shouldLockBattleRoyaleDeathState(ticket, prevWasDead);
+  presence.isDead = lockServerDeath ? true : isDead;
+  if (lockServerDeath) {
+    presence.health = 0;
+  }
   presence.deathSeq = deathSeq;
   presence.deathFallDirX = deathFallDirX;
   presence.deathFallDirY = deathFallDirY;
@@ -3529,6 +3557,12 @@ function applyZoneDamageToTicket(ticket, damage, liveState) {
   outbound.dirZ = dirZ;
 
   if (targetPresence.health <= 0.001) {
+    if (wasKilledByPlayer(ticket)) {
+      targetPresence.isDead = true;
+      flushZoneDamageOutbound(ticket, true);
+      return;
+    }
+
     const wasAlive = !targetPresence.isDead;
     targetPresence.isDead = true;
     targetPresence.deathSeq = Math.max(0, normalizeInt64(targetPresence.deathSeq, 0)) + 1;
@@ -3536,7 +3570,9 @@ function applyZoneDamageToTicket(ticket, damage, liveState) {
     targetPresence.deathFallDirY = dirY;
     targetPresence.deathFallDirZ = dirZ;
     flushZoneDamageOutbound(ticket, true);
+
     if (wasAlive) {
+      markTicketDeathCause(ticket, PLAYER_DEATH_CAUSE_ZONE);
       broadcastKillFeed(ticket.matchId, {
         killerTicketId: "zone",
         victimTicketId: ticket.ticketId,
@@ -4155,6 +4191,7 @@ function handleWsHit(socket, message) {
   if (targetPresence.health <= 0.001 && wasAlive) {
     targetPresence.isDead = true;
     targetPresence.deathSeq = Math.max(0, normalizeInt64(targetPresence.deathSeq, 0)) + 1;
+    markTicketDeathCause(targetTicket, PLAYER_DEATH_CAUSE_PLAYER);
     recordBattleRoyaleKill(attackerTicket);
     broadcastKillFeed(attackerTicket.matchId, {
       killerTicketId: attackerTicket.ticketId,

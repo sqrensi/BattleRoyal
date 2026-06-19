@@ -364,7 +364,7 @@ GameObject:
   - component: {fileID: 33160501487927514}
   - component: {fileID: 23007861936942174}
   m_Layer: 0
-  m_Name: SM_Wep_Pistol_Heavy_Slide_01
+  m_Name: Part2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

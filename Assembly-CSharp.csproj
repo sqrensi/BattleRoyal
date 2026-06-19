@@ -124,6 +124,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\SkewTextExample.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\WarpTextExample.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo_Wall.cs" />
+    <Compile Include="Assets\Scripts\Player\SkinRarity.cs" />
     <Compile Include="Assets\Scripts\Player\ShopCatalogService.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerBoneHitboxRig.cs" />
     <Compile Include="Assets\Scripts\Player\CaseCatalogService.cs" />

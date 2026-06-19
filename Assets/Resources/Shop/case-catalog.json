@@ -6,20 +6,20 @@
       "pictureFolder": "001",
       "price": 5000,
       "lootPool": [
-        "weapon_ak47_001",
-        "weapon_ak47_002",
-        "weapon_ak47_003",
-        "weapon_ak47_004",
-        "weapon_sniper_001",
-        "weapon_sniper_003",
-        "weapon_sniper_002",
-        "weapon_sniper_004",
-        "weapon_pistol_001",
-        "weapon_pistol_002",
-        "weapon_pistol_003",
-        "weapon_mp7_001",
-        "weapon_mp7_002",
-        "weapon_mp7_003"
+        { "skinId": "weapon_ak47_001", "weight": 50 },
+        { "skinId": "weapon_ak47_002", "weight": 30 },
+        { "skinId": "weapon_ak47_003", "weight": 15 },
+        { "skinId": "weapon_ak47_004", "weight": 2 },
+        { "skinId": "weapon_sniper_001", "weight": 50 },
+        { "skinId": "weapon_sniper_002", "weight": 30 },
+        { "skinId": "weapon_sniper_003", "weight": 15 },
+        { "skinId": "weapon_sniper_004", "weight": 2 },
+        { "skinId": "weapon_pistol_001", "weight": 50 },
+        { "skinId": "weapon_pistol_002", "weight": 30 },
+        { "skinId": "weapon_pistol_003", "weight": 8 },
+        { "skinId": "weapon_mp7_001", "weight": 50 },
+        { "skinId": "weapon_mp7_002", "weight": 30 },
+        { "skinId": "weapon_mp7_003", "weight": 8 }
       ]
     }
   ]

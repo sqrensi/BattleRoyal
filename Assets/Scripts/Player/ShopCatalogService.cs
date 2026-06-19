@@ -14,6 +14,7 @@ namespace ShooterPrototype.Player
 
         private static ShopCatalogData cachedCatalog;
         private static Dictionary<string, int> priceBySkinId;
+        private static Dictionary<string, SkinRarity> rarityBySkinId;
         private static HashSet<string> shopSkinIds;
         private static HashSet<string> defaultOwnedSkinIds;
 
@@ -50,6 +51,7 @@ namespace ShooterPrototype.Player
             }
 
             priceBySkinId = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            rarityBySkinId = new Dictionary<string, SkinRarity>(StringComparer.OrdinalIgnoreCase);
             shopSkinIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             defaultOwnedSkinIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -80,6 +82,38 @@ namespace ShooterPrototype.Player
                     priceBySkinId[skinId] = Mathf.Max(0, entry.price);
                 }
             }
+
+            if (cachedCatalog.skinRarities != null)
+            {
+                for (var i = 0; i < cachedCatalog.skinRarities.Length; i++)
+                {
+                    var entry = cachedCatalog.skinRarities[i];
+                    if (entry == null || string.IsNullOrWhiteSpace(entry.skinId))
+                    {
+                        continue;
+                    }
+
+                    rarityBySkinId[entry.skinId.Trim()] = SkinRarityUtility.ParseOrDefault(entry.rarity);
+                }
+            }
+        }
+
+        public static SkinRarity GetRarity(string skinId)
+        {
+            EnsureLoaded();
+            if (string.IsNullOrWhiteSpace(skinId))
+            {
+                return SkinRarity.Common;
+            }
+
+            return rarityBySkinId.TryGetValue(skinId.Trim(), out var rarity)
+                ? rarity
+                : SkinRarity.Common;
+        }
+
+        public static Color GetRarityCardColor(string skinId)
+        {
+            return SkinRarityUtility.GetCardBackgroundColor(GetRarity(skinId));
         }
 
         public static IReadOnlyList<string> GetDefaultOwnedSkinIds()
@@ -352,6 +386,14 @@ namespace ShooterPrototype.Player
             public string[] defaultOwnedSkinIds;
             public ShopCatalogDefaultEquipped defaultEquipped;
             public ShopCatalogItemEntry[] shopItems;
+            public ShopCatalogRarityEntry[] skinRarities;
+        }
+
+        [Serializable]
+        private sealed class ShopCatalogRarityEntry
+        {
+            public string skinId;
+            public string rarity;
         }
 
         [Serializable]

@@ -40,5 +40,33 @@
     { "skinId": "weapon_sniper_001", "price": 3750 },
     { "skinId": "weapon_pistol_001", "price": 4000 },
     { "skinId": "weapon_mp7_001", "price": 4250 }
+  ],
+  "skinRarities": [
+    { "skinId": "tshirts_002", "rarity": "common" },
+    { "skinId": "tshirts_003", "rarity": "uncommon" },
+    { "skinId": "tshirts_004", "rarity": "rare" },
+    { "skinId": "pants_002", "rarity": "common" },
+    { "skinId": "gloves_002", "rarity": "common" },
+    { "skinId": "gloves_003", "rarity": "uncommon" },
+    { "skinId": "gloves_004", "rarity": "rare" },
+    { "skinId": "gloves_005", "rarity": "epic" },
+    { "skinId": "attachment_face_002", "rarity": "common" },
+    { "skinId": "attachment_face_003", "rarity": "uncommon" },
+    { "skinId": "attachment_hair_001", "rarity": "common" },
+    { "skinId": "attachment_hair_002", "rarity": "uncommon" },
+    { "skinId": "weapon_ak47_001", "rarity": "common" },
+    { "skinId": "weapon_ak47_002", "rarity": "uncommon" },
+    { "skinId": "weapon_ak47_003", "rarity": "rare" },
+    { "skinId": "weapon_ak47_004", "rarity": "legendary" },
+    { "skinId": "weapon_sniper_001", "rarity": "common" },
+    { "skinId": "weapon_sniper_002", "rarity": "uncommon" },
+    { "skinId": "weapon_sniper_003", "rarity": "rare" },
+    { "skinId": "weapon_sniper_004", "rarity": "legendary" },
+    { "skinId": "weapon_pistol_001", "rarity": "common" },
+    { "skinId": "weapon_pistol_002", "rarity": "uncommon" },
+    { "skinId": "weapon_pistol_003", "rarity": "epic" },
+    { "skinId": "weapon_mp7_001", "rarity": "common" },
+    { "skinId": "weapon_mp7_002", "rarity": "uncommon" },
+    { "skinId": "weapon_mp7_003", "rarity": "epic" }
   ]
 }

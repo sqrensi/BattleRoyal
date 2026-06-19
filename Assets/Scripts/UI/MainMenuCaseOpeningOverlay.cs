@@ -18,13 +18,9 @@ namespace ShooterPrototype.UI
 
         private static readonly Color OverlayColor = new Color(0.02f, 0.03f, 0.05f, 0.68f);
         private static readonly Color ViewportColor = new Color(0.08f, 0.1f, 0.12f, 0.96f);
-        private static readonly Color ItemBackgroundColor = new Color(0.12f, 0.14f, 0.17f, 0.96f);
-        private static readonly Color WinnerBackgroundColor = new Color(0.78f, 0.14f, 0.12f, 0.98f);
-        private static readonly Color WinnerPreviewBackgroundColor = new Color(0.42f, 0.1f, 0.1f, 0.98f);
         private static readonly Color CloseButtonColor = new Color(0.24f, 0.1f, 0.1f, 0.98f);
         private static readonly Color MarkerColor = new Color(0.92f, 0.84f, 0.55f, 0.95f);
         private static readonly Color TitleColor = new Color(0.94f, 0.96f, 0.98f, 0.98f);
-        private static readonly Color ResultTitleColor = new Color(0.96f, 0.42f, 0.38f, 0.98f);
 
         [SerializeField] private float itemWidth = 188f;
         [SerializeField] private float itemHeight = 188f;
@@ -124,6 +120,7 @@ namespace ShooterPrototype.UI
             tickAudioSource.spatialBlend = 0f;
             tickAudioSource.priority = 16;
             tickAudioSource.volume = soundVolume;
+            tickAudioSource.pitch = 1f;
 
             tickClip = Resources.Load<AudioClip>(SpinClipPath);
             revealClip = Resources.Load<AudioClip>(RevealClipPath);
@@ -157,12 +154,6 @@ namespace ShooterPrototype.UI
             var focusedIndex = Mathf.FloorToInt((viewportCenter - stripX - itemWidth * 0.5f) / itemStep);
             focusedIndex = Mathf.Clamp(focusedIndex, 0, Mathf.Max(0, totalItems - 1));
 
-            var deltaTime = Mathf.Max(Time.unscaledDeltaTime, 0.0001f);
-            var speed = Mathf.Abs(stripX - previousStripX) / deltaTime;
-            var referenceSpeed = itemStep * 10f;
-            var pitch = Mathf.Clamp(speed / referenceSpeed, 0.28f, 1.35f);
-            tickAudioSource.pitch = pitch;
-
             if (focusedIndex != lastTickedCardIndex)
             {
                 if (lastTickedCardIndex == int.MinValue)
@@ -195,7 +186,6 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            tickAudioSource.pitch = 1f;
             tickAudioSource.PlayOneShot(revealClip, soundVolume);
         }
 
@@ -330,8 +320,7 @@ namespace ShooterPrototype.UI
 
         private void BuildCenterMarker(Transform parent)
         {
-            CreateMarkerLine(parent, -3f);
-            CreateMarkerLine(parent, 3f);
+            CreateMarkerLine(parent, 0f);
         }
 
         private void CreateMarkerLine(Transform parent, float xOffset)
@@ -343,7 +332,7 @@ namespace ShooterPrototype.UI
             rect.anchorMin = new Vector2(0.5f, 0f);
             rect.anchorMax = new Vector2(0.5f, 1f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(4f, 0f);
+            rect.sizeDelta = new Vector2(3f, 0f);
             rect.anchoredPosition = new Vector2(xOffset, 0f);
 
             var image = markerObject.AddComponent<Image>();
@@ -366,7 +355,7 @@ namespace ShooterPrototype.UI
 
             resultBackground = resultObject.AddComponent<Image>();
             resultBackground.sprite = GetWhiteSprite();
-            resultBackground.color = WinnerPreviewBackgroundColor;
+            resultBackground.color = ShopCatalogService.GetRarityCardColor(winner.Id);
 
             var iconObject = new GameObject("Icon");
             iconObject.transform.SetParent(resultObject.transform, false);
@@ -396,7 +385,7 @@ namespace ShooterPrototype.UI
             resultTitle.fontSize = 24f;
             resultTitle.fontStyle = FontStyles.Bold;
             resultTitle.alignment = TextAlignmentOptions.Center;
-            resultTitle.color = ResultTitleColor;
+            resultTitle.color = TitleColor;
 
             var subtitleObject = new GameObject("ResultSubtitle");
             subtitleObject.transform.SetParent(resultObject.transform, false);
@@ -497,7 +486,7 @@ namespace ShooterPrototype.UI
                     definition = lootDefinitions[UnityEngine.Random.Range(0, lootDefinitions.Count)];
                 }
 
-                stripItems.Add(CreateStripItem(stripRect, definition, i, i == winnerIndex));
+                stripItems.Add(CreateStripItem(stripRect, definition, i));
             }
 
             var viewportWidth = viewportRect.rect.width;
@@ -522,15 +511,6 @@ namespace ShooterPrototype.UI
             UpdateCardTickSounds(targetX, itemStep, totalItems);
             PlayRevealSound();
 
-            if (stripItems.Count > winnerIndex && stripItems[winnerIndex] != null)
-            {
-                var winnerBackground = stripItems[winnerIndex].GetComponent<Image>();
-                if (winnerBackground != null)
-                {
-                    winnerBackground.color = WinnerBackgroundColor;
-                }
-            }
-
             yield return new WaitForSecondsRealtime(0.35f);
 
             if (resultBackground != null)
@@ -551,8 +531,7 @@ namespace ShooterPrototype.UI
         private RectTransform CreateStripItem(
             Transform parent,
             PlayerSkinDefinition definition,
-            int index,
-            bool isWinnerSlot)
+            int index)
         {
             var slotObject = new GameObject("StripItem_" + definition.Id);
             slotObject.transform.SetParent(parent, false);
@@ -566,7 +545,7 @@ namespace ShooterPrototype.UI
 
             var background = slotObject.AddComponent<Image>();
             background.sprite = GetWhiteSprite();
-            background.color = isWinnerSlot ? WinnerPreviewBackgroundColor : ItemBackgroundColor;
+            background.color = ShopCatalogService.GetRarityCardColor(definition.Id);
 
             var iconObject = new GameObject("Icon");
             iconObject.transform.SetParent(slotObject.transform, false);

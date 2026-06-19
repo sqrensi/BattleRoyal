@@ -12,17 +12,38 @@ for (let i = 0; i < SHOP_CASES.length; i++) {
   CASE_BY_ID[String(entry.caseId).trim()] = normalizeCaseEntry(entry);
 }
 
-function normalizeCaseEntry(raw) {
-  const lootPool = Array.isArray(raw.lootPool)
-    ? raw.lootPool.map((skinId) => String(skinId || "").trim()).filter(Boolean)
-    : [];
+function normalizeLootPool(rawLootPool) {
+  if (!Array.isArray(rawLootPool)) {
+    return [];
+  }
 
+  const lootPool = [];
+  for (let i = 0; i < rawLootPool.length; i++) {
+    const entry = rawLootPool[i];
+    if (!entry) {
+      continue;
+    }
+
+    const skinId = String(entry.skinId || entry || "").trim();
+    if (!skinId) {
+      continue;
+    }
+
+    const weight =
+      typeof entry.weight === "number" && entry.weight > 0 ? entry.weight : 1;
+    lootPool.push({ skinId, weight });
+  }
+
+  return lootPool;
+}
+
+function normalizeCaseEntry(raw) {
   return {
     caseId: String(raw.caseId || "").trim(),
     displayName: String(raw.displayName || raw.caseId || "Case").trim(),
     pictureFolder: String(raw.pictureFolder || "001").trim(),
     price: typeof raw.price === "number" ? Math.max(0, raw.price) : 0,
-    lootPool,
+    lootPool: normalizeLootPool(raw.lootPool),
   };
 }
 
@@ -46,8 +67,24 @@ function rollCaseLoot(caseId) {
     return "";
   }
 
-  const index = Math.floor(Math.random() * definition.lootPool.length);
-  return definition.lootPool[index];
+  let totalWeight = 0;
+  for (let i = 0; i < definition.lootPool.length; i++) {
+    totalWeight += definition.lootPool[i].weight;
+  }
+
+  if (totalWeight <= 0) {
+    return "";
+  }
+
+  let roll = Math.floor(Math.random() * totalWeight);
+  for (let i = 0; i < definition.lootPool.length; i++) {
+    roll -= definition.lootPool[i].weight;
+    if (roll < 0) {
+      return definition.lootPool[i].skinId;
+    }
+  }
+
+  return definition.lootPool[definition.lootPool.length - 1].skinId;
 }
 
 module.exports = {

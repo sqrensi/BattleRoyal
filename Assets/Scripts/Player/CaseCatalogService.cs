@@ -4,6 +4,19 @@ using UnityEngine;
 
 namespace ShooterPrototype.Player
 {
+    public readonly struct CaseLootEntry
+    {
+        public CaseLootEntry(string skinId, int weight)
+        {
+            SkinId = skinId ?? string.Empty;
+            Weight = Mathf.Max(0, weight);
+        }
+
+        public string SkinId { get; }
+        public int Weight { get; }
+        public bool IsValid => !string.IsNullOrWhiteSpace(SkinId) && Weight > 0;
+    }
+
     public readonly struct CaseDefinition
     {
         public CaseDefinition(
@@ -11,20 +24,20 @@ namespace ShooterPrototype.Player
             string displayName,
             string pictureResourcePath,
             int price,
-            IReadOnlyList<string> lootPool)
+            IReadOnlyList<CaseLootEntry> lootPool)
         {
             Id = id ?? string.Empty;
             DisplayName = displayName ?? string.Empty;
             PictureResourcePath = pictureResourcePath ?? string.Empty;
             Price = Mathf.Max(0, price);
-            LootPool = lootPool ?? Array.Empty<string>();
+            LootPool = lootPool ?? Array.Empty<CaseLootEntry>();
         }
 
         public string Id { get; }
         public string DisplayName { get; }
         public string PictureResourcePath { get; }
         public int Price { get; }
-        public IReadOnlyList<string> LootPool { get; }
+        public IReadOnlyList<CaseLootEntry> LootPool { get; }
 
         public bool IsValid => !string.IsNullOrWhiteSpace(Id) && LootPool.Count > 0;
     }
@@ -151,7 +164,30 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            skinId = caseDefinition.LootPool[UnityEngine.Random.Range(0, caseDefinition.LootPool.Count)];
+            var totalWeight = 0;
+            for (var i = 0; i < caseDefinition.LootPool.Count; i++)
+            {
+                totalWeight += caseDefinition.LootPool[i].Weight;
+            }
+
+            if (totalWeight <= 0)
+            {
+                return false;
+            }
+
+            var roll = UnityEngine.Random.Range(0, totalWeight);
+            var cumulative = 0;
+            for (var i = 0; i < caseDefinition.LootPool.Count; i++)
+            {
+                cumulative += caseDefinition.LootPool[i].Weight;
+                if (roll < cumulative)
+                {
+                    skinId = caseDefinition.LootPool[i].SkinId;
+                    return !string.IsNullOrWhiteSpace(skinId);
+                }
+            }
+
+            skinId = caseDefinition.LootPool[caseDefinition.LootPool.Count - 1].SkinId;
             return !string.IsNullOrWhiteSpace(skinId);
         }
 
@@ -167,10 +203,10 @@ namespace ShooterPrototype.Player
 
             for (var i = 0; i < caseDefinition.LootPool.Count; i++)
             {
-                if (PlayerSkinSelectionService.TryGetDefinitionById(
-                        caseDefinition.LootPool[i],
-                        out var definition) &&
-                    definition.IsValid)
+                var skinId = caseDefinition.LootPool[i].SkinId;
+                if (PlayerSkinSelectionService.TryGetDefinitionById(skinId, out var definition) &&
+                    definition.IsValid &&
+                    !ContainsDefinition(results, definition.Id))
                 {
                     results.Add(definition);
                 }
@@ -179,9 +215,22 @@ namespace ShooterPrototype.Player
             return results.Count > 0;
         }
 
-        private static List<string> NormalizeLootPool(string[] lootPool)
+        private static bool ContainsDefinition(List<PlayerSkinDefinition> results, string skinId)
         {
-            var results = new List<string>(lootPool?.Length ?? 0);
+            for (var i = 0; i < results.Count; i++)
+            {
+                if (string.Equals(results[i].Id, skinId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static List<CaseLootEntry> NormalizeLootPool(CaseCatalogLootEntry[] lootPool)
+        {
+            var results = new List<CaseLootEntry>(lootPool?.Length ?? 0);
             if (lootPool == null)
             {
                 return results;
@@ -189,11 +238,14 @@ namespace ShooterPrototype.Player
 
             for (var i = 0; i < lootPool.Length; i++)
             {
-                var skinId = lootPool[i];
-                if (!string.IsNullOrWhiteSpace(skinId))
+                var entry = lootPool[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.skinId))
                 {
-                    results.Add(skinId.Trim());
+                    continue;
                 }
+
+                var weight = entry.weight > 0 ? entry.weight : 1;
+                results.Add(new CaseLootEntry(entry.skinId.Trim(), weight));
             }
 
             return results;
@@ -212,7 +264,14 @@ namespace ShooterPrototype.Player
             public string displayName;
             public string pictureFolder;
             public int price;
-            public string[] lootPool;
+            public CaseCatalogLootEntry[] lootPool;
+        }
+
+        [Serializable]
+        private sealed class CaseCatalogLootEntry
+        {
+            public string skinId;
+            public int weight;
         }
     }
 }
