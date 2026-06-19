@@ -1,3 +1,6 @@
+using System;
+using UnityEngine;
+
 namespace ShooterPrototype.Player
 {
     public static class PlayerSkinResourcePaths
@@ -73,6 +76,45 @@ namespace ShooterPrototype.Player
         public static string BuildPicturePath(string categoryFolder, string variantId)
         {
             return $"{SkinsRoot}/{categoryFolder}/{variantId}/picture";
+        }
+
+        public static string ResolveClothingPrefabPath(string categoryFolder, string variantId)
+        {
+            if (string.IsNullOrWhiteSpace(categoryFolder) || string.IsNullOrWhiteSpace(variantId))
+            {
+                return string.Empty;
+            }
+
+            var variantPath = BuildPrefabPath(categoryFolder, variantId);
+            if (Resources.Load<GameObject>(variantPath) != null)
+            {
+                return variantPath;
+            }
+
+            if (string.Equals(variantId, "001", StringComparison.Ordinal))
+            {
+                return string.Empty;
+            }
+
+            var fallbackPath = BuildPrefabPath(categoryFolder, "001");
+            return Resources.Load<GameObject>(fallbackPath) != null ? fallbackPath : string.Empty;
+        }
+
+        public static string ResolveClothingMaterialPath(string categoryFolder, string variantId)
+        {
+            if (string.IsNullOrWhiteSpace(categoryFolder) || string.IsNullOrWhiteSpace(variantId))
+            {
+                return string.Empty;
+            }
+
+            var materialPath = BuildMaterialPath(categoryFolder, variantId);
+            if (Resources.Load<Material>(materialPath) != null)
+            {
+                return materialPath;
+            }
+
+            var alternatePath = $"{SkinsRoot}/{categoryFolder}/{variantId}/wow";
+            return Resources.Load<Material>(alternatePath) != null ? alternatePath : materialPath;
         }
     }
 }

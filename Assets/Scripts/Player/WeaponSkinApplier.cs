@@ -9,7 +9,6 @@ namespace ShooterPrototype.Player
     public static class WeaponSkinApplier
     {
         private const string PistolSecondaryPartName = "Part2";
-
         /// <summary>
         /// Applies the locally equipped inventory skin when a weapon enters the player's hands.
         /// Default skin variants (no material) leave prefab materials unchanged.
@@ -80,59 +79,170 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            ApplyMaterialToRenderers(weaponRoot, material);
-
-            if (kind == WeaponKind.Pistol)
-            {
-                var part2 = weaponRoot.Find(PistolSecondaryPartName);
-                if (part2 != null)
-                {
-                    ApplyMaterialToRenderers(part2, material);
-                }
-            }
+            ApplyMaterialToRenderers(weaponRoot, kind, material);
         }
 
-        private static void ApplyMaterialToRenderers(Transform root, Material material)
+        private static void ApplyMaterialToRenderers(Transform weaponRoot, WeaponKind kind, Material material)
         {
-            if (root == null || material == null)
+            if (weaponRoot == null || material == null)
             {
                 return;
             }
 
-            var renderers = root.GetComponentsInChildren<Renderer>(true);
-            for (var i = 0; i < renderers.Length; i++)
+            if (!TryApplyMainBodyMaterial(weaponRoot, material))
             {
-                var renderer = renderers[i];
-                if (renderer == null || IsGripOrTargetRenderer(renderer))
+                var profileTransform = ResolveWeaponProfileTransform(weaponRoot);
+                if (profileTransform != null && profileTransform != weaponRoot)
                 {
-                    continue;
+                    TryApplyMainBodyMaterial(profileTransform, material);
                 }
+            }
 
-                var sharedMaterials = renderer.sharedMaterials;
-                for (var j = 0; j < sharedMaterials.Length; j++)
-                {
-                    sharedMaterials[j] = material;
-                }
-
-                renderer.sharedMaterials = sharedMaterials;
-
-                var instanceMaterials = renderer.materials;
-                for (var j = 0; j < instanceMaterials.Length; j++)
-                {
-                    instanceMaterials[j] = material;
-                }
-
-                renderer.materials = instanceMaterials;
+            if (kind == WeaponKind.Pistol)
+            {
+                ApplyPistolSecondaryPart(weaponRoot, material);
             }
         }
 
-        private static bool IsGripOrTargetRenderer(Renderer renderer)
+        private static void ApplyPistolSecondaryPart(Transform weaponRoot, Material material)
         {
-            var objectName = renderer.gameObject.name;
+            var part2 = FindChildRecursive(weaponRoot, PistolSecondaryPartName);
+            if (part2 == null)
+            {
+                return;
+            }
+
+            var renderer = part2.GetComponent<Renderer>();
+            if (renderer == null)
+            {
+                return;
+            }
+
+            ApplyMaterialToRenderer(renderer, material);
+        }
+
+        private static Transform FindChildRecursive(Transform parent, string childName)
+        {
+            if (parent == null || string.IsNullOrWhiteSpace(childName))
+            {
+                return null;
+            }
+
+            for (var i = 0; i < parent.childCount; i++)
+            {
+                var child = parent.GetChild(i);
+                if (string.Equals(child.name, childName, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return child;
+                }
+
+                var nested = FindChildRecursive(child, childName);
+                if (nested != null)
+                {
+                    return nested;
+                }
+            }
+
+            return null;
+        }
+
+        private static Transform ResolveWeaponProfileTransform(Transform weaponRoot)
+        {
+            var profile = weaponRoot.GetComponent<WeaponProfile>() ??
+                          weaponRoot.GetComponentInChildren<WeaponProfile>(true);
+            return profile != null ? profile.transform : null;
+        }
+
+        private static bool TryApplyMainBodyMaterial(Transform bodyTransform, Material material)
+        {
+            var renderer = bodyTransform.GetComponent<Renderer>();
+            if (renderer == null || !ShouldReceiveWeaponSkin(renderer))
+            {
+                return false;
+            }
+
+            ApplyMaterialToRenderer(renderer, material);
+            return true;
+        }
+
+        private static bool ShouldReceiveWeaponSkin(Renderer renderer)
+        {
+            return renderer != null &&
+                   !IsExcludedRenderer(renderer) &&
+                   !IsUnderExcludedAttachmentHierarchy(renderer.transform);
+        }
+
+        private static void ApplyMaterialToRenderer(Renderer renderer, Material material)
+        {
+            if (renderer == null || material == null)
+            {
+                return;
+            }
+
+            var sharedMaterials = renderer.sharedMaterials;
+            for (var j = 0; j < sharedMaterials.Length; j++)
+            {
+                sharedMaterials[j] = material;
+            }
+
+            renderer.sharedMaterials = sharedMaterials;
+
+            var instanceMaterials = renderer.materials;
+            for (var j = 0; j < instanceMaterials.Length; j++)
+            {
+                instanceMaterials[j] = material;
+            }
+
+            renderer.materials = instanceMaterials;
+        }
+
+        private static bool IsExcludedRenderer(Renderer renderer)
+        {
+            if (renderer == null)
+            {
+                return true;
+            }
+
+            return ContainsExcludedNameToken(renderer.gameObject.name);
+        }
+
+        private static bool IsUnderExcludedAttachmentHierarchy(Transform transform)
+        {
+            var current = transform != null ? transform.parent : null;
+            while (current != null)
+            {
+                if (ContainsExcludedNameToken(current.gameObject.name))
+                {
+                    return true;
+                }
+
+                current = current.parent;
+            }
+
+            return false;
+        }
+
+        private static bool ContainsExcludedNameToken(string objectName)
+        {
+            if (string.IsNullOrWhiteSpace(objectName))
+            {
+                return false;
+            }
+
             return objectName.IndexOf("Target", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
                    objectName.IndexOf("IkAnchor", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
                    objectName.IndexOf("AimPoint", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   objectName.IndexOf("Muzzle", System.StringComparison.OrdinalIgnoreCase) >= 0;
+                   objectName.IndexOf("Muzzle", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   objectName.IndexOf("Optic", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   objectName.IndexOf("Scope", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   objectName.IndexOf("Sight", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   objectName.IndexOf("Lens", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   objectName.IndexOf("Part2", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   objectName.IndexOf("Attachment", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   objectName.IndexOf("Trigger", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   objectName.IndexOf("Slide", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   objectName.IndexOf("Hammer", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   objectName.IndexOf("Stock", System.StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 }

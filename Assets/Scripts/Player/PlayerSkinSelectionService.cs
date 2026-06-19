@@ -620,8 +620,14 @@ namespace ShooterPrototype.Player
             for (var i = 1; i <= MaxVariantProbeCount; i++)
             {
                 var variantId = i.ToString("000");
-                var prefabPath = PlayerSkinResourcePaths.BuildPrefabPath(categoryFolder, variantId);
-                if (Resources.Load<GameObject>(prefabPath) == null)
+                var picturePath = PlayerSkinResourcePaths.BuildPicturePath(categoryFolder, variantId);
+                if (!HasResourcePicture(picturePath))
+                {
+                    continue;
+                }
+
+                var prefabPath = PlayerSkinResourcePaths.ResolveClothingPrefabPath(categoryFolder, variantId);
+                if (string.IsNullOrWhiteSpace(prefabPath))
                 {
                     continue;
                 }
@@ -632,8 +638,8 @@ namespace ShooterPrototype.Player
                     skinId,
                     displayName,
                     prefabPath,
-                    PlayerSkinResourcePaths.BuildMaterialPath(categoryFolder, variantId),
-                    PlayerSkinResourcePaths.BuildPicturePath(categoryFolder, variantId)));
+                    PlayerSkinResourcePaths.ResolveClothingMaterialPath(categoryFolder, variantId),
+                    picturePath));
             }
 
             if (results.Count == 0)

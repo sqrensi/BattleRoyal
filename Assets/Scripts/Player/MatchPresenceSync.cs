@@ -1044,11 +1044,6 @@ namespace ShooterPrototype.Player
             {
                 lastSnapshotReceivedAt = Time.unscaledTime;
                 lastSnapshotBinaryVersion = snapshot.binaryVersion;
-                ApplyRemotePresence(snapshot.players);
-                ApplyRemotePresenceEvents(snapshot.players);
-                ApplyLocalMedkitFromSnapshot(snapshot.players);
-                ApplyRemoteWeaponPresence(snapshot.players);
-                ApplySelfAuthoritativePose(snapshot.selfAuthoritative);
                 return;
             }
 

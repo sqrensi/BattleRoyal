@@ -6,14 +6,20 @@
       "pictureFolder": "001",
       "price": 5000,
       "lootPool": [
-        "weapon_ak47_000",
         "weapon_ak47_001",
-        "weapon_sniper_000",
+        "weapon_ak47_002",
+        "weapon_ak47_003",
+        "weapon_ak47_004",
         "weapon_sniper_001",
-        "weapon_pistol_000",
+        "weapon_sniper_003",
+        "weapon_sniper_002",
+        "weapon_sniper_004",
         "weapon_pistol_001",
-        "weapon_mp7_000",
-        "weapon_mp7_001"
+        "weapon_pistol_002",
+        "weapon_pistol_003",
+        "weapon_mp7_001",
+        "weapon_mp7_002",
+        "weapon_mp7_003"
       ]
     }
   ]

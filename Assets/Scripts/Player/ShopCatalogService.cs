@@ -261,11 +261,17 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
+            var prefabPath = PlayerSkinResourcePaths.ResolveClothingPrefabPath(categoryFolder, variantId);
+            if (string.IsNullOrWhiteSpace(prefabPath))
+            {
+                return false;
+            }
+
             definition = new PlayerSkinDefinition(
                 normalized,
                 BuildShopDisplayName(normalized),
-                PlayerSkinResourcePaths.BuildPrefabPath(categoryFolder, variantId),
-                PlayerSkinResourcePaths.BuildMaterialPath(categoryFolder, variantId),
+                prefabPath,
+                PlayerSkinResourcePaths.ResolveClothingMaterialPath(categoryFolder, variantId),
                 clothingPicturePath);
             return true;
         }

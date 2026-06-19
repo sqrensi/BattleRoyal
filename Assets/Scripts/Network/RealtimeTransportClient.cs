@@ -834,9 +834,12 @@ namespace ShooterPrototype.Network
             }
         }
 
+        private const int MaxMainThreadActionsPerFrame = 48;
+
         private void ProcessMainThreadActions()
         {
-            while (true)
+            var processed = 0;
+            while (processed < MaxMainThreadActionsPerFrame)
             {
                 Action action;
                 lock (mainThreadActionsLock)
@@ -857,6 +860,8 @@ namespace ShooterPrototype.Network
                 {
                     Debug.LogException(ex);
                 }
+
+                processed++;
             }
         }
 
