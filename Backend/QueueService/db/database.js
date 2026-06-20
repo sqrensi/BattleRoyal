@@ -56,6 +56,37 @@ function applyMigrations(db) {
   applyAchievementDefinitionSyncMigration(db, insertMigration);
   applyPlayerMatchStatsMigration(db, insertMigration);
   applyPlayerAchievementClaimedAtMigration(db, insertMigration);
+  applyPlayerRatingMigration(db, insertMigration);
+}
+
+function applyPlayerRatingMigration(db, insertMigration) {
+  const migrationName = "006_player_rating";
+  const applied = db
+    .prepare("SELECT 1 AS ok FROM schema_migrations WHERE name = ?")
+    .get(migrationName);
+  if (applied) {
+    return;
+  }
+
+  const profileColumns = db.prepare("PRAGMA table_info(player_profiles)").all();
+  const hasRating = profileColumns.some((column) => column.name === "rating");
+  if (!hasRating) {
+    db.exec(
+      "ALTER TABLE player_profiles ADD COLUMN rating INTEGER NOT NULL DEFAULT 1000;"
+    );
+  }
+
+  const reportColumns = db.prepare("PRAGMA table_info(player_match_stat_reports)").all();
+  const hasRatingDelta = reportColumns.some((column) => column.name === "rating_delta");
+  if (!hasRatingDelta) {
+    db.exec(
+      "ALTER TABLE player_match_stat_reports ADD COLUMN rating_delta INTEGER NOT NULL DEFAULT 0;"
+    );
+  }
+
+  db.exec("UPDATE player_profiles SET rating = 1000 WHERE rating IS NULL OR rating < 0;");
+
+  insertMigration.run(migrationName, nowMs());
 }
 
 function applyPlayerMatchStatsMigration(db, insertMigration) {

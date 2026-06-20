@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS player_profiles (
   selected_character_model TEXT,
   currency_balance INTEGER NOT NULL DEFAULT 0 CHECK (currency_balance >= 0),
   starter_pack_granted INTEGER NOT NULL DEFAULT 0,
+  rating INTEGER NOT NULL DEFAULT 1000 CHECK (rating >= 0),
   updated_at INTEGER NOT NULL
 );
 

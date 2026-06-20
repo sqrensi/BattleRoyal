@@ -45,6 +45,10 @@ namespace ShooterPrototype.UI
         private CanvasGroup startButtonGroup;
         private MainMenuCurrencyDisplay currencyDisplay;
         private MainMenuNicknameEditor nicknameEditor;
+        private MainMenuLeaderboardPanel leaderboardPanel;
+        private RectTransform bottomRightStackRect;
+        private CanvasGroup bottomRightStackGroup;
+        private MainMenuNavNotificationBadges navNotificationBadges;
         private MainMenuServerConnectionGate connectionGate;
 
         public void ApplyLayout(MainMenuController controller)
@@ -68,7 +72,7 @@ namespace ShooterPrototype.UI
             BuildTopNavBar(canvasRect, uiSound);
             CreateBackButton(canvasRect);
             BuildCurrencyDisplay(controller, canvasRect);
-            BuildNicknameEditor(controller, canvasRect, uiSound);
+            BuildBottomRightProfileArea(controller, canvasRect, uiSound);
 
             if (controller.StartButton != null)
             {
@@ -130,15 +134,27 @@ namespace ShooterPrototype.UI
                 achievementsPanel.Build(canvasRect);
                 statsPanel.Build(canvasRect);
                 currencyDisplay?.Build(canvasRect);
-                nicknameEditor?.Build(canvasRect);
+                if (bottomRightStackRect != null)
+                {
+                    nicknameEditor?.Build(canvasRect, bottomRightStackRect);
+                    leaderboardPanel?.Build(bottomRightStackRect);
+                }
+                else
+                {
+                    nicknameEditor?.Build(canvasRect);
+                }
+
                 nicknameEditor?.Configure(controller, controller.ProfileApiClient, EnsureUiSound(controller));
+                leaderboardPanel?.Configure(controller, controller.ProfileApiClient);
 
                 connectionGate = EnsureConnectionGate(controller);
                 connectionGate.Configure(controller, controller.StatusText);
                 connectionGate.Build(canvasRect, EnsureUiSound(controller));
                 connectionGate.RegisterMenuGroup(topNavBarObject != null ? EnsureCanvasGroup(topNavBarObject) : null);
                 connectionGate.RegisterMenuGroup(startButtonGroup);
-                connectionGate.RegisterMenuGroup(nicknameEditor != null ? nicknameEditor.CanvasGroup : null);
+                connectionGate.RegisterMenuGroup(bottomRightStackGroup != null
+                    ? bottomRightStackGroup
+                    : nicknameEditor != null ? nicknameEditor.CanvasGroup : null);
                 connectionGate.RegisterMenuGroup(currencyDisplay != null ? currencyDisplay.CanvasGroup : null);
                 controller.BindConnectionGate(connectionGate);
             }
@@ -177,10 +193,15 @@ namespace ShooterPrototype.UI
                 shopPanel,
                 achievementsPanel,
                 statsPanel,
-                nicknameEditor != null ? nicknameEditor.CanvasGroup : null);
+                bottomRightStackGroup != null
+                    ? bottomRightStackGroup
+                    : nicknameEditor != null ? nicknameEditor.CanvasGroup : null);
         }
 
-        private void BuildNicknameEditor(MainMenuController controller, RectTransform canvasRect, MainMenuUiSoundController uiSound)
+        private void BuildBottomRightProfileArea(
+            MainMenuController controller,
+            RectTransform canvasRect,
+            MainMenuUiSoundController uiSound)
         {
             if (controller == null || canvasRect == null)
             {
@@ -193,7 +214,60 @@ namespace ShooterPrototype.UI
                 nicknameEditor = controller.gameObject.AddComponent<MainMenuNicknameEditor>();
             }
 
+            leaderboardPanel = controller.GetComponent<MainMenuLeaderboardPanel>();
+            if (leaderboardPanel == null)
+            {
+                leaderboardPanel = controller.gameObject.AddComponent<MainMenuLeaderboardPanel>();
+            }
+
             nicknameEditor.Configure(controller, controller.ProfileApiClient, uiSound);
+            leaderboardPanel.Configure(controller, controller.ProfileApiClient);
+
+            if (bottomRightStackRect != null)
+            {
+                return;
+            }
+
+            var stackObject = new GameObject("MainMenuBottomRightStack");
+            stackObject.transform.SetParent(canvasRect, false);
+
+            bottomRightStackRect = stackObject.AddComponent<RectTransform>();
+            bottomRightStackRect.anchorMin = new Vector2(1f, 0f);
+            bottomRightStackRect.anchorMax = new Vector2(1f, 0f);
+            bottomRightStackRect.pivot = new Vector2(1f, 0f);
+            bottomRightStackRect.anchoredPosition = new Vector2(-edgeMargin, edgeMargin);
+            bottomRightStackRect.sizeDelta = new Vector2(340f, 0f);
+
+            var stackLayout = stackObject.AddComponent<VerticalLayoutGroup>();
+            stackLayout.childAlignment = TextAnchor.LowerRight;
+            stackLayout.spacing = 12f;
+            stackLayout.childControlWidth = true;
+            stackLayout.childControlHeight = true;
+            stackLayout.childForceExpandWidth = false;
+            stackLayout.childForceExpandHeight = false;
+
+            var stackFitter = stackObject.AddComponent<ContentSizeFitter>();
+            stackFitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            stackFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            bottomRightStackGroup = stackObject.AddComponent<CanvasGroup>();
+
+            nicknameEditor.Build(canvasRect, bottomRightStackRect);
+            leaderboardPanel.Build(bottomRightStackRect);
+            if (nicknameEditor.RootRect != null)
+            {
+                nicknameEditor.RootRect.SetSiblingIndex(0);
+            }
+
+            if (leaderboardPanel.RootRect != null)
+            {
+                leaderboardPanel.RootRect.SetSiblingIndex(1);
+            }
+        }
+
+        private void BuildNicknameEditor(MainMenuController controller, RectTransform canvasRect, MainMenuUiSoundController uiSound)
+        {
+            BuildBottomRightProfileArea(controller, canvasRect, uiSound);
         }
 
         private static MainMenuServerConnectionGate EnsureConnectionGate(MainMenuController controller)
@@ -260,6 +334,14 @@ namespace ShooterPrototype.UI
             achievementsButton = CreateNavButton(topNavBarObject.transform, "Достижения", uiSound);
             statsButton = CreateNavButton(topNavBarObject.transform, "Статистика", uiSound);
             CreateNavButton(topNavBarObject.transform, "Настройки", uiSound);
+
+            navNotificationBadges = GetComponent<MainMenuNavNotificationBadges>();
+            if (navNotificationBadges == null)
+            {
+                navNotificationBadges = gameObject.AddComponent<MainMenuNavNotificationBadges>();
+            }
+
+            navNotificationBadges.Configure(inventoryButton, achievementsButton);
 
             EnsureCanvasGroup(topNavBarObject);
         }

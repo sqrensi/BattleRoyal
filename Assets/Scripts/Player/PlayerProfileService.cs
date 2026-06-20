@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using ShooterPrototype.Network;
+using ShooterPrototype.UI;
 using UnityEngine;
 
 namespace ShooterPrototype.Player
@@ -19,7 +21,65 @@ namespace ShooterPrototype.Player
 
         public static bool IsServerSynced { get; private set; }
         public static string Nickname { get; private set; } = string.Empty;
+        public static int Rating => CurrentProfile?.rating ?? MatchRatingUtility.DefaultRating;
         public static PlayerProfileDto CurrentProfile { get; private set; }
+
+        public static int GetSpendableBalance()
+        {
+            if (IsServerSynced && CurrentProfile != null)
+            {
+                return Mathf.Max(0, CurrentProfile.currencyBalance);
+            }
+
+            return PlayerCurrencyService.Balance;
+        }
+
+        public static bool TryResolveApiClient(out PlayerProfileApiClient apiClient)
+        {
+            apiClient = UnityEngine.Object.FindFirstObjectByType<PlayerProfileApiClient>();
+            if (apiClient == null)
+            {
+                var launcher = UnityEngine.Object.FindFirstObjectByType<NetworkLauncher>();
+                if (launcher != null)
+                {
+                    apiClient = launcher.GetComponent<PlayerProfileApiClient>();
+                    if (apiClient == null)
+                    {
+                        apiClient = launcher.gameObject.AddComponent<PlayerProfileApiClient>();
+                    }
+                }
+            }
+
+            if (apiClient == null)
+            {
+                var menuController = UnityEngine.Object.FindFirstObjectByType<MainMenuController>();
+                if (menuController != null)
+                {
+                    apiClient = menuController.GetComponent<PlayerProfileApiClient>();
+                    if (apiClient == null)
+                    {
+                        apiClient = menuController.gameObject.AddComponent<PlayerProfileApiClient>();
+                    }
+                }
+            }
+
+            if (apiClient == null)
+            {
+                return false;
+            }
+
+            var config = UnityEngine.Object.FindFirstObjectByType<NetworkLauncher>()?.Config;
+            if (config != null)
+            {
+                apiClient.Configure(config.QueueApiBaseUrl, config.QueueRequestTimeoutSeconds);
+            }
+            else
+            {
+                apiClient.Configure("http://127.0.0.1:5050", 5f);
+            }
+
+            return true;
+        }
 
         public static event Action ProfileSynced;
         public static event Action ProfileSyncFailed;
@@ -44,6 +104,7 @@ namespace ShooterPrototype.Player
 
             var previousOwned = new HashSet<string>(OwnedSkinCache, StringComparer.OrdinalIgnoreCase);
             var previousQuantities = new Dictionary<string, int>(OwnedSkinQuantityCache);
+            var previousCaseQuantities = new Dictionary<string, int>(OwnedCaseQuantityCache);
 
             CurrentProfile = profile;
             IsServerSynced = markSynced;
@@ -79,6 +140,11 @@ namespace ShooterPrototype.Player
             }
 
             PlayerSkinOwnershipService.NotifyEquipmentChanged();
+            MainMenuNotificationState.HandleProfileApplied(
+                previousOwned,
+                previousQuantities,
+                previousCaseQuantities,
+                profile);
             ProfileSynced?.Invoke();
         }
 
@@ -90,6 +156,18 @@ namespace ShooterPrototype.Player
             }
 
             return OwnedSkinCache.Contains(skinId.Trim());
+        }
+
+        public static IReadOnlyList<string> GetOwnedSkinIds()
+        {
+            if (!IsServerSynced || OwnedSkinCache.Count == 0)
+            {
+                return Array.Empty<string>();
+            }
+
+            var results = new string[OwnedSkinCache.Count];
+            OwnedSkinCache.CopyTo(results);
+            return results;
         }
 
         public static int GetOwnedQuantity(string skinId)
@@ -594,23 +672,24 @@ namespace ShooterPrototype.Player
             int placement,
             bool won,
             int damageDealt,
-            Action<bool, string> onCompleted)
+            Action<bool, int, string> onCompleted)
         {
             if (runner == null || apiClient == null || string.IsNullOrWhiteSpace(playerId))
             {
-                onCompleted?.Invoke(false, "Profile is not synced with server.");
+                onCompleted?.Invoke(false, 0, "Profile is not synced with server.");
                 yield break;
             }
 
             if (string.IsNullOrWhiteSpace(sourceId))
             {
-                onCompleted?.Invoke(false, "Missing match source id.");
+                onCompleted?.Invoke(false, 0, "Missing match source id.");
                 yield break;
             }
 
             var completed = false;
             var success = false;
             var error = string.Empty;
+            var ratingDelta = 0;
             PlayerProfileDto profile = null;
 
             var request = new PlayerProfileMatchStatsRequest
@@ -623,28 +702,29 @@ namespace ShooterPrototype.Player
                 damageDealt = Mathf.Max(0, damageDealt)
             };
 
-            yield return apiClient.RecordMatchStats(playerId, request, (ok, responseProfile, responseError) =>
+            yield return apiClient.RecordMatchStats(playerId, request, (ok, responseDelta, responseProfile, responseError) =>
             {
                 completed = true;
                 success = ok;
+                ratingDelta = responseDelta;
                 profile = responseProfile;
                 error = responseError;
             });
 
             if (!completed)
             {
-                onCompleted?.Invoke(false, "Match stats request did not complete.");
+                onCompleted?.Invoke(false, 0, "Match stats request did not complete.");
                 yield break;
             }
 
             if (success && profile != null)
             {
                 ApplyProfile(profile);
-                onCompleted?.Invoke(true, string.Empty);
+                onCompleted?.Invoke(true, ratingDelta, string.Empty);
                 yield break;
             }
 
-            onCompleted?.Invoke(false, string.IsNullOrWhiteSpace(error) ? "Match stats failed." : error);
+            onCompleted?.Invoke(false, 0, string.IsNullOrWhiteSpace(error) ? "Match stats failed." : error);
         }
 
         private static void ApplyOwnedSkinsToLocal(string[] ownedSkins, SkinQuantityEntry[] ownedSkinQuantities)

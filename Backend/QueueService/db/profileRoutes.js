@@ -24,6 +24,14 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
       return true;
     }
 
+    if (method === "GET" && path === "/profile/leaderboard") {
+      const requestUrl = getRequestUrl ? getRequestUrl(req) : null;
+      const limitRaw = requestUrl ? requestUrl.searchParams.get("limit") : "25";
+      const entries = playerRepository.getLeaderboard(limitRaw);
+      respondJson(res, 200, { ok: true, entries });
+      return true;
+    }
+
     if (method === "GET" && path.startsWith("/profile/")) {
       const externalPlayerId = decodeURIComponent(path.slice("/profile/".length));
       if (!externalPlayerId || externalPlayerId.includes("/") || externalPlayerId.startsWith("nickname")) {

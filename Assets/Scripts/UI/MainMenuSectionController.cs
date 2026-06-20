@@ -188,6 +188,36 @@ namespace ShooterPrototype.UI
             SetGroupImmediate(backButtonGroup, visible ? 1f : 0f, interactable: visible);
         }
 
+        public void SetCaseOpeningMode(bool active)
+        {
+            if (transitionCoroutine != null)
+            {
+                StopCoroutine(transitionCoroutine);
+                transitionCoroutine = null;
+            }
+
+            if (active)
+            {
+                SetGroupsImmediate(mainMenuGroups, 0f, interactable: false);
+                SetGroupImmediate(backButtonGroup, 0f, interactable: false);
+                inventoryPanel?.SetHiddenForOverlay(true);
+                return;
+            }
+
+            inventoryPanel?.SetHiddenForOverlay(false);
+
+            if (activePanel != MainMenuPanelMode.None)
+            {
+                SetGroupsImmediate(mainMenuGroups, 0f, interactable: false);
+                SetGroupImmediate(backButtonGroup, 1f, interactable: true);
+            }
+            else
+            {
+                SetGroupsImmediate(mainMenuGroups, 1f, interactable: true);
+                SetGroupImmediate(backButtonGroup, 0f, interactable: false);
+            }
+        }
+
         private void OpenPanel(MainMenuPanelMode panelMode)
         {
             if (activePanel == panelMode)

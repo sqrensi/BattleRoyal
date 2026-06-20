@@ -16,7 +16,7 @@ namespace ShooterPrototype.UI
 
         private static Sprite whiteSprite;
 
-        private static readonly Color OverlayColor = new Color(0.02f, 0.03f, 0.05f, 0.68f);
+        private static readonly Color OverlayColor = new Color(0.02f, 0.03f, 0.05f, 0.96f);
         private static readonly Color ViewportColor = new Color(0.08f, 0.1f, 0.12f, 0.96f);
         private static readonly Color CloseButtonColor = new Color(0.24f, 0.1f, 0.1f, 0.98f);
         private static readonly Color MarkerColor = new Color(0.92f, 0.84f, 0.55f, 0.95f);
@@ -32,7 +32,6 @@ namespace ShooterPrototype.UI
 
         private RectTransform stripRect;
         private RectTransform viewportRect;
-        private RectTransform viewportChromeRect;
         private CanvasGroup overlayGroup;
         private TMP_Text resultTitle;
         private TMP_Text resultSubtitle;
@@ -80,7 +79,7 @@ namespace ShooterPrototype.UI
 
             var overlayCanvas = overlayObject.AddComponent<Canvas>();
             overlayCanvas.overrideSorting = true;
-            overlayCanvas.sortingOrder = 120;
+            overlayCanvas.sortingOrder = 200;
 
             overlayObject.AddComponent<GraphicRaycaster>();
 
@@ -225,7 +224,7 @@ namespace ShooterPrototype.UI
             rootRect.anchorMax = new Vector2(0.5f, 0.5f);
             rootRect.pivot = new Vector2(0.5f, 0.5f);
             rootRect.sizeDelta = new Vector2(1240f, itemHeight + 72f);
-            rootRect.anchoredPosition = new Vector2(0f, 36f);
+            rootRect.anchoredPosition = Vector2.zero;
 
             var maskedViewportObject = new GameObject("ViewportMasked");
             maskedViewportObject.transform.SetParent(viewportRoot.transform, false);
@@ -251,14 +250,8 @@ namespace ShooterPrototype.UI
 
             var chromeObject = new GameObject("ViewportChrome");
             chromeObject.transform.SetParent(viewportRoot.transform, false);
-            viewportChromeRect = chromeObject.AddComponent<RectTransform>();
+            var viewportChromeRect = chromeObject.AddComponent<RectTransform>();
             StretchFull(viewportChromeRect);
-
-            var chromeCanvas = chromeObject.AddComponent<Canvas>();
-            chromeCanvas.overrideSorting = true;
-            chromeCanvas.sortingOrder = 125;
-
-            chromeObject.AddComponent<GraphicRaycaster>().enabled = false;
 
             BuildCenterMarker(chromeObject.transform);
             BuildStripFrame(chromeObject.transform);
@@ -321,6 +314,43 @@ namespace ShooterPrototype.UI
         private void BuildCenterMarker(Transform parent)
         {
             CreateMarkerLine(parent, 0f);
+
+            CreateMarkerCap(
+                parent,
+                "TopCap",
+                new Vector2(0.5f, 1f),
+                new Vector2(0.5f, 1f),
+                new Vector2(0f, -4f));
+
+            CreateMarkerCap(
+                parent,
+                "BottomCap",
+                new Vector2(0.5f, 0f),
+                new Vector2(0.5f, 0f),
+                new Vector2(0f, 4f));
+        }
+
+        private void CreateMarkerCap(
+            Transform parent,
+            string objectName,
+            Vector2 anchorMin,
+            Vector2 anchorMax,
+            Vector2 anchoredPosition)
+        {
+            var capObject = new GameObject(objectName);
+            capObject.transform.SetParent(parent, false);
+
+            var rect = capObject.AddComponent<RectTransform>();
+            rect.anchorMin = anchorMin;
+            rect.anchorMax = anchorMax;
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = new Vector2(18f, 4f);
+            rect.anchoredPosition = anchoredPosition;
+
+            var image = capObject.AddComponent<Image>();
+            image.sprite = GetWhiteSprite();
+            image.color = MarkerColor;
+            image.raycastTarget = false;
         }
 
         private void CreateMarkerLine(Transform parent, float xOffset)
@@ -332,7 +362,7 @@ namespace ShooterPrototype.UI
             rect.anchorMin = new Vector2(0.5f, 0f);
             rect.anchorMax = new Vector2(0.5f, 1f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(3f, 0f);
+            rect.sizeDelta = new Vector2(4f, 0f);
             rect.anchoredPosition = new Vector2(xOffset, 0f);
 
             var image = markerObject.AddComponent<Image>();
@@ -347,10 +377,10 @@ namespace ShooterPrototype.UI
             resultObject.transform.SetParent(transform, false);
 
             var rect = resultObject.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0.5f, 0f);
-            rect.anchorMax = new Vector2(0.5f, 0f);
-            rect.pivot = new Vector2(0.5f, 0f);
-            rect.anchoredPosition = new Vector2(0f, 132f);
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = new Vector2(0f, -40f);
             rect.sizeDelta = new Vector2(460f, 236f);
 
             resultBackground = resultObject.AddComponent<Image>();
@@ -411,11 +441,12 @@ namespace ShooterPrototype.UI
             buttonObject.transform.SetParent(transform, false);
 
             var rect = buttonObject.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0.5f, 0f);
-            rect.anchorMax = new Vector2(0.5f, 0f);
-            rect.pivot = new Vector2(0.5f, 0f);
-            rect.anchoredPosition = new Vector2(0f, 48f);
-            rect.sizeDelta = new Vector2(220f, 52f);
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            var stripHalfHeight = (itemHeight + 72f) * 0.5f;
+            rect.anchoredPosition = new Vector2(0f, -(stripHalfHeight + 36f));
+            rect.sizeDelta = new Vector2(180f, 48f);
 
             var background = buttonObject.AddComponent<Image>();
             background.sprite = GetWhiteSprite();

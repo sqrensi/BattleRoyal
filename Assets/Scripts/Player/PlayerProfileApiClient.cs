@@ -79,6 +79,7 @@ namespace ShooterPrototype.Player
         public string nickname;
         public string selectedCharacterModel;
         public int currencyBalance;
+        public int rating;
         public bool starterPackGranted;
         public string[] ownedSkins;
         public SkinQuantityEntry[] ownedSkinQuantities;
@@ -163,6 +164,17 @@ namespace ShooterPrototype.Player
     }
 
     [Serializable]
+    public sealed class PlayerProfileMatchStatsResponse
+    {
+        public bool ok;
+        public string error;
+        public string message;
+        public bool alreadyReported;
+        public int ratingDelta;
+        public PlayerProfileDto profile;
+    }
+
+    [Serializable]
     public sealed class PlayerProfileMatchStatsRequest
     {
         public string sourceId;
@@ -187,6 +199,24 @@ namespace ShooterPrototype.Player
         public string error;
         public string message;
         public string nickname;
+    }
+
+    [Serializable]
+    public sealed class LeaderboardEntryDto
+    {
+        public int rank;
+        public string nickname;
+        public int rating;
+        public string playerId;
+    }
+
+    [Serializable]
+    public sealed class LeaderboardResponse
+    {
+        public bool ok;
+        public string error;
+        public string message;
+        public LeaderboardEntryDto[] entries;
     }
 
     public sealed class PlayerProfileApiClient : MonoBehaviour
@@ -216,6 +246,19 @@ namespace ShooterPrototype.Player
                 "/profile/ensure",
                 requestBody,
                 (ok, json, error) => ParseProfileResponse(ok, json, error, onCompleted));
+        }
+
+        public IEnumerator FetchLeaderboard(
+            int limit,
+            Action<bool, LeaderboardEntryDto[], string> onCompleted)
+        {
+            var normalizedLimit = Mathf.Clamp(limit, 1, 25);
+            var path = $"/profile/leaderboard?limit={normalizedLimit}";
+            yield return SendRequest(
+                UnityWebRequest.kHttpVerbGET,
+                path,
+                null,
+                (ok, json, error) => ParseLeaderboardResponse(ok, json, error, onCompleted));
         }
 
         public IEnumerator PurchaseSkin(
@@ -438,14 +481,71 @@ namespace ShooterPrototype.Player
         public IEnumerator RecordMatchStats(
             string playerId,
             PlayerProfileMatchStatsRequest request,
-            Action<bool, PlayerProfileDto, string> onCompleted)
+            Action<bool, int, PlayerProfileDto, string> onCompleted)
         {
             var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/match-stats";
             yield return SendRequest(
                 UnityWebRequest.kHttpVerbPOST,
                 path,
                 request,
-                (ok, json, error) => ParseProfileResponse(ok, json, error, onCompleted));
+                (ok, json, error) => ParseMatchStatsResponse(ok, json, error, onCompleted));
+        }
+
+        private static void ParseMatchStatsResponse(
+            bool ok,
+            string json,
+            string error,
+            Action<bool, int, PlayerProfileDto, string> onCompleted)
+        {
+            if (!ok)
+            {
+                onCompleted?.Invoke(false, 0, null, ExtractErrorMessage(json, error));
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                onCompleted?.Invoke(false, 0, null, "Empty match stats response.");
+                return;
+            }
+
+            PlayerProfileMatchStatsResponse response;
+            try
+            {
+                response = ParseJson<PlayerProfileMatchStatsResponse>(json);
+            }
+            catch (Exception exception)
+            {
+                onCompleted?.Invoke(false, 0, null, exception.Message);
+                return;
+            }
+
+            if (response == null || !response.ok)
+            {
+                onCompleted?.Invoke(
+                    false,
+                    0,
+                    null,
+                    response != null && !string.IsNullOrWhiteSpace(response.message)
+                        ? response.message
+                        : "Match stats request failed.");
+                return;
+            }
+
+            var profile = response.profile;
+            if (profile == null)
+            {
+                var fallback = ParseJson<PlayerProfileResponse>(json);
+                profile = fallback?.profile;
+            }
+
+            if (profile == null)
+            {
+                onCompleted?.Invoke(false, 0, null, "Match stats response missing profile.");
+                return;
+            }
+
+            onCompleted?.Invoke(true, response.ratingDelta, profile, string.Empty);
         }
 
         private static void ParseProfileResponse(
@@ -479,6 +579,39 @@ namespace ShooterPrototype.Player
             }
 
             onCompleted?.Invoke(true, response.profile, string.Empty);
+        }
+
+        private static void ParseLeaderboardResponse(
+            bool ok,
+            string json,
+            string error,
+            Action<bool, LeaderboardEntryDto[], string> onCompleted)
+        {
+            if (!ok)
+            {
+                onCompleted?.Invoke(false, null, ExtractErrorMessage(json, error));
+                return;
+            }
+
+            var response = ParseJson<LeaderboardResponse>(json);
+            if (response == null)
+            {
+                onCompleted?.Invoke(false, null, "Invalid leaderboard response.");
+                return;
+            }
+
+            if (!response.ok)
+            {
+                var message = !string.IsNullOrWhiteSpace(response.message)
+                    ? response.message
+                    : !string.IsNullOrWhiteSpace(response.error)
+                        ? response.error
+                        : "Invalid leaderboard response.";
+                onCompleted?.Invoke(false, null, message);
+                return;
+            }
+
+            onCompleted?.Invoke(true, response.entries ?? System.Array.Empty<LeaderboardEntryDto>(), string.Empty);
         }
 
         private static void ParseCaseOpenResponse(

@@ -128,7 +128,7 @@ function getPlayerByExternalId(externalPlayerId) {
     .prepare(
       `SELECT p.id, p.external_player_id, p.created_at, p.updated_at,
               pp.nickname, pp.selected_character_model, pp.currency_balance,
-              pp.starter_pack_granted, pp.updated_at AS profile_updated_at
+              pp.starter_pack_granted, pp.rating, pp.updated_at AS profile_updated_at
        FROM players p
        LEFT JOIN player_profiles pp ON pp.player_id = p.id
        WHERE p.external_player_id = ?`
@@ -395,6 +395,7 @@ function buildProfileResponse(playerRow) {
     currencyBalance: Number.isFinite(playerRow.currency_balance)
       ? playerRow.currency_balance
       : 0,
+    rating: Number.isFinite(playerRow.rating) ? Math.max(0, playerRow.rating) : 1000,
     starterPackGranted: !!playerRow.starter_pack_granted,
     ownedSkins: ownedSkins,
     ownedSkinQuantities: getOwnedSkinQuantities(playerRow.id),
@@ -455,6 +456,15 @@ function getPlayerMatchStats(playerId) {
   };
 }
 
+function calculateRatingDelta(placement, kills) {
+  const brSize = 20;
+  const normalizedPlacement = Math.max(1, Math.min(brSize, Math.floor(Number(placement) || brSize)));
+  const normalizedKills = Math.max(0, Math.floor(Number(kills) || 0));
+  const placementDelta = Math.round(22 - ((normalizedPlacement - 1) / (brSize - 1)) * 44);
+  const killBonus = Math.min(normalizedKills * 3, 15);
+  return Math.max(-30, Math.min(30, placementDelta + killBonus));
+}
+
 function recordMatchStats(externalPlayerId, payload) {
   const normalizedSourceId = String(payload && payload.sourceId ? payload.sourceId : "").trim();
   if (!normalizedSourceId) {
@@ -481,18 +491,22 @@ function recordMatchStats(externalPlayerId, payload) {
   const timestamp = nowMs();
 
   try {
+    let ratingDelta = 0;
     const alreadyReported = db.transaction(() => {
       const existing = db
         .prepare(
-          `SELECT id
+          `SELECT id, rating_delta
            FROM player_match_stat_reports
            WHERE player_id = ? AND source_id = ?`
         )
         .get(playerRow.id, normalizedSourceId);
 
       if (existing) {
+        ratingDelta = Number.isFinite(existing.rating_delta) ? existing.rating_delta : 0;
         return true;
       }
+
+      ratingDelta = calculateRatingDelta(placement, kills);
 
       db.prepare(
         `UPDATE player_match_stats
@@ -507,10 +521,17 @@ function recordMatchStats(externalPlayerId, payload) {
       ).run(kills, deaths, won ? 1 : 0, placement, damageDealt, timestamp, playerRow.id);
 
       db.prepare(
+        `UPDATE player_profiles
+         SET rating = MAX(0, rating + ?),
+             updated_at = ?
+         WHERE player_id = ?`
+      ).run(ratingDelta, timestamp, playerRow.id);
+
+      db.prepare(
         `INSERT INTO player_match_stat_reports
-         (player_id, source_id, reported_at)
-         VALUES (?, ?, ?)`
-      ).run(playerRow.id, normalizedSourceId, timestamp);
+         (player_id, source_id, reported_at, rating_delta)
+         VALUES (?, ?, ?, ?)`
+      ).run(playerRow.id, normalizedSourceId, timestamp, ratingDelta);
 
       return false;
     })();
@@ -518,6 +539,7 @@ function recordMatchStats(externalPlayerId, payload) {
     return {
       ok: true,
       alreadyReported,
+      ratingDelta,
       profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)),
     };
   } catch (error) {
@@ -1256,6 +1278,29 @@ function grantMatchCurrency(externalPlayerId, amount, sourceId) {
   }
 }
 
+function getLeaderboard(limit = 25) {
+  const db = openDatabase();
+  const normalizedLimit = Math.max(1, Math.min(25, Math.floor(Number(limit) || 25)));
+  const rows = db
+    .prepare(
+      `SELECT COALESCE(NULLIF(TRIM(pp.nickname), ''), 'Игрок') AS nickname,
+              pp.rating,
+              p.external_player_id AS player_id
+       FROM player_profiles pp
+       INNER JOIN players p ON p.id = pp.player_id
+       ORDER BY pp.rating DESC, pp.updated_at ASC
+       LIMIT ?`
+    )
+    .all(normalizedLimit);
+
+  return rows.map((row, index) => ({
+    rank: index + 1,
+    nickname: row.nickname || "Игрок",
+    rating: Number.isFinite(row.rating) ? Math.max(0, row.rating) : 1000,
+    playerId: row.player_id || "",
+  }));
+}
+
 module.exports = {
   ensurePlayer,
   getProfile: (externalPlayerId) => {
@@ -1280,6 +1325,7 @@ module.exports = {
   setSelectedCharacterModel,
   grantMatchCurrency,
   recordMatchStats,
+  getLeaderboard,
   playerOwnsSkin,
   isNicknameAvailable,
   resolvePlayerNickname,

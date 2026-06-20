@@ -59,6 +59,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerBoneHitbox.cs" />
     <Compile Include="Assets\Scripts\Network\NetworkConfig.cs" />
     <Compile Include="Assets\Scripts\Player\NetworkPerformanceMonitor.cs" />
+    <Compile Include="Assets\Scripts\Player\MatchRatingUtility.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\EnvMapAnimator.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuNicknameEditor.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerHitboxCleanup.cs" />
@@ -78,12 +79,14 @@
     <Compile Include="Assets\Scripts\Network\RealtimeSnapshotBinaryCodec.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark02.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponKindUtility.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuNotificationState.cs" />
     <Compile Include="Assets\Scripts\Player\PickupSpawnZone.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerHeadMaskSelector.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponLoadout.cs" />
     <Compile Include="Assets\Scripts\Matchmaking\QueueServiceMock.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerCurrencyService.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponBlockLayers.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuNavNotificationBadges.cs" />
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_SimpleTranslate.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyFirstPersonArmsPresenter.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\MotionController.cs" />
@@ -211,6 +214,7 @@
     <Compile Include="Assets\Scripts\UI\MainMenuStatsPanel.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\DropdownSample.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexColorCycler.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuLeaderboardPanel.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerHealth.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponBlockUtility.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo_DeleteAfterDelay.cs" />

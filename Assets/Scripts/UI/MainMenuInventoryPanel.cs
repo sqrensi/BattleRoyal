@@ -22,6 +22,7 @@ namespace ShooterPrototype.UI
         private static readonly Color ScrollTrackColor = new Color(0.1f, 0.12f, 0.14f, 0.55f);
         private static readonly Color ScrollHandleColor = new Color(0.24f, 0.28f, 0.32f, 0.92f);
         private static readonly Color TitleColor = new Color(0.94f, 0.96f, 0.98f, 0.98f);
+        private static readonly Color NotificationDotColor = new Color(0.95f, 0.82f, 0.22f, 1f);
 
         [SerializeField] private float edgeMargin = 44f;
         [SerializeField] private float panelWidth = 528f;
@@ -49,6 +50,10 @@ namespace ShooterPrototype.UI
         private Button casesTabButton;
         private GameObject skinsScrollObject;
         private GameObject casesScrollObject;
+        private ScrollRect skinsScrollRect;
+        private ScrollRect casesScrollRect;
+        private RectTransform skinsViewportRect;
+        private RectTransform casesViewportRect;
         private RectTransform casesContentRect;
         private bool caseOpenInProgress;
 
@@ -61,9 +66,11 @@ namespace ShooterPrototype.UI
         private float itemCellHeight;
         private MainMenuPlayerPreview playerPreview;
         private MainMenuUiSoundController uiSound;
+        private bool overlayHidden;
         private bool isVisible;
         private Coroutine transitionCoroutine;
         private Coroutine pulseCoroutine;
+        private Coroutine visibilityMarkCoroutine;
         private string pendingPulseItemId;
 
         private sealed class ItemSlotVisual
@@ -72,6 +79,8 @@ namespace ShooterPrototype.UI
             public Image Background;
             public Button Button;
             public TMP_Text QuantityLabel;
+            public RectTransform RootRect;
+            public GameObject NotificationDot;
         }
 
         private sealed class CaseSlotVisual
@@ -80,6 +89,8 @@ namespace ShooterPrototype.UI
             public Image Background;
             public Button OpenButton;
             public TMP_Text QuantityLabel;
+            public RectTransform RootRect;
+            public GameObject NotificationDot;
         }
 
         public void Configure(MainMenuPlayerPreview preview, MainMenuUiSoundController sound)
@@ -135,6 +146,7 @@ namespace ShooterPrototype.UI
             PlayerSkinOwnershipService.OwnershipChanged += RebuildItems;
             PlayerSkinOwnershipService.EquipmentChanged += OnEquipmentChanged;
             PlayerProfileService.ProfileSynced += OnProfileSynced;
+            MainMenuNotificationState.Changed += OnNotificationStateChanged;
         }
 
         private void OnDisable()
@@ -142,13 +154,25 @@ namespace ShooterPrototype.UI
             PlayerSkinOwnershipService.OwnershipChanged -= RebuildItems;
             PlayerSkinOwnershipService.EquipmentChanged -= OnEquipmentChanged;
             PlayerProfileService.ProfileSynced -= OnProfileSynced;
+            MainMenuNotificationState.Changed -= OnNotificationStateChanged;
+        }
+
+        private void OnNotificationStateChanged()
+        {
+            RefreshSlotNotificationDots();
         }
 
         private void OnProfileSynced()
         {
+            RebuildItems();
             if (isVisible && activeTab == InventoryTab.Cases)
             {
                 RebuildCases();
+            }
+            else if (isVisible)
+            {
+                RefreshSlotNotificationDots();
+                ScheduleMarkVisibleItemsAsViewed();
             }
         }
 
@@ -195,6 +219,30 @@ namespace ShooterPrototype.UI
             return playerPreview;
         }
 
+        public void SetHiddenForOverlay(bool hidden)
+        {
+            overlayHidden = hidden;
+            if (panelGroup == null)
+            {
+                return;
+            }
+
+            if (hidden)
+            {
+                panelGroup.alpha = 0f;
+                panelGroup.interactable = false;
+                panelGroup.blocksRaycasts = false;
+                return;
+            }
+
+            if (isVisible)
+            {
+                panelGroup.alpha = 1f;
+                panelGroup.interactable = true;
+                panelGroup.blocksRaycasts = true;
+            }
+        }
+
         public void Show()
         {
             if (isVisible)
@@ -209,6 +257,7 @@ namespace ShooterPrototype.UI
                     RebuildCases();
                 }
 
+                ScheduleMarkVisibleItemsAsViewed();
                 return;
             }
 
@@ -216,6 +265,7 @@ namespace ShooterPrototype.UI
             RebuildItems();
             RebuildCases();
             StartTransition(show: true);
+            ScheduleMarkVisibleItemsAsViewed();
         }
 
         public void Hide()
@@ -330,6 +380,8 @@ namespace ShooterPrototype.UI
             {
                 RebuildCases();
             }
+
+            ScheduleMarkVisibleItemsAsViewed();
         }
 
         private static void StyleTabButton(Button button, bool selected)
@@ -358,16 +410,19 @@ namespace ShooterPrototype.UI
             scrollRectTransform.offsetMax = new Vector2(-innerPadding, -(headerHeight + innerPadding));
 
             var scroll = skinsScrollObject.AddComponent<ScrollRect>();
+            skinsScrollRect = scroll;
             scroll.horizontal = false;
             scroll.vertical = true;
             scroll.movementType = ScrollRect.MovementType.Clamped;
             scroll.scrollSensitivity = 28f;
             scroll.inertia = true;
             scroll.decelerationRate = 0.135f;
+            scroll.onValueChanged.AddListener(_ => MarkVisibleUnviewedItemsAsSeen());
 
             var viewportObject = new GameObject("Viewport");
             viewportObject.transform.SetParent(skinsScrollObject.transform, false);
             var viewportRect = viewportObject.AddComponent<RectTransform>();
+            skinsViewportRect = viewportRect;
             viewportRect.anchorMin = Vector2.zero;
             viewportRect.anchorMax = Vector2.one;
             viewportRect.offsetMin = Vector2.zero;
@@ -423,16 +478,19 @@ namespace ShooterPrototype.UI
             scrollRectTransform.offsetMax = new Vector2(-innerPadding, -(headerHeight + innerPadding));
 
             var scroll = casesScrollObject.AddComponent<ScrollRect>();
+            casesScrollRect = scroll;
             scroll.horizontal = false;
             scroll.vertical = true;
             scroll.movementType = ScrollRect.MovementType.Clamped;
             scroll.scrollSensitivity = 28f;
             scroll.inertia = true;
             scroll.decelerationRate = 0.135f;
+            scroll.onValueChanged.AddListener(_ => MarkVisibleUnviewedItemsAsSeen());
 
             var viewportObject = new GameObject("Viewport");
             viewportObject.transform.SetParent(casesScrollObject.transform, false);
             var viewportRect = viewportObject.AddComponent<RectTransform>();
+            casesViewportRect = viewportRect;
             viewportRect.anchorMin = Vector2.zero;
             viewportRect.anchorMax = Vector2.one;
             viewportRect.offsetMin = Vector2.zero;
@@ -512,12 +570,20 @@ namespace ShooterPrototype.UI
             {
                 caseSlots.Add(CreateCaseSlot(casesContentRect, ownedCases[i].definition, ownedCases[i].quantity));
             }
+
+            RefreshSlotNotificationDots();
+            ScheduleMarkVisibleItemsAsViewed();
         }
 
         private CaseSlotVisual CreateCaseSlot(Transform parent, CaseDefinition caseDefinition, int quantity)
         {
             var slotObject = new GameObject("Case_" + caseDefinition.Id);
             slotObject.transform.SetParent(parent, false);
+            var rootRect = slotObject.GetComponent<RectTransform>();
+            if (rootRect == null)
+            {
+                rootRect = slotObject.AddComponent<RectTransform>();
+            }
 
             var slotLayout = slotObject.AddComponent<LayoutElement>();
             slotLayout.preferredWidth = itemCellWidth;
@@ -599,12 +665,17 @@ namespace ShooterPrototype.UI
             quantityLabel.text = quantity > 1 ? "x" + quantity : string.Empty;
             quantityObject.SetActive(quantity > 1);
 
+            var notificationDot = CreateNotificationDot(slotObject.transform);
+            notificationDot.SetActive(MainMenuNotificationState.IsCaseUnviewed(caseDefinition.Id));
+
             return new CaseSlotVisual
             {
                 Definition = caseDefinition,
                 Background = background,
                 OpenButton = openButton,
-                QuantityLabel = quantityLabel
+                QuantityLabel = quantityLabel,
+                RootRect = rootRect,
+                NotificationDot = notificationDot
             };
         }
 
@@ -698,14 +769,8 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            if (panelGroup != null)
-            {
-                panelGroup.interactable = false;
-                panelGroup.blocksRaycasts = false;
-            }
-
             var sectionController = FindObjectOfType<MainMenuSectionController>();
-            sectionController?.SetBackNavigationVisible(false);
+            sectionController?.SetCaseOpeningMode(true);
 
             MainMenuCaseOpeningOverlay.Show(
                 canvasRect,
@@ -713,13 +778,7 @@ namespace ShooterPrototype.UI
                 rolledSkinId,
                 () =>
                 {
-                    if (isVisible && panelGroup != null)
-                    {
-                        panelGroup.interactable = true;
-                        panelGroup.blocksRaycasts = true;
-                    }
-
-                    sectionController?.SetBackNavigationVisible(true);
+                    sectionController?.SetCaseOpeningMode(false);
 
                     if (PlayerSkinSelectionService.TryGetDefinitionById(rolledSkinId, out var item))
                     {
@@ -752,6 +811,166 @@ namespace ShooterPrototype.UI
             }
 
             RefreshEquippedVisuals();
+            RefreshSlotNotificationDots();
+            ScheduleMarkVisibleItemsAsViewed();
+        }
+
+        private GameObject CreateNotificationDot(Transform parent)
+        {
+            var dotObject = new GameObject("NotificationDot", typeof(RectTransform));
+            dotObject.transform.SetParent(parent, false);
+
+            var rect = dotObject.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0f, 1f);
+            rect.anchoredPosition = new Vector2(8f, -8f);
+            rect.sizeDelta = new Vector2(10f, 10f);
+
+            var image = dotObject.AddComponent<Image>();
+            image.sprite = GetWhiteSprite();
+            image.type = Image.Type.Simple;
+            image.color = NotificationDotColor;
+            image.raycastTarget = false;
+
+            return dotObject;
+        }
+
+        private void RefreshSlotNotificationDots()
+        {
+            for (var i = 0; i < itemSlots.Count; i++)
+            {
+                var slot = itemSlots[i];
+                if (slot?.NotificationDot == null || !slot.Definition.IsValid)
+                {
+                    continue;
+                }
+
+                slot.NotificationDot.SetActive(MainMenuNotificationState.IsSkinUnviewed(slot.Definition.Id));
+            }
+
+            for (var i = 0; i < caseSlots.Count; i++)
+            {
+                var slot = caseSlots[i];
+                if (slot?.NotificationDot == null || !slot.Definition.IsValid)
+                {
+                    continue;
+                }
+
+                slot.NotificationDot.SetActive(MainMenuNotificationState.IsCaseUnviewed(slot.Definition.Id));
+            }
+        }
+
+        private void ScheduleMarkVisibleItemsAsViewed()
+        {
+            if (!isVisible || overlayHidden)
+            {
+                return;
+            }
+
+            if (visibilityMarkCoroutine != null)
+            {
+                StopCoroutine(visibilityMarkCoroutine);
+            }
+
+            visibilityMarkCoroutine = StartCoroutine(MarkVisibleItemsAsViewedRoutine());
+        }
+
+        private IEnumerator MarkVisibleItemsAsViewedRoutine()
+        {
+            yield return null;
+            Canvas.ForceUpdateCanvases();
+            MarkVisibleUnviewedItemsAsSeen();
+            visibilityMarkCoroutine = null;
+        }
+
+        private void MarkVisibleUnviewedItemsAsSeen()
+        {
+            if (!isVisible || overlayHidden)
+            {
+                return;
+            }
+
+            var anyMarked = false;
+
+            if (activeTab == InventoryTab.Skins && skinsViewportRect != null)
+            {
+                for (var i = 0; i < itemSlots.Count; i++)
+                {
+                    var slot = itemSlots[i];
+                    if (slot?.RootRect == null || !slot.Definition.IsValid)
+                    {
+                        continue;
+                    }
+
+                    if (!MainMenuNotificationState.IsSkinUnviewed(slot.Definition.Id))
+                    {
+                        continue;
+                    }
+
+                    if (!IntersectsViewport(slot.RootRect, skinsViewportRect))
+                    {
+                        continue;
+                    }
+
+                    MainMenuNotificationState.MarkSkinViewed(slot.Definition.Id);
+                    if (slot.NotificationDot != null)
+                    {
+                        slot.NotificationDot.SetActive(false);
+                    }
+
+                    anyMarked = true;
+                }
+            }
+            else if (activeTab == InventoryTab.Cases && casesViewportRect != null)
+            {
+                for (var i = 0; i < caseSlots.Count; i++)
+                {
+                    var slot = caseSlots[i];
+                    if (slot?.RootRect == null || !slot.Definition.IsValid)
+                    {
+                        continue;
+                    }
+
+                    if (!MainMenuNotificationState.IsCaseUnviewed(slot.Definition.Id))
+                    {
+                        continue;
+                    }
+
+                    if (!IntersectsViewport(slot.RootRect, casesViewportRect))
+                    {
+                        continue;
+                    }
+
+                    MainMenuNotificationState.MarkCaseViewed(slot.Definition.Id);
+                    if (slot.NotificationDot != null)
+                    {
+                        slot.NotificationDot.SetActive(false);
+                    }
+
+                    anyMarked = true;
+                }
+            }
+
+            if (anyMarked)
+            {
+                RefreshSlotNotificationDots();
+            }
+        }
+
+        private static bool IntersectsViewport(RectTransform target, RectTransform viewport)
+        {
+            if (target == null || viewport == null)
+            {
+                return false;
+            }
+
+            var bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(viewport, target);
+            var viewportRect = viewport.rect;
+            return bounds.max.y > viewportRect.yMin &&
+                   bounds.min.y < viewportRect.yMax &&
+                   bounds.max.x > viewportRect.xMin &&
+                   bounds.min.x < viewportRect.xMax;
         }
 
         private Scrollbar CreateVerticalScrollbar(Transform parent)
@@ -800,6 +1019,11 @@ namespace ShooterPrototype.UI
         {
             var slotObject = new GameObject("Item_" + item.Id);
             slotObject.transform.SetParent(parent, false);
+            var rootRect = slotObject.GetComponent<RectTransform>();
+            if (rootRect == null)
+            {
+                rootRect = slotObject.AddComponent<RectTransform>();
+            }
 
             var slotLayout = slotObject.AddComponent<LayoutElement>();
             slotLayout.preferredWidth = itemCellWidth;
@@ -859,12 +1083,18 @@ namespace ShooterPrototype.UI
             quantityLabel.color = TitleColor;
             quantityLabel.raycastTarget = false;
 
+            var notificationDot = CreateNotificationDot(slotObject.transform);
+            var showNotification = MainMenuNotificationState.IsSkinUnviewed(item.Id);
+            notificationDot.SetActive(showNotification);
+
             return new ItemSlotVisual
             {
                 Definition = item,
                 Background = background,
                 Button = button,
-                QuantityLabel = quantityLabel
+                QuantityLabel = quantityLabel,
+                RootRect = rootRect,
+                NotificationDot = notificationDot
             };
         }
 
@@ -1067,6 +1297,11 @@ namespace ShooterPrototype.UI
             panelGroup.interactable = show;
             panelGroup.blocksRaycasts = show;
             transitionCoroutine = null;
+
+            if (show)
+            {
+                ScheduleMarkVisibleItemsAsViewed();
+            }
         }
 
         private static void EnableViewportScrollCapture(GameObject viewportObject)

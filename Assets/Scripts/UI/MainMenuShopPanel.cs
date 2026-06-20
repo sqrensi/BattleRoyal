@@ -122,6 +122,7 @@ namespace ShooterPrototype.UI
             if (isVisible)
             {
                 RebuildItems();
+                RefreshSlotVisuals();
                 return;
             }
 
@@ -145,12 +146,14 @@ namespace ShooterPrototype.UI
         {
             PlayerCurrencyService.BalanceChanged += RefreshSlotVisuals;
             PlayerSkinOwnershipService.OwnershipChanged += RefreshSlotVisuals;
+            PlayerProfileService.ProfileSynced += RefreshSlotVisuals;
         }
 
         private void OnDisable()
         {
             PlayerCurrencyService.BalanceChanged -= RefreshSlotVisuals;
             PlayerSkinOwnershipService.OwnershipChanged -= RefreshSlotVisuals;
+            PlayerProfileService.ProfileSynced -= RefreshSlotVisuals;
         }
 
         private void ComputeCellSize(float canvasWidth)
@@ -303,7 +306,7 @@ namespace ShooterPrototype.UI
         {
             RefreshCaseSlotVisuals();
 
-            var balance = PlayerCurrencyService.Balance;
+            var balance = PlayerProfileService.GetSpendableBalance();
             for (var i = 0; i < itemSlots.Count; i++)
             {
                 var slot = itemSlots[i];
@@ -379,7 +382,7 @@ namespace ShooterPrototype.UI
 
         private void RefreshCaseSlotVisuals()
         {
-            var balance = PlayerCurrencyService.Balance;
+            var balance = PlayerProfileService.GetSpendableBalance();
             for (var i = 0; i < caseSlots.Count; i++)
             {
                 var slot = caseSlots[i];
@@ -504,7 +507,7 @@ namespace ShooterPrototype.UI
             }
 
             var price = CaseCatalogService.GetPrice(caseDefinition);
-            if (PlayerCurrencyService.Balance < price)
+            if (PlayerProfileService.GetSpendableBalance() < price)
             {
                 uiSound?.PlayButton();
                 return;
@@ -512,17 +515,21 @@ namespace ShooterPrototype.UI
 
             if (PlayerProfileService.IsServerSynced)
             {
-                var menu = FindObjectOfType<MainMenuController>();
-                if (menu != null && menu.ProfileApiClient != null)
+                if (!PlayerProfileService.TryResolveApiClient(out var apiClient))
                 {
-                    StartCoroutine(PurchaseCaseFromServerRoutine(menu, caseDefinition));
+                    uiSound?.PlayButton();
+                    Debug.LogWarning("[MainMenuShopPanel] Case purchase unavailable until server profile is ready.");
                     return;
                 }
+
+                StartCoroutine(PurchaseCaseFromServerRoutine(apiClient, caseDefinition));
+                return;
             }
 
             if (!CaseOpeningService.TryPurchaseLocal(caseDefinition))
             {
                 uiSound?.PlayButton();
+                Debug.LogWarning("[MainMenuShopPanel] Case purchase failed.");
                 return;
             }
 
@@ -530,24 +537,38 @@ namespace ShooterPrototype.UI
             RefreshSlotVisuals();
         }
 
-        private IEnumerator PurchaseCaseFromServerRoutine(MainMenuController menu, CaseDefinition caseDefinition)
+        private IEnumerator PurchaseCaseFromServerRoutine(
+            PlayerProfileApiClient apiClient,
+            CaseDefinition caseDefinition)
         {
             casePurchaseInProgress = true;
             RefreshCaseSlotVisuals();
 
+            var playerId = PlayerIdentityService.GetOrCreatePlayerId();
             var success = false;
+            var error = string.Empty;
             yield return PlayerProfileService.PurchaseCase(
                 this,
-                menu.ProfileApiClient,
-                menu.LocalPlayerId,
+                apiClient,
+                playerId,
                 caseDefinition.Id,
-                (ok, _) => success = ok);
+                (ok, responseError) =>
+                {
+                    success = ok;
+                    error = responseError;
+                });
 
             casePurchaseInProgress = false;
             uiSound?.PlayButton();
             if (success)
             {
                 RefreshSlotVisuals();
+                yield break;
+            }
+
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                Debug.LogWarning($"[MainMenuShopPanel] Case purchase failed: {error}");
             }
         }
 
@@ -694,6 +715,7 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            MainMenuNotificationState.MarkSkinAsNew(item.Id);
             uiSound?.PlayButton();
             RefreshSlotVisuals();
         }

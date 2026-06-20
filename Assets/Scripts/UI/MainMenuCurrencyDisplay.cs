@@ -53,12 +53,14 @@ namespace ShooterPrototype.UI
         private void OnEnable()
         {
             PlayerCurrencyService.BalanceChanged += Refresh;
+            PlayerProfileService.ProfileSynced += Refresh;
             Refresh();
         }
 
         private void OnDisable()
         {
             PlayerCurrencyService.BalanceChanged -= Refresh;
+            PlayerProfileService.ProfileSynced -= Refresh;
         }
 
         public void Refresh()
@@ -68,7 +70,7 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            valueText.text = FormatBalance(PlayerCurrencyService.Balance);
+            valueText.text = FormatBalance(PlayerProfileService.GetSpendableBalance());
         }
 
         private static string FormatBalance(int balance)

@@ -541,6 +541,13 @@ namespace ShooterPrototype.UI
             {
                 editor.Configure(this, profileApiClient, uiSound);
             }
+
+            var leaderboard = GetComponent<MainMenuLeaderboardPanel>();
+            if (leaderboard != null)
+            {
+                leaderboard.Configure(this, profileApiClient);
+                leaderboard.RequestRefresh();
+            }
         }
 
         private void RefreshPlayerPreview(bool allow)
@@ -612,6 +619,15 @@ namespace ShooterPrototype.UI
                 if (profileApiClient == null)
                 {
                     profileApiClient = networkLauncher.gameObject.AddComponent<PlayerProfileApiClient>();
+                }
+            }
+
+            if (profileApiClient == null && !Application.isBatchMode)
+            {
+                profileApiClient = GetComponent<PlayerProfileApiClient>();
+                if (profileApiClient == null)
+                {
+                    profileApiClient = gameObject.AddComponent<PlayerProfileApiClient>();
                 }
             }
 

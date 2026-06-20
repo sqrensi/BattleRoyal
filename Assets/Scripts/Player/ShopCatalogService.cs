@@ -200,6 +200,12 @@ namespace ShooterPrototype.Player
             return results;
         }
 
+        public static bool TryGetSkinDefinition(string skinId, out PlayerSkinDefinition definition)
+        {
+            EnsureLoaded();
+            return TryResolveShopDefinition(skinId, out definition) && definition.IsValid;
+        }
+
         private static bool TryResolveShopDefinition(string skinId, out PlayerSkinDefinition definition)
         {
             if (PlayerSkinSelectionService.TryGetDefinitionById(skinId, out definition) &&

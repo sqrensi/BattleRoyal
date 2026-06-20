@@ -31,6 +31,7 @@ namespace ShooterPrototype.UI
         [SerializeField] private float actionButtonWidth = 104f;
 
         private CanvasGroup canvasGroup;
+        private TMP_Text ratingText;
         private TMP_InputField nicknameInput;
         private TMP_Text statusText;
         private TMP_Text actionButtonLabel;
@@ -43,6 +44,7 @@ namespace ShooterPrototype.UI
         private bool isEditing;
 
         public CanvasGroup CanvasGroup => canvasGroup;
+        public RectTransform RootRect { get; private set; }
 
         public void Configure(MainMenuController controller, PlayerProfileApiClient apiClient, MainMenuUiSoundController sound)
         {
@@ -52,22 +54,36 @@ namespace ShooterPrototype.UI
             RefreshFromProfile();
         }
 
-        public void Build(RectTransform canvasRect)
+        public void Build(RectTransform canvasRect, RectTransform stackParent = null)
         {
             if (built || canvasRect == null)
             {
                 return;
             }
 
+            var parent = stackParent != null ? stackParent : canvasRect;
             var rootObject = new GameObject("MainMenuNicknameEditor");
-            rootObject.transform.SetParent(canvasRect, false);
-
-            var rootRect = rootObject.AddComponent<RectTransform>();
-            rootRect.anchorMin = new Vector2(1f, 0f);
-            rootRect.anchorMax = new Vector2(1f, 0f);
-            rootRect.pivot = new Vector2(1f, 0f);
-            rootRect.anchoredPosition = new Vector2(-edgeMargin, bottomOffset);
-            rootRect.sizeDelta = new Vector2(panelWidth, 0f);
+            rootObject.transform.SetParent(parent, false);
+            RootRect = rootObject.AddComponent<RectTransform>();
+            var rootRect = RootRect;
+            if (stackParent != null)
+            {
+                var layoutElement = rootObject.AddComponent<LayoutElement>();
+                layoutElement.preferredWidth = panelWidth;
+                layoutElement.minWidth = panelWidth;
+                rootRect.anchorMin = new Vector2(0f, 1f);
+                rootRect.anchorMax = new Vector2(1f, 1f);
+                rootRect.pivot = new Vector2(0.5f, 1f);
+                rootRect.sizeDelta = Vector2.zero;
+            }
+            else
+            {
+                rootRect.anchorMin = new Vector2(1f, 0f);
+                rootRect.anchorMax = new Vector2(1f, 0f);
+                rootRect.pivot = new Vector2(1f, 0f);
+                rootRect.anchoredPosition = new Vector2(-edgeMargin, bottomOffset);
+                rootRect.sizeDelta = new Vector2(panelWidth, 0f);
+            }
 
             var background = rootObject.AddComponent<Image>();
             background.sprite = GetWhiteSprite();
@@ -93,6 +109,29 @@ namespace ShooterPrototype.UI
             var fitter = rootObject.AddComponent<ContentSizeFitter>();
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var ratingLabelObject = new GameObject("RatingLabel");
+            ratingLabelObject.transform.SetParent(rootObject.transform, false);
+            var ratingLabelLayout = ratingLabelObject.AddComponent<LayoutElement>();
+            ratingLabelLayout.preferredHeight = 20f;
+            var ratingLabelText = ratingLabelObject.AddComponent<TextMeshProUGUI>();
+            ratingLabelText.text = "Рейтинг";
+            ratingLabelText.fontSize = labelFontSize;
+            ratingLabelText.fontStyle = FontStyles.Bold;
+            ratingLabelText.alignment = TextAlignmentOptions.MidlineLeft;
+            ratingLabelText.color = LabelColor;
+            ratingLabelText.raycastTarget = false;
+
+            var ratingObject = new GameObject("RatingValue");
+            ratingObject.transform.SetParent(rootObject.transform, false);
+            var ratingLayout = ratingObject.AddComponent<LayoutElement>();
+            ratingLayout.preferredHeight = 28f;
+            ratingText = ratingObject.AddComponent<TextMeshProUGUI>();
+            ratingText.fontSize = 24f;
+            ratingText.fontStyle = FontStyles.Bold;
+            ratingText.alignment = TextAlignmentOptions.MidlineLeft;
+            ratingText.color = new Color(0.92f, 0.84f, 0.55f, 0.98f);
+            ratingText.raycastTarget = false;
 
             var labelObject = new GameObject("Label");
             labelObject.transform.SetParent(rootObject.transform, false);
@@ -157,6 +196,8 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            RefreshRatingFromProfile();
+
             if (!isEditing)
             {
                 RefreshNicknameFromProfile();
@@ -166,6 +207,16 @@ namespace ShooterPrototype.UI
             {
                 actionButton.interactable = PlayerProfileService.IsServerSynced;
             }
+        }
+
+        private void RefreshRatingFromProfile()
+        {
+            if (ratingText == null)
+            {
+                return;
+            }
+
+            ratingText.text = PlayerProfileService.Rating.ToString("N0");
         }
 
         private void RefreshNicknameFromProfile()

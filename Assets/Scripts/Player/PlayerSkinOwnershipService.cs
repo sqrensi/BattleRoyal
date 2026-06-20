@@ -130,7 +130,17 @@ namespace ShooterPrototype.Player
         public static IReadOnlyList<PlayerSkinDefinition> GetOwnedCatalogItems()
         {
             var owned = new List<PlayerSkinDefinition>(32);
+            var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             AppendOwnedFromSlots(owned);
+            for (var i = 0; i < owned.Count; i++)
+            {
+                if (owned[i].IsValid)
+                {
+                    seenIds.Add(owned[i].Id);
+                }
+            }
+
+            AppendMissingOwnedDefinitions(owned, seenIds);
             return owned;
         }
 
@@ -246,6 +256,57 @@ namespace ShooterPrototype.Player
         private static void AppendOwnedFromSlots(List<PlayerSkinDefinition> owned)
         {
             AppendOwnedFromSlots(PlayerSkinSelectionService.GetDisplaySlotOrder(), owned);
+        }
+
+        private static void AppendMissingOwnedDefinitions(
+            List<PlayerSkinDefinition> owned,
+            HashSet<string> seenIds)
+        {
+            if (PlayerProfileService.IsServerSynced)
+            {
+                var ownedSkinIds = PlayerProfileService.GetOwnedSkinIds();
+                for (var i = 0; i < ownedSkinIds.Count; i++)
+                {
+                    TryAppendOwnedDefinition(owned, seenIds, ownedSkinIds[i]);
+                }
+
+                return;
+            }
+
+            var shopItems = ShopCatalogService.GetShopDefinitions();
+            for (var i = 0; i < shopItems.Count; i++)
+            {
+                var item = shopItems[i];
+                if (item.IsValid && IsOwned(item.Id))
+                {
+                    TryAppendOwnedDefinition(owned, seenIds, item.Id);
+                }
+            }
+        }
+
+        private static void TryAppendOwnedDefinition(
+            List<PlayerSkinDefinition> owned,
+            HashSet<string> seenIds,
+            string skinId)
+        {
+            if (string.IsNullOrWhiteSpace(skinId) || seenIds.Contains(skinId) || !IsOwned(skinId))
+            {
+                return;
+            }
+
+            if (PlayerSkinSelectionService.TryGetDefinitionById(skinId, out var definition) &&
+                definition.IsValid)
+            {
+                owned.Add(definition);
+                seenIds.Add(skinId);
+                return;
+            }
+
+            if (ShopCatalogService.TryGetSkinDefinition(skinId, out definition) && definition.IsValid)
+            {
+                owned.Add(definition);
+                seenIds.Add(skinId);
+            }
         }
 
         private static bool IsDefaultOwnedSkin(string skinId)

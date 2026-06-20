@@ -23,7 +23,7 @@ namespace ShooterPrototype.UI
         private const int MatchCornerStatsLayoutVersion = 2;
         private const float GameOverPanelDelaySeconds = 5f;
         private const float GameOverAutoExitSeconds = 15f;
-        private const int GameOverPanelLayoutVersion = 3;
+        private const int GameOverPanelLayoutVersion = 5;
         private const int GameplayHintLayoutVersion = 2;
         private const int MatchWaitStatusLayoutVersion = 3;
         private const float GameplayHintOffsetX = 72f;
@@ -65,7 +65,9 @@ namespace ShooterPrototype.UI
         private GameObject gameOverPanel;
         private CanvasGroup gameOverPanelGroup;
         private Text gameOverTitleText;
-        private Text gameOverStatsText;
+        private Text gameOverPlacementText;
+        private Text gameOverKillsText;
+        private Text gameOverRewardsText;
         private Text gameOverHintText;
         private Image gameOverPanelBackground;
         private Button gameOverExitButton;
@@ -557,12 +559,9 @@ namespace ShooterPrototype.UI
                 gameOverTitleText.color = accentColor;
             }
 
-            if (gameOverStatsText != null)
-            {
-                gameOverStatsText.text =
-                    $"#{summary.Placement} место  ·  {summary.KillCount} киллов\n" +
-                    $"{summary.SurvivalSeconds} сек  ·  +{summary.CoinReward:N0} монет";
-            }
+            ApplyGameOverSummary(
+                summary,
+                MatchRatingUtility.CalculateDelta(summary.Placement, summary.KillCount));
 
             if (gameOverHintText != null)
             {
@@ -578,11 +577,11 @@ namespace ShooterPrototype.UI
 
         private IEnumerator GrantMatchRewardRoutine(int amount)
         {
-            var apiClient = FindObjectOfType<PlayerProfileApiClient>();
             var playerId = PlayerIdentityService.GetOrCreatePlayerId();
             var sourceId = ResolveMatchRewardSourceId();
 
-            if (apiClient == null || string.IsNullOrWhiteSpace(playerId))
+            if (!PlayerProfileService.TryResolveApiClient(out var apiClient) ||
+                string.IsNullOrWhiteSpace(playerId))
             {
                 PlayerCurrencyService.AddCurrency(amount);
                 matchRewardCoroutine = null;
@@ -608,14 +607,16 @@ namespace ShooterPrototype.UI
 
         private IEnumerator RecordMatchStatsRoutine(bool won, MatchOutcomeSummary summary)
         {
-            var apiClient = FindObjectOfType<PlayerProfileApiClient>();
             var playerId = PlayerIdentityService.GetOrCreatePlayerId();
             var sourceId = ResolveMatchRewardSourceId();
             var deaths = won ? 0 : 1;
             var damageDealt = MatchStatsTracker.DamageDealtThisMatch;
+            var fallbackDelta = MatchRatingUtility.CalculateDelta(summary.Placement, summary.KillCount);
 
-            if (apiClient == null || string.IsNullOrWhiteSpace(playerId))
+            if (!PlayerProfileService.TryResolveApiClient(out var apiClient) ||
+                string.IsNullOrWhiteSpace(playerId))
             {
+                UpdateGameOverRatingText(summary, fallbackDelta);
                 matchStatsCoroutine = null;
                 yield break;
             }
@@ -630,9 +631,43 @@ namespace ShooterPrototype.UI
                 summary.Placement,
                 won,
                 damageDealt,
-                (_, __) => { });
+                (success, ratingDelta, _) =>
+                {
+                    UpdateGameOverRatingText(
+                        summary,
+                        success ? ratingDelta : fallbackDelta);
+                });
 
             matchStatsCoroutine = null;
+        }
+
+        private void UpdateGameOverRatingText(MatchOutcomeSummary summary, int ratingDelta)
+        {
+            if (!gameOverPanelVisible)
+            {
+                return;
+            }
+
+            ApplyGameOverSummary(summary, ratingDelta);
+        }
+
+        private void ApplyGameOverSummary(MatchOutcomeSummary summary, int ratingDelta)
+        {
+            if (gameOverPlacementText != null)
+            {
+                gameOverPlacementText.text = $"ТОП {summary.Placement}";
+            }
+
+            if (gameOverKillsText != null)
+            {
+                gameOverKillsText.text = $"{summary.KillCount} киллов";
+            }
+
+            if (gameOverRewardsText != null)
+            {
+                gameOverRewardsText.text =
+                    $"+{summary.CoinReward:N0} монет  ·  {MatchRatingUtility.FormatDelta(ratingDelta)} рейтинг";
+            }
         }
 
         private string ResolveMatchRewardSourceId()
@@ -1157,7 +1192,9 @@ namespace ShooterPrototype.UI
                 gameOverPanel = null;
                 gameOverPanelGroup = null;
                 gameOverTitleText = null;
-                gameOverStatsText = null;
+                gameOverPlacementText = null;
+                gameOverKillsText = null;
+                gameOverRewardsText = null;
                 gameOverHintText = null;
                 gameOverExitButton = null;
                 gameOverPanelBackground = null;
@@ -1197,10 +1234,14 @@ namespace ShooterPrototype.UI
             panelRect.anchorMin = new Vector2(0.5f, 0.5f);
             panelRect.anchorMax = new Vector2(0.5f, 0.5f);
             panelRect.pivot = new Vector2(0.5f, 0.5f);
-            panelRect.sizeDelta = new Vector2(440f, 300f);
+            panelRect.sizeDelta = new Vector2(440f, 340f);
 
             gameOverPanelBackground = panelObject.AddComponent<Image>();
             gameOverPanelBackground.color = new Color(0.09f, 0.11f, 0.13f, 0.97f);
+
+            var bodyFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            var bodyColor = new Color(0.86f, 0.9f, 0.93f, 1f);
+            var rewardColor = new Color(0.92f, 0.84f, 0.55f, 1f);
 
             var titleObject = new GameObject("Title");
             titleObject.transform.SetParent(panelObject.transform, false);
@@ -1208,29 +1249,38 @@ namespace ShooterPrototype.UI
             titleRect.anchorMin = new Vector2(0.5f, 1f);
             titleRect.anchorMax = new Vector2(0.5f, 1f);
             titleRect.pivot = new Vector2(0.5f, 1f);
-            titleRect.anchoredPosition = new Vector2(0f, -32f);
+            titleRect.anchoredPosition = new Vector2(0f, -28f);
             titleRect.sizeDelta = new Vector2(380f, 48f);
             gameOverTitleText = titleObject.AddComponent<Text>();
-            gameOverTitleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            gameOverTitleText.font = bodyFont;
             gameOverTitleText.fontSize = 36;
             gameOverTitleText.fontStyle = FontStyle.Bold;
             gameOverTitleText.alignment = TextAnchor.MiddleCenter;
             gameOverTitleText.text = "Вы проиграли";
 
-            var statsObject = new GameObject("Stats");
-            statsObject.transform.SetParent(panelObject.transform, false);
-            var statsRect = statsObject.AddComponent<RectTransform>();
-            statsRect.anchorMin = new Vector2(0.5f, 0.5f);
-            statsRect.anchorMax = new Vector2(0.5f, 0.5f);
-            statsRect.pivot = new Vector2(0.5f, 0.5f);
-            statsRect.anchoredPosition = new Vector2(0f, 18f);
-            statsRect.sizeDelta = new Vector2(380f, 64f);
-            gameOverStatsText = statsObject.AddComponent<Text>();
-            gameOverStatsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            gameOverStatsText.fontSize = 21;
-            gameOverStatsText.alignment = TextAnchor.MiddleCenter;
-            gameOverStatsText.color = new Color(0.86f, 0.9f, 0.93f, 1f);
-            gameOverStatsText.lineSpacing = 1.2f;
+            gameOverPlacementText = CreateGameOverBodyLine(
+                panelObject.transform,
+                "Placement",
+                new Vector2(0f, -92f),
+                30,
+                FontStyle.Bold,
+                bodyColor);
+
+            gameOverKillsText = CreateGameOverBodyLine(
+                panelObject.transform,
+                "Kills",
+                new Vector2(0f, -132f),
+                26,
+                FontStyle.Normal,
+                bodyColor);
+
+            gameOverRewardsText = CreateGameOverBodyLine(
+                panelObject.transform,
+                "Rewards",
+                new Vector2(0f, -178f),
+                22,
+                FontStyle.Bold,
+                rewardColor);
 
             var buttonObject = new GameObject("ExitButton");
             buttonObject.transform.SetParent(panelObject.transform, false);
@@ -1273,6 +1323,35 @@ namespace ShooterPrototype.UI
 
             overlayObject.SetActive(false);
             overlayObject.transform.SetAsLastSibling();
+        }
+
+        private static Text CreateGameOverBodyLine(
+            Transform parent,
+            string objectName,
+            Vector2 anchoredPosition,
+            int fontSize,
+            FontStyle fontStyle,
+            Color color)
+        {
+            var lineObject = new GameObject(objectName);
+            lineObject.transform.SetParent(parent, false);
+
+            var rect = lineObject.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = anchoredPosition;
+            rect.sizeDelta = new Vector2(380f, fontSize + 12f);
+
+            var text = lineObject.AddComponent<Text>();
+            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.fontSize = fontSize;
+            text.fontStyle = fontStyle;
+            text.alignment = TextAnchor.MiddleCenter;
+            text.color = color;
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
+            text.verticalOverflow = VerticalWrapMode.Overflow;
+            return text;
         }
 
         private void EnsureCornerStatsPanel(Transform root)
