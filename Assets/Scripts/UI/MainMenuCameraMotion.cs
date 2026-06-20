@@ -1,13 +1,17 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace ShooterPrototype.UI
 {
+    /// <summary>
+    /// Drives the main-menu camera sway and inventory zoom. Must live on Main Camera.
+    /// </summary>
     [DisallowMultipleComponent]
-    [DefaultExecutionOrder(200)]
+    [DefaultExecutionOrder(10000)]
+    [RequireComponent(typeof(Camera))]
     public sealed class MainMenuCameraMotion : MonoBehaviour
     {
-        [SerializeField] private Transform cameraTransform;
-        [SerializeField] private string cameraTag = "MainCamera";
+        private static MainMenuCameraMotion instance;
 
         [Header("Position Sway")]
         [SerializeField] private float horizontalAmplitude = 0.22f;
@@ -35,6 +39,11 @@ namespace ShooterPrototype.UI
         [SerializeField] private float inventoryFov = 24f;
         [SerializeField] private float inventoryTransitionSmoothTime = 0.72f;
 
+        [Header("Mouse Parallax")]
+        [SerializeField] private float mouseParallaxPosition = 0.12f;
+        [SerializeField] private float mouseParallaxRotation = 0.45f;
+        [SerializeField] private float mouseParallaxSmoothTime = 0.35f;
+
         private Camera cameraComponent;
         private Vector3 basePosition;
         private Quaternion baseRotation;
@@ -43,78 +52,104 @@ namespace ShooterPrototype.UI
         private Vector3 currentEulerOffset;
         private Vector3 eulerOffsetVelocity;
         private float phaseOffset;
-        private bool hasBasePose;
-        private float defaultFov = 51f;
+        private bool hasRestPose;
+        private float defaultFov = 48f;
         private float targetViewBlend;
         private float currentViewBlend;
         private float viewBlendVelocity;
-
-        [Header("Mouse Parallax")]
-        [SerializeField] private float mouseParallaxPosition = 0.12f;
-        [SerializeField] private float mouseParallaxRotation = 0.45f;
-        [SerializeField] private float mouseParallaxSmoothTime = 0.35f;
-
         private Vector3 mouseParallaxOffset;
         private Vector3 mouseParallaxVelocity;
         private Vector3 mouseEulerOffset;
         private Vector3 mouseEulerVelocity;
 
+        public static bool IsInventoryViewActive =>
+            instance != null &&
+            (instance.currentViewBlend > 0.001f || instance.targetViewBlend > 0.001f);
+
+        public static MainMenuCameraMotion Resolve()
+        {
+            if (instance != null)
+            {
+                return instance;
+            }
+
+            if (!IsMainMenuScene())
+            {
+                return null;
+            }
+
+            var camera = ResolveMainCamera();
+            if (camera == null)
+            {
+                return null;
+            }
+
+            instance = camera.GetComponent<MainMenuCameraMotion>();
+            if (instance != null)
+            {
+                return instance;
+            }
+
+            RemoveMisplacedCopies();
+            instance = camera.gameObject.AddComponent<MainMenuCameraMotion>();
+            return instance;
+        }
+
         public void EnterInventoryView()
         {
-            EnsureReady();
+            if (!IsMainMenuScene())
+            {
+                return;
+            }
+
+            EnsureBound();
             targetViewBlend = 1f;
         }
 
         public void ExitInventoryView()
         {
-            EnsureReady();
             targetViewBlend = 0f;
-        }
-
-        private void EnsureReady()
-        {
-            ResolveCamera();
-            if (cameraTransform == null)
-            {
-                hasBasePose = false;
-                return;
-            }
-
-            if (!hasBasePose)
-            {
-                CaptureBasePose();
-            }
-            else if (cameraComponent != null && currentViewBlend <= 0.001f && targetViewBlend <= 0.001f)
-            {
-                defaultFov = cameraComponent.fieldOfView;
-            }
         }
 
         private void Awake()
         {
-            ResolveCamera();
+            EnsureBound();
             phaseOffset = Random.Range(0f, 100f);
-            if (!hasBasePose)
-            {
-                CaptureBasePose();
-            }
+            CaptureRestPose();
+            currentViewBlend = 0f;
+            targetViewBlend = 0f;
+            viewBlendVelocity = 0f;
         }
 
         private void OnEnable()
         {
-            ResolveCamera();
+            instance = this;
+            EnsureBound();
+        }
+
+        private void OnDisable()
+        {
+            if (instance == this)
+            {
+                instance = null;
+            }
         }
 
         private void LateUpdate()
         {
-            if (cameraTransform == null)
+            if (!IsMainMenuScene() || cameraComponent == null)
             {
                 return;
             }
 
-            if (!hasBasePose)
+            if (!hasRestPose)
             {
-                CaptureBasePose();
+                CaptureRestPose();
+            }
+
+            if (!hasRestPose)
+            {
+                return;
             }
 
             currentViewBlend = Mathf.SmoothDamp(
@@ -125,16 +160,20 @@ namespace ShooterPrototype.UI
                 Mathf.Infinity,
                 Time.unscaledDeltaTime);
 
+            var inventoryOpen = currentViewBlend > 0.001f || targetViewBlend > 0.001f;
+            var swayScale = inventoryOpen ? 0.35f : 1f;
+            var parallaxScale = inventoryOpen ? 0.2f : 1f;
+
             var time = Time.unscaledTime + phaseOffset;
             var targetPositionOffset = new Vector3(
-                Mathf.Sin(time * horizontalSpeed) * horizontalAmplitude +
-                Mathf.Sin(time * horizontalSpeed * 0.43f + 1.8f) * (horizontalAmplitude * 0.35f),
-                Mathf.Sin(time * verticalSpeed + 1.4f) * verticalAmplitude,
-                Mathf.Cos(time * depthSpeed + 0.6f) * depthAmplitude);
+                Mathf.Sin(time * horizontalSpeed) * horizontalAmplitude * swayScale +
+                Mathf.Sin(time * horizontalSpeed * 0.43f + 1.8f) * (horizontalAmplitude * 0.35f * swayScale),
+                Mathf.Sin(time * verticalSpeed + 1.4f) * verticalAmplitude * swayScale,
+                Mathf.Cos(time * depthSpeed + 0.6f) * depthAmplitude * swayScale);
             var targetEulerOffset = new Vector3(
-                Mathf.Sin(time * pitchSpeed + 0.9f) * pitchAmplitude,
-                Mathf.Sin(time * yawSpeed + 2.2f) * yawAmplitude,
-                Mathf.Sin(time * rollSpeed + 1.1f) * rollAmplitude);
+                Mathf.Sin(time * pitchSpeed + 0.9f) * pitchAmplitude * swayScale,
+                Mathf.Sin(time * yawSpeed + 2.2f) * yawAmplitude * swayScale,
+                Mathf.Sin(time * rollSpeed + 1.1f) * rollAmplitude * swayScale);
 
             currentPositionOffset = Vector3.SmoothDamp(
                 currentPositionOffset,
@@ -155,13 +194,13 @@ namespace ShooterPrototype.UI
                 (Input.mousePosition.x / Mathf.Max(1f, Screen.width) - 0.5f) * 2f,
                 (Input.mousePosition.y / Mathf.Max(1f, Screen.height) - 0.5f) * 2f);
             var targetMouseParallax = new Vector3(
-                mouseNormalized.x * mouseParallaxPosition,
-                mouseNormalized.y * mouseParallaxPosition * 0.55f,
-                mouseNormalized.x * mouseParallaxPosition * 0.25f);
+                mouseNormalized.x * mouseParallaxPosition * parallaxScale,
+                mouseNormalized.y * mouseParallaxPosition * 0.55f * parallaxScale,
+                mouseNormalized.x * mouseParallaxPosition * 0.25f * parallaxScale);
             var targetMouseEuler = new Vector3(
-                -mouseNormalized.y * mouseParallaxRotation,
-                mouseNormalized.x * mouseParallaxRotation,
-                -mouseNormalized.x * mouseParallaxRotation * 0.35f);
+                -mouseNormalized.y * mouseParallaxRotation * parallaxScale,
+                mouseNormalized.x * mouseParallaxRotation * parallaxScale,
+                -mouseNormalized.x * mouseParallaxRotation * 0.35f * parallaxScale);
             mouseParallaxOffset = Vector3.SmoothDamp(
                 mouseParallaxOffset,
                 targetMouseParallax,
@@ -182,70 +221,69 @@ namespace ShooterPrototype.UI
                 0f,
                 inventoryForwardOffset * currentViewBlend);
 
-            cameraTransform.SetPositionAndRotation(
+            transform.SetPositionAndRotation(
                 basePosition + inventoryOffset + currentPositionOffset + mouseParallaxOffset,
                 baseRotation * Quaternion.Euler(currentEulerOffset + mouseEulerOffset));
 
-            if (cameraComponent != null)
+            cameraComponent.fieldOfView = Mathf.Lerp(defaultFov, inventoryFov, currentViewBlend);
+        }
+
+        private void EnsureBound()
+        {
+            if (cameraComponent == null)
             {
-                cameraComponent.fieldOfView = Mathf.Lerp(defaultFov, inventoryFov, currentViewBlend);
+                cameraComponent = GetComponent<Camera>();
+            }
+
+            instance = this;
+        }
+
+        private void CaptureRestPose()
+        {
+            if (cameraComponent == null)
+            {
+                hasRestPose = false;
+                return;
+            }
+
+            basePosition = transform.position;
+            baseRotation = transform.rotation;
+            defaultFov = cameraComponent.fieldOfView;
+            hasRestPose = true;
+        }
+
+        private static void RemoveMisplacedCopies()
+        {
+            var controller = Object.FindFirstObjectByType<MainMenuController>();
+            if (controller == null)
+            {
+                return;
+            }
+
+            var misplaced = controller.GetComponent<MainMenuCameraMotion>();
+            if (misplaced != null)
+            {
+                Object.Destroy(misplaced);
             }
         }
 
-        private void ResolveCamera()
+        private static Camera ResolveMainCamera()
         {
-            if (cameraTransform != null)
-            {
-                cameraComponent = cameraTransform.GetComponent<Camera>();
-                if (cameraComponent == null)
-                {
-                    cameraComponent = cameraTransform.GetComponentInChildren<Camera>();
-                }
-
-                return;
-            }
-
-            var taggedCamera = GameObject.FindGameObjectWithTag(cameraTag);
-            if (taggedCamera != null)
-            {
-                cameraTransform = taggedCamera.transform;
-                cameraComponent = taggedCamera.GetComponent<Camera>();
-                return;
-            }
-
             var mainCamera = Camera.main;
             if (mainCamera != null)
             {
-                cameraTransform = mainCamera.transform;
-                cameraComponent = mainCamera;
+                return mainCamera;
             }
+
+            var tagged = GameObject.FindGameObjectWithTag("MainCamera");
+            return tagged != null ? tagged.GetComponent<Camera>() : null;
         }
 
-        private void CaptureBasePose()
+        private static bool IsMainMenuScene()
         {
-            if (cameraTransform == null)
-            {
-                hasBasePose = false;
-                return;
-            }
-
-            if (cameraComponent == null)
-            {
-                cameraComponent = cameraTransform.GetComponent<Camera>();
-            }
-
-            basePosition = cameraTransform.position;
-            baseRotation = cameraTransform.rotation;
-            if (cameraComponent != null && currentViewBlend <= 0.001f)
-            {
-                defaultFov = cameraComponent.fieldOfView;
-            }
-
-            currentPositionOffset = Vector3.zero;
-            currentEulerOffset = Vector3.zero;
-            positionOffsetVelocity = Vector3.zero;
-            eulerOffsetVelocity = Vector3.zero;
-            hasBasePose = true;
+            var scene = SceneManager.GetActiveScene();
+            return scene.IsValid() &&
+                   string.Equals(scene.name, "MainMenu", System.StringComparison.OrdinalIgnoreCase);
         }
     }
 }

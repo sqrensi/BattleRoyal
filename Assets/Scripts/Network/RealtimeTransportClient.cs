@@ -478,6 +478,16 @@ namespace ShooterPrototype.Network
             public int localKillCount;
             public bool isLocalWinner;
             public int winnerDisconnectSeconds;
+            public string matchMode;
+            public int duelRoundNumber;
+            public int duelLocalRoundWins;
+            public int duelOpponentRoundWins;
+            public int duelRoundsToWin;
+            public bool duelMovementLocked;
+            public bool duelCombatEnabled;
+            public int duelPickedWeaponKind = -1;
+            public int duelTeamIndex = -1;
+            public int duelSpawnSlotIndex = -1;
         }
 
         [Serializable]
@@ -575,6 +585,7 @@ namespace ShooterPrototype.Network
             public string attackerTicketId;
             public string targetTicketId;
             public float damage;
+            public float remainingHealth = -1f;
             public float dirX;
             public float dirY;
             public float dirZ;

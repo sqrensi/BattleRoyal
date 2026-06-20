@@ -21,6 +21,11 @@ namespace ShooterPrototype.Player
             return Mathf.Clamp(placementDelta + killBonus, MinDelta, MaxDelta);
         }
 
+        public static int CalculateDuelDelta(bool won)
+        {
+            return won ? 15 : -15;
+        }
+
         public static string FormatDelta(int delta)
         {
             return delta >= 0 ? $"+{delta}" : delta.ToString();

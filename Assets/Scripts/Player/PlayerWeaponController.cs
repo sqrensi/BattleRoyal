@@ -91,6 +91,7 @@ namespace ShooterPrototype.Player
         private int currentAmmo;
         private int reserveAmmo;
         private bool isReloading;
+        private bool duelFireBlocked;
         private Coroutine reloadCoroutine;
         private Material tracerMaterial;
         private FpsCharacterController fpsController;
@@ -307,6 +308,11 @@ namespace ShooterPrototype.Player
             enabled = weaponMount != null && weaponMount.HasMountedWeapon;
         }
 
+        public void SetDuelFireBlocked(bool blocked)
+        {
+            duelFireBlocked = blocked;
+        }
+
         private void OnEnable()
         {
             fpsController?.SetAutoRecoilRecoveryActive(false);
@@ -329,6 +335,11 @@ namespace ShooterPrototype.Player
             var firePressed = ReadFirePressed();
 
             if (!enabled)
+            {
+                return;
+            }
+
+            if (duelFireBlocked)
             {
                 return;
             }

@@ -134,6 +134,9 @@ namespace ShooterPrototype.Player
         private System.Action medkitMovementCancelHandler;
         private float defaultAdsMaxLookAngle;
         private float adsLookSensitivityMultiplier = 1f;
+        private bool weaponPickUiMode;
+
+        public bool IsWeaponPickUiMode => weaponPickUiMode;
 
         public bool IsGrounded => isGrounded;
         public bool IsMovementLocked => movementLocked;
@@ -196,6 +199,42 @@ namespace ShooterPrototype.Player
             networkJumpPressed = false;
             isSprinting = false;
             externalHorizontalVelocity = Vector2.zero;
+        }
+
+        public void SetWeaponPickUiMode(bool enabled)
+        {
+            weaponPickUiMode = enabled;
+            ApplyWeaponPickCursorState();
+        }
+
+        public void MaintainWeaponPickCursor()
+        {
+            if (!weaponPickUiMode)
+            {
+                return;
+            }
+
+            ApplyWeaponPickCursorState();
+        }
+
+        private void ApplyWeaponPickCursorState()
+        {
+            if (!weaponPickUiMode)
+            {
+                if (lockCursorOnEnable &&
+                    !gameOverMode &&
+                    !PlayerInventoryPanelController.IsOpen &&
+                    !GameHudController.IsPauseMenuOpen)
+                {
+                    Cursor.lockState = CursorLockMode.Locked;
+                    Cursor.visible = false;
+                }
+
+                return;
+            }
+
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
         }
 
         public void ApplyExternalLaunchVelocity(Vector3 worldVelocity)
@@ -477,6 +516,12 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            if (weaponPickUiMode)
+            {
+                ApplyWeaponPickCursorState();
+                return;
+            }
+
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
         }
@@ -496,6 +541,8 @@ namespace ShooterPrototype.Player
 
         private void Update()
         {
+            MaintainWeaponPickCursor();
+
             if (!gameOverMode)
             {
                 HandleCursorToggle();
@@ -555,6 +602,12 @@ namespace ShooterPrototype.Player
                 {
                     Cursor.lockState = CursorLockMode.None;
                     Cursor.visible = true;
+                    return;
+                }
+
+                if (weaponPickUiMode)
+                {
+                    ApplyWeaponPickCursorState();
                     return;
                 }
 
@@ -622,6 +675,7 @@ namespace ShooterPrototype.Player
         private void HandleCursorToggle()
         {
             if (SuppressTabCursorToggle ||
+                weaponPickUiMode ||
                 GameHudController.IsPauseMenuOpen ||
                 PlayerInventoryPanelController.IsOpen ||
                 !toggleCursorWithTab ||
@@ -648,6 +702,11 @@ namespace ShooterPrototype.Player
             }
 
             if (PlayerInventoryPanelController.IsOpen)
+            {
+                return true;
+            }
+
+            if (weaponPickUiMode)
             {
                 return true;
             }

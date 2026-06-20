@@ -1,6 +1,7 @@
 using System.Collections;
 using ShooterPrototype.Bootstrap;
 using ShooterPrototype.Matchmaking;
+using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
 using ShooterPrototype.Player;
 using UnityEngine;
@@ -19,13 +20,15 @@ namespace ShooterPrototype.UI
     {
         private const string CanvasObjectName = "RuntimeGameHudCanvas";
         public const string RuntimeCanvasObjectName = CanvasObjectName;
-        private const int CornerStatsLayoutVersion = 7;
-        private const int MatchCornerStatsLayoutVersion = 7;
+        private const int CornerStatsLayoutVersion = 10;
+        private const int MatchCornerStatsLayoutVersion = 10;
         private const float GameOverPanelDelaySeconds = 5f;
         private const float GameOverAutoExitSeconds = 15f;
         private const int GameOverPanelLayoutVersion = 7;
         private const int GameplayHintLayoutVersion = 5;
         private const int MatchWaitStatusLayoutVersion = 5;
+        private const int DuelTopCenterHudLayoutVersion = 1;
+        private const int DuelRoundCountdownLayoutVersion = 1;
         private const float GameplayHintOffsetX = 72f;
         private const float GameplayHintOffsetY = -48f;
 
@@ -43,10 +46,8 @@ namespace ShooterPrototype.UI
         private TMP_Text playersText;
         private TMP_Text pingText;
         private TMP_Text fpsText;
-        private TMP_Text cornerStatsFpsValue;
-        private TMP_Text cornerStatsPingValue;
-        private TMP_Text matchCornerKillsValue;
-        private TMP_Text matchCornerAliveValue;
+        private TMP_Text cornerStatsText;
+        private TMP_Text matchCornerStatsText;
         private int matchCornerKillCount;
         private int matchCornerAliveCount;
         private int displayPingMs = -1;
@@ -58,6 +59,8 @@ namespace ShooterPrototype.UI
         private TMP_Text inventoryText;
         private GameObject legacyInventoryPanel;
         private TMP_Text matchStatusText;
+        private TMP_Text duelTopCenterText;
+        private TMP_Text duelRoundCountdownText;
         private GameObject gameplayHintPanel;
         private TMP_Text gameplayHintText;
         private string brGameplayHint = string.Empty;
@@ -233,17 +236,25 @@ namespace ShooterPrototype.UI
         {
             if (pauseOpen)
             {
-                Cursor.lockState = CursorLockMode.None;
-                Cursor.visible = true;
+                ApplyMenuCursor();
+                return;
+            }
+
+            if (canvas == null || !canvas.gameObject.activeSelf)
+            {
+                ApplyMenuCursor();
                 return;
             }
 
             var fps = FindFirstObjectByType<FpsCharacterController>();
-            if (fps != null && fps.isActiveAndEnabled)
+            if (fps != null && fps.isActiveAndEnabled && !fps.IsWeaponPickUiMode)
             {
                 Cursor.lockState = CursorLockMode.Locked;
                 Cursor.visible = false;
+                return;
             }
+
+            ApplyMenuCursor();
         }
 
         private void HandlePauseSettingsPressed()
@@ -303,6 +314,7 @@ namespace ShooterPrototype.UI
                 SetTopBarVisible(topBarVisible);
                 combatHud?.SetActiveForScene(true);
                 killFeed?.SetActiveForScene(true);
+                SetMatchCornerStatsPanelVisible(!ActiveMatchContext.IsDuel);
             }
             else
             {
@@ -310,7 +322,14 @@ namespace ShooterPrototype.UI
                 StopPingRefresh();
                 combatHud?.SetActiveForScene(false);
                 killFeed?.SetActiveForScene(false);
+                ApplyMenuCursor();
             }
+        }
+
+        private static void ApplyMenuCursor()
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
         }
 
         private void OnDestroy()
@@ -436,21 +455,138 @@ namespace ShooterPrototype.UI
 
         public void SetMatchCornerStats(int killCount, int aliveCount)
         {
+            if (ActiveMatchContext.IsDuel)
+            {
+                SetMatchCornerStatsPanelVisible(false);
+                return;
+            }
+
             matchCornerKillCount = Mathf.Max(0, killCount);
             matchCornerAliveCount = Mathf.Max(0, aliveCount);
             EnsureHudExists();
+            SetMatchCornerStatsPanelVisible(true);
             RefreshMatchCornerStatsText();
         }
 
-        private void RefreshMatchCornerStatsText()
+        public void SetDuelRoundScore(int localWins, int opponentWins, int roundNumber, int roundsToWin)
         {
-            if (matchCornerKillsValue == null || matchCornerAliveValue == null)
+            SetDuelMatchHud(localWins, opponentWins, roundNumber, roundsToWin, 0, string.Empty);
+        }
+
+        public void SetDuelMatchHud(
+            int localWins,
+            int opponentWins,
+            int roundNumber,
+            int roundsToWin,
+            int countdownSeconds,
+            string phaseLabel)
+        {
+            EnsureHudExists();
+            EnsureDuelTopCenterHud(canvas != null ? canvas.transform : null);
+            SetMatchCornerStatsPanelVisible(false);
+            if (duelTopCenterText == null)
             {
                 return;
             }
 
-            matchCornerKillsValue.text = matchCornerKillCount.ToString();
-            matchCornerAliveValue.text = matchCornerAliveCount.ToString();
+            var scoreLine = $"{Mathf.Max(0, localWins)} : {Mathf.Max(0, opponentWins)}";
+            var detailLine = !string.IsNullOrWhiteSpace(phaseLabel)
+                ? phaseLabel
+                : $"Раунд {Mathf.Max(1, roundNumber)} — {Mathf.Max(0, countdownSeconds)} сек.";
+            duelTopCenterText.text = $"{scoreLine}\n{detailLine}";
+            ApplyBoldHudText(duelTopCenterText);
+            var panel = duelTopCenterText.transform.parent;
+            if (panel != null)
+            {
+                panel.gameObject.SetActive(true);
+            }
+
+            duelTopCenterText.gameObject.SetActive(true);
+        }
+
+        public void ClearDuelMatchHud()
+        {
+            ClearDuelRoundEndCountdown();
+            if (duelTopCenterText == null)
+            {
+                return;
+            }
+
+            duelTopCenterText.text = string.Empty;
+            duelTopCenterText.gameObject.SetActive(false);
+            var panel = duelTopCenterText.transform.parent;
+            if (panel != null)
+            {
+                panel.gameObject.SetActive(false);
+            }
+        }
+
+        public void SetDuelRoundEndCountdown(int secondsRemaining)
+        {
+            EnsureHudExists();
+            EnsureDuelRoundCountdownText(canvas != null ? canvas.transform : null);
+            if (duelRoundCountdownText == null)
+            {
+                return;
+            }
+
+            var seconds = Mathf.Clamp(secondsRemaining, 1, 5);
+            duelRoundCountdownText.text = seconds.ToString();
+            duelRoundCountdownText.gameObject.SetActive(true);
+        }
+
+        public void ClearDuelRoundEndCountdown()
+        {
+            if (duelRoundCountdownText == null)
+            {
+                return;
+            }
+
+            duelRoundCountdownText.text = string.Empty;
+            duelRoundCountdownText.gameObject.SetActive(false);
+        }
+
+        public void SetDuelRoundBanner(string message)
+        {
+            EnsureHudExists();
+            combatHud?.ShowDuelRoundBanner(message);
+        }
+
+        public void ClearDuelRoundBanner()
+        {
+            combatHud?.ClearDuelRoundBanner();
+        }
+
+        public Transform GetHudCanvasTransform()
+        {
+            EnsureHudExists();
+            return canvas != null ? canvas.transform : null;
+        }
+
+        private void RefreshMatchCornerStatsText()
+        {
+            if (matchCornerStatsText == null || ActiveMatchContext.IsDuel)
+            {
+                return;
+            }
+
+            matchCornerStatsText.text =
+                $"Киллы: {matchCornerKillCount}\nВыживших: {matchCornerAliveCount}";
+            ApplyBoldHudText(matchCornerStatsText);
+        }
+
+        private void SetMatchCornerStatsPanelVisible(bool visible)
+        {
+            if (matchCornerStatsText == null)
+            {
+                return;
+            }
+
+            var panel = matchCornerStatsText.transform.parent;
+            if (panel != null)
+            {
+                panel.gameObject.SetActive(visible);
+            }
         }
 
         public void ResetMatchOverlay()
@@ -458,8 +594,13 @@ namespace ShooterPrototype.UI
             StopGameOverFlow();
             SetVictoryBanner(false);
             SetMatchStatusMessage(string.Empty);
+            ClearDuelMatchHud();
             SetKillCount(0);
-            SetMatchCornerStats(0, 0);
+            SetMatchCornerStatsPanelVisible(!ActiveMatchContext.IsDuel);
+            if (!ActiveMatchContext.IsDuel)
+            {
+                SetMatchCornerStats(0, 0);
+            }
             SetMatchStatusMessage(string.Empty);
             ClearGameplayHints();
             HideGameOverPanel();
@@ -582,7 +723,9 @@ namespace ShooterPrototype.UI
 
             ApplyGameOverSummary(
                 summary,
-                MatchRatingUtility.CalculateDelta(summary.Placement, summary.KillCount));
+                ActiveMatchContext.IsDuel
+                    ? MatchRatingUtility.CalculateDuelDelta(won)
+                    : MatchRatingUtility.CalculateDelta(summary.Placement, summary.KillCount));
 
             if (gameOverHintText != null)
             {
@@ -632,7 +775,9 @@ namespace ShooterPrototype.UI
             var sourceId = ResolveMatchRewardSourceId();
             var deaths = won ? 0 : 1;
             var damageDealt = MatchStatsTracker.DamageDealtThisMatch;
-            var fallbackDelta = MatchRatingUtility.CalculateDelta(summary.Placement, summary.KillCount);
+            var fallbackDelta = ActiveMatchContext.IsDuel
+                ? MatchRatingUtility.CalculateDuelDelta(won)
+                : MatchRatingUtility.CalculateDelta(summary.Placement, summary.KillCount);
 
             if (!PlayerProfileService.TryResolveApiClient(out var apiClient) ||
                 string.IsNullOrWhiteSpace(playerId))
@@ -652,6 +797,7 @@ namespace ShooterPrototype.UI
                 summary.Placement,
                 won,
                 damageDealt,
+                ActiveMatchContext.IsDuel ? "duel" : "battle_royale",
                 (success, ratingDelta, _) =>
                 {
                     UpdateGameOverRatingText(
@@ -674,14 +820,33 @@ namespace ShooterPrototype.UI
 
         private void ApplyGameOverSummary(MatchOutcomeSummary summary, int ratingDelta)
         {
-            if (gameOverPlacementText != null)
+            if (ActiveMatchContext.IsDuel)
             {
-                gameOverPlacementText.text = $"ТОП {summary.Placement}";
-            }
+                if (gameOverPlacementText != null)
+                {
+                    gameOverPlacementText.text = string.Empty;
+                    gameOverPlacementText.gameObject.SetActive(false);
+                }
 
-            if (gameOverKillsText != null)
+                if (gameOverKillsText != null)
+                {
+                    gameOverKillsText.text = string.Empty;
+                    gameOverKillsText.gameObject.SetActive(false);
+                }
+            }
+            else
             {
-                gameOverKillsText.text = $"{summary.KillCount} киллов";
+                if (gameOverPlacementText != null)
+                {
+                    gameOverPlacementText.gameObject.SetActive(true);
+                    gameOverPlacementText.text = $"ТОП {summary.Placement}";
+                }
+
+                if (gameOverKillsText != null)
+                {
+                    gameOverKillsText.gameObject.SetActive(true);
+                    gameOverKillsText.text = $"{summary.KillCount} киллов";
+                }
             }
 
             if (gameOverRewardsText != null)
@@ -851,6 +1016,7 @@ namespace ShooterPrototype.UI
             {
                 EnsureCornerStatsPanel(canvas.transform);
                 EnsureMatchCornerStatsPanel(canvas.transform);
+                EnsureDuelTopCenterHud(canvas.transform);
                 EnsureMatchOverlayElements(canvas.transform);
                 EnsureGameplayHintPanel(canvas.transform);
                 EnsurePauseMenuPanel(canvas.transform);
@@ -1010,6 +1176,8 @@ namespace ShooterPrototype.UI
         private void EnsureMatchOverlayElements(Transform root)
         {
             EnsureMatchWaitStatusText(root);
+            EnsureDuelTopCenterHud(root);
+            EnsureDuelRoundCountdownText(root);
 
             if (victoryBannerText == null)
             {
@@ -1066,8 +1234,8 @@ namespace ShooterPrototype.UI
                     matchStatusText != null)
                 {
                     ApplyBoldHudText(matchStatusText);
-                    return;
-                }
+                return;
+            }
 
                 matchStatusText = null;
                 Destroy(existing.gameObject);
@@ -1090,6 +1258,108 @@ namespace ShooterPrototype.UI
             matchStatusText.alignment = TextAlignmentOptions.Center;
             matchStatusText.text = string.Empty;
             matchStatusObject.SetActive(false);
+        }
+
+        private void EnsureDuelTopCenterHud(Transform root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var existingPanel = root.Find("DuelTopCenterHudPanel");
+            if (existingPanel != null)
+            {
+                var versionMarker = existingPanel.GetComponent<CornerStatsLayoutMarker>();
+                if (versionMarker != null &&
+                    versionMarker.Version >= DuelTopCenterHudLayoutVersion &&
+                    duelTopCenterText != null)
+                {
+                    ApplyBoldHudText(duelTopCenterText);
+                    return;
+                }
+
+                duelTopCenterText = null;
+                Destroy(existingPanel.gameObject);
+            }
+
+            var panelObject = new GameObject("DuelTopCenterHudPanel");
+            panelObject.transform.SetParent(root, false);
+            panelObject.AddComponent<CornerStatsLayoutMarker>().Version = DuelTopCenterHudLayoutVersion;
+
+            var panelRect = panelObject.AddComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0.5f, 1f);
+            panelRect.anchorMax = new Vector2(0.5f, 1f);
+            panelRect.pivot = new Vector2(0.5f, 1f);
+            panelRect.sizeDelta = new Vector2(420f, 72f);
+            panelRect.anchoredPosition = new Vector2(0f, -12f);
+
+            var panelImage = panelObject.AddComponent<Image>();
+            UiTheme.ApplyPanel(panelImage, UiPanelStyle.Hud);
+            panelImage.raycastTarget = false;
+
+            var labelObject = new GameObject("DuelTopCenterText");
+            labelObject.transform.SetParent(panelObject.transform, false);
+            var labelRect = labelObject.AddComponent<RectTransform>();
+            labelRect.anchorMin = Vector2.zero;
+            labelRect.anchorMax = Vector2.one;
+            labelRect.offsetMin = new Vector2(8f, 4f);
+            labelRect.offsetMax = new Vector2(-8f, -4f);
+
+            duelTopCenterText = labelObject.AddComponent<TextMeshProUGUI>();
+            ApplyBoldHudText(duelTopCenterText);
+            duelTopCenterText.fontSize = 22f;
+            duelTopCenterText.alignment = TextAlignmentOptions.Center;
+            duelTopCenterText.enableWordWrapping = false;
+            duelTopCenterText.overflowMode = TextOverflowModes.Overflow;
+            duelTopCenterText.lineSpacing = -2f;
+            duelTopCenterText.text = string.Empty;
+            panelObject.SetActive(false);
+        }
+
+        private void EnsureDuelRoundCountdownText(Transform root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var existing = root.Find("DuelRoundCountdownText");
+            if (existing != null)
+            {
+                var versionMarker = existing.GetComponent<CornerStatsLayoutMarker>();
+                if (versionMarker != null &&
+                    versionMarker.Version >= DuelRoundCountdownLayoutVersion &&
+                    duelRoundCountdownText != null)
+                {
+                    return;
+                }
+
+                duelRoundCountdownText = null;
+                Destroy(existing.gameObject);
+            }
+
+            var countdownObject = new GameObject("DuelRoundCountdownText");
+            countdownObject.transform.SetParent(root, false);
+            countdownObject.AddComponent<CornerStatsLayoutMarker>().Version = DuelRoundCountdownLayoutVersion;
+
+            var countdownRect = countdownObject.AddComponent<RectTransform>();
+            countdownRect.anchorMin = new Vector2(0.5f, 0.5f);
+            countdownRect.anchorMax = new Vector2(0.5f, 0.5f);
+            countdownRect.pivot = new Vector2(0.5f, 0.5f);
+            countdownRect.sizeDelta = new Vector2(240f, 240f);
+            countdownRect.anchoredPosition = new Vector2(0f, 72f);
+
+            duelRoundCountdownText = countdownObject.AddComponent<TextMeshProUGUI>();
+            duelRoundCountdownText.fontSize = 120f;
+            duelRoundCountdownText.fontStyle = FontStyles.Bold;
+            duelRoundCountdownText.alignment = TextAlignmentOptions.Center;
+            duelRoundCountdownText.color = new Color(1f, 1f, 1f, 0.42f);
+            duelRoundCountdownText.enableWordWrapping = false;
+            duelRoundCountdownText.overflowMode = TextOverflowModes.Overflow;
+            duelRoundCountdownText.raycastTarget = false;
+            duelRoundCountdownText.text = string.Empty;
+            countdownObject.SetActive(false);
         }
 
         private void EnsureGameplayHintPanel(Transform root)
@@ -1345,13 +1615,12 @@ namespace ShooterPrototype.UI
             if (existingPanel != null)
             {
                 var versionMarker = existingPanel.GetComponent<CornerStatsLayoutMarker>();
-                if (versionMarker != null && versionMarker.Version >= CornerStatsLayoutVersion && cornerStatsFpsValue != null)
+                if (versionMarker != null && versionMarker.Version >= CornerStatsLayoutVersion && cornerStatsText != null)
                 {
                     return;
                 }
 
-                cornerStatsFpsValue = null;
-                cornerStatsPingValue = null;
+                cornerStatsText = null;
                 Destroy(existingPanel.gameObject);
             }
 
@@ -1360,7 +1629,7 @@ namespace ShooterPrototype.UI
 
         private void BuildCornerStatsPanel(Transform root)
         {
-            if (cornerStatsFpsValue != null)
+            if (cornerStatsText != null)
             {
                 return;
             }
@@ -1373,28 +1642,29 @@ namespace ShooterPrototype.UI
             panelRect.anchorMin = new Vector2(1f, 1f);
             panelRect.anchorMax = new Vector2(1f, 1f);
             panelRect.pivot = new Vector2(1f, 1f);
-            panelRect.sizeDelta = new Vector2(136f, 44f);
+            panelRect.sizeDelta = new Vector2(118f, 44f);
             panelRect.anchoredPosition = new Vector2(-8f, -8f);
 
-            var card = UiDecor.CreateHudMetricCard(
-                panelObject.transform,
-                "FPS",
-                "Ping",
-                136f,
-                44f,
-                TextAnchor.MiddleRight);
-            if (card.Root != null)
-            {
-                card.Root.anchorMin = new Vector2(0f, 1f);
-                card.Root.anchorMax = new Vector2(0f, 1f);
-                card.Root.pivot = new Vector2(0f, 1f);
-                card.Root.anchoredPosition = Vector2.zero;
-            }
+            var panelImage = panelObject.AddComponent<Image>();
+            UiTheme.ApplyPanel(panelImage, UiPanelStyle.Hud);
+            panelImage.raycastTarget = false;
 
-            cornerStatsFpsValue = card.Row1Value;
-            cornerStatsPingValue = card.Row2Value;
-            UiDecor.SetMetricRow(card.Row1Label, card.Row1Value, "FPS", "--");
-            UiDecor.SetMetricRow(card.Row2Label, card.Row2Value, "Ping", "-- ms");
+            var labelObject = new GameObject("CornerStatsText");
+            labelObject.transform.SetParent(panelObject.transform, false);
+            var labelRect = labelObject.AddComponent<RectTransform>();
+            labelRect.anchorMin = Vector2.zero;
+            labelRect.anchorMax = Vector2.one;
+            labelRect.offsetMin = new Vector2(4f, 4f);
+            labelRect.offsetMax = new Vector2(-4f, -4f);
+
+            cornerStatsText = labelObject.AddComponent<TextMeshProUGUI>();
+            UiTheme.ApplyTmp(cornerStatsText, UiTextRole.Body);
+            cornerStatsText.fontSize = 14f;
+            cornerStatsText.alignment = TextAlignmentOptions.Center;
+            cornerStatsText.enableWordWrapping = false;
+            cornerStatsText.overflowMode = TextOverflowModes.Overflow;
+            cornerStatsText.lineSpacing = -2f;
+            cornerStatsText.text = "FPS: --\nPing: -- ms";
         }
 
         private void EnsureMatchCornerStatsPanel(Transform root)
@@ -1405,13 +1675,13 @@ namespace ShooterPrototype.UI
                 var versionMarker = existingPanel.GetComponent<CornerStatsLayoutMarker>();
                 if (versionMarker != null &&
                     versionMarker.Version >= MatchCornerStatsLayoutVersion &&
-                    matchCornerKillsValue != null)
+                    matchCornerStatsText != null)
                 {
+                    ApplyBoldHudText(matchCornerStatsText);
                     return;
                 }
 
-                matchCornerKillsValue = null;
-                matchCornerAliveValue = null;
+                matchCornerStatsText = null;
                 Destroy(existingPanel.gameObject);
             }
 
@@ -1420,7 +1690,7 @@ namespace ShooterPrototype.UI
 
         private void BuildMatchCornerStatsPanel(Transform root)
         {
-            if (matchCornerKillsValue != null)
+            if (matchCornerStatsText != null)
             {
                 return;
             }
@@ -1433,28 +1703,29 @@ namespace ShooterPrototype.UI
             panelRect.anchorMin = new Vector2(0f, 1f);
             panelRect.anchorMax = new Vector2(0f, 1f);
             panelRect.pivot = new Vector2(0f, 1f);
+            panelRect.sizeDelta = new Vector2(168f, 52f);
             panelRect.anchoredPosition = new Vector2(8f, -8f);
-            panelRect.sizeDelta = new Vector2(148f, 44f);
 
-            var card = UiDecor.CreateHudMetricCard(
-                panelObject.transform,
-                "Киллы",
-                "Выживших",
-                148f,
-                44f,
-                TextAnchor.MiddleLeft);
-            if (card.Root != null)
-            {
-                card.Root.anchorMin = new Vector2(0f, 1f);
-                card.Root.anchorMax = new Vector2(0f, 1f);
-                card.Root.pivot = new Vector2(0f, 1f);
-                card.Root.anchoredPosition = Vector2.zero;
-            }
+            var panelImage = panelObject.AddComponent<Image>();
+            UiTheme.ApplyPanel(panelImage, UiPanelStyle.Hud);
+            panelImage.raycastTarget = false;
 
-            matchCornerKillsValue = card.Row1Value;
-            matchCornerAliveValue = card.Row2Value;
-            UiDecor.SetMetricRow(card.Row1Label, card.Row1Value, "Киллы", "0");
-            UiDecor.SetMetricRow(card.Row2Label, card.Row2Value, "Выживших", "0");
+            var labelObject = new GameObject("MatchCornerStatsText");
+            labelObject.transform.SetParent(panelObject.transform, false);
+            var labelRect = labelObject.AddComponent<RectTransform>();
+            labelRect.anchorMin = Vector2.zero;
+            labelRect.anchorMax = Vector2.one;
+            labelRect.offsetMin = new Vector2(4f, 4f);
+            labelRect.offsetMax = new Vector2(-4f, -4f);
+
+            matchCornerStatsText = labelObject.AddComponent<TextMeshProUGUI>();
+            ApplyBoldHudText(matchCornerStatsText);
+            matchCornerStatsText.fontSize = 16f;
+            matchCornerStatsText.alignment = TextAlignmentOptions.Center;
+            matchCornerStatsText.enableWordWrapping = false;
+            matchCornerStatsText.overflowMode = TextOverflowModes.Overflow;
+            matchCornerStatsText.lineSpacing = -2f;
+            matchCornerStatsText.text = "Киллы: 0\nВыживших: 0";
         }
 
         private void EnsurePauseMenuPanel(Transform root)
@@ -1675,7 +1946,7 @@ namespace ShooterPrototype.UI
 
         private void RefreshCornerStats()
         {
-            if (cornerStatsFpsValue == null || cornerStatsPingValue == null)
+            if (cornerStatsText == null)
             {
                 return;
             }
@@ -1689,17 +1960,16 @@ namespace ShooterPrototype.UI
                     : Mathf.Lerp(fpsSmoothed, currentFps, 0.15f);
             }
 
-            cornerStatsFpsValue.text = Mathf.RoundToInt(fpsSmoothed).ToString();
-
             if (!Application.isFocused)
             {
-                cornerStatsPingValue.text = "paused";
+                cornerStatsText.text = $"FPS: {Mathf.RoundToInt(fpsSmoothed)}\nPing: paused";
                 return;
             }
 
-            cornerStatsPingValue.text = displayPingMs > 0
-                ? $"{displayPingMs} ms"
-                : "-- ms";
+            var pingLine = displayPingMs > 0
+                ? $"Ping: {displayPingMs} ms"
+                : "Ping: -- ms";
+            cornerStatsText.text = $"FPS: {Mathf.RoundToInt(fpsSmoothed)}\n{pingLine}";
         }
 
         private void EnsurePingRefreshRunning()
@@ -1806,6 +2076,7 @@ namespace ShooterPrototype.UI
             realtimeClient?.Disconnect();
             networkLauncher?.DisconnectClient("Client returned to MainMenu.");
             ResetMatchOverlay();
+            ApplyMenuCursor();
             SceneManager.LoadScene(mainMenuSceneName);
 
             if (backButton != null)

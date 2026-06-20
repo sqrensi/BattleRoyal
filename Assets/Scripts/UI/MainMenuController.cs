@@ -38,6 +38,7 @@ namespace ShooterPrototype.UI
         [Header("Scene Flow")]
         [SerializeField] private bool autoLoadGameSceneOnSuccess = true;
         [SerializeField] private string gameSceneName = "Game";
+        [SerializeField] private string duelSceneName = "1x1";
 
         [Header("Reliability")]
         [SerializeField] private int enqueueRetryCount = 2;
@@ -95,6 +96,8 @@ namespace ShooterPrototype.UI
         private void OnEnable()
         {
             EnsureDependencies();
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
 
             if (networkLauncher == null)
             {
@@ -272,6 +275,8 @@ namespace ShooterPrototype.UI
             var enqueueOk = false;
             QueueEnqueueResponse enqueueResponse = null;
             var enqueueError = string.Empty;
+
+            ActiveMatchContext.SetMode(MainMenuGameModeSelector.SelectedMode);
 
             var attempts = Mathf.Max(1, enqueueRetryCount + 1);
             for (var attempt = 1; attempt <= attempts; attempt++)
@@ -580,10 +585,7 @@ namespace ShooterPrototype.UI
 
         private void EnsureCameraMotion()
         {
-            if (GetComponent<MainMenuCameraMotion>() == null)
-            {
-                gameObject.AddComponent<MainMenuCameraMotion>();
-            }
+            MainMenuCameraMotion.Resolve();
         }
 
         private static string BuildLocalPlayerId()
@@ -682,20 +684,21 @@ namespace ShooterPrototype.UI
 
         private void TryLoadGameScene()
         {
-            if (string.IsNullOrWhiteSpace(gameSceneName))
+            var targetScene = ActiveMatchContext.ResolveGameSceneName(gameSceneName, duelSceneName);
+            if (string.IsNullOrWhiteSpace(targetScene))
             {
-                SetStatus("Сцена Game не задана. Остаемся в MainMenu.");
+                SetStatus("Сцена матча не задана. Остаемся в MainMenu.");
                 return;
             }
 
-            if (!Application.CanStreamedLevelBeLoaded(gameSceneName))
+            if (!Application.CanStreamedLevelBeLoaded(targetScene))
             {
-                SetStatus($"Сцена '{gameSceneName}' не найдена в Build Settings.");
+                SetStatus($"Сцена '{targetScene}' не найдена в Build Settings.");
                 return;
             }
 
-            SetStatus($"Загрузка сцены '{gameSceneName}'...");
-            SceneManager.LoadScene(gameSceneName);
+            SetStatus($"Загрузка сцены '{targetScene}'...");
+            SceneManager.LoadScene(targetScene);
         }
 
         private IEnumerator ConnectAndEnterGameRoutine(string address, int port)

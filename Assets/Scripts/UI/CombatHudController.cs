@@ -169,6 +169,7 @@ namespace ShooterPrototype.UI
 
             if (string.Equals(message.victimTicketId, localTicketId, System.StringComparison.Ordinal))
             {
+                TryForceLocalDeathFromKillFeed(message);
                 if (string.Equals(message.cause, "player", System.StringComparison.OrdinalIgnoreCase))
                 {
                     ShowDeathBanner(message.killerNickname);
@@ -221,6 +222,31 @@ namespace ShooterPrototype.UI
             killBannerText.text = $"Вы убили {victim}";
             killBannerText.color = UiTheme.TextAccent;
             ActivateBanner(KillBannerFadeInSeconds + KillBannerHoldSeconds);
+        }
+
+        public void ShowDuelRoundBanner(string message)
+        {
+            if (killBannerRoot == null || killBannerText == null || killBannerGroup == null)
+            {
+                return;
+            }
+
+            killBannerText.text = string.IsNullOrWhiteSpace(message) ? "Ничья" : message.Trim();
+            killBannerText.color = UiTheme.TextPrimary;
+            ActivateBanner(KillBannerFadeInSeconds + KillBannerHoldSeconds + 2f);
+        }
+
+        public void ClearDuelRoundBanner()
+        {
+            if (killBannerRoot == null || killBannerGroup == null)
+            {
+                return;
+            }
+
+            killBannerTargetAlpha = 0f;
+            killBannerAlpha = 0f;
+            killBannerGroup.alpha = 0f;
+            killBannerRoot.gameObject.SetActive(false);
         }
 
         private void ShowDeathBanner(string killerNickname, bool fromZone = false)
@@ -327,13 +353,22 @@ namespace ShooterPrototype.UI
             damagePulseUntil = Time.unscaledTime + DamageHoldSeconds;
         }
 
+        private void TryForceLocalDeathFromKillFeed(RealtimeTransportClient.KillFeedMessage message)
+        {
+            var local = FindFirstObjectByType<LocalPlayerMarker>();
+            var health = local != null ? local.GetComponent<PlayerHealth>() : null;
+            if (health == null || health.IsDead)
+            {
+                return;
+            }
+
+            health.ForceDeathFromServer(Vector3.forward);
+        }
+
         private void RefreshHealthBar()
         {
-            if (trackedHealth == null || trackedHealth.IsDead)
+            if (trackedHealth == null)
             {
-                displayedHealthRatio = 0f;
-                trailHealthRatio = Mathf.MoveTowards(trailHealthRatio, 0f, TrailCatchUpSpeed * Time.unscaledDeltaTime);
-                ApplyBarVisuals(UiTheme.HealthLow);
                 return;
             }
 

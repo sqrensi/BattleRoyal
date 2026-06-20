@@ -76,9 +76,11 @@ namespace ShooterPrototype.Player
         private PlayerHealth localHealth;
         private PlayerMedkitController localMedkitController;
         private MatchBattleRoyaleController battleRoyaleController;
+        private MatchDuelController duelController;
         private string localCharacterModelName = string.Empty;
         private bool transportEventsSubscribed;
         private readonly Dictionary<string, RemoteAvatar> remoteAvatars = new Dictionary<string, RemoteAvatar>();
+        private bool remoteAvatarsSuppressed;
 
         public int LiveMatchPlayerCount
         {
@@ -662,6 +664,43 @@ namespace ShooterPrototype.Player
             SendLocalPose(forceImmediate: true);
         }
 
+        public void SetRemoteAvatarsVisible(bool visible)
+        {
+            remoteAvatarsSuppressed = !visible;
+            ApplyRemoteAvatarSuppressionState();
+        }
+
+        public void SnapAllRemoteAvatarsToLastKnownPose()
+        {
+            foreach (var kv in remoteAvatars)
+            {
+                var avatar = kv.Value;
+                if (avatar?.Root == null || !avatar.HasKnownPose)
+                {
+                    continue;
+                }
+
+                avatar.Snapshots.Clear();
+                avatar.HorizontalSmoothVelocity = Vector2.zero;
+                avatar.VerticalSmoothVelocity = 0f;
+                avatar.HasSmoothedPlaneLocalPosition = false;
+                avatar.Root.transform.SetPositionAndRotation(
+                    avatar.LastKnownPosition,
+                    Quaternion.Euler(0f, avatar.LastKnownYaw, 0f));
+            }
+        }
+
+        private void ApplyRemoteAvatarSuppressionState()
+        {
+            foreach (var kv in remoteAvatars)
+            {
+                if (kv.Value?.Root != null)
+                {
+                    kv.Value.Root.SetActive(!remoteAvatarsSuppressed);
+                }
+            }
+        }
+
         private void HandleLocalEquipmentChanged()
         {
             PlayerSkinSelectionService.ApplyToPlayer(gameObject, forceReapply: true);
@@ -744,7 +783,20 @@ namespace ShooterPrototype.Player
             isHolstered = localWeaponHolster != null && localWeaponHolster.IsHolstered;
             if (loadoutReady)
             {
-                isHolstered = localWeaponLoadout.IsBothHolstered;
+                if (localWeaponMount != null &&
+                    localWeaponMount.HasMountedWeapon &&
+                    localWeaponHolster != null)
+                {
+                    isHolstered = localWeaponHolster.IsHolstered;
+                    if (!isHolstered && localWeaponLoadout.IsBothHolstered)
+                    {
+                        localWeaponLoadout.SetBothHolstered(false);
+                    }
+                }
+                else
+                {
+                    isHolstered = localWeaponLoadout.IsBothHolstered;
+                }
             }
 
             weaponSlot0Kind = PlayerWeaponLoadout.EmptySlotKind;
@@ -902,7 +954,9 @@ namespace ShooterPrototype.Player
             var animPhase = localLocomotionRig != null
                 ? localLocomotionRig.CurrentAnimPhase01
                 : 0f;
-            var inputAuth = !isDead && localFpsController != null;
+            var inputAuth = !isDead &&
+                            localFpsController != null &&
+                            !localFpsController.IsMovementLocked;
             var moveInputX = inputAuth ? localFpsController.NetworkMoveInputX : 0f;
             var moveInputZ = inputAuth ? localFpsController.NetworkMoveInputZ : 0f;
             var jumpPressed = inputAuth && localFpsController.NetworkJumpPressed;
@@ -1270,7 +1324,17 @@ namespace ShooterPrototype.Player
                 battleRoyaleController = FindFirstObjectByType<MatchBattleRoyaleController>();
             }
 
-            return battleRoyaleController != null && battleRoyaleController.ShouldSuppressPoseReconcile;
+            if (duelController == null)
+            {
+                duelController = FindFirstObjectByType<MatchDuelController>();
+            }
+
+            if (battleRoyaleController != null && battleRoyaleController.ShouldSuppressPoseReconcile)
+            {
+                return true;
+            }
+
+            return duelController != null && duelController.ShouldSuppressPoseReconcile;
         }
 
         private void ApplySelfAuthoritativePose(RealtimeTransportClient.SelfAuthoritativePose selfPose)
@@ -1571,6 +1635,11 @@ namespace ShooterPrototype.Player
 
             EnsureRemoteAudio(root);
 
+            if (remoteAvatarsSuppressed)
+            {
+                root.SetActive(false);
+            }
+
             var health = root.GetComponent<PlayerHealth>();
             if (health == null)
             {
@@ -1737,7 +1806,7 @@ namespace ShooterPrototype.Player
 
             if (shotEffects != null && localWeaponController != null)
             {
-                ApplyRemoteWeaponEffects(avatar, WeaponKindUtility.ClampKind(playerState.weaponKind));
+                ApplyRemoteWeaponEffects(avatar, ResolveRemoteActiveWeaponKind(playerState));
             }
 
             EnsureRemoteAudio(avatar.Root);

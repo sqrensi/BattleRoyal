@@ -179,6 +179,7 @@
     <Compile Include="Assets\Scripts\Player\PickupWorldVisualBuilder.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\FollowCam.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerProfileApiClient.cs" />
+    <Compile Include="Assets\Scripts\Player\MatchDuelController.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponScopeOverlay.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponHolsterController.cs" />
     <Compile Include="Assets\Scripts\Player\MatchPresenceSync.cs" />
@@ -237,6 +238,7 @@
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_Demo_Translate.cs" />
     <Compile Include="Assets\Scripts\Player\LocalPlayerMarker.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TextConsoleSimulator.cs" />
+    <Compile Include="Assets\Scripts\Matchmaking\ActiveMatchContext.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TeleType.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextEventCheck.cs" />
     <Compile Include="Assets\Scripts\UI\GameHudController.cs" />
@@ -261,6 +263,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerWeaponRaycastFilters.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteWeaponPresentation.cs" />
     <Compile Include="Assets\Scripts\Matchmaking\MainMenuGameMode.cs" />
+    <Compile Include="Assets\Scripts\Player\DuelSpawnUtility.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Assets\TextMesh Pro\Shaders\TMPro.cginc" />

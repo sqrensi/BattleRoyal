@@ -246,13 +246,11 @@ namespace ShooterPrototype.UI
 
         private MainMenuCameraMotion ResolveCameraMotion()
         {
-            if (cameraMotion != null)
+            if (cameraMotion == null)
             {
-                return cameraMotion;
+                cameraMotion = MainMenuCameraMotion.Resolve();
             }
 
-            var controller = FindObjectOfType<MainMenuController>();
-            cameraMotion = controller != null ? controller.GetComponent<MainMenuCameraMotion>() : null;
             return cameraMotion;
         }
 

@@ -674,6 +674,33 @@ namespace ShooterPrototype.Player
             int damageDealt,
             Action<bool, int, string> onCompleted)
         {
+            yield return RecordMatchStats(
+                runner,
+                apiClient,
+                playerId,
+                sourceId,
+                kills,
+                deaths,
+                placement,
+                won,
+                damageDealt,
+                null,
+                onCompleted);
+        }
+
+        public static IEnumerator RecordMatchStats(
+            MonoBehaviour runner,
+            PlayerProfileApiClient apiClient,
+            string playerId,
+            string sourceId,
+            int kills,
+            int deaths,
+            int placement,
+            bool won,
+            int damageDealt,
+            string matchMode,
+            Action<bool, int, string> onCompleted)
+        {
             if (runner == null || apiClient == null || string.IsNullOrWhiteSpace(playerId))
             {
                 onCompleted?.Invoke(false, 0, "Profile is not synced with server.");
@@ -699,7 +726,8 @@ namespace ShooterPrototype.Player
                 deaths = Mathf.Max(0, deaths),
                 placement = Mathf.Max(1, placement),
                 won = won,
-                damageDealt = Mathf.Max(0, damageDealt)
+                damageDealt = Mathf.Max(0, damageDealt),
+                matchMode = matchMode ?? string.Empty
             };
 
             yield return apiClient.RecordMatchStats(playerId, request, (ok, responseDelta, responseProfile, responseError) =>

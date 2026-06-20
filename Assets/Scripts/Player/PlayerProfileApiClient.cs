@@ -183,6 +183,7 @@ namespace ShooterPrototype.Player
         public int placement;
         public bool won;
         public int damageDealt;
+        public string matchMode;
     }
 
     [Serializable]

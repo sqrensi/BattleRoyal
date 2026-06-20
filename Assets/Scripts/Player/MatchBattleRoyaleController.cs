@@ -227,7 +227,11 @@ namespace ShooterPrototype.Player
         {
             if (isOnPlane && !hasJumpedLocally && lastState != null)
             {
-                UpdatePlaneOrbitCameraInput();
+                if (!GameHudController.IsPauseMenuOpen)
+                {
+                    UpdatePlaneOrbitCameraInput();
+                }
+
                 if (ShouldAutoEjectAtMapExit(lastState) || lastState.forceJump)
                 {
                     RequestJumpFromPlane(lastState);
@@ -442,6 +446,11 @@ namespace ShooterPrototype.Player
         private void HandleMatchState(RealtimeTransportClient.MatchStateMessage message)
         {
             if (message == null)
+            {
+                return;
+            }
+
+            if (string.Equals(message.matchMode, "duel", StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
@@ -1800,6 +1809,11 @@ namespace ShooterPrototype.Player
 
         private void UpdatePlaneOrbitCameraInput()
         {
+            if (GameHudController.IsPauseMenuOpen)
+            {
+                return;
+            }
+
             var mouseDelta = ReadMouseDelta();
             if (mouseDelta.sqrMagnitude <= 0.0001f)
             {
@@ -1807,10 +1821,11 @@ namespace ShooterPrototype.Player
             }
 
             planeOrbitYaw += mouseDelta.x * planeOrbitSensitivity;
+            planeOrbitYaw = NormalizeYawDegrees(planeOrbitYaw);
             planeOrbitPitch = Mathf.Clamp(
                 planeOrbitPitch - (mouseDelta.y * planeOrbitSensitivity),
-                -5f,
-                80f);
+                -35f,
+                82f);
         }
 
         private void UpdatePlaneOrbitCamera()
@@ -1821,10 +1836,46 @@ namespace ShooterPrototype.Player
             }
 
             var orbitCenter = planeInstance.transform.position + Vector3.up * 2f;
-            var rotation = Quaternion.Euler(planeOrbitPitch, planeOrbitYaw, 0f);
-            var offset = rotation * new Vector3(0f, planeOrbitHeight, -planeOrbitDistance);
-            planeCamera.transform.position = orbitCenter + offset;
-            planeCamera.transform.rotation = Quaternion.LookRotation(orbitCenter - planeCamera.transform.position, Vector3.up);
+            var pitchRad = planeOrbitPitch * Mathf.Deg2Rad;
+            var yawRad = planeOrbitYaw * Mathf.Deg2Rad;
+            var horizontalRadius = Mathf.Max(4f, planeOrbitDistance * Mathf.Cos(pitchRad));
+            var verticalOffset = planeOrbitHeight + (planeOrbitDistance * Mathf.Sin(pitchRad));
+            var offset = new Vector3(
+                Mathf.Sin(yawRad) * horizontalRadius,
+                verticalOffset,
+                Mathf.Cos(yawRad) * horizontalRadius);
+            var cameraPosition = orbitCenter + offset;
+            planeCamera.transform.position = cameraPosition;
+
+            var forward = orbitCenter - cameraPosition;
+            if (forward.sqrMagnitude <= 0.0001f)
+            {
+                return;
+            }
+
+            forward.Normalize();
+            var up = Vector3.up;
+            if (Mathf.Abs(Vector3.Dot(forward, up)) > 0.98f)
+            {
+                up = Vector3.forward;
+            }
+
+            planeCamera.transform.rotation = Quaternion.LookRotation(forward, up);
+        }
+
+        private static float NormalizeYawDegrees(float yaw)
+        {
+            yaw %= 360f;
+            if (yaw > 180f)
+            {
+                yaw -= 360f;
+            }
+            else if (yaw < -180f)
+            {
+                yaw += 360f;
+            }
+
+            return yaw;
         }
 
         private static Vector2 ReadMouseDelta()

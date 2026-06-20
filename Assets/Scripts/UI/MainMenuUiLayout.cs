@@ -162,7 +162,7 @@ namespace ShooterPrototype.UI
             inventoryPanel.Configure(
                 controller.GetComponent<MainMenuPlayerPreview>(),
                 controller.GetComponent<MainMenuUiSoundController>(),
-                controller.GetComponent<MainMenuCameraMotion>());
+                MainMenuCameraMotion.Resolve());
 
             shopPanel.Configure(
                 controller.GetComponent<MainMenuPlayerPreview>(),
@@ -185,7 +185,7 @@ namespace ShooterPrototype.UI
             connectionGate?.RegisterMenuGroup(gameModeSelector != null ? gameModeSelector.CanvasGroup : null);
 
             sectionController.Configure(
-                controller.GetComponent<MainMenuCameraMotion>(),
+                MainMenuCameraMotion.Resolve(),
                 controller.GetComponent<MainMenuUiSoundController>(),
                 topNavBarObject != null ? EnsureCanvasGroup(topNavBarObject) : null,
                 startButtonGroup,

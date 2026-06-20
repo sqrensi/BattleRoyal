@@ -23,6 +23,7 @@ namespace ShooterPrototype.Bootstrap
         [SerializeField] private bool createRuntimePlayerSpawnManager = true;
         [SerializeField] private string mainMenuSceneName = "MainMenu";
         [SerializeField] private string gameSceneName = "Game";
+        [SerializeField] private string duelSceneName = "1x1";
         [SerializeField] private GameObject battleRoyalePlanePrefab;
 
         private bool initialized;
@@ -147,10 +148,15 @@ namespace ShooterPrototype.Bootstrap
                     playerSpawnManager = gameObject.AddComponent<PlayerSpawnManager>();
                 }
 
-                playerSpawnManager.Configure(gameSceneName);
+                playerSpawnManager.Configure(ResolveActiveGameSceneName());
                 playerSpawnManager.HandleSceneLoaded(SceneManager.GetActiveScene());
             }
 
+        }
+
+        private string ResolveActiveGameSceneName()
+        {
+            return ActiveMatchContext.ResolveGameSceneName(gameSceneName, duelSceneName);
         }
 
         private void OnEnable()
@@ -183,10 +189,10 @@ namespace ShooterPrototype.Bootstrap
 
         private void HandleSceneLoaded(Scene scene, LoadSceneMode _)
         {
+            var isMatchScene = scene.name == gameSceneName || scene.name == duelSceneName;
             if (gameHudController != null)
             {
-                var isGameScene = scene.name == gameSceneName;
-                gameHudController.SetActiveForScene(isGameScene);
+                gameHudController.SetActiveForScene(isMatchScene);
             }
 
             if (playerSpawnManager != null)
@@ -198,6 +204,24 @@ namespace ShooterPrototype.Bootstrap
             {
                 EnsureBattleRoyaleController();
             }
+            else if (scene.name == duelSceneName && !Application.isBatchMode)
+            {
+                EnsureDuelController();
+            }
+        }
+
+        private void EnsureDuelController()
+        {
+            var existing = FindFirstObjectByType<MatchDuelController>();
+            if (existing != null)
+            {
+                existing.PrepareForNewMatch();
+                return;
+            }
+
+            var controllerObject = new GameObject("MatchDuel");
+            var controller = controllerObject.AddComponent<MatchDuelController>();
+            controller.PrepareForNewMatch();
         }
 
         private void EnsureBattleRoyaleController()

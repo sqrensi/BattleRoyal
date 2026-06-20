@@ -66,6 +66,66 @@ namespace ShooterPrototype.Player
         public int DeathSequence => deathSequence;
         public Vector3 DeathFallDirection => deathFallDirection;
 
+        public void ForceDeathFromServer(Vector3 hitDirection)
+        {
+            if (networkMode || isDead)
+            {
+                return;
+            }
+
+            var horizontalDir = Vector3.ProjectOnPlane(hitDirection, Vector3.up);
+            if (horizontalDir.sqrMagnitude > 0.0001f)
+            {
+                deathFallDirection = horizontalDir.normalized;
+            }
+
+            currentHealth = 0f;
+            HandleDeath();
+        }
+
+        public void ApplyAuthoritativeDamage(
+            float amount,
+            float remainingHealth,
+            Vector3 hitDirection)
+        {
+            if (networkMode || isDead || amount <= 0f)
+            {
+                return;
+            }
+
+            var horizontalDir = Vector3.ProjectOnPlane(hitDirection, Vector3.up);
+            if (horizontalDir.sqrMagnitude > 0.0001f)
+            {
+                deathFallDirection = horizontalDir.normalized;
+            }
+
+            if (remainingHealth >= 0f)
+            {
+                var previousHealth = currentHealth;
+                currentHealth = Mathf.Clamp(remainingHealth, 0f, MaxHealth);
+                var appliedDamage = Mathf.Max(0f, previousHealth - currentHealth);
+                if (appliedDamage > 0.001f)
+                {
+                    LocalDamageTaken?.Invoke(appliedDamage);
+                }
+            }
+            else
+            {
+                ApplyDamage(amount, string.Empty, hitDirection);
+                return;
+            }
+
+            if (logDamage)
+            {
+                Debug.Log($"[PlayerHealth] authoritative damage={amount:0.##} hp={currentHealth:0.##}/{MaxHealth:0.##}");
+            }
+
+            if (currentHealth <= 0.001f)
+            {
+                HandleDeath();
+            }
+        }
+
         public void ApplyEnvironmentalDamage(float amount, Vector3 hitDirection)
         {
             if (networkMode || isDead || amount <= 0f)
@@ -161,7 +221,7 @@ namespace ShooterPrototype.Player
             }
 
             var hitDirection = new Vector3(damageMessage.dirX, damageMessage.dirY, damageMessage.dirZ);
-            ApplyDamage(damageMessage.damage, damageMessage.attackerTicketId, hitDirection);
+            ApplyAuthoritativeDamage(damageMessage.damage, damageMessage.remainingHealth, hitDirection);
         }
 
         private void ApplyDamage(float amount, string attackerTicketId, Vector3 hitDirection)
@@ -199,7 +259,7 @@ namespace ShooterPrototype.Player
             }
 
             deathSequence++;
-            EnterDeathState(startRespawn: true);
+            EnterDeathState(startRespawn: !eliminationMode);
         }
 
         private IEnumerator RespawnRoutine()
@@ -227,6 +287,43 @@ namespace ShooterPrototype.Player
         public void SetEliminationMode(bool enabled)
         {
             eliminationMode = enabled;
+        }
+
+        public void ForceReviveAt(Vector3 position, Quaternion rotation)
+        {
+            if (respawnRoutine != null)
+            {
+                StopCoroutine(respawnRoutine);
+                respawnRoutine = null;
+            }
+
+            StopDeathFallPhysics();
+            if (characterController != null)
+            {
+                characterController.enabled = false;
+            }
+
+            transform.SetPositionAndRotation(position, rotation);
+            ExitDeathState(restoreHealth: true);
+            presenceSync?.FlushLocalPose();
+        }
+
+        public void RepositionWhileDead(Vector3 position, Quaternion rotation)
+        {
+            if (!isDead)
+            {
+                return;
+            }
+
+            if (respawnRoutine != null)
+            {
+                StopCoroutine(respawnRoutine);
+                respawnRoutine = null;
+            }
+
+            StopDeathFallPhysics();
+            transform.SetPositionAndRotation(position, rotation);
+            presenceSync?.FlushLocalPose();
         }
 
         public void SetNetworkDeadState(bool dead, int deathSeq, Vector3 networkDeathFallDirection)

@@ -38,7 +38,7 @@ namespace ShooterPrototype.Player
 
         public void HandleSceneLoaded(Scene scene)
         {
-            if (scene.name != gameSceneName)
+            if (scene.name != gameSceneName && !DuelSpawnUtility.IsDuelScene(scene))
             {
                 return;
             }
@@ -81,6 +81,13 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            if (DuelSpawnUtility.IsDuelScene(scene))
+            {
+                spawnPointsRoot = null;
+                spawnPoints?.Clear();
+                return;
+            }
+
             if (spawnPointsRoot == null || !spawnPointsRoot.gameObject.scene.IsValid() || spawnPointsRoot.gameObject.scene != scene)
             {
                 var rootCandidate = GameObject.Find("SpawnPoints");
@@ -114,6 +121,11 @@ namespace ShooterPrototype.Player
             }
 
             var hasSpawn = TryResolveSpawnPose(out var resolvedPosition, out var resolvedRotation);
+            if (!hasSpawn && DuelSpawnUtility.IsDuelScene(SceneManager.GetActiveScene()))
+            {
+                hasSpawn = DuelSpawnUtility.TryResolveSpawnPose(0, 0, out resolvedPosition, out resolvedRotation);
+            }
+
             if (!hasSpawn)
             {
                 resolvedPosition = ResolveGroundedSpawnPosition(Vector3.zero);

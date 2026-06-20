@@ -367,6 +367,8 @@ namespace ShooterPrototype.Player
             handBinder?.SetHandIkEnabled(true);
             handBinder?.SyncFirstPersonRigidHandIkMode();
             phase = HolsterPhase.Armed;
+            GetComponent<SyntyHandAttachedWeaponMount>()?.TryAttachNow();
+            GetComponent<PlayerViewPresentation>()?.RefreshViewMode();
             NotifyHolsterNetworkState();
         }
 

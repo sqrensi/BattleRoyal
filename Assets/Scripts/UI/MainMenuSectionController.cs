@@ -203,7 +203,7 @@ namespace ShooterPrototype.UI
 
             if (wasInventory)
             {
-                cameraMotion?.ExitInventoryView();
+                ResolveCameraMotion()?.ExitInventoryView();
             }
 
             StartTransition(showBackButton: false);
@@ -242,6 +242,16 @@ namespace ShooterPrototype.UI
                 SetGroupsImmediate(mainMenuGroups, 1f, interactable: true);
                 SetGroupImmediate(backButtonGroup, 0f, interactable: false);
             }
+        }
+
+        private MainMenuCameraMotion ResolveCameraMotion()
+        {
+            if (cameraMotion == null)
+            {
+                cameraMotion = MainMenuCameraMotion.Resolve();
+            }
+
+            return cameraMotion;
         }
 
         private void OpenPanel(MainMenuPanelMode panelMode)
@@ -297,14 +307,14 @@ namespace ShooterPrototype.UI
 
             if (wasInventory && panelMode != MainMenuPanelMode.Inventory)
             {
-                cameraMotion?.ExitInventoryView();
+                ResolveCameraMotion()?.ExitInventoryView();
             }
 
             activePanel = panelMode;
 
             if (panelMode == MainMenuPanelMode.Inventory)
             {
-                cameraMotion?.EnterInventoryView();
+                ResolveCameraMotion()?.EnterInventoryView();
                 inventoryPanel?.Show();
             }
             else if (panelMode == MainMenuPanelMode.Shop)

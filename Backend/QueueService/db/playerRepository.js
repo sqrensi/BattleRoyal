@@ -456,7 +456,12 @@ function getPlayerMatchStats(playerId) {
   };
 }
 
-function calculateRatingDelta(placement, kills) {
+function calculateRatingDelta(placement, kills, matchMode) {
+  const normalizedMode = String(matchMode || "").trim().toLowerCase();
+  if (normalizedMode === "duel" || normalizedMode === "1v1") {
+    return placement <= 1 ? 15 : -15;
+  }
+
   const brSize = 20;
   const normalizedPlacement = Math.max(1, Math.min(brSize, Math.floor(Number(placement) || brSize)));
   const normalizedKills = Math.max(0, Math.floor(Number(kills) || 0));
@@ -506,7 +511,7 @@ function recordMatchStats(externalPlayerId, payload) {
         return true;
       }
 
-      ratingDelta = calculateRatingDelta(placement, kills);
+      ratingDelta = calculateRatingDelta(placement, kills, payload && payload.matchMode);
 
       db.prepare(
         `UPDATE player_match_stats
