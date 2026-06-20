@@ -20,6 +20,7 @@ namespace ShooterPrototype.UI
         [SerializeField] private float navFontSize = 18f;
         [SerializeField] private float startFontSize = 26f;
         [SerializeField] private float statusFontSize = 21f;
+        [SerializeField] private float modeSelectorGap = 10f;
 
         private bool layoutApplied;
         private GameObject topNavBarObject;
@@ -31,6 +32,7 @@ namespace ShooterPrototype.UI
         private Button backButton;
         private CanvasGroup backButtonGroup;
         private CanvasGroup startButtonGroup;
+        private MainMenuGameModeSelector gameModeSelector;
         private MainMenuCurrencyDisplay currencyDisplay;
         private MainMenuNicknameEditor nicknameEditor;
         private MainMenuLeaderboardPanel leaderboardPanel;
@@ -68,6 +70,7 @@ namespace ShooterPrototype.UI
             {
                 SetupStartButton(controller.StartButton, canvasRect);
                 controller.BindStartButtonText(ResolveButtonLabel(controller.StartButton));
+                BuildGameModeSelector(controller, canvasRect, uiSound);
             }
 
             if (controller.StatusText != null)
@@ -158,7 +161,8 @@ namespace ShooterPrototype.UI
 
             inventoryPanel.Configure(
                 controller.GetComponent<MainMenuPlayerPreview>(),
-                controller.GetComponent<MainMenuUiSoundController>());
+                controller.GetComponent<MainMenuUiSoundController>(),
+                controller.GetComponent<MainMenuCameraMotion>());
 
             shopPanel.Configure(
                 controller.GetComponent<MainMenuPlayerPreview>(),
@@ -178,6 +182,7 @@ namespace ShooterPrototype.UI
                 : null;
 
             connectionGate?.RegisterMenuGroup(changeCharacterGroup);
+            connectionGate?.RegisterMenuGroup(gameModeSelector != null ? gameModeSelector.CanvasGroup : null);
 
             sectionController.Configure(
                 controller.GetComponent<MainMenuCameraMotion>(),
@@ -185,6 +190,7 @@ namespace ShooterPrototype.UI
                 topNavBarObject != null ? EnsureCanvasGroup(topNavBarObject) : null,
                 startButtonGroup,
                 changeCharacterGroup,
+                gameModeSelector != null ? gameModeSelector.CanvasGroup : null,
                 inventoryButton,
                 shopButton,
                 achievementsButton,
@@ -326,12 +332,12 @@ namespace ShooterPrototype.UI
             fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            CreateNavButton(topNavBarObject.transform, "Меню", uiSound, selected: true, UiIconCatalog.IconKind.Skin);
-            inventoryButton = CreateNavButton(topNavBarObject.transform, "Инвентарь", uiSound, iconKind: UiIconCatalog.IconKind.Inventory);
-            shopButton = CreateNavButton(topNavBarObject.transform, "Магазин", uiSound, iconKind: UiIconCatalog.IconKind.Shop);
-            achievementsButton = CreateNavButton(topNavBarObject.transform, "Достижения", uiSound, iconKind: UiIconCatalog.IconKind.Case);
-            statsButton = CreateNavButton(topNavBarObject.transform, "Статистика", uiSound, iconKind: UiIconCatalog.IconKind.Skin);
-            settingsButton = CreateNavButton(topNavBarObject.transform, "Настройки", uiSound, iconKind: UiIconCatalog.IconKind.Settings);
+            CreateNavButton(topNavBarObject.transform, "Меню", uiSound, selected: true);
+            inventoryButton = CreateNavButton(topNavBarObject.transform, "Инвентарь", uiSound);
+            shopButton = CreateNavButton(topNavBarObject.transform, "Магазин", uiSound);
+            achievementsButton = CreateNavButton(topNavBarObject.transform, "Достижения", uiSound);
+            statsButton = CreateNavButton(topNavBarObject.transform, "Статистика", uiSound);
+            settingsButton = CreateNavButton(topNavBarObject.transform, "Настройки", uiSound);
 
             navNotificationBadges = GetComponent<MainMenuNavNotificationBadges>();
             if (navNotificationBadges == null)
@@ -477,6 +483,31 @@ namespace ShooterPrototype.UI
             startButtonGroup = EnsureCanvasGroup(startButton.gameObject);
         }
 
+        private void BuildGameModeSelector(
+            MainMenuController controller,
+            RectTransform canvasRect,
+            MainMenuUiSoundController uiSound)
+        {
+            if (controller == null || canvasRect == null || controller.StartButton == null)
+            {
+                return;
+            }
+
+            gameModeSelector = controller.GetComponent<MainMenuGameModeSelector>();
+            if (gameModeSelector == null)
+            {
+                gameModeSelector = controller.gameObject.AddComponent<MainMenuGameModeSelector>();
+            }
+
+            var startRect = controller.StartButton.GetComponent<RectTransform>();
+            var modeLeft = startRect != null ? startRect.anchoredPosition.x : edgeMargin;
+            var modeWidth = startRect != null ? startRect.sizeDelta.x : startButtonWidth;
+            var modeBottom = startRect != null
+                ? startRect.anchoredPosition.y + startRect.sizeDelta.y + modeSelectorGap
+                : edgeMargin + startButtonHeight + modeSelectorGap;
+            gameModeSelector.Build(canvasRect, modeLeft, modeBottom, modeWidth, uiSound);
+        }
+
         private void LayoutStatusText(TMP_Text statusText, RectTransform canvasRect)
         {
             var rect = statusText.rectTransform;
@@ -499,8 +530,7 @@ namespace ShooterPrototype.UI
             Transform parent,
             string label,
             MainMenuUiSoundController uiSound,
-            bool selected = false,
-            UiIconCatalog.IconKind iconKind = UiIconCatalog.IconKind.Skin)
+            bool selected = false)
         {
             var tab = UiPrefabLibrary.CreateNavTab(parent, label, selected, navButtonWidth, navButtonHeight);
             var button = tab.Button;
@@ -508,19 +538,15 @@ namespace ShooterPrototype.UI
             {
                 tab.Label.text = label.ToUpperInvariant();
                 tab.Label.fontSize = navFontSize;
+                tab.Label.alignment = TextAlignmentOptions.Center;
                 tab.Label.enableWordWrapping = false;
                 tab.Label.overflowMode = TextOverflowModes.Overflow;
                 tab.Label.characterSpacing = 1.2f;
                 UiTheme.ApplyMilitaryHeader(tab.Label, selected ? UiTextRole.Accent : UiTextRole.Heading);
-            }
 
-            if (tab.Root != null)
-            {
-                var rootRect = tab.Root.GetComponent<RectTransform>();
-                if (rootRect != null)
-                {
-                    UiIconCatalog.AttachIcon(rootRect, iconKind, 18f, new Vector2(12f, 0f), TextAnchor.MiddleLeft);
-                }
+                var labelRect = tab.Label.rectTransform;
+                labelRect.offsetMin = new Vector2(10f, 0f);
+                labelRect.offsetMax = new Vector2(-10f, 0f);
             }
 
             if (uiSound != null && !selected && button != null)

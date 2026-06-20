@@ -11,6 +11,8 @@ namespace ShooterPrototype.UI
             Inventory,
             Shop,
             Back,
+            ChevronLeft,
+            ChevronRight,
             Case,
             Skin,
         }
@@ -20,6 +22,8 @@ namespace ShooterPrototype.UI
         private static Sprite inventoryIcon;
         private static Sprite shopIcon;
         private static Sprite backIcon;
+        private static Sprite chevronLeftIcon;
+        private static Sprite chevronRightIcon;
         private static Sprite caseIcon;
         private static Sprite skinIcon;
 
@@ -32,6 +36,8 @@ namespace ShooterPrototype.UI
                 IconKind.Inventory => inventoryIcon ??= CreateBagIcon(),
                 IconKind.Shop => shopIcon ??= CreateCartIcon(),
                 IconKind.Back => backIcon ??= CreateArrowIcon(),
+                IconKind.ChevronLeft => chevronLeftIcon ??= CreateTriangleIcon(pointRight: false),
+                IconKind.ChevronRight => chevronRightIcon ??= CreateTriangleIcon(pointRight: true),
                 IconKind.Case => caseIcon ??= CreateCaseIcon(),
                 _ => skinIcon ??= CreateSkinIcon(),
             };
@@ -142,6 +148,55 @@ namespace ShooterPrototype.UI
             }
 
             return Finish(texture, pixels, size);
+        }
+
+        private static Sprite CreateTriangleIcon(bool pointRight)
+        {
+            const int size = 24;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false) { hideFlags = HideFlags.HideAndDontSave };
+            var pixels = Clear(size);
+
+            Vector2 a;
+            Vector2 b;
+            Vector2 c;
+            if (pointRight)
+            {
+                a = new Vector2(16f, 5f);
+                b = new Vector2(16f, 19f);
+                c = new Vector2(6f, 12f);
+            }
+            else
+            {
+                a = new Vector2(8f, 5f);
+                b = new Vector2(8f, 19f);
+                c = new Vector2(18f, 12f);
+            }
+
+            for (var y = 0; y < size; y++)
+            {
+                for (var x = 0; x < size; x++)
+                {
+                    if (PointInTriangle(new Vector2(x + 0.5f, y + 0.5f), a, b, c))
+                    {
+                        pixels[y * size + x] = Color.white;
+                    }
+                }
+            }
+
+            return Finish(texture, pixels, size);
+        }
+
+        private static bool PointInTriangle(Vector2 point, Vector2 a, Vector2 b, Vector2 c)
+        {
+            var area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+            if (Mathf.Abs(area) < 0.001f)
+            {
+                return false;
+            }
+
+            var s = ((a.y - c.y) * (point.x - c.x) + (c.x - a.x) * (point.y - c.y)) / area;
+            var t = ((c.y - b.y) * (point.x - c.x) + (b.x - c.x) * (point.y - c.y)) / area;
+            return s >= 0f && t >= 0f && s + t <= 1f;
         }
 
         private static Sprite CreateCaseIcon() => CreateBoxIcon(false);

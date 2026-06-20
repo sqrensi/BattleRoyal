@@ -30,9 +30,9 @@ namespace ShooterPrototype.UI
         [SerializeField] private float rotationSmoothTime = 0.68f;
 
         [Header("Inventory View")]
-        [SerializeField] private float inventoryForwardOffset = 0.32f;
-        [SerializeField] private float inventoryRightOffset = 0.26f;
-        [SerializeField] private float inventoryFov = 28f;
+        [SerializeField] private float inventoryForwardOffset = 0.58f;
+        [SerializeField] private float inventoryRightOffset = 0.28f;
+        [SerializeField] private float inventoryFov = 24f;
         [SerializeField] private float inventoryTransitionSmoothTime = 0.72f;
 
         private Camera cameraComponent;
@@ -61,25 +61,48 @@ namespace ShooterPrototype.UI
 
         public void EnterInventoryView()
         {
+            EnsureReady();
             targetViewBlend = 1f;
         }
 
         public void ExitInventoryView()
         {
+            EnsureReady();
             targetViewBlend = 0f;
+        }
+
+        private void EnsureReady()
+        {
+            ResolveCamera();
+            if (cameraTransform == null)
+            {
+                hasBasePose = false;
+                return;
+            }
+
+            if (!hasBasePose)
+            {
+                CaptureBasePose();
+            }
+            else if (cameraComponent != null && currentViewBlend <= 0.001f && targetViewBlend <= 0.001f)
+            {
+                defaultFov = cameraComponent.fieldOfView;
+            }
         }
 
         private void Awake()
         {
             ResolveCamera();
             phaseOffset = Random.Range(0f, 100f);
-            CaptureBasePose();
+            if (!hasBasePose)
+            {
+                CaptureBasePose();
+            }
         }
 
         private void OnEnable()
         {
             ResolveCamera();
-            CaptureBasePose();
         }
 
         private void LateUpdate()
@@ -213,7 +236,7 @@ namespace ShooterPrototype.UI
 
             basePosition = cameraTransform.position;
             baseRotation = cameraTransform.rotation;
-            if (cameraComponent != null)
+            if (cameraComponent != null && currentViewBlend <= 0.001f)
             {
                 defaultFov = cameraComponent.fieldOfView;
             }
@@ -222,8 +245,6 @@ namespace ShooterPrototype.UI
             currentEulerOffset = Vector3.zero;
             positionOffsetVelocity = Vector3.zero;
             eulerOffsetVelocity = Vector3.zero;
-            currentViewBlend = targetViewBlend;
-            viewBlendVelocity = 0f;
             hasBasePose = true;
         }
     }

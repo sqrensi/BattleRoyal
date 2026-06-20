@@ -155,16 +155,39 @@ namespace ShooterPrototype.UI
             return rootRect;
         }
 
-        public static Image CreateRarityStripe(Transform parent, Color stripeColor, float height = 4f)
+        public enum RarityStripeEdge
+        {
+            Top,
+            Bottom,
+        }
+
+        public static Image CreateRarityStripe(
+            Transform parent,
+            Color stripeColor,
+            float height = 4f,
+            RarityStripeEdge edge = RarityStripeEdge.Bottom,
+            float bottomOffset = 0f,
+            float horizontalInset = 0f)
         {
             var stripeObject = new GameObject("RarityStripe");
             stripeObject.transform.SetParent(parent, false);
             var rect = stripeObject.AddComponent<RectTransform>();
-            rect.anchorMin = new Vector2(0f, 1f);
-            rect.anchorMax = new Vector2(1f, 1f);
-            rect.pivot = new Vector2(0.5f, 1f);
-            rect.anchoredPosition = Vector2.zero;
-            rect.sizeDelta = new Vector2(0f, height);
+            if (edge == RarityStripeEdge.Top)
+            {
+                rect.anchorMin = new Vector2(0f, 1f);
+                rect.anchorMax = new Vector2(1f, 1f);
+                rect.pivot = new Vector2(0.5f, 1f);
+                rect.anchoredPosition = new Vector2(0f, -bottomOffset);
+            }
+            else
+            {
+                rect.anchorMin = new Vector2(0f, 0f);
+                rect.anchorMax = new Vector2(1f, 0f);
+                rect.pivot = new Vector2(0.5f, 0f);
+                rect.anchoredPosition = new Vector2(0f, bottomOffset);
+            }
+
+            rect.sizeDelta = new Vector2(-horizontalInset * 2f, height);
 
             var image = stripeObject.AddComponent<Image>();
             UiTheme.ApplyFlatFill(image, stripeColor);
@@ -324,6 +347,103 @@ namespace ShooterPrototype.UI
             rect.anchorMax = Vector2.one;
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = Vector2.zero;
+        }
+
+        public sealed class HudMetricCardInstance
+        {
+            public RectTransform Root;
+            public TMP_Text Row1Label;
+            public TMP_Text Row1Value;
+            public TMP_Text Row2Label;
+            public TMP_Text Row2Value;
+        }
+
+        public static HudMetricCardInstance CreateHudMetricCard(
+            Transform parent,
+            string row1Label,
+            string row2Label,
+            float width = 136f,
+            float height = 44f,
+            TextAnchor rowAlignment = TextAnchor.MiddleRight)
+        {
+            var rootObject = new GameObject("HudMetricCard");
+            rootObject.transform.SetParent(parent, false);
+
+            var rootRect = rootObject.AddComponent<RectTransform>();
+            rootRect.anchorMin = new Vector2(0f, 1f);
+            rootRect.anchorMax = new Vector2(0f, 1f);
+            rootRect.pivot = new Vector2(0f, 1f);
+            rootRect.sizeDelta = new Vector2(width, height);
+
+            var row1 = CreateMetricRowAnchored(rootObject.transform, row1Label, 0.52f, 1f, rowAlignment);
+            var row2 = CreateMetricRowAnchored(rootObject.transform, row2Label, 0f, 0.48f, rowAlignment);
+
+            return new HudMetricCardInstance
+            {
+                Root = rootRect,
+                Row1Label = row1.label,
+                Row1Value = row1.value,
+                Row2Label = row2.label,
+                Row2Value = row2.value,
+            };
+        }
+
+        public static void SetMetricRow(TMP_Text label, TMP_Text value, string labelText, string valueText)
+        {
+            if (label != null)
+            {
+                label.text = labelText;
+            }
+
+            if (value != null)
+            {
+                value.text = valueText;
+            }
+        }
+
+        private static (TMP_Text label, TMP_Text value) CreateMetricRowAnchored(
+            Transform parent,
+            string labelText,
+            float anchorMinY,
+            float anchorMaxY,
+            TextAnchor rowAlignment)
+        {
+            var rowObject = new GameObject("MetricRow_" + labelText);
+            rowObject.transform.SetParent(parent, false);
+
+            var rowRect = rowObject.AddComponent<RectTransform>();
+            rowRect.anchorMin = new Vector2(0f, anchorMinY);
+            rowRect.anchorMax = new Vector2(1f, anchorMaxY);
+            rowRect.offsetMin = Vector2.zero;
+            rowRect.offsetMax = Vector2.zero;
+
+            var rowLayout = rowObject.AddComponent<HorizontalLayoutGroup>();
+            rowLayout.spacing = 4f;
+            rowLayout.childAlignment = rowAlignment;
+            rowLayout.childControlWidth = false;
+            rowLayout.childControlHeight = true;
+            rowLayout.childForceExpandWidth = false;
+            rowLayout.childForceExpandHeight = false;
+
+            var labelObject = new GameObject("Label");
+            labelObject.transform.SetParent(rowObject.transform, false);
+            var label = labelObject.AddComponent<TextMeshProUGUI>();
+            label.text = labelText;
+            label.fontSize = 15f;
+            label.alignment = TextAlignmentOptions.MidlineRight;
+            label.enableWordWrapping = false;
+            UiTheme.ApplyTmp(label, UiTextRole.Heading);
+
+            var valueObject = new GameObject("Value");
+            valueObject.transform.SetParent(rowObject.transform, false);
+            var valueText = valueObject.AddComponent<TextMeshProUGUI>();
+            valueText.fontSize = 15f;
+            valueText.alignment = TextAlignmentOptions.MidlineRight;
+            valueText.enableWordWrapping = false;
+            valueText.overflowMode = TextOverflowModes.Overflow;
+            UiTheme.ApplyTmp(valueText, UiTextRole.Heading);
+
+            return (label, valueText);
         }
     }
 }

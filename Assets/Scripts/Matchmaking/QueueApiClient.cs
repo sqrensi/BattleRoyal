@@ -10,6 +10,7 @@ namespace ShooterPrototype.Matchmaking
     public sealed class QueueEnqueueRequest
     {
         public string playerId;
+        public string matchMode;
     }
 
     [Serializable]
@@ -128,11 +129,13 @@ namespace ShooterPrototype.Matchmaking
 
         public IEnumerator Enqueue(
             string playerId,
+            string matchMode,
             Action<bool, QueueEnqueueResponse, string> onCompleted)
         {
             var requestBody = new QueueEnqueueRequest
             {
-                playerId = playerId
+                playerId = playerId,
+                matchMode = matchMode
             };
 
             yield return SendRequest(

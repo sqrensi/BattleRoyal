@@ -24,6 +24,7 @@ namespace ShooterPrototype.UI
         private const float DeathBannerHoldSeconds = 4f;
         private const float KillBannerFadeOutSeconds = 0.45f;
         private const float KillBannerBottomOffset = 58f;
+        private const int KillBannerLayoutVersion = 2;
 
         private Canvas canvas;
         private RectTransform hpFillRect;
@@ -475,22 +476,39 @@ namespace ShooterPrototype.UI
 
         private void EnsureKillBanner(Transform root)
         {
+            var existing = root.Find("KillBannerRoot");
+            if (existing != null)
+            {
+                var versionMarker = existing.GetComponent<KillBannerLayoutMarker>();
+                if (versionMarker != null && versionMarker.Version >= KillBannerLayoutVersion &&
+                    killBannerRoot != null)
+                {
+                    return;
+                }
+
+                if (existing == killBannerRoot)
+                {
+                    killBannerRoot = null;
+                    killBannerText = null;
+                    killBannerGroup = null;
+                }
+
+                Destroy(existing.gameObject);
+            }
+
             if (killBannerRoot != null)
             {
                 return;
             }
 
             var bannerObject = CreateRect("KillBannerRoot", root);
+            bannerObject.AddComponent<KillBannerLayoutMarker>().Version = KillBannerLayoutVersion;
             killBannerRoot = bannerObject.GetComponent<RectTransform>();
             killBannerRoot.anchorMin = new Vector2(0.5f, 0f);
             killBannerRoot.anchorMax = new Vector2(0.5f, 0f);
             killBannerRoot.pivot = new Vector2(0.5f, 0f);
             killBannerRoot.anchoredPosition = new Vector2(0f, KillBannerBottomOffset);
-            killBannerRoot.sizeDelta = new Vector2(520f, 42f);
-
-            var background = bannerObject.AddComponent<Image>();
-            UiTheme.ApplyPanel(background, UiPanelStyle.Hud);
-            background.raycastTarget = false;
+            killBannerRoot.sizeDelta = new Vector2(640f, 36f);
 
             killBannerGroup = bannerObject.AddComponent<CanvasGroup>();
             killBannerGroup.alpha = 0f;
@@ -498,16 +516,23 @@ namespace ShooterPrototype.UI
             var labelObject = CreateRect("Label", bannerObject.transform);
             var labelRect = labelObject.GetComponent<RectTransform>();
             StretchFull(labelRect);
-            labelRect.offsetMin = new Vector2(16f, 6f);
-            labelRect.offsetMax = new Vector2(-16f, -6f);
 
             killBannerText = labelObject.AddComponent<TextMeshProUGUI>();
-            UiTheme.ApplyTmp(killBannerText, UiTextRole.Accent);
-            killBannerText.fontSize = 24f;
+            UiTheme.ApplyMilitaryHeader(killBannerText, UiTextRole.Accent);
+            killBannerText.fontSize = 26f;
             killBannerText.alignment = TextAlignmentOptions.Center;
+            killBannerText.enableWordWrapping = false;
+            killBannerText.overflowMode = TextOverflowModes.Overflow;
             killBannerText.raycastTarget = false;
+            killBannerText.outlineWidth = 0.22f;
+            killBannerText.outlineColor = new Color(0.02f, 0.02f, 0.02f, 0.92f);
 
             bannerObject.SetActive(false);
+        }
+
+        private sealed class KillBannerLayoutMarker : MonoBehaviour
+        {
+            public int Version;
         }
 
         private void EnsureDamageOverlay(Transform root)

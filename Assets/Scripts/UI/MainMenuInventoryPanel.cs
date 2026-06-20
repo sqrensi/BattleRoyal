@@ -11,11 +11,11 @@ namespace ShooterPrototype.UI
     public sealed class MainMenuInventoryPanel : MonoBehaviour
     {
         [SerializeField] private float edgeMargin = 44f;
-        [SerializeField] private float panelWidth = 528f;
-        [SerializeField] private float innerPadding = 24f;
+        [SerializeField] private float panelWidth = 628f;
+        [SerializeField] private float innerPadding = 28f;
         [SerializeField] private float fadeDuration = 0.38f;
         [SerializeField] private float slideOffset = 56f;
-        [SerializeField] private float itemSpacing = 14f;
+        [SerializeField] private float itemSpacing = 20f;
         [SerializeField] private float headerHeight = 110f;
         [SerializeField] private float scrollbarWidth = 12f;
         [SerializeField] private float scrollbarGap = 8f;
@@ -51,10 +51,16 @@ namespace ShooterPrototype.UI
         private GameObject emptyCasesState;
         private Vector2 shownAnchoredPosition;
         private Vector2 hiddenAnchoredPosition;
+        private const float ViewportClipInset = 6f;
+        private const float SlotCardInset = 9f;
+        private const float RarityBorderWidth = 7f;
+        private const float IconWellPadding = 8f;
+        private const int InventoryLayoutVersion = 6;
         private float itemCellWidth;
         private float itemCellHeight;
         private MainMenuPlayerPreview playerPreview;
         private MainMenuUiSoundController uiSound;
+        private MainMenuCameraMotion cameraMotion;
         private bool overlayHidden;
         private bool isVisible;
         private Coroutine transitionCoroutine;
@@ -67,7 +73,6 @@ namespace ShooterPrototype.UI
             public PlayerSkinDefinition Definition;
             public Image Background;
             public Image EquippedFrame;
-            public Image RarityStripe;
             public Button Button;
             public TMP_Text QuantityLabel;
             public RectTransform RootRect;
@@ -84,15 +89,45 @@ namespace ShooterPrototype.UI
             public GameObject NotificationDot;
         }
 
-        public void Configure(MainMenuPlayerPreview preview, MainMenuUiSoundController sound)
+        public void Configure(
+            MainMenuPlayerPreview preview,
+            MainMenuUiSoundController sound,
+            MainMenuCameraMotion camera = null)
         {
             playerPreview = preview;
             uiSound = sound;
+            if (camera != null)
+            {
+                cameraMotion = camera;
+            }
         }
 
         public void Build(RectTransform canvasRect)
         {
-            if (panelRect != null || canvasRect == null)
+            if (canvasRect == null)
+            {
+                return;
+            }
+
+            var existing = canvasRect.Find("MainMenuInventoryPanel");
+            if (existing != null)
+            {
+                var marker = existing.GetComponent<InventoryLayoutMarker>();
+                if (marker != null && marker.Version >= InventoryLayoutVersion && panelRect != null)
+                {
+                    return;
+                }
+
+                Destroy(existing.gameObject);
+                panelRect = null;
+                contentRect = null;
+                skinsScrollObject = null;
+                casesScrollObject = null;
+                itemSlots.Clear();
+                caseSlots.Clear();
+            }
+
+            if (panelRect != null)
             {
                 return;
             }
@@ -105,6 +140,7 @@ namespace ShooterPrototype.UI
             panelObject.transform.SetParent(canvasRect, false);
 
             panelRect = panelObject.AddComponent<RectTransform>();
+            panelObject.AddComponent<InventoryLayoutMarker>().Version = InventoryLayoutVersion;
             panelRect.anchorMin = new Vector2(1f, 0f);
             panelRect.anchorMax = new Vector2(1f, 1f);
             panelRect.pivot = new Vector2(1f, 0.5f);
@@ -208,6 +244,18 @@ namespace ShooterPrototype.UI
             return playerPreview;
         }
 
+        private MainMenuCameraMotion ResolveCameraMotion()
+        {
+            if (cameraMotion != null)
+            {
+                return cameraMotion;
+            }
+
+            var controller = FindObjectOfType<MainMenuController>();
+            cameraMotion = controller != null ? controller.GetComponent<MainMenuCameraMotion>() : null;
+            return cameraMotion;
+        }
+
         public void SetHiddenForOverlay(bool hidden)
         {
             overlayHidden = hidden;
@@ -234,6 +282,8 @@ namespace ShooterPrototype.UI
 
         public void Show()
         {
+            ResolveCameraMotion()?.EnterInventoryView();
+
             if (isVisible)
             {
                 if (activeTab == InventoryTab.Skins)
@@ -264,6 +314,7 @@ namespace ShooterPrototype.UI
             }
 
             isVisible = false;
+            ResolveCameraMotion()?.ExitInventoryView();
             UiMenuBackdrop.PopClosed();
             StopNotificationPulse();
             MainMenuNotificationState.SyncInventoryNotifications();
@@ -402,8 +453,8 @@ namespace ShooterPrototype.UI
             skinsViewportRect = viewportRect;
             viewportRect.anchorMin = Vector2.zero;
             viewportRect.anchorMax = Vector2.one;
-            viewportRect.offsetMin = Vector2.zero;
-            viewportRect.offsetMax = new Vector2(-(scrollbarWidth + scrollbarGap), 0f);
+            viewportRect.offsetMin = new Vector2(ViewportClipInset, ViewportClipInset);
+            viewportRect.offsetMax = new Vector2(-(scrollbarWidth + scrollbarGap + ViewportClipInset), -ViewportClipInset);
             viewportObject.AddComponent<RectMask2D>();
             EnableViewportScrollCapture(viewportObject);
 
@@ -431,7 +482,7 @@ namespace ShooterPrototype.UI
             grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             grid.constraintCount = 2;
             grid.childAlignment = TextAnchor.UpperCenter;
-            grid.padding = new RectOffset(0, 0, 4, 8);
+            grid.padding = new RectOffset(18, 18, 14, 16);
 
             var fitter = contentObject.AddComponent<ContentSizeFitter>();
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
@@ -476,8 +527,8 @@ namespace ShooterPrototype.UI
             casesViewportRect = viewportRect;
             viewportRect.anchorMin = Vector2.zero;
             viewportRect.anchorMax = Vector2.one;
-            viewportRect.offsetMin = Vector2.zero;
-            viewportRect.offsetMax = new Vector2(-(scrollbarWidth + scrollbarGap), 0f);
+            viewportRect.offsetMin = new Vector2(ViewportClipInset, ViewportClipInset);
+            viewportRect.offsetMax = new Vector2(-(scrollbarWidth + scrollbarGap + ViewportClipInset), -ViewportClipInset);
             viewportObject.AddComponent<RectMask2D>();
             EnableViewportScrollCapture(viewportObject);
 
@@ -505,7 +556,7 @@ namespace ShooterPrototype.UI
             grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
             grid.constraintCount = 2;
             grid.childAlignment = TextAnchor.UpperCenter;
-            grid.padding = new RectOffset(0, 0, 4, 8);
+            grid.padding = new RectOffset(18, 18, 14, 16);
 
             var fitter = contentObject.AddComponent<ContentSizeFitter>();
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
@@ -586,7 +637,7 @@ namespace ShooterPrototype.UI
             slotLayout.minHeight = itemCellHeight;
 
             var background = slotObject.AddComponent<Image>();
-            UiTheme.ApplyFlatFill(background, UiTheme.SlotFill);
+            UiTheme.ApplyFlatFill(background, UiTheme.InventorySlotFill);
 
             var iconObject = new GameObject("Icon", typeof(RectTransform));
             iconObject.transform.SetParent(slotObject.transform, false);
@@ -1005,40 +1056,71 @@ namespace ShooterPrototype.UI
             slotLayout.preferredHeight = itemCellHeight;
             slotLayout.minWidth = itemCellWidth;
             slotLayout.minHeight = itemCellHeight;
+            slotObject.AddComponent<RectMask2D>();
 
-            var background = slotObject.AddComponent<Image>();
-            UiTheme.ApplyFlatFill(background, UiTheme.SlotFill);
+            var bodyObject = new GameObject("Body", typeof(RectTransform));
+            bodyObject.transform.SetParent(slotObject.transform, false);
+            var bodyRect = bodyObject.GetComponent<RectTransform>();
+            bodyRect.anchorMin = Vector2.zero;
+            bodyRect.anchorMax = Vector2.one;
+            bodyRect.offsetMin = Vector2.zero;
+            bodyRect.offsetMax = Vector2.zero;
 
-            var rarityStripe = UiDecor.CreateRarityStripe(
-                slotObject.transform,
-                ShopCatalogService.GetRarityStripeColor(item.Id));
+            var background = bodyObject.AddComponent<Image>();
+            UiTheme.ApplyFlatFill(background, UiTheme.InventorySlotFill);
 
-            var button = slotObject.AddComponent<Button>();
+            var button = bodyObject.AddComponent<Button>();
             button.targetGraphic = background;
             button.onClick.AddListener(() => OnItemClicked(item));
-            UiMotion.AttachButtonMotion(button);
+            UiMotion.AttachHoverScale(bodyObject, hoverScale: 1.02f, pressedScale: 0.985f);
+
+            var cardSize = Mathf.Min(itemCellWidth, itemCellHeight) - SlotCardInset * 2f;
+            var cardObject = new GameObject("Card", typeof(RectTransform));
+            cardObject.transform.SetParent(bodyObject.transform, false);
+            var cardRect = cardObject.GetComponent<RectTransform>();
+            cardRect.anchorMin = new Vector2(0.5f, 0.5f);
+            cardRect.anchorMax = new Vector2(0.5f, 0.5f);
+            cardRect.pivot = new Vector2(0.5f, 0.5f);
+            cardRect.anchoredPosition = Vector2.zero;
+            cardRect.sizeDelta = new Vector2(cardSize, cardSize);
+
+            var rarityBorderObject = new GameObject("RarityBorder", typeof(RectTransform));
+            rarityBorderObject.transform.SetParent(cardObject.transform, false);
+            StretchFull(rarityBorderObject.GetComponent<RectTransform>());
+            var rarityBorder = rarityBorderObject.AddComponent<Image>();
+            UiTheme.ApplyFlatFill(rarityBorder, ShopCatalogService.GetRarityStripeColor(item.Id));
+            rarityBorder.raycastTarget = false;
+
+            var iconWellObject = new GameObject("IconWell", typeof(RectTransform));
+            iconWellObject.transform.SetParent(cardObject.transform, false);
+            var iconWellRect = iconWellObject.GetComponent<RectTransform>();
+            StretchInset(iconWellRect, RarityBorderWidth);
+            var iconWellBackground = iconWellObject.AddComponent<Image>();
+            UiTheme.ApplyFlatFill(iconWellBackground, new Color(0.11f, 0.105f, 0.095f, 0.96f));
+            iconWellBackground.raycastTarget = false;
 
             var iconObject = new GameObject("Icon", typeof(RectTransform));
-            iconObject.transform.SetParent(slotObject.transform, false);
-
+            iconObject.transform.SetParent(iconWellObject.transform, false);
             var iconRect = iconObject.GetComponent<RectTransform>();
-            iconRect.anchorMin = Vector2.zero;
-            iconRect.anchorMax = Vector2.one;
-            iconRect.offsetMin = new Vector2(slotPadding, slotPadding);
-            iconRect.offsetMax = new Vector2(-slotPadding, -slotPadding);
-
+            StretchInset(iconRect, IconWellPadding);
             var iconImage = iconObject.AddComponent<Image>();
             iconImage.preserveAspect = true;
             iconImage.raycastTarget = false;
             iconImage.sprite = InventoryIconCatalog.GetSkinIcon(item.PictureResourcePath);
 
+            var frameObject = new GameObject("EquippedFrame", typeof(RectTransform));
+            frameObject.transform.SetParent(cardObject.transform, false);
+            StretchFull(frameObject.GetComponent<RectTransform>());
+            var equippedFrame = frameObject.AddComponent<Image>();
+            UiTheme.ApplyEquippedFrame(equippedFrame, visible: false);
+
             var quantityObject = new GameObject("QuantityBadge", typeof(RectTransform));
-            quantityObject.transform.SetParent(slotObject.transform, false);
+            quantityObject.transform.SetParent(bodyObject.transform, false);
             var quantityRect = quantityObject.GetComponent<RectTransform>();
             quantityRect.anchorMin = new Vector2(1f, 1f);
             quantityRect.anchorMax = new Vector2(1f, 1f);
             quantityRect.pivot = new Vector2(1f, 1f);
-            quantityRect.anchoredPosition = new Vector2(-8f, -8f);
+            quantityRect.anchoredPosition = new Vector2(-6f, -6f);
             quantityRect.sizeDelta = new Vector2(42f, 28f);
 
             var quantityBackground = quantityObject.AddComponent<Image>();
@@ -1057,16 +1139,6 @@ namespace ShooterPrototype.UI
             quantityLabel.fontSize = 16f;
             quantityLabel.alignment = TextAlignmentOptions.Center;
             UiTheme.ApplyTmp(quantityLabel, UiTextRole.Heading);
-
-            var frameObject = new GameObject("EquippedFrame", typeof(RectTransform));
-            frameObject.transform.SetParent(slotObject.transform, false);
-            var frameRect = frameObject.GetComponent<RectTransform>();
-            frameRect.anchorMin = Vector2.zero;
-            frameRect.anchorMax = Vector2.one;
-            frameRect.offsetMin = Vector2.zero;
-            frameRect.offsetMax = Vector2.zero;
-            var equippedFrame = frameObject.AddComponent<Image>();
-            UiTheme.ApplyEquippedFrame(equippedFrame, visible: false);
 
             var notificationDot = CreateNotificationDot(slotObject.transform);
             var showNotification = MainMenuNotificationState.IsSkinUnviewed(item.Id);
@@ -1089,7 +1161,6 @@ namespace ShooterPrototype.UI
                 Definition = item,
                 Background = background,
                 EquippedFrame = equippedFrame,
-                RarityStripe = rarityStripe,
                 Button = button,
                 QuantityLabel = quantityLabel,
                 RootRect = rootRect,
@@ -1190,7 +1261,7 @@ namespace ShooterPrototype.UI
 
                 if (slot.Background != null)
                 {
-                    slot.Background.color = UiTheme.SlotFill;
+                    slot.Background.color = UiTheme.InventorySlotFill;
                 }
 
                 if (slot.EquippedFrame != null)
@@ -1201,11 +1272,11 @@ namespace ShooterPrototype.UI
                 if (slot.Button != null)
                 {
                     var colors = slot.Button.colors;
-                    colors.normalColor = UiTheme.SlotFill;
+                    colors.normalColor = UiTheme.InventorySlotFill;
                     colors.highlightedColor = UiTheme.ButtonHighlight;
                     colors.pressedColor = UiTheme.ButtonPressed;
                     colors.selectedColor = UiTheme.ButtonHighlight;
-                    colors.disabledColor = UiTheme.SlotFill;
+                    colors.disabledColor = UiTheme.InventorySlotFill;
                     colors.fadeDuration = 0.08f;
                     slot.Button.colors = colors;
                 }
@@ -1260,7 +1331,7 @@ namespace ShooterPrototype.UI
 
             targetSlot.Background.color = UiTheme.ButtonHighlight;
             yield return new WaitForSecondsRealtime(0.1f);
-            targetSlot.Background.color = UiTheme.SlotFill;
+            targetSlot.Background.color = UiTheme.InventorySlotFill;
             pulseCoroutine = null;
         }
 
@@ -1325,6 +1396,14 @@ namespace ShooterPrototype.UI
             viewportImage.raycastTarget = true;
         }
 
+        private static void StretchInset(RectTransform rect, float inset)
+        {
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = new Vector2(inset, inset);
+            rect.offsetMax = new Vector2(-inset, -inset);
+        }
+
         private static void StretchFull(RectTransform rect)
         {
             rect.anchorMin = Vector2.zero;
@@ -1336,6 +1415,11 @@ namespace ShooterPrototype.UI
         private static float EaseInOut(float t)
         {
             return t * t * (3f - 2f * t);
+        }
+
+        private sealed class InventoryLayoutMarker : MonoBehaviour
+        {
+            public int Version;
         }
     }
 }

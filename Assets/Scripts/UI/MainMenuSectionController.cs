@@ -46,6 +46,7 @@ namespace ShooterPrototype.UI
             CanvasGroup topNavGroup,
             CanvasGroup startButtonGroup,
             CanvasGroup changeCharacterGroup,
+            CanvasGroup gameModeGroup,
             Button inventoryButton,
             Button shopButton,
             Button achievementsButton,
@@ -84,6 +85,11 @@ namespace ShooterPrototype.UI
             if (changeCharacterGroup != null)
             {
                 mainMenuGroups.Add(changeCharacterGroup);
+            }
+
+            if (gameModeGroup != null)
+            {
+                mainMenuGroups.Add(gameModeGroup);
             }
 
             if (nicknameGroup != null)

@@ -186,10 +186,20 @@ const server = http.createServer(async (req, res) => {
     const body = await readJsonBody(req);
     const playerId = normalizePlayerId(body && body.playerId);
     playerRepository.ensurePlayer(playerId);
-    const ticket = createQueuedTicket(playerId);
+    const ticket = createQueuedTicket(playerId, body && body.matchMode);
     syncTicketNickname(ticket);
     if (DEBUG_REALTIME) {
-      console.log(`[http][enqueue] player=${playerId} ticket=${ticket.ticketId}`);
+      console.log(`[http][enqueue] player=${playerId} ticket=${ticket.ticketId} mode=${ticket.matchMode}`);
+    }
+
+    if (ticket.matchMode === "training") {
+      removeFromQueue(ticket.ticketId);
+      const match = getOrCreateActiveMatch();
+      match.matchMode = "training";
+      matchTicketToSession(ticket, match, Date.now());
+      synchronizeActiveMatchCounts();
+    } else {
+      tryMatchTickets();
     }
 
     respondJson(res, 200, {
@@ -584,7 +594,32 @@ function broadcastKillFeed(matchId, payload) {
   }
 }
 
-function createQueuedTicket(playerId) {
+function normalizeMatchMode(value) {
+  const raw = String(value || "battle_royale").trim().toLowerCase();
+  if (raw === "training") {
+    return "training";
+  }
+  if (raw === "duel" || raw === "1v1" || raw === "duel_1v1") {
+    return "duel";
+  }
+  return "battle_royale";
+}
+
+function getMatchModeConfig(matchMode) {
+  const normalized = normalizeMatchMode(matchMode);
+  if (normalized === "training") {
+    return { minPlayers: 1, targetPlayers: 1 };
+  }
+  if (normalized === "duel") {
+    return { minPlayers: 2, targetPlayers: 2 };
+  }
+  return {
+    minPlayers: Math.max(MIN_PLAYERS_TO_MATCH, TARGET_PLAYERS_PER_MATCH),
+    targetPlayers: TARGET_PLAYERS_PER_MATCH,
+  };
+}
+
+function createQueuedTicket(playerId, matchMode) {
   cancelExistingQueuedTicketsForPlayer(playerId);
   removeDisconnectedMatchedTicketsForPlayer(playerId);
 
@@ -593,6 +628,7 @@ function createQueuedTicket(playerId) {
     ticketId,
     playerId,
     status: "Queued",
+    matchMode: normalizeMatchMode(matchMode),
     queueEnterTimeMs: Date.now(),
     matchedAtMs: 0,
     matchId: "",
@@ -633,26 +669,38 @@ function tryMatchTickets() {
     return;
   }
 
-  const requiredPlayers = Math.max(MIN_PLAYERS_TO_MATCH, TARGET_PLAYERS_PER_MATCH);
-  if (queuedTicketIds.length < requiredPlayers) {
+  tryMatchModeBucket("duel", nowMs);
+  tryMatchModeBucket("battle_royale", nowMs);
+}
+
+function tryMatchModeBucket(matchMode, nowMs) {
+  const config = getMatchModeConfig(matchMode);
+  const bucketIds = queuedTicketIds.filter((ticketId) => {
+    const ticket = ticketsById.get(ticketId);
+    return ticket && ticket.status === "Queued" && normalizeMatchMode(ticket.matchMode) === matchMode;
+  });
+
+  if (bucketIds.length < config.minPlayers) {
     return;
   }
 
-  const oldestTicket = ticketsById.get(queuedTicketIds[0]);
+  const oldestTicket = ticketsById.get(bucketIds[0]);
   if (!oldestTicket) {
     return;
   }
+
   const oldestWaitMs = nowMs - oldestTicket.queueEnterTimeMs;
   const batchWindowElapsed = oldestWaitMs >= MATCH_BATCH_WINDOW_SECONDS * 1000;
   const shouldMatchByTimeout = oldestWaitMs >= MATCH_TIMEOUT_SECONDS * 1000;
-  if (!batchWindowElapsed && !shouldMatchByTimeout) {
+  if (!batchWindowElapsed && !shouldMatchByTimeout && bucketIds.length < config.targetPlayers) {
     return;
   }
 
-  const matchSize = Math.min(TARGET_PLAYERS_PER_MATCH, queuedTicketIds.length);
+  const matchSize = Math.min(config.targetPlayers, bucketIds.length);
   const matchedTickets = [];
-  for (let i = 0; i < matchSize && queuedTicketIds.length > 0; i++) {
-    const ticketId = queuedTicketIds.shift();
+  for (let i = 0; i < matchSize; i++) {
+    const ticketId = bucketIds[i];
+    removeFromQueue(ticketId);
     const ticket = ticketsById.get(ticketId);
     if (!ticket || ticket.status !== "Queued") {
       continue;
@@ -666,6 +714,7 @@ function tryMatchTickets() {
   }
 
   const match = getOrCreateActiveMatch();
+  match.matchMode = matchMode;
   for (const ticket of matchedTickets) {
     matchTicketToSession(ticket, match, nowMs);
   }
@@ -780,6 +829,7 @@ function getOrCreateActiveMatch() {
     endedAtMs: 0,
     lastActivityMs: nowMs,
     state: "Open",
+    matchMode: "battle_royale",
     ticketIds: new Set(),
     br: createBattleRoyaleState()
   };
@@ -826,7 +876,7 @@ function assignQueuedTicketsToExistingSessions(nowMs) {
       continue;
     }
 
-    const joinableSessions = getJoinableSessions();
+    const joinableSessions = getJoinableSessions(normalizeMatchMode(ticket.matchMode));
     if (joinableSessions.length === 0) {
       continue;
     }
@@ -837,10 +887,16 @@ function assignQueuedTicketsToExistingSessions(nowMs) {
   }
 }
 
-function getJoinableSessions() {
+function getJoinableSessions(matchMode) {
+  const normalized = normalizeMatchMode(matchMode);
+  const config = getMatchModeConfig(normalized);
   const sessions = [];
   for (const session of matchesById.values()) {
     if (!session || session.state === "Ended") {
+      continue;
+    }
+
+    if (normalizeMatchMode(session.matchMode) !== normalized) {
       continue;
     }
 
@@ -852,7 +908,7 @@ function getJoinableSessions() {
       }
     }
 
-    if (matchedCount >= 1 && matchedCount < TARGET_PLAYERS_PER_MATCH) {
+    if (matchedCount >= 1 && matchedCount < config.targetPlayers) {
       const br = ensureBattleRoyaleState(session);
       if (br && br.joinLocked) {
         continue;
@@ -879,6 +935,9 @@ function matchTicketToSession(ticket, session, nowMs) {
   ticket.serverPort = MATCH_SERVER_PORT;
   session.ticketIds.add(ticket.ticketId);
   session.lastActivityMs = nowMs;
+  if (!session.matchMode) {
+    session.matchMode = normalizeMatchMode(ticket.matchMode);
+  }
   if (session.state === "Open") {
     session.state = "Active";
   }

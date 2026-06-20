@@ -8,20 +8,33 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuCurrencyDisplay : MonoBehaviour
     {
+        private const int LayoutVersion = 2;
+
         [SerializeField] private float edgeMargin = 28f;
         [SerializeField] private float valueFontSize = 24f;
 
         private TMP_Text valueText;
         private CanvasGroup canvasGroup;
-        private bool built;
+        private int builtLayoutVersion;
 
         public CanvasGroup CanvasGroup => canvasGroup;
 
         public void Build(RectTransform canvasRect)
         {
-            if (built || canvasRect == null)
+            if (canvasRect == null)
             {
                 return;
+            }
+
+            var existing = canvasRect.Find("MainMenuCurrencyDisplay");
+            if (existing != null)
+            {
+                if (builtLayoutVersion >= LayoutVersion && valueText != null)
+                {
+                    return;
+                }
+
+                Destroy(existing.gameObject);
             }
 
             PlayerSkinOwnershipService.EnsureInitialized();
@@ -37,7 +50,8 @@ namespace ShooterPrototype.UI
 
             var layout = rootObject.AddComponent<HorizontalLayoutGroup>();
             layout.childAlignment = TextAnchor.MiddleRight;
-            layout.spacing = 4f;
+            layout.spacing = 0f;
+            layout.padding = new RectOffset(0, 0, 0, 0);
             layout.childControlWidth = false;
             layout.childControlHeight = true;
             layout.childForceExpandWidth = false;
@@ -47,30 +61,29 @@ namespace ShooterPrototype.UI
             fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
+            var textObject = new GameObject("Value");
+            textObject.transform.SetParent(rootObject.transform, false);
+            valueText = textObject.AddComponent<TextMeshProUGUI>();
+            valueText.fontSize = valueFontSize;
+            valueText.alignment = TextAlignmentOptions.MidlineRight;
+            valueText.margin = new Vector4(0f, 0f, 0f, 0f);
+            valueText.characterSpacing = 0.5f;
+            valueText.enableWordWrapping = false;
+            UiTheme.ApplyTmp(valueText, UiTextRole.Accent);
+
             var iconObject = new GameObject("CoinIcon");
             iconObject.transform.SetParent(rootObject.transform, false);
-            var iconRect = iconObject.AddComponent<RectTransform>();
-            iconRect.sizeDelta = new Vector2(22f, 22f);
             var iconLayout = iconObject.AddComponent<LayoutElement>();
-            iconLayout.preferredWidth = 22f;
-            iconLayout.preferredHeight = 22f;
+            iconLayout.preferredWidth = 20f;
+            iconLayout.preferredHeight = 20f;
             var iconImage = iconObject.AddComponent<Image>();
             iconImage.sprite = UiIconCatalog.GetIcon(UiIconCatalog.IconKind.Coin);
             iconImage.preserveAspect = true;
             iconImage.color = UiTheme.TextAccent;
             iconImage.raycastTarget = false;
 
-            var textObject = new GameObject("Value");
-            textObject.transform.SetParent(rootObject.transform, false);
-            valueText = textObject.AddComponent<TextMeshProUGUI>();
-            valueText.fontSize = valueFontSize;
-            valueText.alignment = TextAlignmentOptions.MidlineRight;
-            valueText.characterSpacing = 1f;
-            valueText.enableWordWrapping = false;
-            UiTheme.ApplyTmp(valueText, UiTextRole.Accent);
-
             canvasGroup = rootObject.AddComponent<CanvasGroup>();
-            built = true;
+            builtLayoutVersion = LayoutVersion;
             Refresh();
         }
 

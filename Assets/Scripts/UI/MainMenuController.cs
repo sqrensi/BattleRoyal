@@ -281,7 +281,10 @@ namespace ShooterPrototype.UI
                 enqueueResponse = null;
                 enqueueError = string.Empty;
 
-                yield return StartCoroutine(queueApiClient.Enqueue(localPlayerId, (ok, response, error) =>
+                yield return StartCoroutine(queueApiClient.Enqueue(
+                    localPlayerId,
+                    MainMenuGameModeUtility.ToApiValue(MainMenuGameModeSelector.SelectedMode),
+                    (ok, response, error) =>
                 {
                     enqueueCompleted = true;
                     enqueueOk = ok;
@@ -407,6 +410,8 @@ namespace ShooterPrototype.UI
             {
                 startButton.interactable = interactable;
             }
+
+            GetComponent<MainMenuGameModeSelector>()?.SetInteractable(!isQueueing && interactable);
 
             if (startButtonText != null)
             {

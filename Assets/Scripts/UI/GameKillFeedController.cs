@@ -13,18 +13,18 @@ namespace ShooterPrototype.UI
         private const float EntryLifetimeSeconds = 3f;
         private const float EntryIntroSeconds = 0.28f;
         private const float EntrySlidePixels = 48f;
-        private const int FeedLayoutVersion = 4;
-        private const float TopOffsetBelowCornerStats = 58f;
-        private const float EntryHorizontalPadding = 24f;
-        private const float EntryVerticalPadding = 8f;
-        private const float EntryMinWidth = 96f;
-        private const float EntryMaxWidth = 640f;
+        private const int FeedLayoutVersion = 6;
+        private const float TopOffsetBelowCornerStats = 62f;
+        private const float EntryHorizontalPadding = 14f;
+        private const float EntryVerticalPadding = 6f;
+        private const float EntryMinWidth = 120f;
+        private const float EntryMaxWidth = 560f;
 
 
         [SerializeField] private float edgeMargin = 18f;
-        [SerializeField] private float entryHeight = 28f;
-        [SerializeField] private float entrySpacing = 4f;
-        [SerializeField] private float entryFontSize = 18f;
+        [SerializeField] private float entryHeight = 26f;
+        [SerializeField] private float entrySpacing = 5f;
+        [SerializeField] private float entryFontSize = 16f;
 
         private RectTransform feedRoot;
         private RealtimeTransportClient transportClient;
@@ -235,7 +235,7 @@ namespace ShooterPrototype.UI
             entryRect.anchorMax = new Vector2(1f, 1f);
             entryRect.pivot = new Vector2(1f, 1f);
 
-            var innerObject = new GameObject("Background");
+            var innerObject = new GameObject("LabelWrap");
             innerObject.transform.SetParent(entryObject.transform, false);
             var innerRect = innerObject.AddComponent<RectTransform>();
             innerRect.anchorMin = new Vector2(1f, 0.5f);
@@ -243,17 +243,13 @@ namespace ShooterPrototype.UI
             innerRect.pivot = new Vector2(1f, 0.5f);
             innerRect.anchoredPosition = Vector2.zero;
 
-            var background = innerObject.AddComponent<Image>();
-            UiTheme.ApplyPanel(background, UiPanelStyle.Hud);
-            background.raycastTarget = false;
-
             var labelObject = new GameObject("Label");
             labelObject.transform.SetParent(innerObject.transform, false);
             var labelRect = labelObject.AddComponent<RectTransform>();
             labelRect.anchorMin = Vector2.zero;
             labelRect.anchorMax = Vector2.one;
-            labelRect.offsetMin = new Vector2(EntryHorizontalPadding * 0.5f, EntryVerticalPadding * 0.5f);
-            labelRect.offsetMax = new Vector2(-EntryHorizontalPadding * 0.5f, -EntryVerticalPadding * 0.5f);
+            labelRect.offsetMin = new Vector2(EntryHorizontalPadding, EntryVerticalPadding);
+            labelRect.offsetMax = new Vector2(-EntryHorizontalPadding, -EntryVerticalPadding);
 
             var label = labelObject.AddComponent<TextMeshProUGUI>();
             label.fontSize = entryFontSize;
@@ -263,11 +259,15 @@ namespace ShooterPrototype.UI
             label.raycastTarget = false;
             label.enableWordWrapping = false;
             label.overflowMode = TextOverflowModes.Overflow;
+            label.lineSpacing = -4f;
+            label.characterSpacing = 0.2f;
+            label.outlineWidth = 0.16f;
+            label.outlineColor = new Color(0.02f, 0.02f, 0.02f, 0.78f);
 
             label.ForceMeshUpdate(true, true);
             var textWidth = Mathf.Clamp(label.preferredWidth, EntryMinWidth, EntryMaxWidth);
-            var textHeight = Mathf.Max(entryHeight - EntryVerticalPadding, label.preferredHeight);
-            innerRect.sizeDelta = new Vector2(textWidth + EntryHorizontalPadding, textHeight + EntryVerticalPadding);
+            var textHeight = Mathf.Max(entryHeight, label.preferredHeight + EntryVerticalPadding * 2f);
+            innerRect.sizeDelta = new Vector2(textWidth + EntryHorizontalPadding * 2f, textHeight);
             entryRect.sizeDelta = innerRect.sizeDelta;
             entryRect.anchoredPosition = new Vector2(EntrySlidePixels, 0f);
 

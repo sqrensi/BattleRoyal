@@ -43,10 +43,11 @@ namespace ShooterPrototype.UI
         // ── Palette ──────────────────────────────────────────────────────────
         public static readonly Color CanvasDim = new Color(0.02f, 0.018f, 0.015f, 0.72f);
         public static readonly Color PanelFill = new Color(0.07f, 0.065f, 0.055f, 0.9f);
-        public static readonly Color PanelFillInventory = new Color(0.07f, 0.065f, 0.055f, 0.48f);
+        public static readonly Color PanelFillInventory = new Color(0.07f, 0.065f, 0.055f, 0.26f);
         public static readonly Color PanelFillHeavy = new Color(0.05f, 0.045f, 0.04f, 0.94f);
         public static readonly Color PanelFillOverlay = new Color(0.04f, 0.038f, 0.032f, 0.82f);
-        public static readonly Color PanelFillHud = new Color(0.04f, 0.038f, 0.034f, 0.78f);
+        public static readonly Color PanelFillHud = new Color(0.24f, 0.23f, 0.21f, 0.38f);
+        public static readonly Color InventorySlotFill = new Color(0.12f, 0.11f, 0.1f, 0.34f);
 
         public static readonly Color BorderOuter = new Color(0.28f, 0.26f, 0.22f, 0.82f);
         public static readonly Color BorderInner = new Color(0.05f, 0.045f, 0.04f, 0.38f);

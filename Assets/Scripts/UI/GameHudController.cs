@@ -19,12 +19,12 @@ namespace ShooterPrototype.UI
     {
         private const string CanvasObjectName = "RuntimeGameHudCanvas";
         public const string RuntimeCanvasObjectName = CanvasObjectName;
-        private const int CornerStatsLayoutVersion = 4;
-        private const int MatchCornerStatsLayoutVersion = 4;
+        private const int CornerStatsLayoutVersion = 7;
+        private const int MatchCornerStatsLayoutVersion = 7;
         private const float GameOverPanelDelaySeconds = 5f;
         private const float GameOverAutoExitSeconds = 15f;
         private const int GameOverPanelLayoutVersion = 7;
-        private const int GameplayHintLayoutVersion = 4;
+        private const int GameplayHintLayoutVersion = 5;
         private const int MatchWaitStatusLayoutVersion = 5;
         private const float GameplayHintOffsetX = 72f;
         private const float GameplayHintOffsetY = -48f;
@@ -43,8 +43,10 @@ namespace ShooterPrototype.UI
         private TMP_Text playersText;
         private TMP_Text pingText;
         private TMP_Text fpsText;
-        private TMP_Text cornerStatsText;
-        private TMP_Text matchCornerStatsText;
+        private TMP_Text cornerStatsFpsValue;
+        private TMP_Text cornerStatsPingValue;
+        private TMP_Text matchCornerKillsValue;
+        private TMP_Text matchCornerAliveValue;
         private int matchCornerKillCount;
         private int matchCornerAliveCount;
         private int displayPingMs = -1;
@@ -442,14 +444,13 @@ namespace ShooterPrototype.UI
 
         private void RefreshMatchCornerStatsText()
         {
-            if (matchCornerStatsText == null)
+            if (matchCornerKillsValue == null || matchCornerAliveValue == null)
             {
                 return;
             }
 
-            matchCornerStatsText.text =
-                $"Киллы: {matchCornerKillCount}\nВыживших: {matchCornerAliveCount}";
-            ApplyBoldHudText(matchCornerStatsText);
+            matchCornerKillsValue.text = matchCornerKillCount.ToString();
+            matchCornerAliveValue.text = matchCornerAliveCount.ToString();
         }
 
         public void ResetMatchOverlay()
@@ -1135,19 +1136,15 @@ namespace ShooterPrototype.UI
             panelRect.anchorMax = new Vector2(0.5f, 0.5f);
             panelRect.pivot = new Vector2(0f, 0.5f);
             panelRect.anchoredPosition = new Vector2(GameplayHintOffsetX, GameplayHintOffsetY);
-            panelRect.sizeDelta = new Vector2(420f, 40f);
-
-            var panelImage = panelObject.AddComponent<Image>();
-            UiTheme.ApplyPanel(panelImage, UiPanelStyle.Hud);
-            panelImage.raycastTarget = false;
+            panelRect.sizeDelta = new Vector2(420f, 32f);
 
             var labelObject = new GameObject("HintText");
             labelObject.transform.SetParent(panelObject.transform, false);
             var labelRect = labelObject.AddComponent<RectTransform>();
             labelRect.anchorMin = Vector2.zero;
             labelRect.anchorMax = Vector2.one;
-            labelRect.offsetMin = new Vector2(14f, 6f);
-            labelRect.offsetMax = new Vector2(-14f, -6f);
+            labelRect.offsetMin = Vector2.zero;
+            labelRect.offsetMax = Vector2.zero;
 
             gameplayHintText = labelObject.AddComponent<TextMeshProUGUI>();
             ApplyBoldHudText(gameplayHintText);
@@ -1155,6 +1152,8 @@ namespace ShooterPrototype.UI
             gameplayHintText.alignment = TextAlignmentOptions.MidlineLeft;
             gameplayHintText.enableWordWrapping = false;
             gameplayHintText.overflowMode = TextOverflowModes.Overflow;
+            gameplayHintText.outlineWidth = 0.18f;
+            gameplayHintText.outlineColor = new Color(0.02f, 0.02f, 0.02f, 0.82f);
 
             panelObject.SetActive(false);
         }
@@ -1346,12 +1345,13 @@ namespace ShooterPrototype.UI
             if (existingPanel != null)
             {
                 var versionMarker = existingPanel.GetComponent<CornerStatsLayoutMarker>();
-                if (versionMarker != null && versionMarker.Version >= CornerStatsLayoutVersion && cornerStatsText != null)
+                if (versionMarker != null && versionMarker.Version >= CornerStatsLayoutVersion && cornerStatsFpsValue != null)
                 {
                     return;
                 }
 
-                cornerStatsText = null;
+                cornerStatsFpsValue = null;
+                cornerStatsPingValue = null;
                 Destroy(existingPanel.gameObject);
             }
 
@@ -1360,7 +1360,7 @@ namespace ShooterPrototype.UI
 
         private void BuildCornerStatsPanel(Transform root)
         {
-            if (cornerStatsText != null)
+            if (cornerStatsFpsValue != null)
             {
                 return;
             }
@@ -1373,28 +1373,28 @@ namespace ShooterPrototype.UI
             panelRect.anchorMin = new Vector2(1f, 1f);
             panelRect.anchorMax = new Vector2(1f, 1f);
             panelRect.pivot = new Vector2(1f, 1f);
-            panelRect.sizeDelta = new Vector2(118f, 44f);
+            panelRect.sizeDelta = new Vector2(136f, 44f);
             panelRect.anchoredPosition = new Vector2(-8f, -8f);
 
-            var panelImage = panelObject.AddComponent<Image>();
-            UiTheme.ApplyPanel(panelImage, UiPanelStyle.Hud);
-            panelImage.raycastTarget = false;
+            var card = UiDecor.CreateHudMetricCard(
+                panelObject.transform,
+                "FPS",
+                "Ping",
+                136f,
+                44f,
+                TextAnchor.MiddleRight);
+            if (card.Root != null)
+            {
+                card.Root.anchorMin = new Vector2(0f, 1f);
+                card.Root.anchorMax = new Vector2(0f, 1f);
+                card.Root.pivot = new Vector2(0f, 1f);
+                card.Root.anchoredPosition = Vector2.zero;
+            }
 
-            var labelObject = new GameObject("CornerStatsText");
-            labelObject.transform.SetParent(panelObject.transform, false);
-            var labelRect = labelObject.AddComponent<RectTransform>();
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            labelRect.offsetMin = new Vector2(10f, 6f);
-            labelRect.offsetMax = new Vector2(-10f, -6f);
-
-            cornerStatsText = labelObject.AddComponent<TextMeshProUGUI>();
-            UiTheme.ApplyTmp(cornerStatsText, UiTextRole.Body);
-            cornerStatsText.fontSize = 14;
-            cornerStatsText.alignment = TextAlignmentOptions.TopLeft;
-            cornerStatsText.enableWordWrapping = false;
-            cornerStatsText.overflowMode = TextOverflowModes.Overflow;
-            cornerStatsText.text = "FPS: --\nPing: -- ms";
+            cornerStatsFpsValue = card.Row1Value;
+            cornerStatsPingValue = card.Row2Value;
+            UiDecor.SetMetricRow(card.Row1Label, card.Row1Value, "FPS", "--");
+            UiDecor.SetMetricRow(card.Row2Label, card.Row2Value, "Ping", "-- ms");
         }
 
         private void EnsureMatchCornerStatsPanel(Transform root)
@@ -1405,13 +1405,13 @@ namespace ShooterPrototype.UI
                 var versionMarker = existingPanel.GetComponent<CornerStatsLayoutMarker>();
                 if (versionMarker != null &&
                     versionMarker.Version >= MatchCornerStatsLayoutVersion &&
-                    matchCornerStatsText != null)
+                    matchCornerKillsValue != null)
                 {
-                    ApplyBoldHudText(matchCornerStatsText);
                     return;
                 }
 
-                matchCornerStatsText = null;
+                matchCornerKillsValue = null;
+                matchCornerAliveValue = null;
                 Destroy(existingPanel.gameObject);
             }
 
@@ -1420,7 +1420,7 @@ namespace ShooterPrototype.UI
 
         private void BuildMatchCornerStatsPanel(Transform root)
         {
-            if (matchCornerStatsText != null)
+            if (matchCornerKillsValue != null)
             {
                 return;
             }
@@ -1433,26 +1433,28 @@ namespace ShooterPrototype.UI
             panelRect.anchorMin = new Vector2(0f, 1f);
             panelRect.anchorMax = new Vector2(0f, 1f);
             panelRect.pivot = new Vector2(0f, 1f);
-            panelRect.sizeDelta = new Vector2(168f, 52f);
             panelRect.anchoredPosition = new Vector2(8f, -8f);
+            panelRect.sizeDelta = new Vector2(148f, 44f);
 
-            var panelImage = panelObject.AddComponent<Image>();
-            UiTheme.ApplyPanel(panelImage, UiPanelStyle.Hud);
-            panelImage.raycastTarget = false;
+            var card = UiDecor.CreateHudMetricCard(
+                panelObject.transform,
+                "Киллы",
+                "Выживших",
+                148f,
+                44f,
+                TextAnchor.MiddleLeft);
+            if (card.Root != null)
+            {
+                card.Root.anchorMin = new Vector2(0f, 1f);
+                card.Root.anchorMax = new Vector2(0f, 1f);
+                card.Root.pivot = new Vector2(0f, 1f);
+                card.Root.anchoredPosition = Vector2.zero;
+            }
 
-            var labelObject = new GameObject("MatchCornerStatsText");
-            labelObject.transform.SetParent(panelObject.transform, false);
-            var labelRect = labelObject.AddComponent<RectTransform>();
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            labelRect.offsetMin = new Vector2(10f, 6f);
-            labelRect.offsetMax = new Vector2(-10f, -6f);
-
-            matchCornerStatsText = labelObject.AddComponent<TextMeshProUGUI>();
-            ApplyBoldHudText(matchCornerStatsText);
-            matchCornerStatsText.fontSize = 16;
-            matchCornerStatsText.alignment = TextAlignmentOptions.TopLeft;
-            matchCornerStatsText.text = "Киллы: 0\nВыживших: 0";
+            matchCornerKillsValue = card.Row1Value;
+            matchCornerAliveValue = card.Row2Value;
+            UiDecor.SetMetricRow(card.Row1Label, card.Row1Value, "Киллы", "0");
+            UiDecor.SetMetricRow(card.Row2Label, card.Row2Value, "Выживших", "0");
         }
 
         private void EnsurePauseMenuPanel(Transform root)
@@ -1673,7 +1675,7 @@ namespace ShooterPrototype.UI
 
         private void RefreshCornerStats()
         {
-            if (cornerStatsText == null)
+            if (cornerStatsFpsValue == null || cornerStatsPingValue == null)
             {
                 return;
             }
@@ -1687,16 +1689,17 @@ namespace ShooterPrototype.UI
                     : Mathf.Lerp(fpsSmoothed, currentFps, 0.15f);
             }
 
+            cornerStatsFpsValue.text = Mathf.RoundToInt(fpsSmoothed).ToString();
+
             if (!Application.isFocused)
             {
-                cornerStatsText.text = $"FPS: {Mathf.RoundToInt(fpsSmoothed)}\nPing: paused";
+                cornerStatsPingValue.text = "paused";
                 return;
             }
 
-            var pingLine = displayPingMs > 0
-                ? $"Ping: {displayPingMs} ms"
-                : "Ping: -- ms";
-            cornerStatsText.text = $"FPS: {Mathf.RoundToInt(fpsSmoothed)}\n{pingLine}";
+            cornerStatsPingValue.text = displayPingMs > 0
+                ? $"{displayPingMs} ms"
+                : "-- ms";
         }
 
         private void EnsurePingRefreshRunning()

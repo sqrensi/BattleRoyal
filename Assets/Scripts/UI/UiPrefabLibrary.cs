@@ -139,20 +139,30 @@ namespace ShooterPrototype.UI
             var button = root.AddComponent<Button>();
             button.targetGraphic = background;
 
-            var stripeObject = new GameObject("RarityStripe");
-            stripeObject.transform.SetParent(root.transform, false);
-            var stripe = UiDecor.CreateRarityStripe(stripeObject.transform, UiTheme.TextMuted);
-            stripe.gameObject.SetActive(false);
+            const float slotPad = 10f;
+            const float stripeHeight = 5f;
+            const float stripeBottom = 11f;
+            const float stripeIconGap = 4f;
+            var iconBottomReserve = stripeBottom + stripeHeight + stripeIconGap;
 
             var iconObject = new GameObject("Icon");
             iconObject.transform.SetParent(root.transform, false);
             var iconRect = iconObject.AddComponent<RectTransform>();
             Stretch(iconRect);
-            iconRect.offsetMin = new Vector2(10f, 10f);
-            iconRect.offsetMax = new Vector2(-10f, -10f);
+            iconRect.offsetMin = new Vector2(slotPad, slotPad);
+            iconRect.offsetMax = new Vector2(-slotPad, -(slotPad + iconBottomReserve));
             var icon = iconObject.AddComponent<Image>();
             icon.preserveAspect = true;
             icon.raycastTarget = false;
+
+            var stripe = UiDecor.CreateRarityStripe(
+                root.transform,
+                UiTheme.TextMuted,
+                stripeHeight,
+                UiDecor.RarityStripeEdge.Bottom,
+                stripeBottom,
+                slotPad);
+            stripe.gameObject.SetActive(false);
 
             var frameObject = new GameObject("EquippedFrame");
             frameObject.transform.SetParent(root.transform, false);
