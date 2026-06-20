@@ -59,6 +59,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerBoneHitbox.cs" />
     <Compile Include="Assets\Scripts\Network\NetworkConfig.cs" />
     <Compile Include="Assets\Scripts\Player\NetworkPerformanceMonitor.cs" />
+    <Compile Include="Assets\Scripts\UI\UiDecor.cs" />
     <Compile Include="Assets\Scripts\Player\MatchRatingUtility.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\EnvMapAnimator.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuNicknameEditor.cs" />
@@ -108,6 +109,7 @@
     <Compile Include="Assets\Scripts\Player\RemoteAnimatorHolsterPresentation.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\MultiAnimationDisplay.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyBoneAnchorSync.cs" />
+    <Compile Include="Assets\Scripts\UI\UiPrefabLibrary.cs" />
     <Compile Include="Assets\Scripts\Player\MovementNetworkDiagnostics.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponPrefabRegistry.cs" />
     <Compile Include="Assets\Scripts\UI\InventoryTypes.cs" />
@@ -184,6 +186,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_FrameRateCounter.cs" />
     <Compile Include="Assets\TutorialInfo\Scripts\Readme.cs" />
     <Compile Include="Assets\Scripts\Matchmaking\QueueApiClient.cs" />
+    <Compile Include="Assets\Scripts\UI\UiTheme.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark01.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TextMeshSpawner.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteLookPitchPosture.cs" />
@@ -194,9 +197,11 @@
     <Compile Include="Assets\Scripts\Player\AmmoCatalog.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\WFX_BulletHoleDecal.cs" />
     <Compile Include="Assets\Scripts\Player\MatchStatsTracker.cs" />
+    <Compile Include="Assets\Scripts\UI\UiMenuBackdrop.cs" />
     <Compile Include="Assets\FarlandSkies\Demo\Scripts\Skybox\SkyboxChanger.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\PackInfo.cs" />
     <Compile Include="Assets\Scripts\Player\CharacterSelectionService.cs" />
+    <Compile Include="Assets\Scripts\UI\UiTooltipController.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponSkinApplier.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\CameraController.cs" />
     <Compile Include="Assets\Scripts\Player\MatchDamageZoneController.cs" />
@@ -221,6 +226,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerHealth.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponBlockUtility.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo_DeleteAfterDelay.cs" />
+    <Compile Include="Assets\Scripts\UI\UiMotion.cs" />
     <Compile Include="Assets\Scripts\Player\Day5RuntimeSetup.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\ObjectSpin.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_PhoneNumberValidator.cs" />
@@ -237,6 +243,7 @@
     <Compile Include="Assets\Scripts\Player\UserScopedPlayerPrefs.cs" />
     <Compile Include="Assets\Scripts\UI\MatchOutcomeSummary.cs" />
     <Compile Include="Assets\Scripts\Bootstrap\LaunchMode.cs" />
+    <Compile Include="Assets\Scripts\UI\UiIconCatalog.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\CharacterItemEvent.cs" />
     <Compile Include="Assets\Scripts\UI\InventorySlotView.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerAudioController.cs" />

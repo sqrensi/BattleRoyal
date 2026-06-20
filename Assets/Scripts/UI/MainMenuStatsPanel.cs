@@ -8,18 +8,6 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuStatsPanel : MonoBehaviour
     {
-        private static Sprite whiteSprite;
-
-        private static readonly Color PanelColor = new Color(0.04f, 0.06f, 0.08f, 0.94f);
-        private static readonly Color RowBackgroundColor = new Color(0.12f, 0.14f, 0.17f, 0.88f);
-        private static readonly Color TitleColor = new Color(0.94f, 0.96f, 0.98f, 0.98f);
-        private static readonly Color LabelColor = new Color(0.78f, 0.84f, 0.9f, 0.94f);
-        private static readonly Color ValueColor = new Color(0.95f, 0.97f, 0.99f, 0.98f);
-        private static readonly Color AccentValueColor = new Color(0.95f, 0.82f, 0.35f, 1f);
-        private static readonly Color MutedColor = new Color(0.72f, 0.78f, 0.84f, 0.92f);
-        private static readonly Color ScrollTrackColor = new Color(0.1f, 0.12f, 0.14f, 0.55f);
-        private static readonly Color ScrollHandleColor = new Color(0.24f, 0.28f, 0.32f, 0.92f);
-
         [SerializeField] private float edgeMargin = 28f;
         [SerializeField] private float leftReservedWidth = 228f;
         [SerializeField] private float topReservedHeight = 92f;
@@ -68,10 +56,7 @@ namespace ShooterPrototype.UI
             panelRect.offsetMax = new Vector2(-edgeMargin, -topReservedHeight);
 
             var background = panelObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.type = Image.Type.Simple;
-            background.color = PanelColor;
-            background.raycastTarget = true;
+            UiTheme.ApplyPanel(background, UiPanelStyle.Heavy);
 
             panelGroup = panelObject.AddComponent<CanvasGroup>();
             panelGroup.alpha = 0f;
@@ -132,10 +117,8 @@ namespace ShooterPrototype.UI
             var title = headerObject.AddComponent<TextMeshProUGUI>();
             title.text = "Статистика";
             title.fontSize = titleFontSize;
-            title.fontStyle = FontStyles.Bold;
             title.alignment = TextAlignmentOptions.Center;
-            title.color = TitleColor;
-            title.raycastTarget = false;
+            UiTheme.ApplyTmp(title, UiTextRole.Heading);
 
             var subtitleObject = new GameObject("Subtitle", typeof(RectTransform));
             subtitleObject.transform.SetParent(headerObject.transform, false);
@@ -149,8 +132,7 @@ namespace ShooterPrototype.UI
             subtitle.text = "Сводка по вашему профилю";
             subtitle.fontSize = 17f;
             subtitle.alignment = TextAlignmentOptions.Center;
-            subtitle.color = MutedColor;
-            subtitle.raycastTarget = false;
+            UiTheme.ApplyTmp(subtitle, UiTextRole.Muted);
         }
 
         private void BuildContent(Transform parent)
@@ -225,8 +207,7 @@ namespace ShooterPrototype.UI
             cardLayout.preferredHeight = cardHeight;
 
             var background = cardObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.color = RowBackgroundColor;
+            UiTheme.ApplyFlatFill(background, UiTheme.SectionFill);
             background.raycastTarget = false;
 
             var labelObject = new GameObject("Label", typeof(RectTransform));
@@ -242,8 +223,7 @@ namespace ShooterPrototype.UI
             label.text = labelText;
             label.fontSize = 18f;
             label.alignment = TextAlignmentOptions.TopLeft;
-            label.color = LabelColor;
-            label.raycastTarget = false;
+            UiTheme.ApplyTmp(label, UiTextRole.Label);
 
             var valueObject = new GameObject("Value", typeof(RectTransform));
             valueObject.transform.SetParent(cardObject.transform, false);
@@ -257,10 +237,8 @@ namespace ShooterPrototype.UI
             var value = valueObject.AddComponent<TextMeshProUGUI>();
             value.text = "—";
             value.fontSize = 30f;
-            value.fontStyle = FontStyles.Bold;
             value.alignment = TextAlignmentOptions.BottomLeft;
-            value.color = accent ? AccentValueColor : ValueColor;
-            value.raycastTarget = false;
+            UiTheme.ApplyTmp(value, accent ? UiTextRole.Accent : UiTextRole.Body);
 
             return value;
         }
@@ -318,9 +296,7 @@ namespace ShooterPrototype.UI
             rect.anchoredPosition = Vector2.zero;
 
             var trackImage = scrollbarObject.AddComponent<Image>();
-            trackImage.sprite = GetWhiteSprite();
-            trackImage.type = Image.Type.Simple;
-            trackImage.color = ScrollTrackColor;
+            UiTheme.ApplyFlatFill(trackImage, UiTheme.ScrollTrack);
 
             var scrollbar = scrollbarObject.AddComponent<Scrollbar>();
             scrollbar.direction = Scrollbar.Direction.BottomToTop;
@@ -338,9 +314,7 @@ namespace ShooterPrototype.UI
             StretchFull(handleRect);
 
             var handleImage = handleObject.AddComponent<Image>();
-            handleImage.sprite = GetWhiteSprite();
-            handleImage.type = Image.Type.Simple;
-            handleImage.color = ScrollHandleColor;
+            UiTheme.ApplyFlatFill(handleImage, UiTheme.ScrollHandle);
 
             scrollbar.handleRect = handleRect;
             scrollbar.targetGraphic = handleImage;
@@ -398,26 +372,6 @@ namespace ShooterPrototype.UI
         private static float EaseInOut(float t)
         {
             return t * t * (3f - 2f * t);
-        }
-
-        private static Sprite GetWhiteSprite()
-        {
-            if (whiteSprite != null)
-            {
-                return whiteSprite;
-            }
-
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            texture.SetPixel(0, 0, Color.white);
-            texture.SetPixel(1, 0, Color.white);
-            texture.SetPixel(0, 1, Color.white);
-            texture.SetPixel(1, 1, Color.white);
-            texture.Apply(false, false);
-            whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 100f);
-            return whiteSprite;
         }
     }
 }

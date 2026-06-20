@@ -16,7 +16,6 @@ namespace ShooterPrototype.UI
         private const float VisibleOffsetX = LeftEdgeOffset;
         private const float VerticalOffsetY = 72f;
 
-        private static Sprite whiteSprite;
         private static Canvas toastCanvas;
         private static RectTransform toastPanel;
         private static CanvasGroup toastGroup;
@@ -137,8 +136,7 @@ namespace ShooterPrototype.UI
             toastGroup.blocksRaycasts = false;
 
             var background = panelObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.color = new Color(0.07f, 0.09f, 0.11f, 0.96f);
+            UiTheme.ApplyPanel(background, UiPanelStyle.Hud);
             background.raycastTarget = false;
 
             var accentObject = new GameObject("Accent", typeof(RectTransform));
@@ -150,8 +148,7 @@ namespace ShooterPrototype.UI
             accentRect.anchoredPosition = Vector2.zero;
             accentRect.sizeDelta = new Vector2(5f, 0f);
             var accentImage = accentObject.AddComponent<Image>();
-            accentImage.sprite = GetWhiteSprite();
-            accentImage.color = new Color(0.22f, 0.58f, 0.5f, 1f);
+            UiTheme.ApplyFlatFill(accentImage, UiTheme.Success);
             accentImage.raycastTarget = false;
 
             var headerObject = new GameObject("Header", typeof(RectTransform));
@@ -165,10 +162,9 @@ namespace ShooterPrototype.UI
             headerLabel = headerObject.AddComponent<TextMeshProUGUI>();
             headerLabel.text = "Достижение выполнено";
             headerLabel.fontSize = 14f;
-            headerLabel.fontStyle = FontStyles.Bold;
             headerLabel.characterSpacing = 4f;
-            headerLabel.color = new Color(0.22f, 0.58f, 0.5f, 1f);
             headerLabel.alignment = TextAlignmentOptions.TopLeft;
+            UiTheme.ApplyTmp(headerLabel, UiTextRole.Success);
 
             var titleObject = new GameObject("Title", typeof(RectTransform));
             titleObject.transform.SetParent(panelObject.transform, false);
@@ -180,9 +176,8 @@ namespace ShooterPrototype.UI
             titleRect.offsetMax = new Vector2(-14f, 28f);
             titleLabel = titleObject.AddComponent<TextMeshProUGUI>();
             titleLabel.fontSize = 24f;
-            titleLabel.fontStyle = FontStyles.Bold;
-            titleLabel.color = new Color(0.95f, 0.82f, 0.35f, 1f);
             titleLabel.alignment = TextAlignmentOptions.TopLeft;
+            UiTheme.ApplyTmp(titleLabel, UiTextRole.Accent);
 
             var descriptionObject = new GameObject("Description", typeof(RectTransform));
             descriptionObject.transform.SetParent(panelObject.transform, false);
@@ -194,8 +189,8 @@ namespace ShooterPrototype.UI
             descriptionRect.offsetMax = new Vector2(-14f, 44f);
             descriptionLabel = descriptionObject.AddComponent<TextMeshProUGUI>();
             descriptionLabel.fontSize = 17f;
-            descriptionLabel.color = new Color(0.88f, 0.92f, 0.96f, 0.96f);
             descriptionLabel.alignment = TextAlignmentOptions.TopLeft;
+            UiTheme.ApplyTmp(descriptionLabel, UiTextRole.Body);
 
             panelObject.SetActive(false);
         }
@@ -209,26 +204,6 @@ namespace ShooterPrototype.UI
         private static float EaseInCubic(float t)
         {
             return t * t * t;
-        }
-
-        private static Sprite GetWhiteSprite()
-        {
-            if (whiteSprite != null)
-            {
-                return whiteSprite;
-            }
-
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            texture.SetPixel(0, 0, Color.white);
-            texture.SetPixel(1, 0, Color.white);
-            texture.SetPixel(0, 1, Color.white);
-            texture.SetPixel(1, 1, Color.white);
-            texture.Apply(false, false);
-            whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 100f);
-            return whiteSprite;
         }
 
         private sealed class AchievementToastRunner : MonoBehaviour

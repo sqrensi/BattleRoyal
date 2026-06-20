@@ -10,20 +10,6 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuInventoryPanel : MonoBehaviour
     {
-        private static Sprite whiteSprite;
-
-        private static readonly Color PanelColor = new Color(0.06f, 0.08f, 0.1f, 0.72f);
-        private static readonly Color ItemBackgroundColor = new Color(0.12f, 0.14f, 0.17f, 0.88f);
-        private static readonly Color EquippedBackgroundColor = new Color(0.18f, 0.48f, 0.42f, 0.96f);
-        private static readonly Color EquippedHighlightedColor = new Color(0.22f, 0.58f, 0.5f, 1f);
-        private static readonly Color EquippedPressedColor = new Color(0.14f, 0.38f, 0.34f, 1f);
-        private static readonly Color ItemHighlightedColor = new Color(0.16f, 0.18f, 0.21f, 0.94f);
-        private static readonly Color ItemPressedColor = new Color(0.1f, 0.12f, 0.14f, 0.98f);
-        private static readonly Color ScrollTrackColor = new Color(0.1f, 0.12f, 0.14f, 0.55f);
-        private static readonly Color ScrollHandleColor = new Color(0.24f, 0.28f, 0.32f, 0.92f);
-        private static readonly Color TitleColor = new Color(0.94f, 0.96f, 0.98f, 0.98f);
-        private static readonly Color NotificationDotColor = new Color(0.95f, 0.82f, 0.22f, 1f);
-
         [SerializeField] private float edgeMargin = 44f;
         [SerializeField] private float panelWidth = 528f;
         [SerializeField] private float innerPadding = 24f;
@@ -60,6 +46,9 @@ namespace ShooterPrototype.UI
         private CanvasGroup panelGroup;
         private RectTransform panelRect;
         private RectTransform contentRect;
+        private Canvas hostCanvas;
+        private GameObject emptySkinsState;
+        private GameObject emptyCasesState;
         private Vector2 shownAnchoredPosition;
         private Vector2 hiddenAnchoredPosition;
         private float itemCellWidth;
@@ -77,6 +66,8 @@ namespace ShooterPrototype.UI
         {
             public PlayerSkinDefinition Definition;
             public Image Background;
+            public Image EquippedFrame;
+            public Image RarityStripe;
             public Button Button;
             public TMP_Text QuantityLabel;
             public RectTransform RootRect;
@@ -108,6 +99,7 @@ namespace ShooterPrototype.UI
 
             itemCellWidth = (panelWidth - innerPadding * 2f - itemSpacing - scrollbarWidth - scrollbarGap) * 0.5f;
             itemCellHeight = itemCellWidth;
+            hostCanvas = canvasRect.GetComponent<Canvas>();
 
             var panelObject = new GameObject("MainMenuInventoryPanel");
             panelObject.transform.SetParent(canvasRect, false);
@@ -125,10 +117,8 @@ namespace ShooterPrototype.UI
             panelRect.anchoredPosition = hiddenAnchoredPosition;
 
             var background = panelObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.type = Image.Type.Simple;
-            background.color = PanelColor;
-            background.raycastTarget = true;
+            UiTheme.ApplyPanel(background, UiPanelStyle.Inventory);
+            UiDecor.AttachPanelChrome(panelRect, 12f, 16f);
 
             panelGroup = panelObject.AddComponent<CanvasGroup>();
             panelGroup.alpha = 0f;
@@ -260,6 +250,7 @@ namespace ShooterPrototype.UI
             }
 
             isVisible = true;
+            UiMenuBackdrop.PushOpen(hostCanvas);
             RebuildItems();
             RebuildCases();
             StartTransition(show: true);
@@ -273,6 +264,7 @@ namespace ShooterPrototype.UI
             }
 
             isVisible = false;
+            UiMenuBackdrop.PopClosed();
             StopNotificationPulse();
             MainMenuNotificationState.SyncInventoryNotifications();
             StartTransition(show: false);
@@ -293,10 +285,8 @@ namespace ShooterPrototype.UI
             var title = headerObject.AddComponent<TextMeshProUGUI>();
             title.text = "Инвентарь";
             title.fontSize = titleFontSize;
-            title.fontStyle = FontStyles.Bold;
             title.alignment = TextAlignmentOptions.Center;
-            title.color = TitleColor;
-            title.raycastTarget = false;
+            UiTheme.ApplyMilitaryHeader(title, UiTextRole.Heading);
 
             var tabsObject = new GameObject("Tabs");
             tabsObject.transform.SetParent(headerObject.transform, false);
@@ -324,13 +314,10 @@ namespace ShooterPrototype.UI
             var buttonObject = new GameObject(label + "Tab");
             buttonObject.transform.SetParent(parent, false);
 
-            var image = buttonObject.AddComponent<Image>();
-            image.sprite = GetWhiteSprite();
-            image.type = Image.Type.Simple;
-            image.color = ItemBackgroundColor;
+            buttonObject.AddComponent<Image>();
 
             var button = buttonObject.AddComponent<Button>();
-            button.targetGraphic = image;
+            UiTheme.StyleButton(button, UiButtonStyle.Standard);
             button.onClick.AddListener(onClick);
             if (uiSound != null)
             {
@@ -345,10 +332,8 @@ namespace ShooterPrototype.UI
             var text = labelObject.AddComponent<TextMeshProUGUI>();
             text.text = label;
             text.fontSize = 18f;
-            text.fontStyle = FontStyles.Bold;
             text.alignment = TextAlignmentOptions.Center;
-            text.color = TitleColor;
-            text.raycastTarget = false;
+            UiTheme.ApplyTmp(text, UiTextRole.Heading);
 
             return button;
         }
@@ -388,11 +373,7 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            var image = button.GetComponent<Image>();
-            if (image != null)
-            {
-                image.color = selected ? EquippedBackgroundColor : ItemBackgroundColor;
-            }
+            UiTheme.StyleButton(button, selected ? UiButtonStyle.NavSelected : UiButtonStyle.Standard);
         }
 
         private void BuildItemsGrid(Transform parent)
@@ -440,7 +421,7 @@ namespace ShooterPrototype.UI
             contentRect.sizeDelta = new Vector2(0f, 0f);
 
             var contentBackground = contentObject.AddComponent<Image>();
-            contentBackground.sprite = GetWhiteSprite();
+            contentBackground.sprite = UiTheme.WhiteSprite;
             contentBackground.color = Color.clear;
             contentBackground.raycastTarget = true;
 
@@ -458,6 +439,13 @@ namespace ShooterPrototype.UI
 
             scroll.viewport = viewportRect;
             scroll.content = contentRect;
+
+            emptySkinsState = UiDecor.CreateEmptyState(
+                viewportObject.transform,
+                "Пусто",
+                "У вас пока нет скинов",
+                UiIconCatalog.IconKind.Skin).gameObject;
+            emptySkinsState.SetActive(false);
 
             RebuildItems();
         }
@@ -507,7 +495,7 @@ namespace ShooterPrototype.UI
             casesContentRect.sizeDelta = new Vector2(0f, 0f);
 
             var contentBackground = contentObject.AddComponent<Image>();
-            contentBackground.sprite = GetWhiteSprite();
+            contentBackground.sprite = UiTheme.WhiteSprite;
             contentBackground.color = Color.clear;
             contentBackground.raycastTarget = true;
 
@@ -525,6 +513,13 @@ namespace ShooterPrototype.UI
 
             scroll.viewport = viewportRect;
             scroll.content = casesContentRect;
+
+            emptyCasesState = UiDecor.CreateEmptyState(
+                viewportObject.transform,
+                "Пусто",
+                "У вас пока нет кейсов",
+                UiIconCatalog.IconKind.Case).gameObject;
+            emptyCasesState.SetActive(false);
 
             casesScrollObject.SetActive(false);
             RebuildCases();
@@ -566,6 +561,11 @@ namespace ShooterPrototype.UI
                 caseSlots.Add(CreateCaseSlot(casesContentRect, ownedCases[i].definition, ownedCases[i].quantity));
             }
 
+            if (emptyCasesState != null)
+            {
+                emptyCasesState.SetActive(ownedCases.Count == 0);
+            }
+
             RefreshSlotNotificationDots();
         }
 
@@ -586,9 +586,7 @@ namespace ShooterPrototype.UI
             slotLayout.minHeight = itemCellHeight;
 
             var background = slotObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.type = Image.Type.Simple;
-            background.color = ItemBackgroundColor;
+            UiTheme.ApplyFlatFill(background, UiTheme.SlotFill);
 
             var iconObject = new GameObject("Icon", typeof(RectTransform));
             iconObject.transform.SetParent(slotObject.transform, false);
@@ -612,12 +610,10 @@ namespace ShooterPrototype.UI
             openButtonRect.anchoredPosition = new Vector2(0f, slotPadding);
             openButtonRect.sizeDelta = new Vector2(Mathf.Max(88f, itemCellWidth * 0.72f), 28f);
 
-            var openButtonImage = openButtonObject.AddComponent<Image>();
-            openButtonImage.sprite = GetWhiteSprite();
-            openButtonImage.color = EquippedBackgroundColor;
+            openButtonObject.AddComponent<Image>();
 
             var openButton = openButtonObject.AddComponent<Button>();
-            openButton.targetGraphic = openButtonImage;
+            UiTheme.StyleButton(openButton, UiButtonStyle.Primary);
             openButton.onClick.AddListener(() => OnCaseOpenClicked(caseDefinition));
 
             var openLabelObject = new GameObject("Label", typeof(RectTransform));
@@ -627,10 +623,8 @@ namespace ShooterPrototype.UI
             var openLabel = openLabelObject.AddComponent<TextMeshProUGUI>();
             openLabel.text = "Открыть";
             openLabel.fontSize = 16f;
-            openLabel.fontStyle = FontStyles.Bold;
             openLabel.alignment = TextAlignmentOptions.Center;
-            openLabel.color = TitleColor;
-            openLabel.raycastTarget = false;
+            UiTheme.ApplyTmp(openLabel, UiTextRole.PrimaryButton);
 
             var quantityObject = new GameObject("QuantityBadge", typeof(RectTransform));
             quantityObject.transform.SetParent(slotObject.transform, false);
@@ -642,8 +636,7 @@ namespace ShooterPrototype.UI
             quantityRect.sizeDelta = new Vector2(42f, 28f);
 
             var quantityBackground = quantityObject.AddComponent<Image>();
-            quantityBackground.sprite = GetWhiteSprite();
-            quantityBackground.color = new Color(0.08f, 0.09f, 0.11f, 0.92f);
+            UiTheme.ApplyFlatFill(quantityBackground, UiTheme.SlotEmpty);
             quantityBackground.raycastTarget = false;
 
             var quantityLabelObject = new GameObject("QuantityLabel", typeof(RectTransform));
@@ -652,10 +645,8 @@ namespace ShooterPrototype.UI
             StretchFull(quantityLabelRect);
             var quantityLabel = quantityLabelObject.AddComponent<TextMeshProUGUI>();
             quantityLabel.fontSize = 16f;
-            quantityLabel.fontStyle = FontStyles.Bold;
             quantityLabel.alignment = TextAlignmentOptions.Center;
-            quantityLabel.color = TitleColor;
-            quantityLabel.raycastTarget = false;
+            UiTheme.ApplyTmp(quantityLabel, UiTextRole.Heading);
             quantityLabel.text = quantity > 1 ? "x" + quantity : string.Empty;
             quantityObject.SetActive(quantity > 1);
 
@@ -817,6 +808,11 @@ namespace ShooterPrototype.UI
                 itemSlots.Add(CreateItemSlot(contentRect, ownedItems[i]));
             }
 
+            if (emptySkinsState != null)
+            {
+                emptySkinsState.SetActive(ownedItems.Count == 0);
+            }
+
             RefreshEquippedVisuals();
             RefreshSlotNotificationDots();
         }
@@ -907,9 +903,7 @@ namespace ShooterPrototype.UI
             var ringRect = ringObject.GetComponent<RectTransform>();
             StretchFull(ringRect);
             var ringImage = ringObject.AddComponent<Image>();
-            ringImage.sprite = GetWhiteSprite();
-            ringImage.type = Image.Type.Simple;
-            ringImage.color = new Color(0.04f, 0.05f, 0.07f, 0.96f);
+            UiTheme.ApplyFlatFill(ringImage, UiTheme.PanelFillHeavy);
             ringImage.raycastTarget = false;
 
             var dotObject = new GameObject("Dot", typeof(RectTransform));
@@ -921,9 +915,7 @@ namespace ShooterPrototype.UI
             dotRect.anchoredPosition = Vector2.zero;
             dotRect.sizeDelta = new Vector2(14f, 14f);
             var dotImage = dotObject.AddComponent<Image>();
-            dotImage.sprite = GetWhiteSprite();
-            dotImage.type = Image.Type.Simple;
-            dotImage.color = NotificationDotColor;
+            UiTheme.ApplyFlatFill(dotImage, UiTheme.NotificationDot);
             dotImage.raycastTarget = false;
 
             badgeObject.transform.SetAsLastSibling();
@@ -973,9 +965,7 @@ namespace ShooterPrototype.UI
             rect.anchoredPosition = Vector2.zero;
 
             var trackImage = scrollbarObject.AddComponent<Image>();
-            trackImage.sprite = GetWhiteSprite();
-            trackImage.type = Image.Type.Simple;
-            trackImage.color = ScrollTrackColor;
+            UiTheme.ApplyFlatFill(trackImage, UiTheme.ScrollTrack);
 
             var scrollbar = scrollbarObject.AddComponent<Scrollbar>();
             scrollbar.direction = Scrollbar.Direction.BottomToTop;
@@ -993,9 +983,7 @@ namespace ShooterPrototype.UI
             StretchFull(handleRect);
 
             var handleImage = handleObject.AddComponent<Image>();
-            handleImage.sprite = GetWhiteSprite();
-            handleImage.type = Image.Type.Simple;
-            handleImage.color = ScrollHandleColor;
+            UiTheme.ApplyFlatFill(handleImage, UiTheme.ScrollHandle);
 
             scrollbar.handleRect = handleRect;
             scrollbar.targetGraphic = handleImage;
@@ -1019,13 +1007,16 @@ namespace ShooterPrototype.UI
             slotLayout.minHeight = itemCellHeight;
 
             var background = slotObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.type = Image.Type.Simple;
-            background.color = ItemBackgroundColor;
+            UiTheme.ApplyFlatFill(background, UiTheme.SlotFill);
+
+            var rarityStripe = UiDecor.CreateRarityStripe(
+                slotObject.transform,
+                ShopCatalogService.GetRarityStripeColor(item.Id));
 
             var button = slotObject.AddComponent<Button>();
             button.targetGraphic = background;
             button.onClick.AddListener(() => OnItemClicked(item));
+            UiMotion.AttachButtonMotion(button);
 
             var iconObject = new GameObject("Icon", typeof(RectTransform));
             iconObject.transform.SetParent(slotObject.transform, false);
@@ -1051,8 +1042,7 @@ namespace ShooterPrototype.UI
             quantityRect.sizeDelta = new Vector2(42f, 28f);
 
             var quantityBackground = quantityObject.AddComponent<Image>();
-            quantityBackground.sprite = GetWhiteSprite();
-            quantityBackground.color = new Color(0.08f, 0.09f, 0.11f, 0.92f);
+            UiTheme.ApplyFlatFill(quantityBackground, UiTheme.SlotEmpty);
             quantityBackground.raycastTarget = false;
 
             var quantityLabelObject = new GameObject("QuantityLabel", typeof(RectTransform));
@@ -1065,19 +1055,41 @@ namespace ShooterPrototype.UI
 
             var quantityLabel = quantityLabelObject.AddComponent<TextMeshProUGUI>();
             quantityLabel.fontSize = 16f;
-            quantityLabel.fontStyle = FontStyles.Bold;
             quantityLabel.alignment = TextAlignmentOptions.Center;
-            quantityLabel.color = TitleColor;
-            quantityLabel.raycastTarget = false;
+            UiTheme.ApplyTmp(quantityLabel, UiTextRole.Heading);
+
+            var frameObject = new GameObject("EquippedFrame", typeof(RectTransform));
+            frameObject.transform.SetParent(slotObject.transform, false);
+            var frameRect = frameObject.GetComponent<RectTransform>();
+            frameRect.anchorMin = Vector2.zero;
+            frameRect.anchorMax = Vector2.one;
+            frameRect.offsetMin = Vector2.zero;
+            frameRect.offsetMax = Vector2.zero;
+            var equippedFrame = frameObject.AddComponent<Image>();
+            UiTheme.ApplyEquippedFrame(equippedFrame, visible: false);
 
             var notificationDot = CreateNotificationDot(slotObject.transform);
             var showNotification = MainMenuNotificationState.IsSkinUnviewed(item.Id);
             notificationDot.SetActive(showNotification);
 
+            UiTooltipController.AttachSlotTooltip(
+                slotObject,
+                hostCanvas,
+                () => item.DisplayName,
+                () =>
+                {
+                    var rarity = SkinRarityUtility.GetDisplayName(ShopCatalogService.GetRarity(item.Id));
+                    return PlayerSkinSelectionService.IsEquipped(item)
+                        ? rarity + " · Экипировано"
+                        : rarity;
+                });
+
             return new ItemSlotVisual
             {
                 Definition = item,
                 Background = background,
+                EquippedFrame = equippedFrame,
+                RarityStripe = rarityStripe,
                 Button = button,
                 QuantityLabel = quantityLabel,
                 RootRect = rootRect,
@@ -1175,24 +1187,26 @@ namespace ShooterPrototype.UI
             {
                 var slot = itemSlots[i];
                 var equipped = PlayerSkinSelectionService.IsEquipped(slot.Definition);
-                var normalColor = equipped ? EquippedBackgroundColor : ItemBackgroundColor;
-                var highlightedColor = equipped ? EquippedHighlightedColor : ItemHighlightedColor;
-                var pressedColor = equipped ? EquippedPressedColor : ItemPressedColor;
 
                 if (slot.Background != null)
                 {
-                    slot.Background.color = normalColor;
+                    slot.Background.color = UiTheme.SlotFill;
+                }
+
+                if (slot.EquippedFrame != null)
+                {
+                    UiTheme.ApplyEquippedFrame(slot.EquippedFrame, equipped);
                 }
 
                 if (slot.Button != null)
                 {
                     var colors = slot.Button.colors;
-                    colors.normalColor = normalColor;
-                    colors.highlightedColor = highlightedColor;
-                    colors.pressedColor = pressedColor;
-                    colors.selectedColor = highlightedColor;
-                    colors.disabledColor = normalColor;
-                    colors.fadeDuration = 0f;
+                    colors.normalColor = UiTheme.SlotFill;
+                    colors.highlightedColor = UiTheme.ButtonHighlight;
+                    colors.pressedColor = UiTheme.ButtonPressed;
+                    colors.selectedColor = UiTheme.ButtonHighlight;
+                    colors.disabledColor = UiTheme.SlotFill;
+                    colors.fadeDuration = 0.08f;
                     slot.Button.colors = colors;
                 }
 
@@ -1235,12 +1249,18 @@ namespace ShooterPrototype.UI
             }
 
             var equipped = PlayerSkinSelectionService.IsEquipped(targetSlot.Definition);
-            var baseColor = equipped ? EquippedBackgroundColor : ItemBackgroundColor;
-            var pulseColor = equipped ? EquippedHighlightedColor : ItemHighlightedColor;
+            if (equipped && targetSlot.EquippedFrame != null)
+            {
+                targetSlot.EquippedFrame.color = UiTheme.EquippedBorderPulse;
+                yield return new WaitForSecondsRealtime(0.1f);
+                targetSlot.EquippedFrame.color = Color.white;
+                pulseCoroutine = null;
+                yield break;
+            }
 
-            targetSlot.Background.color = pulseColor;
+            targetSlot.Background.color = UiTheme.ButtonHighlight;
             yield return new WaitForSecondsRealtime(0.1f);
-            targetSlot.Background.color = baseColor;
+            targetSlot.Background.color = UiTheme.SlotFill;
             pulseCoroutine = null;
         }
 
@@ -1300,7 +1320,7 @@ namespace ShooterPrototype.UI
         private static void EnableViewportScrollCapture(GameObject viewportObject)
         {
             var viewportImage = viewportObject.AddComponent<Image>();
-            viewportImage.sprite = GetWhiteSprite();
+            viewportImage.sprite = UiTheme.WhiteSprite;
             viewportImage.color = Color.clear;
             viewportImage.raycastTarget = true;
         }
@@ -1316,26 +1336,6 @@ namespace ShooterPrototype.UI
         private static float EaseInOut(float t)
         {
             return t * t * (3f - 2f * t);
-        }
-
-        private static Sprite GetWhiteSprite()
-        {
-            if (whiteSprite != null)
-            {
-                return whiteSprite;
-            }
-
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            texture.SetPixel(0, 0, Color.white);
-            texture.SetPixel(1, 0, Color.white);
-            texture.SetPixel(0, 1, Color.white);
-            texture.SetPixel(1, 1, Color.white);
-            texture.Apply(false, false);
-            whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 100f);
-            return whiteSprite;
         }
     }
 }

@@ -10,20 +10,6 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuLeaderboardPanel : MonoBehaviour
     {
-        private static Sprite whiteSprite;
-
-        private static readonly Color PanelColor = new Color(0.06f, 0.08f, 0.1f, 0.72f);
-        private static readonly Color TitleColor = new Color(0.94f, 0.96f, 0.98f, 0.98f);
-        private static readonly Color RowColor = new Color(0.1f, 0.12f, 0.15f, 0.88f);
-        private static readonly Color SelfRowColor = new Color(0.16f, 0.28f, 0.26f, 0.92f);
-        private static readonly Color RankColor = new Color(0.72f, 0.78f, 0.84f, 0.92f);
-        private static readonly Color NicknameColor = new Color(0.94f, 0.96f, 0.98f, 0.96f);
-        private static readonly Color SelfNicknameColor = new Color(0.92f, 0.84f, 0.55f, 0.98f);
-        private static readonly Color RatingColor = new Color(0.92f, 0.84f, 0.55f, 0.98f);
-        private static readonly Color MutedColor = new Color(0.72f, 0.76f, 0.8f, 0.88f);
-        private static readonly Color ScrollTrackColor = new Color(0.1f, 0.12f, 0.14f, 0.55f);
-        private static readonly Color ScrollHandleColor = new Color(0.24f, 0.28f, 0.32f, 0.92f);
-
         [SerializeField] private float panelWidth = 340f;
         [SerializeField] private float panelPadding = 14f;
         [SerializeField] private float scrollHeight = 280f;
@@ -66,9 +52,7 @@ namespace ShooterPrototype.UI
             layoutElement.minWidth = panelWidth;
 
             var background = rootObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.type = Image.Type.Simple;
-            background.color = PanelColor;
+            UiTheme.ApplyPanel(background, UiPanelStyle.Standard);
             background.raycastTarget = false;
 
             var layout = rootObject.AddComponent<VerticalLayoutGroup>();
@@ -91,10 +75,8 @@ namespace ShooterPrototype.UI
             var titleText = titleObject.AddComponent<TextMeshProUGUI>();
             titleText.text = "Топ 25";
             titleText.fontSize = titleFontSize;
-            titleText.fontStyle = FontStyles.Bold;
             titleText.alignment = TextAlignmentOptions.MidlineLeft;
-            titleText.color = TitleColor;
-            titleText.raycastTarget = false;
+            UiTheme.ApplyTmp(titleText, UiTextRole.Heading);
 
             BuildScrollArea(rootObject.transform);
 
@@ -200,14 +182,14 @@ namespace ShooterPrototype.UI
             StretchFull(viewportRect);
             viewportRect.offsetMax = new Vector2(-(scrollbarWidth + scrollbarGap), 0f);
             viewportObject.AddComponent<RectMask2D>();
-            MainMenuScrollSupport.EnableViewportScrollCapture(viewportObject, GetWhiteSprite());
+            MainMenuScrollSupport.EnableViewportScrollCapture(viewportObject, UiTheme.WhiteSprite);
 
             var scrollbar = MainMenuScrollSupport.CreateVerticalScrollbar(
                 scrollObject.transform,
                 scrollbarWidth,
-                ScrollTrackColor,
-                ScrollHandleColor,
-                GetWhiteSprite());
+                UiTheme.ScrollTrack,
+                UiTheme.ScrollHandle,
+                UiTheme.WhiteSprite);
             scroll.verticalScrollbar = scrollbar;
             scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
 
@@ -219,7 +201,7 @@ namespace ShooterPrototype.UI
             contentRect.pivot = new Vector2(0.5f, 1f);
             contentRect.anchoredPosition = Vector2.zero;
             contentRect.sizeDelta = new Vector2(0f, 0f);
-            MainMenuScrollSupport.EnableContentScrollCapture(contentObject, GetWhiteSprite());
+            MainMenuScrollSupport.EnableContentScrollCapture(contentObject, UiTheme.WhiteSprite);
 
             var contentLayout = contentObject.AddComponent<VerticalLayoutGroup>();
             contentLayout.spacing = rowSpacing;
@@ -296,8 +278,7 @@ namespace ShooterPrototype.UI
             text.text = message ?? string.Empty;
             text.fontSize = rowFontSize;
             text.alignment = TextAlignmentOptions.MidlineLeft;
-            text.color = MutedColor;
-            text.raycastTarget = false;
+            UiTheme.ApplyTmp(text, UiTextRole.Muted);
         }
 
         private void CreateEntryRow(LeaderboardEntryDto entry, bool isSelf)
@@ -310,9 +291,7 @@ namespace ShooterPrototype.UI
             rowLayout.minHeight = rowHeight;
 
             var background = rowObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.type = Image.Type.Simple;
-            background.color = isSelf ? SelfRowColor : RowColor;
+            UiTheme.ApplyFlatFill(background, isSelf ? UiTheme.SlotHighlight : UiTheme.SlotFill);
             background.raycastTarget = false;
 
             var horizontal = rowObject.AddComponent<HorizontalLayoutGroup>();
@@ -332,10 +311,8 @@ namespace ShooterPrototype.UI
             var rankText = rankObject.AddComponent<TextMeshProUGUI>();
             rankText.text = entry.rank.ToString();
             rankText.fontSize = rowFontSize;
-            rankText.fontStyle = FontStyles.Bold;
             rankText.alignment = TextAlignmentOptions.MidlineRight;
-            rankText.color = RankColor;
-            rankText.raycastTarget = false;
+            UiTheme.ApplyTmp(rankText, UiTextRole.Muted);
 
             var nicknameObject = new GameObject("Nickname");
             nicknameObject.transform.SetParent(rowObject.transform, false);
@@ -346,9 +323,8 @@ namespace ShooterPrototype.UI
             nicknameText.fontSize = rowFontSize;
             nicknameText.fontStyle = isSelf ? FontStyles.Bold : FontStyles.Normal;
             nicknameText.alignment = TextAlignmentOptions.MidlineLeft;
-            nicknameText.color = isSelf ? SelfNicknameColor : NicknameColor;
             nicknameText.overflowMode = TextOverflowModes.Ellipsis;
-            nicknameText.raycastTarget = false;
+            UiTheme.ApplyTmp(nicknameText, isSelf ? UiTextRole.Accent : UiTextRole.Body);
 
             var ratingObject = new GameObject("Rating");
             ratingObject.transform.SetParent(rowObject.transform, false);
@@ -358,10 +334,8 @@ namespace ShooterPrototype.UI
             var ratingText = ratingObject.AddComponent<TextMeshProUGUI>();
             ratingText.text = entry.rating.ToString("N0");
             ratingText.fontSize = rowFontSize;
-            ratingText.fontStyle = FontStyles.Bold;
             ratingText.alignment = TextAlignmentOptions.MidlineRight;
-            ratingText.color = RatingColor;
-            ratingText.raycastTarget = false;
+            UiTheme.ApplyTmp(ratingText, UiTextRole.Accent);
         }
 
         private static void StretchFull(RectTransform rect)
@@ -370,26 +344,6 @@ namespace ShooterPrototype.UI
             rect.anchorMax = Vector2.one;
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = Vector2.zero;
-        }
-
-        private static Sprite GetWhiteSprite()
-        {
-            if (whiteSprite != null)
-            {
-                return whiteSprite;
-            }
-
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            texture.SetPixel(0, 0, Color.white);
-            texture.SetPixel(1, 0, Color.white);
-            texture.SetPixel(0, 1, Color.white);
-            texture.SetPixel(1, 1, Color.white);
-            texture.Apply(false, false);
-            whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 100f);
-            return whiteSprite;
         }
     }
 }

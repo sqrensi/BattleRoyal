@@ -16,8 +16,6 @@ namespace ShooterPrototype.UI
     {
         private const float NearbyRadius = 4f;
         private const float DoubleClickWindowSeconds = 0.35f;
-        private static readonly Color ItemSlotBackgroundTint = new Color(0.34f, 0.34f, 0.36f, 0.52f);
-        private static readonly Color ItemSlotEmptyBackgroundTint = new Color(0.26f, 0.26f, 0.28f, 0.42f);
         private static PlayerInventoryPanelController activePanel;
 
         [SerializeField] private bool hideLegacyHudInventory = true;
@@ -160,7 +158,7 @@ namespace ShooterPrototype.UI
             var dimmer = CreateRect("Dimmer", panelRoot.transform);
             StretchFull(dimmer);
             var dimmerImage = dimmer.gameObject.AddComponent<Image>();
-            dimmerImage.color = new Color(0f, 0f, 0f, 0.22f);
+            UiTheme.ApplyFlatFill(dimmerImage, UiTheme.CanvasDim);
             dimmerImage.raycastTarget = true;
 
             var panel = CreateRect("Panel", panelRoot.transform);
@@ -169,7 +167,7 @@ namespace ShooterPrototype.UI
             panel.pivot = new Vector2(0.5f, 0.5f);
             panel.sizeDelta = new Vector2(760f, 360f);
             var panelImage = panel.gameObject.AddComponent<Image>();
-            panelImage.color = new Color(0.08f, 0.08f, 0.1f, 0.52f);
+            UiTheme.ApplyPanel(panelImage, UiPanelStyle.Heavy);
 
             var title = CreateLabel(panel, "Title", new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f));
             title.rectTransform.offsetMin = new Vector2(16f, -34f);
@@ -189,7 +187,7 @@ namespace ShooterPrototype.UI
             var weaponsColumn = BuildZoneColumn(columns, "Оружие", 0.65f, 1f);
 
             floorAreaView = CreateAreaSlot(floorColumn, InventorySlotKind.FloorArea, ConfigureFloorArea);
-            floorAreaView.SetAreaTint(new Color(0.14f, 0.12f, 0.1f, 0.32f));
+            floorAreaView.SetAreaTint(UiTheme.SectionFill);
             floorItemsRow = CreateRect("FloorItemsRow", floorColumn);
             var floorItemsRect = floorItemsRow as RectTransform;
             floorItemsRect.anchorMin = new Vector2(0f, 0f);
@@ -198,7 +196,7 @@ namespace ShooterPrototype.UI
             floorItemsRect.offsetMax = new Vector2(-8f, -28f);
 
             inventoryAreaView = CreateAreaSlot(itemsColumn, InventorySlotKind.InventoryArea, ConfigureInventoryArea);
-            inventoryAreaView.SetAreaTint(new Color(0.1f, 0.12f, 0.16f, 0.32f));
+            inventoryAreaView.SetAreaTint(UiTheme.SectionFill);
             inventoryItemsRow = CreateRect("InventoryItemsRow", itemsColumn);
             var inventoryItemsRect = inventoryItemsRow as RectTransform;
             inventoryItemsRect.anchorMin = new Vector2(0f, 0f);
@@ -207,7 +205,7 @@ namespace ShooterPrototype.UI
             inventoryItemsRect.offsetMax = new Vector2(-8f, -8f);
 
             weaponAreaView = CreateAreaSlot(weaponsColumn, InventorySlotKind.WeaponArea, ConfigureWeaponArea);
-            weaponAreaView.SetAreaTint(new Color(0.1f, 0.14f, 0.11f, 0.32f));
+            weaponAreaView.SetAreaTint(UiTheme.SectionFill);
             BuildWeaponSlots(weaponsColumn);
 
             BindAllSlots(this);
@@ -364,7 +362,7 @@ namespace ShooterPrototype.UI
                     null,
                     string.Empty,
                     $"Слот {slotIndex + 1}\nПусто",
-                    new Color(0.1f, 0.1f, 0.1f, 0.85f),
+                    UiTheme.SlotEmpty,
                     default);
                 return;
             }
@@ -390,7 +388,7 @@ namespace ShooterPrototype.UI
                 InventoryIconCatalog.GetWeaponIcon(slot.Kind),
                 countText,
                 FormatWeaponLabel(slot.ItemId, slot.Kind),
-                active ? new Color(0.16f, 0.28f, 0.18f, 0.95f) : new Color(0.1f, 0.1f, 0.12f, 0.92f),
+                active ? UiTheme.SlotHighlight : UiTheme.SlotFill,
                 payload);
         }
 
@@ -449,7 +447,7 @@ namespace ShooterPrototype.UI
                         null,
                         count > 0 ? count.ToString() : string.Empty,
                         "Аптечка",
-                        count > 0 ? ItemSlotBackgroundTint : ItemSlotEmptyBackgroundTint,
+                        count > 0 ? UiTheme.SlotFill : UiTheme.SlotEmpty,
                         payload);
                     return;
                 }
@@ -469,7 +467,7 @@ namespace ShooterPrototype.UI
                         null,
                         count > 0 ? count.ToString() : string.Empty,
                         "Граната",
-                        count > 0 ? ItemSlotBackgroundTint : ItemSlotEmptyBackgroundTint,
+                        count > 0 ? UiTheme.SlotFill : UiTheme.SlotEmpty,
                         payload);
                     return;
                 }
@@ -493,7 +491,7 @@ namespace ShooterPrototype.UI
                         InventoryIconCatalog.GetAmmoIcon(key.AmmoKind),
                         count > 0 ? count.ToString() : string.Empty,
                         FormatWeaponKindLabel(key.AmmoKind),
-                        count > 0 ? ItemSlotBackgroundTint : ItemSlotEmptyBackgroundTint,
+                        count > 0 ? UiTheme.SlotFill : UiTheme.SlotEmpty,
                         payload);
                     return;
                 }
@@ -676,7 +674,7 @@ namespace ShooterPrototype.UI
                     icon,
                     countText,
                     FormatPickupTitle(definition),
-                    ItemSlotBackgroundTint,
+                    UiTheme.SlotFill,
                     payload);
             }
         }
@@ -978,8 +976,7 @@ namespace ShooterPrototype.UI
             rect.anchorMax = anchorMax;
             rect.pivot = pivot;
             var label = labelObject.AddComponent<Text>();
-            label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            label.color = Color.white;
+            UiTheme.ApplyLegacyText(label, UiTextRole.Body);
             return label;
         }
 

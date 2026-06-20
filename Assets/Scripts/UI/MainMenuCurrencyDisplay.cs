@@ -1,14 +1,13 @@
 using ShooterPrototype.Player;
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace ShooterPrototype.UI
 {
     [DisallowMultipleComponent]
     public sealed class MainMenuCurrencyDisplay : MonoBehaviour
     {
-        private static readonly Color ValueColor = new Color(0.98f, 0.9f, 0.58f, 1f);
-
         [SerializeField] private float edgeMargin = 28f;
         [SerializeField] private float valueFontSize = 24f;
 
@@ -27,25 +26,50 @@ namespace ShooterPrototype.UI
 
             PlayerSkinOwnershipService.EnsureInitialized();
 
-            var textObject = new GameObject("MainMenuCurrencyDisplay");
-            textObject.transform.SetParent(canvasRect, false);
+            var rootObject = new GameObject("MainMenuCurrencyDisplay");
+            rootObject.transform.SetParent(canvasRect, false);
 
-            var rect = textObject.AddComponent<RectTransform>();
+            var rect = rootObject.AddComponent<RectTransform>();
             rect.anchorMin = new Vector2(1f, 1f);
             rect.anchorMax = new Vector2(1f, 1f);
             rect.pivot = new Vector2(1f, 1f);
             rect.anchoredPosition = new Vector2(-edgeMargin, -edgeMargin);
-            rect.sizeDelta = new Vector2(240f, 36f);
 
+            var layout = rootObject.AddComponent<HorizontalLayoutGroup>();
+            layout.childAlignment = TextAnchor.MiddleRight;
+            layout.spacing = 4f;
+            layout.childControlWidth = false;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
+
+            var fitter = rootObject.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var iconObject = new GameObject("CoinIcon");
+            iconObject.transform.SetParent(rootObject.transform, false);
+            var iconRect = iconObject.AddComponent<RectTransform>();
+            iconRect.sizeDelta = new Vector2(22f, 22f);
+            var iconLayout = iconObject.AddComponent<LayoutElement>();
+            iconLayout.preferredWidth = 22f;
+            iconLayout.preferredHeight = 22f;
+            var iconImage = iconObject.AddComponent<Image>();
+            iconImage.sprite = UiIconCatalog.GetIcon(UiIconCatalog.IconKind.Coin);
+            iconImage.preserveAspect = true;
+            iconImage.color = UiTheme.TextAccent;
+            iconImage.raycastTarget = false;
+
+            var textObject = new GameObject("Value");
+            textObject.transform.SetParent(rootObject.transform, false);
             valueText = textObject.AddComponent<TextMeshProUGUI>();
             valueText.fontSize = valueFontSize;
-            valueText.fontStyle = FontStyles.Bold;
-            valueText.alignment = TextAlignmentOptions.TopRight;
+            valueText.alignment = TextAlignmentOptions.MidlineRight;
             valueText.characterSpacing = 1f;
-            valueText.color = ValueColor;
-            valueText.raycastTarget = false;
+            valueText.enableWordWrapping = false;
+            UiTheme.ApplyTmp(valueText, UiTextRole.Accent);
 
-            canvasGroup = textObject.AddComponent<CanvasGroup>();
+            canvasGroup = rootObject.AddComponent<CanvasGroup>();
             built = true;
             Refresh();
         }

@@ -18,14 +18,12 @@ namespace ShooterPrototype.UI
         private const float DamageHoldSeconds = 0.14f;
         private const float DamageFadeOutSeconds = 0.42f;
         private const float TrailCatchUpSpeed = 2.4f;
-        private const int DamageOverlayVersion = 2;
+        private const int DamageOverlayVersion = 3;
         private const float KillBannerFadeInSeconds = 0.28f;
         private const float KillBannerHoldSeconds = 2.2f;
         private const float DeathBannerHoldSeconds = 4f;
         private const float KillBannerFadeOutSeconds = 0.45f;
         private const float KillBannerBottomOffset = 58f;
-
-        private static Sprite whiteSprite;
 
         private Canvas canvas;
         private RectTransform hpFillRect;
@@ -220,7 +218,7 @@ namespace ShooterPrototype.UI
 
             var victim = string.IsNullOrWhiteSpace(victimNickname) ? "Игрок" : victimNickname.Trim();
             killBannerText.text = $"Вы убили {victim}";
-            killBannerText.color = new Color(0.98f, 0.9f, 0.58f, 1f);
+            killBannerText.color = UiTheme.TextAccent;
             ActivateBanner(KillBannerFadeInSeconds + KillBannerHoldSeconds);
         }
 
@@ -241,7 +239,7 @@ namespace ShooterPrototype.UI
                 killBannerText.text = $"{killer} вас убил";
             }
 
-            killBannerText.color = new Color(0.98f, 0.62f, 0.62f, 1f);
+            killBannerText.color = UiTheme.Danger;
             ActivateBanner(KillBannerFadeInSeconds + DeathBannerHoldSeconds);
         }
 
@@ -334,7 +332,7 @@ namespace ShooterPrototype.UI
             {
                 displayedHealthRatio = 0f;
                 trailHealthRatio = Mathf.MoveTowards(trailHealthRatio, 0f, TrailCatchUpSpeed * Time.unscaledDeltaTime);
-                ApplyBarVisuals(new Color(0.72f, 0.18f, 0.28f, 0.95f));
+                ApplyBarVisuals(UiTheme.HealthLow);
                 return;
             }
 
@@ -362,7 +360,7 @@ namespace ShooterPrototype.UI
             SetHorizontalFill(hpFillRect, displayedHealthRatio);
             SetHorizontalFill(hpTrailRect, trailHealthRatio);
             hpFillImage.color = fillColor;
-            hpTrailImage.color = new Color(0.82f, 0.16f, 0.2f, 0.82f);
+            hpTrailImage.color = new Color(UiTheme.HealthLow.r, UiTheme.HealthLow.g, UiTheme.HealthLow.b, 0.82f);
         }
 
         private static void SetHorizontalFill(RectTransform rect, float ratio)
@@ -383,20 +381,17 @@ namespace ShooterPrototype.UI
         {
             if (ratio <= CriticalHealthThreshold)
             {
-                return new Color(0.92f, 0.24f, 0.42f, 0.98f);
+                return UiTheme.HealthLow;
             }
 
             if (ratio <= LowHealthYellowThreshold)
             {
                 var t = (ratio - CriticalHealthThreshold) /
                         Mathf.Max(0.001f, LowHealthYellowThreshold - CriticalHealthThreshold);
-                return Color.Lerp(
-                    new Color(0.92f, 0.24f, 0.42f, 0.98f),
-                    new Color(0.95f, 0.78f, 0.18f, 0.98f),
-                    t);
+                return Color.Lerp(UiTheme.HealthLow, UiTheme.HealthMid, t);
             }
 
-            return new Color(0.22f, 0.78f, 0.34f, 0.98f);
+            return UiTheme.HealthHigh;
         }
 
         private void TickDamageOverlay()
@@ -442,28 +437,40 @@ namespace ShooterPrototype.UI
             barRect.anchoredPosition = new Vector2(0f, BarBottomOffset);
 
             hpBackgroundImage = barRoot.AddComponent<Image>();
-            hpBackgroundImage.sprite = GetWhiteSprite();
-            hpBackgroundImage.type = Image.Type.Simple;
-            hpBackgroundImage.color = new Color(0.08f, 0.08f, 0.1f, 0.72f);
+            UiTheme.ApplyPanel(hpBackgroundImage, UiPanelStyle.Hud);
             hpBackgroundImage.raycastTarget = false;
 
             var trailObject = CreateRect("HealthBarTrail", barRoot.transform);
             hpTrailRect = trailObject.GetComponent<RectTransform>();
             hpTrailImage = trailObject.AddComponent<Image>();
-            hpTrailImage.sprite = GetWhiteSprite();
-            hpTrailImage.type = Image.Type.Simple;
-            hpTrailImage.color = new Color(0.82f, 0.16f, 0.2f, 0.82f);
+            UiTheme.ApplyFlatFill(hpTrailImage, UiTheme.HealthLow);
+            hpTrailImage.color = new Color(UiTheme.HealthLow.r, UiTheme.HealthLow.g, UiTheme.HealthLow.b, 0.82f);
             hpTrailImage.raycastTarget = false;
             SetHorizontalFill(hpTrailRect, 1f);
 
             var fillObject = CreateRect("HealthBarFill", barRoot.transform);
             hpFillRect = fillObject.GetComponent<RectTransform>();
             hpFillImage = fillObject.AddComponent<Image>();
-            hpFillImage.sprite = GetWhiteSprite();
-            hpFillImage.type = Image.Type.Simple;
-            hpFillImage.color = new Color(0.22f, 0.78f, 0.34f, 0.98f);
+            UiTheme.ApplyFlatFill(hpFillImage, UiTheme.HealthHigh);
             hpFillImage.raycastTarget = false;
             SetHorizontalFill(hpFillRect, 1f);
+
+            CreateHealthSegmentDivider(barRoot.transform, 0.25f);
+            CreateHealthSegmentDivider(barRoot.transform, 0.5f);
+            CreateHealthSegmentDivider(barRoot.transform, 0.75f);
+        }
+
+        private static void CreateHealthSegmentDivider(Transform parent, float normalizedX)
+        {
+            var dividerObject = CreateRect("HealthSegment_" + normalizedX, parent);
+            var rect = dividerObject.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(normalizedX, 0f);
+            rect.anchorMax = new Vector2(normalizedX, 1f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = new Vector2(1f, 0f);
+            var image = dividerObject.AddComponent<Image>();
+            UiTheme.ApplyFlatFill(image, new Color(0f, 0f, 0f, 0.35f));
+            image.raycastTarget = false;
         }
 
         private void EnsureKillBanner(Transform root)
@@ -482,9 +489,7 @@ namespace ShooterPrototype.UI
             killBannerRoot.sizeDelta = new Vector2(520f, 42f);
 
             var background = bannerObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.type = Image.Type.Simple;
-            background.color = new Color(0.04f, 0.06f, 0.08f, 0.72f);
+            UiTheme.ApplyPanel(background, UiPanelStyle.Hud);
             background.raycastTarget = false;
 
             killBannerGroup = bannerObject.AddComponent<CanvasGroup>();
@@ -497,10 +502,9 @@ namespace ShooterPrototype.UI
             labelRect.offsetMax = new Vector2(-16f, -6f);
 
             killBannerText = labelObject.AddComponent<TextMeshProUGUI>();
+            UiTheme.ApplyTmp(killBannerText, UiTextRole.Accent);
             killBannerText.fontSize = 24f;
-            killBannerText.fontStyle = FontStyles.Bold;
             killBannerText.alignment = TextAlignmentOptions.Center;
-            killBannerText.color = new Color(0.98f, 0.9f, 0.58f, 1f);
             killBannerText.raycastTarget = false;
 
             bannerObject.SetActive(false);
@@ -551,7 +555,7 @@ namespace ShooterPrototype.UI
             image.sprite = CreateSideArcSprite(leftSide);
             image.type = Image.Type.Simple;
             image.preserveAspect = false;
-            image.color = new Color(0.98f, 0.05f, 0.1f, 0f);
+            image.color = new Color(UiTheme.Danger.r, UiTheme.Danger.g, UiTheme.Danger.b, 0f);
             image.enabled = false;
             return image;
         }
@@ -610,26 +614,6 @@ namespace ShooterPrototype.UI
             {
                 Object.Destroy(child.gameObject);
             }
-        }
-
-        private static Sprite GetWhiteSprite()
-        {
-            if (whiteSprite != null)
-            {
-                return whiteSprite;
-            }
-
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            texture.SetPixel(0, 0, Color.white);
-            texture.SetPixel(1, 0, Color.white);
-            texture.SetPixel(0, 1, Color.white);
-            texture.SetPixel(1, 1, Color.white);
-            texture.Apply(false, false);
-            whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 100f);
-            return whiteSprite;
         }
 
         private static GameObject CreateRect(string name, Transform parent)

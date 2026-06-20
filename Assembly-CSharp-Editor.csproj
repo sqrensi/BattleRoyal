@@ -60,6 +60,7 @@
     <Compile Include="Assets\Scripts\Editor\WeaponBlockSetup.cs" />
     <Compile Include="Assets\Synty\PolygonGeneric\Shaders\InterfaceOverrides\Editor\PolygonTransparencyShaderGUI.cs" />
     <Compile Include="Assets\Synty\SyntyPackageHelper\Editor\SyntyPackageHelperConfig.cs" />
+    <Compile Include="Assets\Scripts\Editor\UiPrefabBuilder.cs" />
     <Compile Include="Assets\Scripts\Editor\RemotePlayerEditorPreviewSetup.cs" />
     <Compile Include="Assets\Scripts\Editor\SyntyAnimationSetup.cs" />
     <Compile Include="Assets\Scripts\Editor\PickupSpawnSetupMenu.cs" />

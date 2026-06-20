@@ -9,17 +9,6 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuNicknameEditor : MonoBehaviour
     {
-        private static Sprite whiteSprite;
-
-        private static readonly Color PanelColor = new Color(0.06f, 0.08f, 0.1f, 0.72f);
-        private static readonly Color InputColor = new Color(0.1f, 0.12f, 0.15f, 0.92f);
-        private static readonly Color LabelColor = new Color(0.94f, 0.96f, 0.98f, 0.98f);
-        private static readonly Color StatusOkColor = new Color(0.62f, 0.9f, 0.72f, 0.95f);
-        private static readonly Color StatusErrorColor = new Color(0.98f, 0.58f, 0.58f, 0.95f);
-        private static readonly Color ButtonNormalColor = new Color(0.18f, 0.48f, 0.42f, 0.96f);
-        private static readonly Color ButtonHighlightedColor = new Color(0.22f, 0.58f, 0.5f, 1f);
-        private static readonly Color ButtonPressedColor = new Color(0.14f, 0.38f, 0.34f, 1f);
-
         [SerializeField] private float edgeMargin = 28f;
         [SerializeField] private float bottomOffset = 28f;
         [SerializeField] private float panelWidth = 340f;
@@ -86,10 +75,7 @@ namespace ShooterPrototype.UI
             }
 
             var background = rootObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.type = Image.Type.Simple;
-            background.color = PanelColor;
-            background.raycastTarget = true;
+            UiTheme.ApplyPanel(background, UiPanelStyle.Standard);
 
             canvasGroup = rootObject.AddComponent<CanvasGroup>();
 
@@ -117,10 +103,8 @@ namespace ShooterPrototype.UI
             var ratingLabelText = ratingLabelObject.AddComponent<TextMeshProUGUI>();
             ratingLabelText.text = "Рейтинг";
             ratingLabelText.fontSize = labelFontSize;
-            ratingLabelText.fontStyle = FontStyles.Bold;
             ratingLabelText.alignment = TextAlignmentOptions.MidlineLeft;
-            ratingLabelText.color = LabelColor;
-            ratingLabelText.raycastTarget = false;
+            UiTheme.ApplyTmp(ratingLabelText, UiTextRole.Label);
 
             var ratingObject = new GameObject("RatingValue");
             ratingObject.transform.SetParent(rootObject.transform, false);
@@ -128,10 +112,8 @@ namespace ShooterPrototype.UI
             ratingLayout.preferredHeight = 28f;
             ratingText = ratingObject.AddComponent<TextMeshProUGUI>();
             ratingText.fontSize = 24f;
-            ratingText.fontStyle = FontStyles.Bold;
             ratingText.alignment = TextAlignmentOptions.MidlineLeft;
-            ratingText.color = new Color(0.92f, 0.84f, 0.55f, 0.98f);
-            ratingText.raycastTarget = false;
+            UiTheme.ApplyTmp(ratingText, UiTextRole.Accent);
 
             var labelObject = new GameObject("Label");
             labelObject.transform.SetParent(rootObject.transform, false);
@@ -140,10 +122,8 @@ namespace ShooterPrototype.UI
             var labelText = labelObject.AddComponent<TextMeshProUGUI>();
             labelText.text = "Ник";
             labelText.fontSize = labelFontSize;
-            labelText.fontStyle = FontStyles.Bold;
             labelText.alignment = TextAlignmentOptions.MidlineLeft;
-            labelText.color = LabelColor;
-            labelText.raycastTarget = false;
+            UiTheme.ApplyTmp(labelText, UiTextRole.Label);
 
             var fieldContainer = new GameObject("NicknameField");
             fieldContainer.transform.SetParent(rootObject.transform, false);
@@ -169,8 +149,7 @@ namespace ShooterPrototype.UI
             statusText.alignment = TextAlignmentOptions.TopLeft;
             statusText.enableWordWrapping = true;
             statusText.overflowMode = TextOverflowModes.Overflow;
-            statusText.color = StatusErrorColor;
-            statusText.raycastTarget = false;
+            UiTheme.ApplyTmp(statusText, UiTextRole.Danger);
             statusText.text = string.Empty;
 
             built = true;
@@ -232,7 +211,7 @@ namespace ShooterPrototype.UI
         {
             if (!PlayerProfileService.IsServerSynced || profileApiClient == null)
             {
-                SetStatus("Сервер недоступен — никнейм нельзя изменить.", StatusErrorColor);
+                SetStatus("Сервер недоступен — никнейм нельзя изменить.", UiTheme.Danger);
                 return;
             }
 
@@ -288,7 +267,7 @@ namespace ShooterPrototype.UI
         {
             if (!PlayerProfileService.IsServerSynced || profileApiClient == null)
             {
-                SetStatus("Сервер недоступен — никнейм нельзя изменить.", StatusErrorColor);
+                SetStatus("Сервер недоступен — никнейм нельзя изменить.", UiTheme.Danger);
                 return;
             }
 
@@ -310,7 +289,7 @@ namespace ShooterPrototype.UI
             var trimmed = nicknameInput != null ? nicknameInput.text.Trim() : string.Empty;
             if (string.IsNullOrWhiteSpace(trimmed))
             {
-                SetStatus("Введите никнейм.", StatusErrorColor);
+                SetStatus("Введите никнейм.", UiTheme.Danger);
                 if (actionButton != null)
                 {
                     actionButton.interactable = PlayerProfileService.IsServerSynced;
@@ -360,11 +339,11 @@ namespace ShooterPrototype.UI
             {
                 SetEditMode(false);
                 nicknameInput.SetTextWithoutNotify(PlayerProfileService.Nickname);
-                SetStatus("Никнейм сохранён.", StatusOkColor);
+                SetStatus("Никнейм сохранён.", UiTheme.Success);
                 yield break;
             }
 
-            SetStatus(string.IsNullOrWhiteSpace(error) ? "Не удалось сохранить никнейм." : error, StatusErrorColor);
+            SetStatus(string.IsNullOrWhiteSpace(error) ? "Не удалось сохранить никнейм." : error, UiTheme.Danger);
         }
 
         private void ClearStatus()
@@ -397,9 +376,7 @@ namespace ShooterPrototype.UI
             StretchFull(inputRect);
 
             var background = inputObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.type = Image.Type.Simple;
-            background.color = InputColor;
+            UiTheme.ApplyFlatFill(background, UiTheme.SlotFill);
 
             var inputField = inputObject.AddComponent<TMP_InputField>();
             inputField.characterLimit = 16;
@@ -422,8 +399,8 @@ namespace ShooterPrototype.UI
             placeholder.fontSize = inputFontSize;
             placeholder.fontStyle = FontStyles.Italic;
             placeholder.alignment = TextAlignmentOptions.MidlineLeft;
-            placeholder.color = new Color(0.72f, 0.76f, 0.8f, 0.72f);
-            placeholder.raycastTarget = false;
+            UiTheme.ApplyTmp(placeholder, UiTextRole.Muted);
+            placeholder.color = new Color(UiTheme.TextMuted.r, UiTheme.TextMuted.g, UiTheme.TextMuted.b, 0.72f);
 
             var textObject = new GameObject("Text");
             textObject.transform.SetParent(textAreaObject.transform, false);
@@ -432,8 +409,7 @@ namespace ShooterPrototype.UI
             var text = textObject.AddComponent<TextMeshProUGUI>();
             text.fontSize = inputFontSize;
             text.alignment = TextAlignmentOptions.MidlineLeft;
-            text.color = LabelColor;
-            text.raycastTarget = false;
+            UiTheme.ApplyTmp(text, UiTextRole.Body);
 
             inputField.textViewport = textAreaRect;
             inputField.textComponent = text;
@@ -455,21 +431,10 @@ namespace ShooterPrototype.UI
             buttonRect.sizeDelta = new Vector2(actionButtonWidth, 0f);
             buttonRect.anchoredPosition = new Vector2(-4f, 0f);
 
-            var image = buttonObject.AddComponent<Image>();
-            image.sprite = GetWhiteSprite();
-            image.type = Image.Type.Simple;
-            image.color = ButtonNormalColor;
+            buttonObject.AddComponent<Image>();
 
             var button = buttonObject.AddComponent<Button>();
-            var colors = button.colors;
-            colors.normalColor = ButtonNormalColor;
-            colors.highlightedColor = ButtonHighlightedColor;
-            colors.pressedColor = ButtonPressedColor;
-            colors.selectedColor = ButtonHighlightedColor;
-            colors.disabledColor = new Color(0.12f, 0.14f, 0.16f, 0.55f);
-            colors.fadeDuration = 0.08f;
-            button.colors = colors;
-            button.targetGraphic = image;
+            UiTheme.StyleButton(button, UiButtonStyle.Primary);
 
             var labelObject = new GameObject("Label");
             labelObject.transform.SetParent(buttonObject.transform, false);
@@ -478,10 +443,8 @@ namespace ShooterPrototype.UI
             actionButtonLabel = labelObject.AddComponent<TextMeshProUGUI>();
             actionButtonLabel.text = "Изменить";
             actionButtonLabel.fontSize = 15f;
-            actionButtonLabel.fontStyle = FontStyles.Bold;
             actionButtonLabel.alignment = TextAlignmentOptions.Center;
-            actionButtonLabel.color = LabelColor;
-            actionButtonLabel.raycastTarget = false;
+            UiTheme.ApplyTmp(actionButtonLabel, UiTextRole.PrimaryButton);
 
             return button;
         }
@@ -492,26 +455,6 @@ namespace ShooterPrototype.UI
             rect.anchorMax = Vector2.one;
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = Vector2.zero;
-        }
-
-        private static Sprite GetWhiteSprite()
-        {
-            if (whiteSprite != null)
-            {
-                return whiteSprite;
-            }
-
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            texture.SetPixel(0, 0, Color.white);
-            texture.SetPixel(1, 0, Color.white);
-            texture.SetPixel(0, 1, Color.white);
-            texture.SetPixel(1, 1, Color.white);
-            texture.Apply(false, false);
-            whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 100f);
-            return whiteSprite;
         }
     }
 }

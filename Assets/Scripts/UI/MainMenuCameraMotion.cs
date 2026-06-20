@@ -49,6 +49,16 @@ namespace ShooterPrototype.UI
         private float currentViewBlend;
         private float viewBlendVelocity;
 
+        [Header("Mouse Parallax")]
+        [SerializeField] private float mouseParallaxPosition = 0.12f;
+        [SerializeField] private float mouseParallaxRotation = 0.45f;
+        [SerializeField] private float mouseParallaxSmoothTime = 0.35f;
+
+        private Vector3 mouseParallaxOffset;
+        private Vector3 mouseParallaxVelocity;
+        private Vector3 mouseEulerOffset;
+        private Vector3 mouseEulerVelocity;
+
         public void EnterInventoryView()
         {
             targetViewBlend = 1f;
@@ -118,14 +128,40 @@ namespace ShooterPrototype.UI
                 Mathf.Infinity,
                 Time.unscaledDeltaTime);
 
+            var mouseNormalized = new Vector2(
+                (Input.mousePosition.x / Mathf.Max(1f, Screen.width) - 0.5f) * 2f,
+                (Input.mousePosition.y / Mathf.Max(1f, Screen.height) - 0.5f) * 2f);
+            var targetMouseParallax = new Vector3(
+                mouseNormalized.x * mouseParallaxPosition,
+                mouseNormalized.y * mouseParallaxPosition * 0.55f,
+                mouseNormalized.x * mouseParallaxPosition * 0.25f);
+            var targetMouseEuler = new Vector3(
+                -mouseNormalized.y * mouseParallaxRotation,
+                mouseNormalized.x * mouseParallaxRotation,
+                -mouseNormalized.x * mouseParallaxRotation * 0.35f);
+            mouseParallaxOffset = Vector3.SmoothDamp(
+                mouseParallaxOffset,
+                targetMouseParallax,
+                ref mouseParallaxVelocity,
+                mouseParallaxSmoothTime,
+                Mathf.Infinity,
+                Time.unscaledDeltaTime);
+            mouseEulerOffset = Vector3.SmoothDamp(
+                mouseEulerOffset,
+                targetMouseEuler,
+                ref mouseEulerVelocity,
+                mouseParallaxSmoothTime,
+                Mathf.Infinity,
+                Time.unscaledDeltaTime);
+
             var inventoryOffset = baseRotation * new Vector3(
                 inventoryRightOffset * currentViewBlend,
                 0f,
                 inventoryForwardOffset * currentViewBlend);
 
             cameraTransform.SetPositionAndRotation(
-                basePosition + inventoryOffset + currentPositionOffset,
-                baseRotation * Quaternion.Euler(currentEulerOffset));
+                basePosition + inventoryOffset + currentPositionOffset + mouseParallaxOffset,
+                baseRotation * Quaternion.Euler(currentEulerOffset + mouseEulerOffset));
 
             if (cameraComponent != null)
             {

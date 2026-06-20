@@ -56,19 +56,36 @@ namespace ShooterPrototype.Player
 
         public static Color GetCardBackgroundColor(SkinRarity rarity)
         {
+            return new Color(0.08f, 0.075f, 0.065f, 0.92f);
+        }
+
+        public static Color GetStripeColor(SkinRarity rarity)
+        {
             switch (rarity)
             {
                 case SkinRarity.Uncommon:
-                    return new Color(0.14f, 0.28f, 0.58f, 0.96f);
+                    return new Color(0.42f, 0.62f, 0.88f, 0.98f);
                 case SkinRarity.Rare:
-                    return new Color(0.34f, 0.16f, 0.58f, 0.96f);
+                    return new Color(0.58f, 0.38f, 0.86f, 0.98f);
                 case SkinRarity.Epic:
-                    return new Color(0.62f, 0.2f, 0.52f, 0.96f);
+                    return new Color(0.82f, 0.36f, 0.68f, 0.98f);
                 case SkinRarity.Legendary:
-                    return new Color(0.72f, 0.16f, 0.14f, 0.96f);
+                    return new Color(0.95f, 0.72f, 0.18f, 0.98f);
                 default:
-                    return new Color(0.34f, 0.36f, 0.4f, 0.96f);
+                    return new Color(0.52f, 0.5f, 0.46f, 0.72f);
             }
+        }
+
+        public static string GetDisplayName(SkinRarity rarity)
+        {
+            return rarity switch
+            {
+                SkinRarity.Uncommon => "Необычный",
+                SkinRarity.Rare => "Редкий",
+                SkinRarity.Epic => "Эпический",
+                SkinRarity.Legendary => "Легендарный",
+                _ => "Обычный",
+            };
         }
     }
 }

@@ -218,7 +218,7 @@ namespace ShooterPrototype.UI
                 background = gameObject.AddComponent<Image>();
             }
 
-            background.color = ResolveDefaultTint(slotKind);
+            UiTheme.ApplyFlatFill(background, ResolveDefaultTint(slotKind));
             background.raycastTarget = true;
 
             var iconObject = new GameObject("Icon");
@@ -241,10 +241,9 @@ namespace ShooterPrototype.UI
             titleRect.offsetMin = Vector2.zero;
             titleRect.offsetMax = Vector2.zero;
             titleLabel = titleObject.AddComponent<Text>();
-            titleLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            UiTheme.ApplyLegacyText(titleLabel, UiTextRole.Body);
             titleLabel.fontSize = 11;
             titleLabel.alignment = TextAnchor.MiddleCenter;
-            titleLabel.color = Color.white;
             titleLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
             titleLabel.verticalOverflow = VerticalWrapMode.Overflow;
             titleLabel.raycastTarget = false;
@@ -258,11 +257,9 @@ namespace ShooterPrototype.UI
             countRect.sizeDelta = new Vector2(0f, 18f);
             countRect.anchoredPosition = new Vector2(0f, 2f);
             countLabel = countObject.AddComponent<Text>();
-            countLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            UiTheme.ApplyLegacyText(countLabel, UiTextRole.Accent);
             countLabel.fontSize = 12;
-            countLabel.fontStyle = FontStyle.Bold;
             countLabel.alignment = TextAnchor.MiddleCenter;
-            countLabel.color = new Color(1f, 0.95f, 0.7f, 1f);
             countLabel.raycastTarget = false;
         }
 
@@ -427,13 +424,11 @@ namespace ShooterPrototype.UI
             switch (kind)
             {
                 case InventorySlotKind.FloorArea:
-                    return new Color(0.14f, 0.12f, 0.1f, 0.32f);
                 case InventorySlotKind.InventoryArea:
-                    return new Color(0.1f, 0.12f, 0.16f, 0.32f);
                 case InventorySlotKind.WeaponArea:
-                    return new Color(0.1f, 0.14f, 0.11f, 0.32f);
+                    return UiTheme.SectionFill;
                 default:
-                    return new Color(0.34f, 0.34f, 0.36f, 0.52f);
+                    return UiTheme.SlotFill;
             }
         }
     }

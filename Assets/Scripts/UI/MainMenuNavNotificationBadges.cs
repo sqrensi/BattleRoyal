@@ -7,10 +7,6 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuNavNotificationBadges : MonoBehaviour
     {
-        private static Sprite whiteSprite;
-
-        private static readonly Color DotColor = new Color(0.95f, 0.82f, 0.22f, 1f);
-
         [SerializeField] private float dotSize = 10f;
         [SerializeField] private Vector2 dotOffset = new Vector2(-6f, -6f);
 
@@ -70,33 +66,11 @@ namespace ShooterPrototype.UI
             rect.sizeDelta = new Vector2(dotSize, dotSize);
 
             var image = dotObject.AddComponent<Image>();
-            image.sprite = GetWhiteSprite();
-            image.type = Image.Type.Simple;
-            image.color = DotColor;
+            UiTheme.ApplyFlatFill(image, UiTheme.NotificationDot);
             image.raycastTarget = false;
 
             dotObject.SetActive(false);
             return dotObject;
-        }
-
-        private static Sprite GetWhiteSprite()
-        {
-            if (whiteSprite != null)
-            {
-                return whiteSprite;
-            }
-
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            texture.SetPixel(0, 0, Color.white);
-            texture.SetPixel(1, 0, Color.white);
-            texture.SetPixel(0, 1, Color.white);
-            texture.SetPixel(1, 1, Color.white);
-            texture.Apply(false, false);
-            whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 100f);
-            return whiteSprite;
         }
     }
 }

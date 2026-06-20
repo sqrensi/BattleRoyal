@@ -10,23 +10,6 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuShopPanel : MonoBehaviour
     {
-        private static Sprite whiteSprite;
-
-        private static readonly Color PanelColor = new Color(0.04f, 0.06f, 0.08f, 0.94f);
-        private static readonly Color ItemBackgroundColor = new Color(0.12f, 0.14f, 0.17f, 0.88f);
-        private static readonly Color ItemHighlightedColor = new Color(0.16f, 0.18f, 0.21f, 0.94f);
-        private static readonly Color ItemPressedColor = new Color(0.1f, 0.12f, 0.14f, 0.98f);
-        private static readonly Color UnaffordableColor = new Color(0.16f, 0.12f, 0.12f, 0.9f);
-        private static readonly Color PurchasedBackgroundColor = new Color(0.08f, 0.09f, 0.11f, 0.94f);
-        private static readonly Color PurchasedBadgeColor = new Color(0.06f, 0.07f, 0.09f, 0.96f);
-        private static readonly Color PurchasedLabelColor = new Color(0.56f, 0.6f, 0.64f, 0.94f);
-        private static readonly Color PriceBadgeColor = new Color(0.08f, 0.09f, 0.11f, 0.92f);
-        private static readonly Color PriceTextColor = new Color(0.92f, 0.84f, 0.55f, 0.98f);
-        private static readonly Color PriceMutedColor = new Color(0.62f, 0.58f, 0.52f, 0.88f);
-        private static readonly Color ScrollTrackColor = new Color(0.1f, 0.12f, 0.14f, 0.55f);
-        private static readonly Color ScrollHandleColor = new Color(0.24f, 0.28f, 0.32f, 0.92f);
-        private static readonly Color TitleColor = new Color(0.94f, 0.96f, 0.98f, 0.98f);
-
         [SerializeField] private float edgeMargin = 28f;
         [SerializeField] private float leftReservedWidth = 228f;
         [SerializeField] private float topReservedHeight = 92f;
@@ -48,6 +31,8 @@ namespace ShooterPrototype.UI
         private CanvasGroup panelGroup;
         private RectTransform panelRect;
         private RectTransform contentRect;
+        private Canvas hostCanvas;
+        private GameObject emptyShopState;
         private ScrollRect itemsScrollRect;
         private GridLayoutGroup itemGrid;
         private float itemCellWidth;
@@ -90,6 +75,7 @@ namespace ShooterPrototype.UI
             }
 
             ComputeCellSize(canvasRect.rect.width);
+            hostCanvas = canvasRect.GetComponent<Canvas>();
 
             var panelObject = new GameObject("MainMenuShopPanel");
             panelObject.transform.SetParent(canvasRect, false);
@@ -101,10 +87,8 @@ namespace ShooterPrototype.UI
             panelRect.offsetMax = new Vector2(-edgeMargin, -topReservedHeight);
 
             var background = panelObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.type = Image.Type.Simple;
-            background.color = PanelColor;
-            background.raycastTarget = true;
+            UiTheme.ApplyPanel(background, UiPanelStyle.Heavy);
+            UiDecor.AttachPanelChrome(panelRect, 12f, 16f);
 
             panelGroup = panelObject.AddComponent<CanvasGroup>();
             panelGroup.alpha = 0f;
@@ -127,6 +111,7 @@ namespace ShooterPrototype.UI
             }
 
             isVisible = true;
+            UiMenuBackdrop.PushOpen(hostCanvas);
             RebuildItems();
             StartTransition(show: true);
         }
@@ -139,6 +124,7 @@ namespace ShooterPrototype.UI
             }
 
             isVisible = false;
+            UiMenuBackdrop.PopClosed();
             StartTransition(show: false);
         }
 
@@ -195,10 +181,8 @@ namespace ShooterPrototype.UI
             var title = headerObject.AddComponent<TextMeshProUGUI>();
             title.text = "Магазин";
             title.fontSize = titleFontSize;
-            title.fontStyle = FontStyles.Bold;
             title.alignment = TextAlignmentOptions.Center;
-            title.color = TitleColor;
-            title.raycastTarget = false;
+            UiTheme.ApplyMilitaryHeader(title, UiTextRole.Heading);
         }
 
         private void BuildItemsGrid(Transform parent)
@@ -245,7 +229,7 @@ namespace ShooterPrototype.UI
             contentRect.sizeDelta = new Vector2(0f, 0f);
 
             var contentBackground = contentObject.AddComponent<Image>();
-            contentBackground.sprite = GetWhiteSprite();
+            contentBackground.sprite = UiTheme.WhiteSprite;
             contentBackground.color = Color.clear;
             contentBackground.raycastTarget = true;
 
@@ -263,6 +247,13 @@ namespace ShooterPrototype.UI
 
             scroll.viewport = viewportRect;
             scroll.content = contentRect;
+
+            emptyShopState = UiDecor.CreateEmptyState(
+                viewportObject.transform,
+                "Магазин пуст",
+                "Новые товары появятся позже",
+                UiIconCatalog.IconKind.Shop).gameObject;
+            emptyShopState.SetActive(false);
         }
 
         private void RebuildItems()
@@ -299,6 +290,11 @@ namespace ShooterPrototype.UI
                 itemSlots.Add(CreateItemSlot(contentRect, shopItems[i]));
             }
 
+            if (emptyShopState != null)
+            {
+                emptyShopState.SetActive(shopItems.Count == 0 && shopCases.Count == 0);
+            }
+
             RefreshSlotVisuals();
         }
 
@@ -315,18 +311,18 @@ namespace ShooterPrototype.UI
                 {
                     if (slot.Background != null)
                     {
-                        slot.Background.color = PurchasedBackgroundColor;
+                        slot.Background.color = UiTheme.SlotEmpty;
                     }
 
                     if (slot.Button != null)
                     {
                         slot.Button.interactable = false;
                         var colors = slot.Button.colors;
-                        colors.normalColor = PurchasedBackgroundColor;
-                        colors.highlightedColor = PurchasedBackgroundColor;
-                        colors.pressedColor = PurchasedBackgroundColor;
-                        colors.selectedColor = PurchasedBackgroundColor;
-                        colors.disabledColor = PurchasedBackgroundColor;
+                        colors.normalColor = UiTheme.SlotEmpty;
+                        colors.highlightedColor = UiTheme.SlotEmpty;
+                        colors.pressedColor = UiTheme.SlotEmpty;
+                        colors.selectedColor = UiTheme.SlotEmpty;
+                        colors.disabledColor = UiTheme.SlotEmpty;
                         colors.fadeDuration = 0.1f;
                         slot.Button.colors = colors;
                     }
@@ -334,12 +330,12 @@ namespace ShooterPrototype.UI
                     if (slot.PriceLabel != null)
                     {
                         slot.PriceLabel.text = "Куплено";
-                        slot.PriceLabel.color = PurchasedLabelColor;
+                        slot.PriceLabel.color = UiTheme.TextMuted;
                     }
 
                     if (slot.PriceBadge != null)
                     {
-                        slot.PriceBadge.color = PurchasedBadgeColor;
+                        UiTheme.ApplyFlatFill(slot.PriceBadge, UiTheme.PriceBadgeFillMuted);
                     }
 
                     continue;
@@ -347,7 +343,7 @@ namespace ShooterPrototype.UI
 
                 var price = PlayerSkinOwnershipService.GetShopPrice(slot.Definition);
                 var canAfford = balance >= price;
-                var normalColor = canAfford ? ItemBackgroundColor : UnaffordableColor;
+                var normalColor = canAfford ? UiTheme.SlotFill : UiTheme.SlotEmpty;
 
                 if (slot.Background != null)
                 {
@@ -359,8 +355,8 @@ namespace ShooterPrototype.UI
                     slot.Button.interactable = true;
                     var colors = slot.Button.colors;
                     colors.normalColor = normalColor;
-                    colors.highlightedColor = canAfford ? ItemHighlightedColor : UnaffordableColor;
-                    colors.pressedColor = canAfford ? ItemPressedColor : UnaffordableColor;
+                    colors.highlightedColor = canAfford ? UiTheme.ButtonHighlight : UiTheme.SlotEmpty;
+                    colors.pressedColor = canAfford ? UiTheme.ButtonPressed : UiTheme.SlotEmpty;
                     colors.selectedColor = colors.highlightedColor;
                     colors.disabledColor = normalColor;
                     colors.fadeDuration = 0.1f;
@@ -370,12 +366,12 @@ namespace ShooterPrototype.UI
                 if (slot.PriceLabel != null)
                 {
                     slot.PriceLabel.text = FormatPrice(price);
-                    slot.PriceLabel.color = canAfford ? PriceTextColor : PriceMutedColor;
+                    slot.PriceLabel.color = canAfford ? UiTheme.CurrencyAccent : UiTheme.TextMuted;
                 }
 
                 if (slot.PriceBadge != null)
                 {
-                    slot.PriceBadge.color = canAfford ? PriceBadgeColor : new Color(0.12f, 0.1f, 0.1f, 0.92f);
+                    UiTheme.ApplyPriceBadge(slot.PriceBadge, canAfford);
                 }
             }
         }
@@ -388,7 +384,7 @@ namespace ShooterPrototype.UI
                 var slot = caseSlots[i];
                 var price = CaseCatalogService.GetPrice(slot.Definition);
                 var canAfford = balance >= price && !casePurchaseInProgress;
-                var normalColor = canAfford ? ItemBackgroundColor : UnaffordableColor;
+                var normalColor = canAfford ? UiTheme.SlotFill : UiTheme.SlotEmpty;
 
                 if (slot.Background != null)
                 {
@@ -400,8 +396,8 @@ namespace ShooterPrototype.UI
                     slot.Button.interactable = canAfford;
                     var colors = slot.Button.colors;
                     colors.normalColor = normalColor;
-                    colors.highlightedColor = canAfford ? ItemHighlightedColor : UnaffordableColor;
-                    colors.pressedColor = canAfford ? ItemPressedColor : UnaffordableColor;
+                    colors.highlightedColor = canAfford ? UiTheme.ButtonHighlight : UiTheme.SlotEmpty;
+                    colors.pressedColor = canAfford ? UiTheme.ButtonPressed : UiTheme.SlotEmpty;
                     colors.selectedColor = colors.highlightedColor;
                     colors.disabledColor = normalColor;
                     colors.fadeDuration = 0.1f;
@@ -411,12 +407,12 @@ namespace ShooterPrototype.UI
                 if (slot.PriceLabel != null)
                 {
                     slot.PriceLabel.text = FormatPrice(price);
-                    slot.PriceLabel.color = canAfford ? PriceTextColor : PriceMutedColor;
+                    slot.PriceLabel.color = canAfford ? UiTheme.CurrencyAccent : UiTheme.TextMuted;
                 }
 
                 if (slot.PriceBadge != null)
                 {
-                    slot.PriceBadge.color = canAfford ? PriceBadgeColor : new Color(0.12f, 0.1f, 0.1f, 0.92f);
+                    UiTheme.ApplyPriceBadge(slot.PriceBadge, canAfford);
                 }
             }
         }
@@ -433,9 +429,7 @@ namespace ShooterPrototype.UI
             slotLayout.minHeight = itemCellHeight;
 
             var background = slotObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.type = Image.Type.Simple;
-            background.color = ItemBackgroundColor;
+            UiTheme.ApplyFlatFill(background, UiTheme.SlotFill);
 
             var button = slotObject.AddComponent<Button>();
             button.targetGraphic = background;
@@ -466,10 +460,7 @@ namespace ShooterPrototype.UI
             priceBadgeRect.sizeDelta = new Vector2(Mathf.Max(72f, itemCellWidth * 0.62f), priceBadgeHeight);
 
             var priceBadge = priceBadgeObject.AddComponent<Image>();
-            priceBadge.sprite = GetWhiteSprite();
-            priceBadge.type = Image.Type.Simple;
-            priceBadge.color = PriceBadgeColor;
-            priceBadge.raycastTarget = false;
+            UiTheme.ApplyPriceBadge(priceBadge, canAfford: true);
 
             var priceLabelObject = new GameObject("PriceLabel", typeof(RectTransform));
             priceLabelObject.transform.SetParent(priceBadgeObject.transform, false);
@@ -486,7 +477,7 @@ namespace ShooterPrototype.UI
             priceLabel.characterSpacing = 1.5f;
             priceLabel.alignment = TextAlignmentOptions.Center;
             priceLabel.verticalAlignment = VerticalAlignmentOptions.Middle;
-            priceLabel.color = PriceTextColor;
+            UiTheme.ApplyTmp(priceLabel, UiTextRole.Accent);
             priceLabel.raycastTarget = false;
 
             return new CaseSlotVisual
@@ -585,9 +576,7 @@ namespace ShooterPrototype.UI
             rect.anchoredPosition = Vector2.zero;
 
             var trackImage = scrollbarObject.AddComponent<Image>();
-            trackImage.sprite = GetWhiteSprite();
-            trackImage.type = Image.Type.Simple;
-            trackImage.color = ScrollTrackColor;
+            UiTheme.ApplyFlatFill(trackImage, UiTheme.ScrollTrack);
 
             var scrollbar = scrollbarObject.AddComponent<Scrollbar>();
             scrollbar.direction = Scrollbar.Direction.BottomToTop;
@@ -605,9 +594,7 @@ namespace ShooterPrototype.UI
             StretchFull(handleRect);
 
             var handleImage = handleObject.AddComponent<Image>();
-            handleImage.sprite = GetWhiteSprite();
-            handleImage.type = Image.Type.Simple;
-            handleImage.color = ScrollHandleColor;
+            UiTheme.ApplyFlatFill(handleImage, UiTheme.ScrollHandle);
 
             scrollbar.handleRect = handleRect;
             scrollbar.targetGraphic = handleImage;
@@ -626,13 +613,13 @@ namespace ShooterPrototype.UI
             slotLayout.minHeight = itemCellHeight;
 
             var background = slotObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.type = Image.Type.Simple;
-            background.color = ItemBackgroundColor;
+            UiTheme.ApplyFlatFill(background, UiTheme.SlotFill);
+            UiDecor.CreateRarityStripe(slotObject.transform, ShopCatalogService.GetRarityStripeColor(item.Id));
 
             var button = slotObject.AddComponent<Button>();
             button.targetGraphic = background;
             button.onClick.AddListener(() => OnItemClicked(item));
+            UiMotion.AttachButtonMotion(button);
 
             var iconObject = new GameObject("Icon", typeof(RectTransform));
             iconObject.transform.SetParent(slotObject.transform, false);
@@ -659,10 +646,7 @@ namespace ShooterPrototype.UI
             priceBadgeRect.sizeDelta = new Vector2(Mathf.Max(72f, itemCellWidth * 0.62f), priceBadgeHeight);
 
             var priceBadge = priceBadgeObject.AddComponent<Image>();
-            priceBadge.sprite = GetWhiteSprite();
-            priceBadge.type = Image.Type.Simple;
-            priceBadge.color = PriceBadgeColor;
-            priceBadge.raycastTarget = false;
+            UiTheme.ApplyPriceBadge(priceBadge, canAfford: true);
 
             var priceLabelObject = new GameObject("PriceLabel", typeof(RectTransform));
             priceLabelObject.transform.SetParent(priceBadgeObject.transform, false);
@@ -679,8 +663,19 @@ namespace ShooterPrototype.UI
             priceLabel.characterSpacing = 1.5f;
             priceLabel.alignment = TextAlignmentOptions.Center;
             priceLabel.verticalAlignment = VerticalAlignmentOptions.Middle;
-            priceLabel.color = PriceTextColor;
+            UiTheme.ApplyTmp(priceLabel, UiTextRole.Accent);
             priceLabel.raycastTarget = false;
+
+            UiTooltipController.AttachSlotTooltip(
+                slotObject,
+                hostCanvas,
+                () => item.DisplayName,
+                () =>
+                {
+                    var price = PlayerSkinOwnershipService.GetShopPrice(item);
+                    var rarity = SkinRarityUtility.GetDisplayName(ShopCatalogService.GetRarity(item.Id));
+                    return rarity + " · " + FormatPrice(price) + " монет";
+                });
 
             return new ShopSlotVisual
             {
@@ -791,7 +786,7 @@ namespace ShooterPrototype.UI
         private static void EnableViewportScrollCapture(GameObject viewportObject)
         {
             var viewportImage = viewportObject.AddComponent<Image>();
-            viewportImage.sprite = GetWhiteSprite();
+            viewportImage.sprite = UiTheme.WhiteSprite;
             viewportImage.color = Color.clear;
             viewportImage.raycastTarget = true;
         }
@@ -807,26 +802,6 @@ namespace ShooterPrototype.UI
         private static float EaseInOut(float t)
         {
             return t * t * (3f - 2f * t);
-        }
-
-        private static Sprite GetWhiteSprite()
-        {
-            if (whiteSprite != null)
-            {
-                return whiteSprite;
-            }
-
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            texture.SetPixel(0, 0, Color.white);
-            texture.SetPixel(1, 0, Color.white);
-            texture.SetPixel(0, 1, Color.white);
-            texture.SetPixel(1, 1, Color.white);
-            texture.Apply(false, false);
-            whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 100f);
-            return whiteSprite;
         }
     }
 }

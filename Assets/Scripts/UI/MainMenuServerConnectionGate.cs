@@ -15,14 +15,6 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuServerConnectionGate : MonoBehaviour
     {
-        private static Sprite whiteSprite;
-
-        private static readonly Color PanelColor = new Color(0.04f, 0.06f, 0.08f, 0.82f);
-        private static readonly Color LabelColor = new Color(0.94f, 0.96f, 0.98f, 0.98f);
-        private static readonly Color PrimaryButtonNormalColor = new Color(0.18f, 0.48f, 0.42f, 0.96f);
-        private static readonly Color PrimaryButtonHighlightedColor = new Color(0.22f, 0.58f, 0.5f, 1f);
-        private static readonly Color PrimaryButtonPressedColor = new Color(0.14f, 0.38f, 0.34f, 1f);
-
         private readonly List<CanvasGroup> menuGroups = new List<CanvasGroup>();
 
         private MainMenuController controller;
@@ -69,9 +61,7 @@ namespace ShooterPrototype.UI
             StretchFull(overlayRect);
 
             var blocker = overlayObject.AddComponent<Image>();
-            blocker.sprite = GetWhiteSprite();
-            blocker.type = Image.Type.Simple;
-            blocker.color = PanelColor;
+            UiTheme.ApplyFlatFill(blocker, UiTheme.CanvasDim);
             blocker.raycastTarget = true;
 
             overlayGroup = overlayObject.AddComponent<CanvasGroup>();
@@ -85,10 +75,7 @@ namespace ShooterPrototype.UI
             panelRect.sizeDelta = new Vector2(520f, 220f);
 
             var panelBackground = panelObject.AddComponent<Image>();
-            panelBackground.sprite = GetWhiteSprite();
-            panelBackground.type = Image.Type.Simple;
-            panelBackground.color = new Color(0.08f, 0.1f, 0.12f, 0.94f);
-            panelBackground.raycastTarget = true;
+            UiTheme.ApplyPanel(panelBackground, UiPanelStyle.Overlay);
 
             var messageObject = new GameObject("Message");
             messageObject.transform.SetParent(panelObject.transform, false);
@@ -101,10 +88,8 @@ namespace ShooterPrototype.UI
             messageText = messageObject.AddComponent<TextMeshProUGUI>();
             messageText.alignment = TextAlignmentOptions.Center;
             messageText.fontSize = 28f;
-            messageText.fontStyle = FontStyles.Bold;
-            messageText.color = LabelColor;
             messageText.enableWordWrapping = true;
-            messageText.raycastTarget = false;
+            UiTheme.ApplyTmp(messageText, UiTextRole.Heading);
 
             retryButton = CreateButton(panelObject.transform, "Перезагрузить", new Vector2(0f, -148f), 220f, 52f);
             retryButton.onClick.AddListener(HandleRetryPressed);
@@ -216,21 +201,10 @@ namespace ShooterPrototype.UI
             rect.anchoredPosition = anchoredPosition;
             rect.sizeDelta = new Vector2(width, height);
 
-            var image = buttonObject.AddComponent<Image>();
-            image.sprite = GetWhiteSprite();
-            image.type = Image.Type.Simple;
-            image.color = PrimaryButtonNormalColor;
+            buttonObject.AddComponent<Image>();
 
             var button = buttonObject.AddComponent<Button>();
-            var colors = button.colors;
-            colors.normalColor = PrimaryButtonNormalColor;
-            colors.highlightedColor = PrimaryButtonHighlightedColor;
-            colors.pressedColor = PrimaryButtonPressedColor;
-            colors.selectedColor = PrimaryButtonHighlightedColor;
-            colors.disabledColor = new Color(0.12f, 0.14f, 0.16f, 0.55f);
-            colors.fadeDuration = 0.12f;
-            button.colors = colors;
-            button.targetGraphic = image;
+            UiTheme.StyleButton(button, UiButtonStyle.Primary);
 
             var labelObject = new GameObject("Label");
             labelObject.transform.SetParent(buttonObject.transform, false);
@@ -239,10 +213,8 @@ namespace ShooterPrototype.UI
             var labelText = labelObject.AddComponent<TextMeshProUGUI>();
             labelText.text = label;
             labelText.fontSize = 22f;
-            labelText.fontStyle = FontStyles.Bold;
             labelText.alignment = TextAlignmentOptions.Center;
-            labelText.color = LabelColor;
-            labelText.raycastTarget = false;
+            UiTheme.ApplyTmp(labelText, UiTextRole.PrimaryButton);
 
             return button;
         }
@@ -253,26 +225,6 @@ namespace ShooterPrototype.UI
             rect.anchorMax = Vector2.one;
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = Vector2.zero;
-        }
-
-        private static Sprite GetWhiteSprite()
-        {
-            if (whiteSprite != null)
-            {
-                return whiteSprite;
-            }
-
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            texture.SetPixel(0, 0, Color.white);
-            texture.SetPixel(1, 0, Color.white);
-            texture.SetPixel(0, 1, Color.white);
-            texture.SetPixel(1, 1, Color.white);
-            texture.Apply(false, false);
-            whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 100f);
-            return whiteSprite;
         }
     }
 }

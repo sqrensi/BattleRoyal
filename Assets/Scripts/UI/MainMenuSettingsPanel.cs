@@ -11,19 +11,6 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuSettingsPanel : MonoBehaviour
     {
-        private static Sprite whiteSprite;
-
-        private static readonly Color PanelColor = new Color(0.04f, 0.06f, 0.08f, 0.94f);
-        private static readonly Color SectionColor = new Color(0.1f, 0.12f, 0.15f, 0.92f);
-        private static readonly Color TitleColor = new Color(0.94f, 0.96f, 0.98f, 0.98f);
-        private static readonly Color LabelColor = new Color(0.78f, 0.84f, 0.9f, 0.94f);
-        private static readonly Color ValueColor = new Color(0.95f, 0.97f, 0.99f, 0.98f);
-        private static readonly Color MutedColor = new Color(0.72f, 0.78f, 0.84f, 0.92f);
-        private static readonly Color ScrollTrackColor = new Color(0.1f, 0.12f, 0.14f, 0.55f);
-        private static readonly Color ScrollHandleColor = new Color(0.24f, 0.28f, 0.32f, 0.92f);
-        private static readonly Color ToggleOnColor = new Color(0.18f, 0.48f, 0.42f, 0.96f);
-        private static readonly Color ToggleOffColor = new Color(0.12f, 0.14f, 0.17f, 0.88f);
-
         [SerializeField] private float edgeMargin = 28f;
         [SerializeField] private float leftReservedWidth = 228f;
         [SerializeField] private float topReservedHeight = 92f;
@@ -40,6 +27,7 @@ namespace ShooterPrototype.UI
         private CanvasGroup panelGroup;
         private RectTransform panelRect;
         private RectTransform contentRect;
+        private Canvas hostCanvas;
         private MainMenuUiSoundController uiSound;
         private bool isVisible;
         private bool suppressRefresh;
@@ -96,6 +84,8 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            hostCanvas = canvasRect.GetComponent<Canvas>();
+
             var panelObject = new GameObject("MainMenuSettingsPanel");
             panelObject.transform.SetParent(canvasRect, false);
 
@@ -106,10 +96,8 @@ namespace ShooterPrototype.UI
             panelRect.offsetMax = new Vector2(-edgeMargin, -topReservedHeight);
 
             var background = panelObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.type = Image.Type.Simple;
-            background.color = PanelColor;
-            background.raycastTarget = true;
+            UiTheme.ApplyPanel(background, UiPanelStyle.Heavy);
+            UiDecor.AttachPanelChrome(panelRect, 12f, 16f);
 
             panelGroup = panelObject.AddComponent<CanvasGroup>();
             panelGroup.alpha = 0f;
@@ -140,6 +128,7 @@ namespace ShooterPrototype.UI
             }
 
             isVisible = true;
+            UiMenuBackdrop.PushOpen(hostCanvas);
             RefreshFromSettings();
             StartTransition(show: true);
         }
@@ -152,6 +141,7 @@ namespace ShooterPrototype.UI
             }
 
             isVisible = false;
+            UiMenuBackdrop.PopClosed();
             StartTransition(show: false);
         }
 
@@ -170,10 +160,8 @@ namespace ShooterPrototype.UI
             var title = headerObject.AddComponent<TextMeshProUGUI>();
             title.text = "Настройки";
             title.fontSize = titleFontSize;
-            title.fontStyle = FontStyles.Bold;
             title.alignment = TextAlignmentOptions.Center;
-            title.color = TitleColor;
-            title.raycastTarget = false;
+            UiTheme.ApplyMilitaryHeader(title, UiTextRole.Heading);
 
             if (backHandler != null)
             {
@@ -193,12 +181,10 @@ namespace ShooterPrototype.UI
             rect.anchoredPosition = Vector2.zero;
             rect.sizeDelta = new Vector2(120f, 40f);
 
-            var image = buttonObject.AddComponent<Image>();
-            image.sprite = GetWhiteSprite();
-            image.type = Image.Type.Simple;
-            image.color = ToggleOffColor;
+            buttonObject.AddComponent<Image>();
 
             var button = buttonObject.AddComponent<Button>();
+            UiTheme.StyleButton(button, UiButtonStyle.Standard);
             button.onClick.AddListener(() =>
             {
                 uiSound?.PlayButton();
@@ -213,10 +199,8 @@ namespace ShooterPrototype.UI
             var label = labelObject.AddComponent<TextMeshProUGUI>();
             label.text = "Назад";
             label.fontSize = 20f;
-            label.fontStyle = FontStyles.Bold;
             label.alignment = TextAlignmentOptions.Center;
-            label.color = ValueColor;
-            label.raycastTarget = false;
+            UiTheme.ApplyTmp(label, UiTextRole.Body);
         }
 
         private void BuildScrollContent(Transform parent)
@@ -239,14 +223,14 @@ namespace ShooterPrototype.UI
             StretchFull(viewportRect);
             viewportRect.offsetMax = new Vector2(-(scrollbarWidth + scrollbarGap), 0f);
             viewportObject.AddComponent<RectMask2D>();
-            MainMenuScrollSupport.EnableViewportScrollCapture(viewportObject, GetWhiteSprite());
+            MainMenuScrollSupport.EnableViewportScrollCapture(viewportObject, UiTheme.WhiteSprite);
 
             var scrollbar = MainMenuScrollSupport.CreateVerticalScrollbar(
                 scrollObject.transform,
                 scrollbarWidth,
-                ScrollTrackColor,
-                ScrollHandleColor,
-                GetWhiteSprite());
+                UiTheme.ScrollTrack,
+                UiTheme.ScrollHandle,
+                UiTheme.WhiteSprite);
             scroll.verticalScrollbar = scrollbar;
             scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
 
@@ -258,7 +242,7 @@ namespace ShooterPrototype.UI
             contentRect.pivot = new Vector2(0.5f, 1f);
             contentRect.anchoredPosition = Vector2.zero;
             contentRect.sizeDelta = new Vector2(0f, 0f);
-            MainMenuScrollSupport.EnableContentScrollCapture(contentObject, GetWhiteSprite());
+            MainMenuScrollSupport.EnableContentScrollCapture(contentObject, UiTheme.WhiteSprite);
 
             var layout = contentObject.AddComponent<VerticalLayoutGroup>();
             layout.spacing = rowSpacing;
@@ -406,10 +390,8 @@ namespace ShooterPrototype.UI
             var text = sectionObject.AddComponent<TextMeshProUGUI>();
             text.text = title;
             text.fontSize = 22f;
-            text.fontStyle = FontStyles.Bold;
             text.alignment = TextAlignmentOptions.MidlineLeft;
-            text.color = TitleColor;
-            text.raycastTarget = false;
+            UiTheme.ApplyTmp(text, UiTextRole.Heading);
         }
 
         private void CreateToggleRow(
@@ -426,8 +408,7 @@ namespace ShooterPrototype.UI
             rowLayout.minHeight = rowHeight;
 
             var background = rowObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.color = SectionColor;
+            UiTheme.ApplyFlatFill(background, UiTheme.SectionFill);
             background.raycastTarget = false;
 
             var labelObject = new GameObject("Label", typeof(RectTransform));
@@ -442,8 +423,7 @@ namespace ShooterPrototype.UI
             labelText.text = label;
             labelText.fontSize = 18f;
             labelText.alignment = TextAlignmentOptions.MidlineLeft;
-            labelText.color = LabelColor;
-            labelText.raycastTarget = false;
+            UiTheme.ApplyTmp(labelText, UiTextRole.Label);
 
             var buttonObject = new GameObject("ToggleButton", typeof(RectTransform));
             buttonObject.transform.SetParent(rowObject.transform, false);
@@ -455,8 +435,7 @@ namespace ShooterPrototype.UI
             buttonRect.sizeDelta = new Vector2(180f, 44f);
 
             var buttonImage = buttonObject.AddComponent<Image>();
-            buttonImage.sprite = GetWhiteSprite();
-            buttonImage.color = ToggleOffColor;
+            UiTheme.ApplyFlatFill(buttonImage, UiTheme.ToggleOff);
 
             var button = buttonObject.AddComponent<Button>();
             button.targetGraphic = buttonImage;
@@ -467,10 +446,8 @@ namespace ShooterPrototype.UI
             StretchFull(valueLabelRect);
             var valueLabel = valueLabelObject.AddComponent<TextMeshProUGUI>();
             valueLabel.fontSize = 17f;
-            valueLabel.fontStyle = FontStyles.Bold;
             valueLabel.alignment = TextAlignmentOptions.Center;
-            valueLabel.color = ValueColor;
-            valueLabel.raycastTarget = false;
+            UiTheme.ApplyTmp(valueLabel, UiTextRole.Body);
 
             var binding = new ToggleRowBinding
             {
@@ -515,8 +492,7 @@ namespace ShooterPrototype.UI
             rowLayout.minHeight = rowHeight;
 
             var background = rowObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.color = SectionColor;
+            UiTheme.ApplyFlatFill(background, UiTheme.SectionFill);
             background.raycastTarget = false;
 
             var labelObject = new GameObject("Label", typeof(RectTransform));
@@ -531,8 +507,7 @@ namespace ShooterPrototype.UI
             labelText.text = label;
             labelText.fontSize = 17f;
             labelText.alignment = TextAlignmentOptions.MidlineLeft;
-            labelText.color = LabelColor;
-            labelText.raycastTarget = false;
+            UiTheme.ApplyTmp(labelText, UiTextRole.Label);
 
             var valueObject = new GameObject("Value", typeof(RectTransform));
             valueObject.transform.SetParent(rowObject.transform, false);
@@ -544,10 +519,8 @@ namespace ShooterPrototype.UI
             valueRect.sizeDelta = new Vector2(56f, 24f);
             var valueText = valueObject.AddComponent<TextMeshProUGUI>();
             valueText.fontSize = 16f;
-            valueText.fontStyle = FontStyles.Bold;
             valueText.alignment = TextAlignmentOptions.MidlineRight;
-            valueText.color = ValueColor;
-            valueText.raycastTarget = false;
+            UiTheme.ApplyTmp(valueText, UiTextRole.Body);
 
             var sliderObject = new GameObject("Slider", typeof(RectTransform));
             sliderObject.transform.SetParent(rowObject.transform, false);
@@ -563,8 +536,7 @@ namespace ShooterPrototype.UI
             var sliderBackgroundRect = sliderBackgroundObject.GetComponent<RectTransform>();
             StretchFull(sliderBackgroundRect);
             var sliderBackground = sliderBackgroundObject.AddComponent<Image>();
-            sliderBackground.sprite = GetWhiteSprite();
-            sliderBackground.color = new Color(0.08f, 0.09f, 0.11f, 0.92f);
+            UiTheme.ApplyFlatFill(sliderBackground, UiTheme.SliderTrack);
 
             var fillAreaObject = new GameObject("Fill Area", typeof(RectTransform));
             fillAreaObject.transform.SetParent(sliderObject.transform, false);
@@ -581,8 +553,7 @@ namespace ShooterPrototype.UI
             fillRect.offsetMin = Vector2.zero;
             fillRect.offsetMax = Vector2.zero;
             var fillImage = fillObject.AddComponent<Image>();
-            fillImage.sprite = GetWhiteSprite();
-            fillImage.color = ToggleOnColor;
+            UiTheme.ApplyFlatFill(fillImage, UiTheme.SliderFill);
 
             var handleAreaObject = new GameObject("Handle Slide Area", typeof(RectTransform));
             handleAreaObject.transform.SetParent(sliderObject.transform, false);
@@ -594,8 +565,7 @@ namespace ShooterPrototype.UI
             var handleRect = handleObject.GetComponent<RectTransform>();
             handleRect.sizeDelta = new Vector2(18f, 0f);
             var handleImage = handleObject.AddComponent<Image>();
-            handleImage.sprite = GetWhiteSprite();
-            handleImage.color = ValueColor;
+            UiTheme.ApplyFlatFill(handleImage, UiTheme.TextPrimary);
 
             var slider = sliderObject.AddComponent<Slider>();
             slider.fillRect = fillRect;
@@ -671,7 +641,7 @@ namespace ShooterPrototype.UI
             binding.ValueLabel.text = enabled ? "Вкл" : "Выкл";
             if (binding.ButtonImage != null)
             {
-                binding.ButtonImage.color = enabled ? ToggleOnColor : ToggleOffColor;
+                binding.ButtonImage.color = enabled ? UiTheme.ToggleOn : UiTheme.ToggleOff;
             }
         }
 
@@ -749,26 +719,6 @@ namespace ShooterPrototype.UI
             rect.anchorMax = Vector2.one;
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = Vector2.zero;
-        }
-
-        private static Sprite GetWhiteSprite()
-        {
-            if (whiteSprite != null)
-            {
-                return whiteSprite;
-            }
-
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            texture.SetPixel(0, 0, Color.white);
-            texture.SetPixel(1, 0, Color.white);
-            texture.SetPixel(0, 1, Color.white);
-            texture.SetPixel(1, 1, Color.white);
-            texture.Apply(false, false);
-            whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 100f);
-            return whiteSprite;
         }
     }
 }

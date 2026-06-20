@@ -7,6 +7,7 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using TMPro;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
@@ -18,13 +19,13 @@ namespace ShooterPrototype.UI
     {
         private const string CanvasObjectName = "RuntimeGameHudCanvas";
         public const string RuntimeCanvasObjectName = CanvasObjectName;
-        private const int CornerStatsLayoutVersion = 2;
-        private const int MatchCornerStatsLayoutVersion = 2;
+        private const int CornerStatsLayoutVersion = 4;
+        private const int MatchCornerStatsLayoutVersion = 4;
         private const float GameOverPanelDelaySeconds = 5f;
         private const float GameOverAutoExitSeconds = 15f;
-        private const int GameOverPanelLayoutVersion = 5;
-        private const int GameplayHintLayoutVersion = 2;
-        private const int MatchWaitStatusLayoutVersion = 3;
+        private const int GameOverPanelLayoutVersion = 7;
+        private const int GameplayHintLayoutVersion = 4;
+        private const int MatchWaitStatusLayoutVersion = 5;
         private const float GameplayHintOffsetX = 72f;
         private const float GameplayHintOffsetY = -48f;
 
@@ -38,37 +39,38 @@ namespace ShooterPrototype.UI
         private bool topBarVisible;
         private CombatHudController combatHud;
         private GameKillFeedController killFeed;
-        private Text connectionText;
-        private Text playersText;
-        private Text pingText;
-        private Text fpsText;
-        private Text cornerStatsText;
-        private Text matchCornerStatsText;
+        private TMP_Text connectionText;
+        private TMP_Text playersText;
+        private TMP_Text pingText;
+        private TMP_Text fpsText;
+        private TMP_Text cornerStatsText;
+        private TMP_Text matchCornerStatsText;
         private int matchCornerKillCount;
         private int matchCornerAliveCount;
         private int displayPingMs = -1;
         private string displayPingLabel = "--";
-        private Text ammoText;
-        private Text healthText;
-        private Text medkitText;
-        private Text killsText;
-        private Text inventoryText;
+        private TMP_Text ammoText;
+        private TMP_Text healthText;
+        private TMP_Text medkitText;
+        private TMP_Text killsText;
+        private TMP_Text inventoryText;
         private GameObject legacyInventoryPanel;
-        private Text matchStatusText;
+        private TMP_Text matchStatusText;
         private GameObject gameplayHintPanel;
-        private Text gameplayHintText;
+        private TMP_Text gameplayHintText;
         private string brGameplayHint = string.Empty;
         private string pickupGameplayHint = string.Empty;
-        private Text victoryBannerText;
-        private Text victorySubtitleText;
+        private TMP_Text victoryBannerText;
+        private TMP_Text victorySubtitleText;
         private GameObject gameOverPanel;
         private CanvasGroup gameOverPanelGroup;
-        private Text gameOverTitleText;
-        private Text gameOverPlacementText;
-        private Text gameOverKillsText;
-        private Text gameOverRewardsText;
-        private Text gameOverHintText;
+        private TMP_Text gameOverTitleText;
+        private TMP_Text gameOverPlacementText;
+        private TMP_Text gameOverKillsText;
+        private TMP_Text gameOverRewardsText;
+        private TMP_Text gameOverHintText;
         private Image gameOverPanelBackground;
+        private Image gameOverAccentLine;
         private Button gameOverExitButton;
         private Coroutine gameOverFlowCoroutine;
         private bool gameOverFlowStarted;
@@ -87,8 +89,8 @@ namespace ShooterPrototype.UI
         private Button backButton;
         private Button muteButton;
         private Button perfButton;
-        private Text muteButtonLabel;
-        private Text perfButtonLabel;
+        private TMP_Text muteButtonLabel;
+        private TMP_Text perfButtonLabel;
         private Image perfButtonImage;
         private Coroutine pingRefreshCoroutine;
         private float fpsSmoothed;
@@ -559,13 +561,16 @@ namespace ShooterPrototype.UI
                 gameOverPanelGroup.blocksRaycasts = true;
             }
 
-            var accentColor = won
-                ? new Color(0.95f, 0.82f, 0.35f, 1f)
-                : new Color(0.9f, 0.45f, 0.45f, 1f);
+            var accentColor = won ? UiTheme.GameOverWin : UiTheme.GameOverLoss;
 
             if (gameOverPanelBackground != null)
             {
-                gameOverPanelBackground.color = new Color(0.09f, 0.11f, 0.13f, 0.97f);
+                UiTheme.ApplyPanel(gameOverPanelBackground, UiPanelStyle.Heavy);
+            }
+
+            if (gameOverAccentLine != null)
+            {
+                UiTheme.ApplyFlatFill(gameOverAccentLine, accentColor);
             }
 
             if (gameOverTitleText != null)
@@ -910,7 +915,8 @@ namespace ShooterPrototype.UI
             panelRect.anchoredPosition = Vector2.zero;
 
             var panelImage = panelObject.AddComponent<Image>();
-            panelImage.color = new Color(0f, 0f, 0f, 0.45f);
+            UiTheme.ApplyPanel(panelImage, UiPanelStyle.Hud);
+            panelImage.raycastTarget = false;
 
             connectionText = CreateLabel(panelObject.transform, "ConnectionText", new Vector2(10f, -10f), "Status: Connected");
             playersText = CreateLabel(panelObject.transform, "PlayersText", new Vector2(10f, -34f), "Players in match: --");
@@ -932,7 +938,8 @@ namespace ShooterPrototype.UI
             inventoryPanelRect.sizeDelta = new Vector2(240f, 180f);
             inventoryPanelRect.anchoredPosition = new Vector2(10f, 10f);
             var inventoryPanelImage = inventoryPanel.AddComponent<Image>();
-            inventoryPanelImage.color = new Color(0f, 0f, 0f, 0.45f);
+            UiTheme.ApplyPanel(inventoryPanelImage, UiPanelStyle.Hud);
+            inventoryPanelImage.raycastTarget = false;
             inventoryText = CreateLabel(inventoryPanel.transform, "InventoryText", new Vector2(8f, -8f), "Inventory:\n  (empty)");
             var inventoryLabelRect = inventoryText.rectTransform;
             inventoryLabelRect.anchorMin = new Vector2(0f, 1f);
@@ -940,10 +947,10 @@ namespace ShooterPrototype.UI
             inventoryLabelRect.pivot = new Vector2(0f, 1f);
             inventoryLabelRect.offsetMin = new Vector2(8f, -170f);
             inventoryLabelRect.offsetMax = new Vector2(-8f, -8f);
-            inventoryText.alignment = TextAnchor.UpperLeft;
+            inventoryText.alignment = TextAlignmentOptions.TopLeft;
             inventoryText.fontSize = 14;
-            inventoryText.horizontalOverflow = HorizontalWrapMode.Wrap;
-            inventoryText.verticalOverflow = VerticalWrapMode.Overflow;
+            inventoryText.enableWordWrapping = true;
+            inventoryText.overflowMode = TextOverflowModes.Overflow;
             inventoryPanel.SetActive(false);
 
             EnsureMatchOverlayElements(rootCanvasObject.transform);
@@ -959,9 +966,9 @@ namespace ShooterPrototype.UI
             buttonRect.anchoredPosition = new Vector2(-10f, 0f);
 
             var buttonImage = buttonObject.AddComponent<Image>();
-            buttonImage.color = new Color(0.15f, 0.15f, 0.15f, 0.95f);
-
             backButton = buttonObject.AddComponent<Button>();
+            backButton.targetGraphic = buttonImage;
+            UiTheme.StyleButton(backButton);
             backButton.onClick.AddListener(HandleBackPressed);
 
             var buttonLabel = CreateLabel(buttonObject.transform, "Label", Vector2.zero, "Back to Menu");
@@ -970,7 +977,7 @@ namespace ShooterPrototype.UI
             buttonLabelRect.anchorMax = Vector2.one;
             buttonLabelRect.offsetMin = Vector2.zero;
             buttonLabelRect.offsetMax = Vector2.zero;
-            buttonLabel.alignment = TextAnchor.MiddleCenter;
+            buttonLabel.alignment = TextAlignmentOptions.Center;
 
             var muteObject = new GameObject("MuteButton");
             muteObject.transform.SetParent(panelObject.transform, false);
@@ -983,9 +990,9 @@ namespace ShooterPrototype.UI
             muteRect.anchoredPosition = new Vector2(-190f, 0f);
 
             var muteImage = muteObject.AddComponent<Image>();
-            muteImage.color = new Color(0.15f, 0.15f, 0.15f, 0.95f);
-
             muteButton = muteObject.AddComponent<Button>();
+            muteButton.targetGraphic = muteImage;
+            UiTheme.StyleButton(muteButton);
             muteButton.onClick.AddListener(HandleMutePressed);
             muteButtonLabel = CreateLabel(muteObject.transform, "Label", Vector2.zero, "");
             var muteLabelRect = muteButtonLabel.rectTransform;
@@ -993,7 +1000,7 @@ namespace ShooterPrototype.UI
             muteLabelRect.anchorMax = Vector2.one;
             muteLabelRect.offsetMin = Vector2.zero;
             muteLabelRect.offsetMax = Vector2.zero;
-            muteButtonLabel.alignment = TextAnchor.MiddleCenter;
+            muteButtonLabel.alignment = TextAlignmentOptions.Center;
             RefreshMuteButtonText();
 
             BuildCornerStatsPanel(rootCanvasObject.transform);
@@ -1013,12 +1020,10 @@ namespace ShooterPrototype.UI
                 victoryBannerRect.pivot = new Vector2(0.5f, 0.5f);
                 victoryBannerRect.sizeDelta = new Vector2(720f, 96f);
                 victoryBannerRect.anchoredPosition = new Vector2(0f, 40f);
-                victoryBannerText = victoryBannerObject.AddComponent<Text>();
-                victoryBannerText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                victoryBannerText = victoryBannerObject.AddComponent<TextMeshProUGUI>();
+                UiTheme.ApplyMilitaryHeader(victoryBannerText, UiTextRole.Accent);
                 victoryBannerText.fontSize = 64;
-                victoryBannerText.fontStyle = FontStyle.Bold;
-                victoryBannerText.alignment = TextAnchor.MiddleCenter;
-                victoryBannerText.color = new Color(1f, 0.84f, 0.2f, 1f);
+                victoryBannerText.alignment = TextAlignmentOptions.Center;
                 victoryBannerText.text = string.Empty;
                 victoryBannerObject.SetActive(false);
             }
@@ -1033,11 +1038,10 @@ namespace ShooterPrototype.UI
                 victorySubtitleRect.pivot = new Vector2(0.5f, 0.5f);
                 victorySubtitleRect.sizeDelta = new Vector2(640f, 36f);
                 victorySubtitleRect.anchoredPosition = new Vector2(0f, -24f);
-                victorySubtitleText = victorySubtitleObject.AddComponent<Text>();
-                victorySubtitleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                victorySubtitleText = victorySubtitleObject.AddComponent<TextMeshProUGUI>();
+                UiTheme.ApplyTmp(victorySubtitleText, UiTextRole.Body);
                 victorySubtitleText.fontSize = 20;
-                victorySubtitleText.alignment = TextAnchor.MiddleCenter;
-                victorySubtitleText.color = Color.white;
+                victorySubtitleText.alignment = TextAlignmentOptions.Center;
                 victorySubtitleText.text = string.Empty;
                 victorySubtitleObject.SetActive(false);
             }
@@ -1079,11 +1083,10 @@ namespace ShooterPrototype.UI
             matchStatusRect.sizeDelta = new Vector2(900f, 72f);
             matchStatusRect.anchoredPosition = Vector2.zero;
 
-            matchStatusText = matchStatusObject.AddComponent<Text>();
+            matchStatusText = matchStatusObject.AddComponent<TextMeshProUGUI>();
             ApplyBoldHudText(matchStatusText);
             matchStatusText.fontSize = 40;
-            matchStatusText.alignment = TextAnchor.MiddleCenter;
-            matchStatusText.color = new Color(0.96f, 0.97f, 0.99f, 0.98f);
+            matchStatusText.alignment = TextAlignmentOptions.Center;
             matchStatusText.text = string.Empty;
             matchStatusObject.SetActive(false);
         }
@@ -1135,7 +1138,7 @@ namespace ShooterPrototype.UI
             panelRect.sizeDelta = new Vector2(420f, 40f);
 
             var panelImage = panelObject.AddComponent<Image>();
-            panelImage.color = new Color(0f, 0f, 0f, 0.38f);
+            UiTheme.ApplyPanel(panelImage, UiPanelStyle.Hud);
             panelImage.raycastTarget = false;
 
             var labelObject = new GameObject("HintText");
@@ -1146,13 +1149,12 @@ namespace ShooterPrototype.UI
             labelRect.offsetMin = new Vector2(14f, 6f);
             labelRect.offsetMax = new Vector2(-14f, -6f);
 
-            gameplayHintText = labelObject.AddComponent<Text>();
+            gameplayHintText = labelObject.AddComponent<TextMeshProUGUI>();
             ApplyBoldHudText(gameplayHintText);
             gameplayHintText.fontSize = 22;
-            gameplayHintText.alignment = TextAnchor.MiddleLeft;
-            gameplayHintText.color = new Color(0.94f, 0.96f, 0.98f, 0.96f);
-            gameplayHintText.horizontalOverflow = HorizontalWrapMode.Overflow;
-            gameplayHintText.verticalOverflow = VerticalWrapMode.Overflow;
+            gameplayHintText.alignment = TextAlignmentOptions.MidlineLeft;
+            gameplayHintText.enableWordWrapping = false;
+            gameplayHintText.overflowMode = TextOverflowModes.Overflow;
 
             panelObject.SetActive(false);
         }
@@ -1184,6 +1186,7 @@ namespace ShooterPrototype.UI
                 gameOverHintText = null;
                 gameOverExitButton = null;
                 gameOverPanelBackground = null;
+                gameOverAccentLine = null;
                 Destroy(existingPanel.gameObject);
             }
 
@@ -1208,7 +1211,7 @@ namespace ShooterPrototype.UI
             overlayRect.offsetMax = Vector2.zero;
 
             var overlayImage = overlayObject.AddComponent<Image>();
-            overlayImage.color = new Color(0.02f, 0.03f, 0.05f, 0.75f);
+            UiTheme.ApplyFlatFill(overlayImage, UiTheme.CanvasDim);
             overlayImage.raycastTarget = true;
 
             gameOverPanelGroup = overlayObject.AddComponent<CanvasGroup>();
@@ -1223,11 +1226,8 @@ namespace ShooterPrototype.UI
             panelRect.sizeDelta = new Vector2(440f, 340f);
 
             gameOverPanelBackground = panelObject.AddComponent<Image>();
-            gameOverPanelBackground.color = new Color(0.09f, 0.11f, 0.13f, 0.97f);
-
-            var bodyFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            var bodyColor = new Color(0.86f, 0.9f, 0.93f, 1f);
-            var rewardColor = new Color(0.92f, 0.84f, 0.55f, 1f);
+            UiTheme.ApplyPanel(gameOverPanelBackground, UiPanelStyle.Heavy);
+            gameOverAccentLine = UiDecor.CreateAccentLine(panelObject.transform, UiTheme.GameOverLoss);
 
             var titleObject = new GameObject("Title");
             titleObject.transform.SetParent(panelObject.transform, false);
@@ -1237,11 +1237,10 @@ namespace ShooterPrototype.UI
             titleRect.pivot = new Vector2(0.5f, 1f);
             titleRect.anchoredPosition = new Vector2(0f, -28f);
             titleRect.sizeDelta = new Vector2(380f, 48f);
-            gameOverTitleText = titleObject.AddComponent<Text>();
-            gameOverTitleText.font = bodyFont;
+            gameOverTitleText = titleObject.AddComponent<TextMeshProUGUI>();
+            UiTheme.ApplyMilitaryHeader(gameOverTitleText, UiTextRole.Heading);
             gameOverTitleText.fontSize = 36;
-            gameOverTitleText.fontStyle = FontStyle.Bold;
-            gameOverTitleText.alignment = TextAnchor.MiddleCenter;
+            gameOverTitleText.alignment = TextAlignmentOptions.Center;
             gameOverTitleText.text = "Вы проиграли";
 
             gameOverPlacementText = CreateGameOverBodyLine(
@@ -1249,24 +1248,21 @@ namespace ShooterPrototype.UI
                 "Placement",
                 new Vector2(0f, -92f),
                 30,
-                FontStyle.Bold,
-                bodyColor);
+                UiTextRole.Heading);
 
             gameOverKillsText = CreateGameOverBodyLine(
                 panelObject.transform,
                 "Kills",
                 new Vector2(0f, -132f),
                 26,
-                FontStyle.Normal,
-                bodyColor);
+                UiTextRole.Body);
 
             gameOverRewardsText = CreateGameOverBodyLine(
                 panelObject.transform,
                 "Rewards",
                 new Vector2(0f, -178f),
                 22,
-                FontStyle.Bold,
-                rewardColor);
+                UiTextRole.Accent);
 
             var buttonObject = new GameObject("ExitButton");
             buttonObject.transform.SetParent(panelObject.transform, false);
@@ -1278,9 +1274,9 @@ namespace ShooterPrototype.UI
             buttonRect.anchoredPosition = new Vector2(0f, 52f);
 
             var buttonImage = buttonObject.AddComponent<Image>();
-            buttonImage.color = new Color(0.2f, 0.46f, 0.4f, 1f);
-
             gameOverExitButton = buttonObject.AddComponent<Button>();
+            gameOverExitButton.targetGraphic = buttonImage;
+            UiTheme.StyleButton(gameOverExitButton, UiButtonStyle.Primary);
             gameOverExitButton.onClick.AddListener(HandleGameOverExitPressed);
 
             var buttonLabel = CreateLabel(buttonObject.transform, "Label", Vector2.zero, "Выйти в меню");
@@ -1290,8 +1286,8 @@ namespace ShooterPrototype.UI
             buttonLabelRect.offsetMin = Vector2.zero;
             buttonLabelRect.offsetMax = Vector2.zero;
             buttonLabel.fontSize = 20;
-            buttonLabel.fontStyle = FontStyle.Bold;
-            buttonLabel.alignment = TextAnchor.MiddleCenter;
+            UiTheme.ApplyTmp(buttonLabel, UiTextRole.PrimaryButton);
+            buttonLabel.alignment = TextAlignmentOptions.Center;
 
             var hintObject = new GameObject("Hint");
             hintObject.transform.SetParent(panelObject.transform, false);
@@ -1301,23 +1297,21 @@ namespace ShooterPrototype.UI
             hintRect.pivot = new Vector2(0.5f, 0f);
             hintRect.anchoredPosition = new Vector2(0f, 20f);
             hintRect.sizeDelta = new Vector2(380f, 22f);
-            gameOverHintText = hintObject.AddComponent<Text>();
-            gameOverHintText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            gameOverHintText = hintObject.AddComponent<TextMeshProUGUI>();
+            UiTheme.ApplyTmp(gameOverHintText, UiTextRole.Muted);
             gameOverHintText.fontSize = 14;
-            gameOverHintText.alignment = TextAnchor.MiddleCenter;
-            gameOverHintText.color = new Color(0.62f, 0.68f, 0.72f, 0.9f);
+            gameOverHintText.alignment = TextAlignmentOptions.Center;
 
             overlayObject.SetActive(false);
             overlayObject.transform.SetAsLastSibling();
         }
 
-        private static Text CreateGameOverBodyLine(
+        private static TMP_Text CreateGameOverBodyLine(
             Transform parent,
             string objectName,
             Vector2 anchoredPosition,
             int fontSize,
-            FontStyle fontStyle,
-            Color color)
+            UiTextRole role)
         {
             var lineObject = new GameObject(objectName);
             lineObject.transform.SetParent(parent, false);
@@ -1329,14 +1323,20 @@ namespace ShooterPrototype.UI
             rect.anchoredPosition = anchoredPosition;
             rect.sizeDelta = new Vector2(380f, fontSize + 12f);
 
-            var text = lineObject.AddComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            var text = lineObject.AddComponent<TextMeshProUGUI>();
+            if (role == UiTextRole.Heading)
+            {
+                UiTheme.ApplyMilitaryHeader(text, role);
+            }
+            else
+            {
+                UiTheme.ApplyTmp(text, role);
+            }
+
             text.fontSize = fontSize;
-            text.fontStyle = fontStyle;
-            text.alignment = TextAnchor.MiddleCenter;
-            text.color = color;
-            text.horizontalOverflow = HorizontalWrapMode.Overflow;
-            text.verticalOverflow = VerticalWrapMode.Overflow;
+            text.alignment = TextAlignmentOptions.Center;
+            text.enableWordWrapping = false;
+            text.overflowMode = TextOverflowModes.Overflow;
             return text;
         }
 
@@ -1377,7 +1377,7 @@ namespace ShooterPrototype.UI
             panelRect.anchoredPosition = new Vector2(-8f, -8f);
 
             var panelImage = panelObject.AddComponent<Image>();
-            panelImage.color = new Color(0f, 0f, 0f, 0.42f);
+            UiTheme.ApplyPanel(panelImage, UiPanelStyle.Hud);
             panelImage.raycastTarget = false;
 
             var labelObject = new GameObject("CornerStatsText");
@@ -1388,14 +1388,12 @@ namespace ShooterPrototype.UI
             labelRect.offsetMin = new Vector2(10f, 6f);
             labelRect.offsetMax = new Vector2(-10f, -6f);
 
-            cornerStatsText = labelObject.AddComponent<Text>();
-            cornerStatsText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            cornerStatsText = labelObject.AddComponent<TextMeshProUGUI>();
+            UiTheme.ApplyTmp(cornerStatsText, UiTextRole.Body);
             cornerStatsText.fontSize = 14;
-            cornerStatsText.alignment = TextAnchor.UpperLeft;
-            cornerStatsText.color = Color.white;
-            cornerStatsText.horizontalOverflow = HorizontalWrapMode.Overflow;
-            cornerStatsText.verticalOverflow = VerticalWrapMode.Overflow;
-            cornerStatsText.lineSpacing = 1f;
+            cornerStatsText.alignment = TextAlignmentOptions.TopLeft;
+            cornerStatsText.enableWordWrapping = false;
+            cornerStatsText.overflowMode = TextOverflowModes.Overflow;
             cornerStatsText.text = "FPS: --\nPing: -- ms";
         }
 
@@ -1439,7 +1437,7 @@ namespace ShooterPrototype.UI
             panelRect.anchoredPosition = new Vector2(8f, -8f);
 
             var panelImage = panelObject.AddComponent<Image>();
-            panelImage.color = new Color(0f, 0f, 0f, 0.42f);
+            UiTheme.ApplyPanel(panelImage, UiPanelStyle.Hud);
             panelImage.raycastTarget = false;
 
             var labelObject = new GameObject("MatchCornerStatsText");
@@ -1450,12 +1448,10 @@ namespace ShooterPrototype.UI
             labelRect.offsetMin = new Vector2(10f, 6f);
             labelRect.offsetMax = new Vector2(-10f, -6f);
 
-            matchCornerStatsText = labelObject.AddComponent<Text>();
+            matchCornerStatsText = labelObject.AddComponent<TextMeshProUGUI>();
             ApplyBoldHudText(matchCornerStatsText);
             matchCornerStatsText.fontSize = 16;
-            matchCornerStatsText.alignment = TextAnchor.UpperLeft;
-            matchCornerStatsText.color = Color.white;
-            matchCornerStatsText.lineSpacing = 1f;
+            matchCornerStatsText.alignment = TextAlignmentOptions.TopLeft;
             matchCornerStatsText.text = "Киллы: 0\nВыживших: 0";
         }
 
@@ -1475,7 +1471,7 @@ namespace ShooterPrototype.UI
             overlayRect.offsetMax = Vector2.zero;
 
             var overlayImage = overlayObject.AddComponent<Image>();
-            overlayImage.color = new Color(0.02f, 0.04f, 0.06f, 0.72f);
+            UiTheme.ApplyFlatFill(overlayImage, UiTheme.CanvasDim);
             overlayImage.raycastTarget = true;
 
             pauseMenuPanel = overlayObject;
@@ -1490,7 +1486,7 @@ namespace ShooterPrototype.UI
             panelRect.sizeDelta = new Vector2(420f, 360f);
 
             var panelImage = panelObject.AddComponent<Image>();
-            panelImage.color = new Color(0.08f, 0.1f, 0.12f, 0.96f);
+            UiTheme.ApplyPanel(panelImage, UiPanelStyle.Heavy);
 
             var titleObject = new GameObject("Title");
             titleObject.transform.SetParent(panelObject.transform, false);
@@ -1500,11 +1496,10 @@ namespace ShooterPrototype.UI
             titleRect.pivot = new Vector2(0.5f, 1f);
             titleRect.anchoredPosition = new Vector2(0f, -24f);
             titleRect.sizeDelta = new Vector2(360f, 48f);
-            var titleText = titleObject.AddComponent<Text>();
-            titleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            var titleText = titleObject.AddComponent<TextMeshProUGUI>();
+            UiTheme.ApplyMilitaryHeader(titleText, UiTextRole.Title);
             titleText.fontSize = 34;
-            titleText.fontStyle = FontStyle.Bold;
-            titleText.alignment = TextAnchor.MiddleCenter;
+            titleText.alignment = TextAlignmentOptions.Center;
             titleText.text = "Пауза";
 
             CreatePauseMenuButton(
@@ -1545,7 +1540,7 @@ namespace ShooterPrototype.UI
             overlayObject.transform.SetAsLastSibling();
         }
 
-        private Text CreatePauseMenuButton(
+        private TMP_Text CreatePauseMenuButton(
             Transform parent,
             string objectName,
             Vector2 anchoredPosition,
@@ -1562,9 +1557,9 @@ namespace ShooterPrototype.UI
             buttonRect.anchoredPosition = anchoredPosition;
 
             var buttonImage = buttonObject.AddComponent<Image>();
-            buttonImage.color = new Color(0.18f, 0.22f, 0.26f, 0.96f);
-
             var button = buttonObject.AddComponent<Button>();
+            button.targetGraphic = buttonImage;
+            UiTheme.StyleButton(button);
             button.onClick.AddListener(onClick);
 
             var buttonLabel = CreateLabel(buttonObject.transform, "Label", Vector2.zero, label);
@@ -1574,8 +1569,8 @@ namespace ShooterPrototype.UI
             buttonLabelRect.offsetMin = Vector2.zero;
             buttonLabelRect.offsetMax = Vector2.zero;
             buttonLabel.fontSize = 20;
-            buttonLabel.fontStyle = FontStyle.Bold;
-            buttonLabel.alignment = TextAnchor.MiddleCenter;
+            UiTheme.ApplyTmp(buttonLabel, UiTextRole.Heading);
+            buttonLabel.alignment = TextAlignmentOptions.Center;
             return buttonLabel;
         }
 
@@ -1588,23 +1583,17 @@ namespace ShooterPrototype.UI
             }
         }
 
-        private static Font GetBoldHudFont()
-        {
-            return Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        }
-
-        private static void ApplyBoldHudText(Text text)
+        private static void ApplyBoldHudText(TMP_Text text)
         {
             if (text == null)
             {
                 return;
             }
 
-            text.font = GetBoldHudFont();
-            text.fontStyle = FontStyle.Bold;
+            UiTheme.ApplyMilitaryHeader(text, UiTextRole.Heading);
         }
 
-        private Text CreateLabel(Transform parent, string objectName, Vector2 anchoredPosition, string textValue)
+        private TMP_Text CreateLabel(Transform parent, string objectName, Vector2 anchoredPosition, string textValue)
         {
             var labelObject = new GameObject(objectName);
             labelObject.transform.SetParent(parent, false);
@@ -1616,12 +1605,12 @@ namespace ShooterPrototype.UI
             rect.sizeDelta = new Vector2(520f, 22f);
             rect.anchoredPosition = anchoredPosition;
 
-            var label = labelObject.AddComponent<Text>();
-            label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            var label = labelObject.AddComponent<TextMeshProUGUI>();
+            UiTheme.ApplyTmp(label, UiTextRole.Body);
             label.fontSize = 16;
-            label.alignment = TextAnchor.UpperLeft;
-            label.color = Color.white;
+            label.alignment = TextAlignmentOptions.TopLeft;
             label.text = textValue;
+            label.raycastTarget = false;
             return label;
         }
 
@@ -2013,9 +2002,9 @@ namespace ShooterPrototype.UI
 
             if (perfButtonImage != null)
             {
-                perfButtonImage.color = maxPerformance
-                    ? new Color(0.12f, 0.34f, 0.16f, 0.95f)
-                    : new Color(0.15f, 0.15f, 0.15f, 0.95f);
+                UiTheme.ApplyFlatFill(
+                    perfButtonImage,
+                    maxPerformance ? UiTheme.Success : UiTheme.ButtonNormal);
             }
         }
 

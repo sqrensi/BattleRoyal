@@ -14,14 +14,6 @@ namespace ShooterPrototype.UI
         private const string SpinClipPath = "Sounds/case";
         private const string RevealClipPath = "Sounds/case2";
 
-        private static Sprite whiteSprite;
-
-        private static readonly Color OverlayColor = new Color(0.02f, 0.03f, 0.05f, 0.96f);
-        private static readonly Color ViewportColor = new Color(0.08f, 0.1f, 0.12f, 0.96f);
-        private static readonly Color CloseButtonColor = new Color(0.24f, 0.1f, 0.1f, 0.98f);
-        private static readonly Color MarkerColor = new Color(0.92f, 0.84f, 0.55f, 0.95f);
-        private static readonly Color TitleColor = new Color(0.94f, 0.96f, 0.98f, 0.98f);
-
         [SerializeField] private float itemWidth = 188f;
         [SerializeField] private float itemHeight = 188f;
         [SerializeField] private float itemSpacing = 18f;
@@ -93,8 +85,7 @@ namespace ShooterPrototype.UI
             Action onCompleted)
         {
             var background = gameObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.color = OverlayColor;
+            UiTheme.ApplyFlatFill(background, UiTheme.CanvasDim);
             background.raycastTarget = true;
 
             overlayGroup = gameObject.AddComponent<CanvasGroup>();
@@ -209,10 +200,8 @@ namespace ShooterPrototype.UI
             var title = titleObject.AddComponent<TextMeshProUGUI>();
             title.text = caseName;
             title.fontSize = 36f;
-            title.fontStyle = FontStyles.Bold;
             title.alignment = TextAlignmentOptions.Center;
-            title.color = TitleColor;
-            title.raycastTarget = false;
+            UiTheme.ApplyTmp(title, UiTextRole.Heading);
         }
 
         private void BuildViewport()
@@ -234,8 +223,7 @@ namespace ShooterPrototype.UI
             StretchFull(viewportRect);
 
             var viewportBackground = maskedViewportObject.AddComponent<Image>();
-            viewportBackground.sprite = GetWhiteSprite();
-            viewportBackground.color = ViewportColor;
+            UiTheme.ApplyFlatFill(viewportBackground, UiTheme.SectionFill);
             viewportBackground.raycastTarget = false;
 
             maskedViewportObject.AddComponent<RectMask2D>();
@@ -307,8 +295,7 @@ namespace ShooterPrototype.UI
             rect.sizeDelta = sizeDelta;
 
             var image = frameObject.AddComponent<Image>();
-            image.sprite = GetWhiteSprite();
-            image.color = MarkerColor;
+            UiTheme.ApplyFlatFill(image, UiTheme.TextAccent);
             image.raycastTarget = false;
         }
 
@@ -349,8 +336,7 @@ namespace ShooterPrototype.UI
             rect.anchoredPosition = anchoredPosition;
 
             var image = capObject.AddComponent<Image>();
-            image.sprite = GetWhiteSprite();
-            image.color = MarkerColor;
+            UiTheme.ApplyFlatFill(image, UiTheme.TextAccent);
             image.raycastTarget = false;
         }
 
@@ -367,8 +353,7 @@ namespace ShooterPrototype.UI
             rect.anchoredPosition = new Vector2(xOffset, 0f);
 
             var image = markerObject.AddComponent<Image>();
-            image.sprite = GetWhiteSprite();
-            image.color = MarkerColor;
+            UiTheme.ApplyFlatFill(image, UiTheme.TextAccent);
             image.raycastTarget = false;
         }
 
@@ -385,8 +370,9 @@ namespace ShooterPrototype.UI
             rect.sizeDelta = new Vector2(460f, 236f);
 
             resultBackground = resultObject.AddComponent<Image>();
-            resultBackground.sprite = GetWhiteSprite();
-            resultBackground.color = ShopCatalogService.GetRarityCardColor(winner.Id);
+            resultBackground.sprite = UiTheme.WhiteSprite;
+            resultBackground.color = UiTheme.SlotFill;
+            UiDecor.CreateRarityStripe(resultObject.transform, ShopCatalogService.GetRarityStripeColor(winner.Id), 5f);
 
             var iconObject = new GameObject("Icon");
             iconObject.transform.SetParent(resultObject.transform, false);
@@ -414,9 +400,8 @@ namespace ShooterPrototype.UI
             resultTitle = titleObject.AddComponent<TextMeshProUGUI>();
             resultTitle.text = "Выпало";
             resultTitle.fontSize = 24f;
-            resultTitle.fontStyle = FontStyles.Bold;
             resultTitle.alignment = TextAlignmentOptions.Center;
-            resultTitle.color = TitleColor;
+            UiTheme.ApplyTmp(resultTitle, UiTextRole.Heading);
 
             var subtitleObject = new GameObject("ResultSubtitle");
             subtitleObject.transform.SetParent(resultObject.transform, false);
@@ -431,7 +416,7 @@ namespace ShooterPrototype.UI
             resultSubtitle.text = winner.DisplayName;
             resultSubtitle.fontSize = 18f;
             resultSubtitle.alignment = TextAlignmentOptions.Center;
-            resultSubtitle.color = TitleColor;
+            UiTheme.ApplyTmp(resultSubtitle, UiTextRole.Body);
 
             resultObject.SetActive(false);
         }
@@ -449,12 +434,11 @@ namespace ShooterPrototype.UI
             rect.anchoredPosition = new Vector2(0f, -(stripHalfHeight + 36f));
             rect.sizeDelta = new Vector2(180f, 48f);
 
-            var background = buttonObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.color = CloseButtonColor;
+            var closeImage = buttonObject.AddComponent<Image>();
+            UiTheme.ApplyFlatFill(closeImage, UiTheme.Danger);
 
             closeButton = buttonObject.AddComponent<Button>();
-            closeButton.targetGraphic = background;
+            closeButton.targetGraphic = closeImage;
             closeButton.interactable = false;
             closeButton.gameObject.SetActive(false);
 
@@ -469,9 +453,8 @@ namespace ShooterPrototype.UI
             var label = labelObject.AddComponent<TextMeshProUGUI>();
             label.text = "Закрыть";
             label.fontSize = 22f;
-            label.fontStyle = FontStyles.Bold;
             label.alignment = TextAlignmentOptions.Center;
-            label.color = TitleColor;
+            UiTheme.ApplyTmp(label, UiTextRole.Body);
 
             closeButton.onClick.AddListener(() =>
             {
@@ -576,8 +559,9 @@ namespace ShooterPrototype.UI
             rect.sizeDelta = new Vector2(itemWidth, itemHeight);
 
             var background = slotObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.color = ShopCatalogService.GetRarityCardColor(definition.Id);
+            background.sprite = UiTheme.WhiteSprite;
+            background.color = UiTheme.SlotFill;
+            UiDecor.CreateRarityStripe(slotObject.transform, ShopCatalogService.GetRarityStripeColor(definition.Id));
 
             var iconObject = new GameObject("Icon");
             iconObject.transform.SetParent(slotObject.transform, false);
@@ -607,26 +591,6 @@ namespace ShooterPrototype.UI
             {
                 StopCoroutine(animationCoroutine);
             }
-        }
-
-        private static Sprite GetWhiteSprite()
-        {
-            if (whiteSprite != null)
-            {
-                return whiteSprite;
-            }
-
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            texture.SetPixel(0, 0, Color.white);
-            texture.SetPixel(1, 0, Color.white);
-            texture.SetPixel(0, 1, Color.white);
-            texture.SetPixel(1, 1, Color.white);
-            texture.Apply(false, false);
-            whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 100f);
-            return whiteSprite;
         }
     }
 }

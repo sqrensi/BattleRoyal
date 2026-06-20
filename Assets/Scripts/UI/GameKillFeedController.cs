@@ -11,19 +11,15 @@ namespace ShooterPrototype.UI
     {
         private const int MaxEntries = 5;
         private const float EntryLifetimeSeconds = 3f;
-        private const int FeedLayoutVersion = 2;
+        private const float EntryIntroSeconds = 0.28f;
+        private const float EntrySlidePixels = 48f;
+        private const int FeedLayoutVersion = 4;
         private const float TopOffsetBelowCornerStats = 58f;
         private const float EntryHorizontalPadding = 24f;
         private const float EntryVerticalPadding = 8f;
         private const float EntryMinWidth = 96f;
         private const float EntryMaxWidth = 640f;
 
-        private static Sprite whiteSprite;
-
-        private static readonly Color PanelColor = new Color(0f, 0f, 0f, 0.42f);
-        private static readonly Color KillerColor = new Color(0.98f, 0.86f, 0.58f, 1f);
-        private static readonly Color VictimColor = new Color(0.94f, 0.96f, 0.98f, 1f);
-        private static readonly Color ActionColor = new Color(0.78f, 0.84f, 0.88f, 0.95f);
 
         [SerializeField] private float edgeMargin = 18f;
         [SerializeField] private float entryHeight = 28f;
@@ -40,7 +36,9 @@ namespace ShooterPrototype.UI
         {
             public GameObject Root;
             public CanvasGroup Group;
+            public RectTransform Rect;
             public float ExpireAt;
+            public float IntroAt;
         }
 
         public void EnsureOnCanvas(Canvas targetCanvas)
@@ -124,7 +122,18 @@ namespace ShooterPrototype.UI
 
                 if (entry.Group != null)
                 {
-                    entry.Group.alpha = remaining < 0.45f ? remaining / 0.45f : 1f;
+                    var fade = remaining < 0.45f ? remaining / 0.45f : 1f;
+                    var introT = entry.IntroAt > 0f
+                        ? Mathf.Clamp01((EntryIntroSeconds - (entry.IntroAt - now)) / EntryIntroSeconds)
+                        : 1f;
+                    entry.Group.alpha = fade * introT;
+                }
+
+                if (entry.Rect != null && entry.IntroAt > now)
+                {
+                    var introT = Mathf.Clamp01((EntryIntroSeconds - (entry.IntroAt - now)) / EntryIntroSeconds);
+                    var eased = 1f - (1f - introT) * (1f - introT);
+                    entry.Rect.anchoredPosition = new Vector2(Mathf.Lerp(EntrySlidePixels, 0f, eased), entry.Rect.anchoredPosition.y);
                 }
             }
 
@@ -190,11 +199,11 @@ namespace ShooterPrototype.UI
             var victim = string.IsNullOrWhiteSpace(message.victimNickname) ? "Игрок" : message.victimNickname.Trim();
             if (string.Equals(message.cause, "zone", System.StringComparison.OrdinalIgnoreCase))
             {
-                return $"<color=#{ColorToHex(VictimColor)}>{victim}</color> <color=#{ColorToHex(ActionColor)}>погиб от зоны</color>";
+                return $"<color=#{ColorToHex(UiTheme.KillFeedVictim)}>{victim}</color> <color=#{ColorToHex(UiTheme.KillFeedWeapon)}>погиб от зоны</color>";
             }
 
             var killer = string.IsNullOrWhiteSpace(message.killerNickname) ? "Игрок" : message.killerNickname.Trim();
-            return $"<color=#{ColorToHex(KillerColor)}>{killer}</color> <color=#{ColorToHex(ActionColor)}>убил</color> <color=#{ColorToHex(VictimColor)}>{victim}</color>";
+            return $"<color=#{ColorToHex(UiTheme.KillFeedKiller)}>{killer}</color> <color=#{ColorToHex(UiTheme.KillFeedWeapon)}>убил</color> <color=#{ColorToHex(UiTheme.KillFeedVictim)}>{victim}</color>";
         }
 
         private static string ColorToHex(Color color)
@@ -235,9 +244,7 @@ namespace ShooterPrototype.UI
             innerRect.anchoredPosition = Vector2.zero;
 
             var background = innerObject.AddComponent<Image>();
-            background.sprite = GetWhiteSprite();
-            background.type = Image.Type.Simple;
-            background.color = PanelColor;
+            UiTheme.ApplyPanel(background, UiPanelStyle.Hud);
             background.raycastTarget = false;
 
             var labelObject = new GameObject("Label");
@@ -262,14 +269,18 @@ namespace ShooterPrototype.UI
             var textHeight = Mathf.Max(entryHeight - EntryVerticalPadding, label.preferredHeight);
             innerRect.sizeDelta = new Vector2(textWidth + EntryHorizontalPadding, textHeight + EntryVerticalPadding);
             entryRect.sizeDelta = innerRect.sizeDelta;
+            entryRect.anchoredPosition = new Vector2(EntrySlidePixels, 0f);
 
             var group = entryObject.AddComponent<CanvasGroup>();
+            group.alpha = 0f;
 
             activeEntries.Add(new FeedEntry
             {
                 Root = entryObject,
                 Group = group,
-                ExpireAt = Time.unscaledTime + EntryLifetimeSeconds
+                Rect = entryRect,
+                ExpireAt = Time.unscaledTime + EntryLifetimeSeconds,
+                IntroAt = Time.unscaledTime + EntryIntroSeconds
             });
 
             RebuildEntryLayout();
@@ -330,26 +341,6 @@ namespace ShooterPrototype.UI
         private sealed class KillFeedLayoutMarker : MonoBehaviour
         {
             public int Version;
-        }
-
-        private static Sprite GetWhiteSprite()
-        {
-            if (whiteSprite != null)
-            {
-                return whiteSprite;
-            }
-
-            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false)
-            {
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            texture.SetPixel(0, 0, Color.white);
-            texture.SetPixel(1, 0, Color.white);
-            texture.SetPixel(0, 1, Color.white);
-            texture.SetPixel(1, 1, Color.white);
-            texture.Apply(false, false);
-            whiteSprite = Sprite.Create(texture, new Rect(0f, 0f, 2f, 2f), new Vector2(0.5f, 0.5f), 100f);
-            return whiteSprite;
         }
     }
 }

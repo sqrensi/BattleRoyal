@@ -116,6 +116,11 @@ namespace ShooterPrototype.Player
             return SkinRarityUtility.GetCardBackgroundColor(GetRarity(skinId));
         }
 
+        public static Color GetRarityStripeColor(string skinId)
+        {
+            return SkinRarityUtility.GetStripeColor(GetRarity(skinId));
+        }
+
         public static IReadOnlyList<string> GetDefaultOwnedSkinIds()
         {
             EnsureLoaded();
