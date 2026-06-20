@@ -99,7 +99,8 @@ namespace ShooterPrototype.Player
             if (fpsController != null)
             {
                 fpsController.ConfigureAdsMaxLookAngle(adsMaxLookAngle);
-                fpsController.ConfigureAdsLookSensitivityMultiplier(adsLookSensitivityMultiplier);
+                fpsController.ConfigureAdsLookSensitivityMultiplier(
+                    ClientSettingsService.GetAdsSensitivity(weaponKind));
             }
         }
 

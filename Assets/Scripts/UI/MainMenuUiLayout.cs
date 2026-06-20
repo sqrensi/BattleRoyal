@@ -40,6 +40,7 @@ namespace ShooterPrototype.UI
         private Button shopButton;
         private Button achievementsButton;
         private Button statsButton;
+        private Button settingsButton;
         private Button backButton;
         private CanvasGroup backButtonGroup;
         private CanvasGroup startButtonGroup;
@@ -125,6 +126,12 @@ namespace ShooterPrototype.UI
                 statsPanel = controller.gameObject.AddComponent<MainMenuStatsPanel>();
             }
 
+            var settingsPanel = controller.GetComponent<MainMenuSettingsPanel>();
+            if (settingsPanel == null)
+            {
+                settingsPanel = controller.gameObject.AddComponent<MainMenuSettingsPanel>();
+            }
+
             var canvas = ResolveMenuCanvas(controller);
             if (canvas != null)
             {
@@ -133,6 +140,7 @@ namespace ShooterPrototype.UI
                 shopPanel.Build(canvasRect);
                 achievementsPanel.Build(canvasRect);
                 statsPanel.Build(canvasRect);
+                settingsPanel.Build(canvasRect);
                 currencyDisplay?.Build(canvasRect);
                 if (bottomRightStackRect != null)
                 {
@@ -170,6 +178,11 @@ namespace ShooterPrototype.UI
             achievementsPanel.Configure(controller.GetComponent<MainMenuUiSoundController>());
 
             statsPanel.Configure(controller.GetComponent<MainMenuUiSoundController>());
+            settingsPanel.Configure(controller.GetComponent<MainMenuUiSoundController>());
+
+            ClientSettingsService.EnsureLoaded();
+            ClientSettingsService.ApplyMasterVolume();
+            ClientSettingsService.ApplyGraphicsPreset();
 
             var changeCharacterGroup = controller.ChangeCharacterButton != null
                 ? EnsureCanvasGroup(controller.ChangeCharacterButton.gameObject)
@@ -187,12 +200,14 @@ namespace ShooterPrototype.UI
                 shopButton,
                 achievementsButton,
                 statsButton,
+                settingsButton,
                 backButton,
                 backButtonGroup,
                 inventoryPanel,
                 shopPanel,
                 achievementsPanel,
                 statsPanel,
+                settingsPanel,
                 bottomRightStackGroup != null
                     ? bottomRightStackGroup
                     : nicknameEditor != null ? nicknameEditor.CanvasGroup : null);
@@ -333,7 +348,7 @@ namespace ShooterPrototype.UI
             shopButton = CreateNavButton(topNavBarObject.transform, "Магазин", uiSound);
             achievementsButton = CreateNavButton(topNavBarObject.transform, "Достижения", uiSound);
             statsButton = CreateNavButton(topNavBarObject.transform, "Статистика", uiSound);
-            CreateNavButton(topNavBarObject.transform, "Настройки", uiSound);
+            settingsButton = CreateNavButton(topNavBarObject.transform, "Настройки", uiSound);
 
             navNotificationBadges = GetComponent<MainMenuNavNotificationBadges>();
             if (navNotificationBadges == null)

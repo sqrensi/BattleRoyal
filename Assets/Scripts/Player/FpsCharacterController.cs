@@ -431,6 +431,20 @@ namespace ShooterPrototype.Player
             }
 
             CacheRestingCameraLocalTransform();
+            ApplySettingsFromService();
+        }
+
+        private void ApplySettingsFromService()
+        {
+            ClientSettingsService.EnsureLoaded();
+            mouseSensitivity = ClientSettingsService.MouseSensitivity;
+
+            var weaponMount = GetComponent<PlayerWeaponMount>();
+            var profile = weaponMount != null ? weaponMount.ActiveWeaponProfile : null;
+            if (profile != null)
+            {
+                ConfigureAdsLookSensitivityMultiplier(ClientSettingsService.GetAdsSensitivity(profile.Kind));
+            }
         }
 
         public void ConfigureAdsMaxLookAngle(float value)
@@ -455,6 +469,9 @@ namespace ShooterPrototype.Player
 
         private void OnEnable()
         {
+            ClientSettingsService.SettingsChanged += ApplySettingsFromService;
+            ApplySettingsFromService();
+
             if (!lockCursorOnEnable)
             {
                 return;
@@ -466,6 +483,8 @@ namespace ShooterPrototype.Player
 
         private void OnDisable()
         {
+            ClientSettingsService.SettingsChanged -= ApplySettingsFromService;
+
             if (!lockCursorOnEnable)
             {
                 return;

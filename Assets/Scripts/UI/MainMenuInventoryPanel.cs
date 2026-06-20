@@ -69,8 +69,8 @@ namespace ShooterPrototype.UI
         private bool overlayHidden;
         private bool isVisible;
         private Coroutine transitionCoroutine;
+        private Coroutine notificationPulseCoroutine;
         private Coroutine pulseCoroutine;
-        private Coroutine visibilityMarkCoroutine;
         private string pendingPulseItemId;
 
         private sealed class ItemSlotVisual
@@ -172,7 +172,6 @@ namespace ShooterPrototype.UI
             else if (isVisible)
             {
                 RefreshSlotNotificationDots();
-                ScheduleMarkVisibleItemsAsViewed();
             }
         }
 
@@ -257,7 +256,6 @@ namespace ShooterPrototype.UI
                     RebuildCases();
                 }
 
-                ScheduleMarkVisibleItemsAsViewed();
                 return;
             }
 
@@ -265,7 +263,6 @@ namespace ShooterPrototype.UI
             RebuildItems();
             RebuildCases();
             StartTransition(show: true);
-            ScheduleMarkVisibleItemsAsViewed();
         }
 
         public void Hide()
@@ -276,6 +273,8 @@ namespace ShooterPrototype.UI
             }
 
             isVisible = false;
+            StopNotificationPulse();
+            MainMenuNotificationState.SyncInventoryNotifications();
             StartTransition(show: false);
         }
 
@@ -380,8 +379,6 @@ namespace ShooterPrototype.UI
             {
                 RebuildCases();
             }
-
-            ScheduleMarkVisibleItemsAsViewed();
         }
 
         private static void StyleTabButton(Button button, bool selected)
@@ -417,7 +414,6 @@ namespace ShooterPrototype.UI
             scroll.scrollSensitivity = 28f;
             scroll.inertia = true;
             scroll.decelerationRate = 0.135f;
-            scroll.onValueChanged.AddListener(_ => MarkVisibleUnviewedItemsAsSeen());
 
             var viewportObject = new GameObject("Viewport");
             viewportObject.transform.SetParent(skinsScrollObject.transform, false);
@@ -485,7 +481,6 @@ namespace ShooterPrototype.UI
             scroll.scrollSensitivity = 28f;
             scroll.inertia = true;
             scroll.decelerationRate = 0.135f;
-            scroll.onValueChanged.AddListener(_ => MarkVisibleUnviewedItemsAsSeen());
 
             var viewportObject = new GameObject("Viewport");
             viewportObject.transform.SetParent(casesScrollObject.transform, false);
@@ -572,7 +567,6 @@ namespace ShooterPrototype.UI
             }
 
             RefreshSlotNotificationDots();
-            ScheduleMarkVisibleItemsAsViewed();
         }
 
         private CaseSlotVisual CreateCaseSlot(Transform parent, CaseDefinition caseDefinition, int quantity)
@@ -692,6 +686,9 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            MainMenuNotificationState.MarkCaseViewed(caseDefinition.Id);
+            RefreshSlotNotificationDots();
+
             if (PlayerProfileService.IsServerSynced)
             {
                 var menu = FindObjectOfType<MainMenuController>();
@@ -779,10 +776,20 @@ namespace ShooterPrototype.UI
                 () =>
                 {
                     sectionController?.SetCaseOpeningMode(false);
+                    MainMenuNotificationState.MarkSkinAsNew(rolledSkinId);
 
                     if (PlayerSkinSelectionService.TryGetDefinitionById(rolledSkinId, out var item))
                     {
                         playerPreview?.PreviewInventoryItem(item);
+                    }
+
+                    if (activeTab == InventoryTab.Skins)
+                    {
+                        RebuildItems();
+                    }
+                    else
+                    {
+                        RefreshSlotNotificationDots();
                     }
                 });
         }
@@ -812,28 +819,115 @@ namespace ShooterPrototype.UI
 
             RefreshEquippedVisuals();
             RefreshSlotNotificationDots();
-            ScheduleMarkVisibleItemsAsViewed();
+        }
+
+        private void MarkSkinViewedIfNeeded(string skinId)
+        {
+            if (string.IsNullOrWhiteSpace(skinId) ||
+                !MainMenuNotificationState.IsSkinUnviewed(skinId))
+            {
+                return;
+            }
+
+            MainMenuNotificationState.MarkSkinViewed(skinId);
+            RefreshSlotNotificationDots();
+        }
+
+        private void StartNotificationPulse()
+        {
+            if (notificationPulseCoroutine != null)
+            {
+                StopCoroutine(notificationPulseCoroutine);
+            }
+
+            notificationPulseCoroutine = StartCoroutine(NotificationPulseRoutine());
+        }
+
+        private void StopNotificationPulse()
+        {
+            if (notificationPulseCoroutine != null)
+            {
+                StopCoroutine(notificationPulseCoroutine);
+                notificationPulseCoroutine = null;
+            }
+
+            ApplyNotificationDotScale(1f);
+        }
+
+        private IEnumerator NotificationPulseRoutine()
+        {
+            while (isVisible && !overlayHidden)
+            {
+                var scale = 1f + Mathf.Sin(Time.unscaledTime * 5f) * 0.12f;
+                ApplyNotificationDotScale(scale);
+                yield return null;
+            }
+
+            ApplyNotificationDotScale(1f);
+            notificationPulseCoroutine = null;
+        }
+
+        private void ApplyNotificationDotScale(float scale)
+        {
+            var pulseScale = new Vector3(scale, scale, 1f);
+
+            for (var i = 0; i < itemSlots.Count; i++)
+            {
+                var slot = itemSlots[i];
+                if (slot?.NotificationDot != null && slot.NotificationDot.activeSelf)
+                {
+                    slot.NotificationDot.transform.localScale = pulseScale;
+                }
+            }
+
+            for (var i = 0; i < caseSlots.Count; i++)
+            {
+                var slot = caseSlots[i];
+                if (slot?.NotificationDot != null && slot.NotificationDot.activeSelf)
+                {
+                    slot.NotificationDot.transform.localScale = pulseScale;
+                }
+            }
         }
 
         private GameObject CreateNotificationDot(Transform parent)
         {
-            var dotObject = new GameObject("NotificationDot", typeof(RectTransform));
-            dotObject.transform.SetParent(parent, false);
+            var badgeObject = new GameObject("NotificationDot", typeof(RectTransform));
+            badgeObject.transform.SetParent(parent, false);
 
-            var rect = dotObject.GetComponent<RectTransform>();
+            var rect = badgeObject.GetComponent<RectTransform>();
             rect.anchorMin = new Vector2(0f, 1f);
             rect.anchorMax = new Vector2(0f, 1f);
             rect.pivot = new Vector2(0f, 1f);
-            rect.anchoredPosition = new Vector2(8f, -8f);
-            rect.sizeDelta = new Vector2(10f, 10f);
+            rect.anchoredPosition = new Vector2(6f, -6f);
+            rect.sizeDelta = new Vector2(22f, 22f);
 
-            var image = dotObject.AddComponent<Image>();
-            image.sprite = GetWhiteSprite();
-            image.type = Image.Type.Simple;
-            image.color = NotificationDotColor;
-            image.raycastTarget = false;
+            var ringObject = new GameObject("Ring", typeof(RectTransform));
+            ringObject.transform.SetParent(badgeObject.transform, false);
+            var ringRect = ringObject.GetComponent<RectTransform>();
+            StretchFull(ringRect);
+            var ringImage = ringObject.AddComponent<Image>();
+            ringImage.sprite = GetWhiteSprite();
+            ringImage.type = Image.Type.Simple;
+            ringImage.color = new Color(0.04f, 0.05f, 0.07f, 0.96f);
+            ringImage.raycastTarget = false;
 
-            return dotObject;
+            var dotObject = new GameObject("Dot", typeof(RectTransform));
+            dotObject.transform.SetParent(badgeObject.transform, false);
+            var dotRect = dotObject.GetComponent<RectTransform>();
+            dotRect.anchorMin = new Vector2(0.5f, 0.5f);
+            dotRect.anchorMax = new Vector2(0.5f, 0.5f);
+            dotRect.pivot = new Vector2(0.5f, 0.5f);
+            dotRect.anchoredPosition = Vector2.zero;
+            dotRect.sizeDelta = new Vector2(14f, 14f);
+            var dotImage = dotObject.AddComponent<Image>();
+            dotImage.sprite = GetWhiteSprite();
+            dotImage.type = Image.Type.Simple;
+            dotImage.color = NotificationDotColor;
+            dotImage.raycastTarget = false;
+
+            badgeObject.transform.SetAsLastSibling();
+            return badgeObject;
         }
 
         private void RefreshSlotNotificationDots()
@@ -859,118 +953,11 @@ namespace ShooterPrototype.UI
 
                 slot.NotificationDot.SetActive(MainMenuNotificationState.IsCaseUnviewed(slot.Definition.Id));
             }
-        }
 
-        private void ScheduleMarkVisibleItemsAsViewed()
-        {
-            if (!isVisible || overlayHidden)
+            if (isVisible && !overlayHidden)
             {
-                return;
+                StartNotificationPulse();
             }
-
-            if (visibilityMarkCoroutine != null)
-            {
-                StopCoroutine(visibilityMarkCoroutine);
-            }
-
-            visibilityMarkCoroutine = StartCoroutine(MarkVisibleItemsAsViewedRoutine());
-        }
-
-        private IEnumerator MarkVisibleItemsAsViewedRoutine()
-        {
-            yield return null;
-            Canvas.ForceUpdateCanvases();
-            MarkVisibleUnviewedItemsAsSeen();
-            visibilityMarkCoroutine = null;
-        }
-
-        private void MarkVisibleUnviewedItemsAsSeen()
-        {
-            if (!isVisible || overlayHidden)
-            {
-                return;
-            }
-
-            var anyMarked = false;
-
-            if (activeTab == InventoryTab.Skins && skinsViewportRect != null)
-            {
-                for (var i = 0; i < itemSlots.Count; i++)
-                {
-                    var slot = itemSlots[i];
-                    if (slot?.RootRect == null || !slot.Definition.IsValid)
-                    {
-                        continue;
-                    }
-
-                    if (!MainMenuNotificationState.IsSkinUnviewed(slot.Definition.Id))
-                    {
-                        continue;
-                    }
-
-                    if (!IntersectsViewport(slot.RootRect, skinsViewportRect))
-                    {
-                        continue;
-                    }
-
-                    MainMenuNotificationState.MarkSkinViewed(slot.Definition.Id);
-                    if (slot.NotificationDot != null)
-                    {
-                        slot.NotificationDot.SetActive(false);
-                    }
-
-                    anyMarked = true;
-                }
-            }
-            else if (activeTab == InventoryTab.Cases && casesViewportRect != null)
-            {
-                for (var i = 0; i < caseSlots.Count; i++)
-                {
-                    var slot = caseSlots[i];
-                    if (slot?.RootRect == null || !slot.Definition.IsValid)
-                    {
-                        continue;
-                    }
-
-                    if (!MainMenuNotificationState.IsCaseUnviewed(slot.Definition.Id))
-                    {
-                        continue;
-                    }
-
-                    if (!IntersectsViewport(slot.RootRect, casesViewportRect))
-                    {
-                        continue;
-                    }
-
-                    MainMenuNotificationState.MarkCaseViewed(slot.Definition.Id);
-                    if (slot.NotificationDot != null)
-                    {
-                        slot.NotificationDot.SetActive(false);
-                    }
-
-                    anyMarked = true;
-                }
-            }
-
-            if (anyMarked)
-            {
-                RefreshSlotNotificationDots();
-            }
-        }
-
-        private static bool IntersectsViewport(RectTransform target, RectTransform viewport)
-        {
-            if (target == null || viewport == null)
-            {
-                return false;
-            }
-
-            var bounds = RectTransformUtility.CalculateRelativeRectTransformBounds(viewport, target);
-            var viewportRect = viewport.rect;
-            return bounds.max.y > viewportRect.yMin &&
-                   bounds.min.y < viewportRect.yMax &&
-                   bounds.max.x > viewportRect.xMin &&
-                   bounds.min.x < viewportRect.xMax;
         }
 
         private Scrollbar CreateVerticalScrollbar(Transform parent)
@@ -1123,6 +1110,8 @@ namespace ShooterPrototype.UI
             {
                 return;
             }
+
+            MarkSkinViewedIfNeeded(item.Id);
 
             if (PlayerProfileService.IsServerSynced)
             {
@@ -1300,7 +1289,11 @@ namespace ShooterPrototype.UI
 
             if (show)
             {
-                ScheduleMarkVisibleItemsAsViewed();
+                StartNotificationPulse();
+            }
+            else
+            {
+                StopNotificationPulse();
             }
         }
 

@@ -1,10 +1,8 @@
+using ShooterPrototype.Player;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
-#if ENABLE_INPUT_SYSTEM
-using UnityEngine.InputSystem;
-#endif
 using QualityShadowResolution = UnityEngine.ShadowResolution;
 using QualityShadowsMode = UnityEngine.ShadowQuality;
 
@@ -59,6 +57,7 @@ namespace ShooterPrototype.Bootstrap
         private float[] cachedVolumeWeights;
         private bool hasCachedVolumeWeights;
         private bool hasCapturedProjectUrp;
+        private float renderScaleOverride = ClientSettingsService.DefaultRenderScale;
         private UrpPresetState projectUrpState;
         private QualityShadowsMode projectShadowsMode;
         private int projectMaximumLodLevel;
@@ -99,8 +98,82 @@ namespace ShooterPrototype.Bootstrap
                 maxPerformanceEnabled = PlayerPrefs.GetInt(PrefKey, 0) == 1;
             }
 
+            ClientSettingsService.EnsureLoaded();
+            renderScaleOverride = ClientSettingsService.RenderScale;
+
             CacheVolumeWeightsIfNeeded();
-            ApplyCurrentPreset();
+            ApplyClientGraphicsSettings(
+                ClientSettingsService.RenderScale,
+                ClientSettingsService.ShadowsEnabled,
+                ClientSettingsService.PostProcessingEnabled,
+                ClientSettingsService.MsaaSampleCount,
+                ClientSettingsService.TextureMipmapLimit);
+        }
+
+        public void ApplyClientGraphicsSettings(
+            float renderScale,
+            bool shadowsEnabled,
+            bool postProcessingEnabled,
+            int msaaSampleCount,
+            int textureMipmapLimit)
+        {
+            if (Application.isBatchMode)
+            {
+                return;
+            }
+
+            renderScaleOverride = Mathf.Clamp(renderScale, 0.65f, 1f);
+            maxPerformanceEnabled = !postProcessingEnabled;
+
+            QualitySettings.globalTextureMipmapLimit = Mathf.Clamp(textureMipmapLimit, 0, 2);
+            QualitySettings.anisotropicFiltering = textureMipmapLimit > 0
+                ? AnisotropicFiltering.Enable
+                : AnisotropicFiltering.ForceEnable;
+            QualitySettings.antiAliasing = msaaSampleCount > 1 ? msaaSampleCount : 0;
+            QualitySettings.shadows = shadowsEnabled ? projectShadowsMode : QualityShadowsMode.Disable;
+            QualitySettings.shadowDistance = shadowsEnabled ? visualQualityShadowDistance : 0f;
+            QualitySettings.shadowResolution = shadowsEnabled
+                ? visualQualityShadowResolution
+                : maxPerformanceShadowResolution;
+            QualitySettings.shadowCascades = shadowsEnabled ? visualQualityShadowCascades : 1;
+            QualitySettings.pixelLightCount = shadowsEnabled ? visualQualityPixelLightCount : 0;
+            QualitySettings.lodBias = shadowsEnabled ? visualQualityLodBias : maxPerformanceLodBias;
+            QualitySettings.maximumLODLevel = shadowsEnabled
+                ? projectMaximumLodLevel
+                : maxPerformanceMaximumLodLevel;
+            QualitySettings.realtimeReflectionProbes = postProcessingEnabled;
+            QualitySettings.softParticles = postProcessingEnabled;
+            QualitySettings.skinWeights = SkinWeights.FourBones;
+            QualitySettings.vSyncCount = 0;
+
+            ApplyUrpSettings(new UrpPresetState
+            {
+                RenderScale = renderScaleOverride,
+                MsaaSampleCount = Mathf.Max(1, msaaSampleCount),
+                SupportsHdr = postProcessingEnabled && visualQualitySupportsHdr,
+                RequireDepthTexture = postProcessingEnabled && visualQualityRequireDepthTexture,
+                RequireOpaqueTexture = postProcessingEnabled && visualQualityRequireOpaqueTexture,
+                ShadowDistance = shadowsEnabled
+                    ? (hasCapturedProjectUrp ? projectUrpState.ShadowDistance : visualQualityShadowDistance)
+                    : 0f,
+                MainLightShadowResolution = shadowsEnabled
+                    ? visualQualityMainLightShadowResolution
+                    : maxPerformanceMainLightShadowResolution,
+                ShadowCascadeCount = shadowsEnabled
+                    ? visualQualityShadowCascadeCount
+                    : maxPerformanceShadowCascadeCount
+            });
+
+            ApplyVolumeAndCameraSettings(!postProcessingEnabled);
+        }
+
+        public void SetRenderScaleOverride(float value)
+        {
+            renderScaleOverride = Mathf.Clamp(value, 0.65f, 1f);
+            if (!maxPerformanceEnabled)
+            {
+                ApplyVisualQualityPreset();
+            }
         }
 
         private static bool ShouldUseDirectLocalPlayQuality()
@@ -146,28 +219,6 @@ namespace ShooterPrototype.Bootstrap
             SceneManager.sceneLoaded -= HandleSceneLoaded;
         }
 
-        private void Update()
-        {
-            if (Application.isBatchMode)
-            {
-                return;
-            }
-
-            if (ReadToggleGraphicsPresetPressed())
-            {
-                ToggleMaxPerformance();
-            }
-        }
-
-        private static bool ReadToggleGraphicsPresetPressed()
-        {
-#if ENABLE_INPUT_SYSTEM
-            return Keyboard.current != null && Keyboard.current.f7Key.wasPressedThisFrame;
-#else
-            return Input.GetKeyDown(KeyCode.F7);
-#endif
-        }
-
         private void OnValidate()
         {
             if (!Application.isPlaying || Application.isBatchMode)
@@ -175,7 +226,13 @@ namespace ShooterPrototype.Bootstrap
                 return;
             }
 
-            ApplyCurrentPreset();
+            ClientSettingsService.EnsureLoaded();
+            ApplyClientGraphicsSettings(
+                ClientSettingsService.RenderScale,
+                ClientSettingsService.ShadowsEnabled,
+                ClientSettingsService.PostProcessingEnabled,
+                ClientSettingsService.MsaaSampleCount,
+                ClientSettingsService.TextureMipmapLimit);
         }
 
         public void SetMaxPerformanceEnabled(bool enabled)
@@ -183,12 +240,12 @@ namespace ShooterPrototype.Bootstrap
             maxPerformanceEnabled = enabled;
             PlayerPrefs.SetInt(PrefKey, enabled ? 1 : 0);
             PlayerPrefs.Save();
-            ApplyCurrentPreset();
+            ClientSettingsService.SetMaxPerformanceEnabled(enabled);
         }
 
         public void ToggleMaxPerformance()
         {
-            SetMaxPerformanceEnabled(!maxPerformanceEnabled);
+            ClientSettingsService.ToggleMaxPerformance();
         }
 
         private void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -206,7 +263,13 @@ namespace ShooterPrototype.Bootstrap
                 maxPerformanceEnabled = false;
             }
 
-            ApplyVolumeAndCameraSettings(maxPerformanceEnabled);
+            ClientSettingsService.EnsureLoaded();
+            ApplyClientGraphicsSettings(
+                ClientSettingsService.RenderScale,
+                ClientSettingsService.ShadowsEnabled,
+                ClientSettingsService.PostProcessingEnabled,
+                ClientSettingsService.MsaaSampleCount,
+                ClientSettingsService.TextureMipmapLimit);
         }
 
         private void ApplyCurrentPreset()
@@ -295,7 +358,7 @@ namespace ShooterPrototype.Bootstrap
 
             ApplyUrpSettings(new UrpPresetState
             {
-                RenderScale = visualQualityRenderScale,
+                RenderScale = renderScaleOverride,
                 MsaaSampleCount = visualQualityUrpMsaa,
                 SupportsHdr = visualQualitySupportsHdr,
                 RequireDepthTexture = visualQualityRequireDepthTexture,

@@ -76,6 +76,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerSkinNetworkState.cs" />
     <Compile Include="Assets\Scripts\Player\PickupSpawnManager.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerPickupContext.cs" />
+    <Compile Include="Assets\Scripts\Player\ClientSettingsService.cs" />
     <Compile Include="Assets\Scripts\Network\RealtimeSnapshotBinaryCodec.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark02.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponKindUtility.cs" />
@@ -155,7 +156,9 @@
     <Compile Include="Assets\Scripts\Player\PickupSpawnRandomPool.cs" />
     <Compile Include="Assets\Scripts\UI\AchievementToastController.cs" />
     <Compile Include="Assets\Scripts\Player\ProceduralLocomotionRig.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuScrollSupport.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteMedkitPresentation.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuSettingsPanel.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_AutoStopLoopedEffect.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark01_UGUI.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\SimpleScript.cs" />

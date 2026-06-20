@@ -11,7 +11,8 @@ namespace ShooterPrototype.UI
         Inventory = 1,
         Shop = 2,
         Achievements = 3,
-        Stats = 4
+        Stats = 4,
+        Settings = 5
     }
 
     [DisallowMultipleComponent]
@@ -28,6 +29,7 @@ namespace ShooterPrototype.UI
         private MainMenuShopPanel shopPanel;
         private MainMenuAchievementsPanel achievementsPanel;
         private MainMenuStatsPanel statsPanel;
+        private MainMenuSettingsPanel settingsPanel;
         private MainMenuPanelMode activePanel = MainMenuPanelMode.None;
         private Coroutine transitionCoroutine;
 
@@ -36,6 +38,7 @@ namespace ShooterPrototype.UI
         public bool IsShopOpen => activePanel == MainMenuPanelMode.Shop;
         public bool IsAchievementsOpen => activePanel == MainMenuPanelMode.Achievements;
         public bool IsStatsOpen => activePanel == MainMenuPanelMode.Stats;
+        public bool IsSettingsOpen => activePanel == MainMenuPanelMode.Settings;
 
         public void Configure(
             MainMenuCameraMotion camera,
@@ -47,12 +50,14 @@ namespace ShooterPrototype.UI
             Button shopButton,
             Button achievementsButton,
             Button statsButton,
+            Button settingsButton,
             Button back,
             CanvasGroup backGroup,
             MainMenuInventoryPanel inventory,
             MainMenuShopPanel shop,
             MainMenuAchievementsPanel achievements,
             MainMenuStatsPanel stats,
+            MainMenuSettingsPanel settings,
             CanvasGroup nicknameGroup = null)
         {
             cameraMotion = camera;
@@ -63,6 +68,7 @@ namespace ShooterPrototype.UI
             shopPanel = shop;
             achievementsPanel = achievements;
             statsPanel = stats;
+            settingsPanel = settings;
 
             mainMenuGroups.Clear();
             if (topNavGroup != null)
@@ -105,6 +111,11 @@ namespace ShooterPrototype.UI
                 statsButton.onClick.AddListener(EnterStats);
             }
 
+            if (settingsButton != null)
+            {
+                settingsButton.onClick.AddListener(EnterSettings);
+            }
+
             if (backButton != null)
             {
                 backButton.onClick.RemoveListener(ExitActivePanel);
@@ -139,6 +150,11 @@ namespace ShooterPrototype.UI
             OpenPanel(MainMenuPanelMode.Stats);
         }
 
+        public void EnterSettings()
+        {
+            OpenPanel(MainMenuPanelMode.Settings);
+        }
+
         public void ExitInventory()
         {
             if (activePanel == MainMenuPanelMode.Inventory)
@@ -171,6 +187,10 @@ namespace ShooterPrototype.UI
             else if (activePanel == MainMenuPanelMode.Stats)
             {
                 statsPanel?.Hide();
+            }
+            else if (activePanel == MainMenuPanelMode.Settings)
+            {
+                settingsPanel?.Hide();
             }
 
             activePanel = MainMenuPanelMode.None;
@@ -238,6 +258,10 @@ namespace ShooterPrototype.UI
                 {
                     statsPanel?.Show();
                 }
+                else if (panelMode == MainMenuPanelMode.Settings)
+                {
+                    settingsPanel?.Show();
+                }
 
                 return;
             }
@@ -259,6 +283,10 @@ namespace ShooterPrototype.UI
             else if (activePanel == MainMenuPanelMode.Stats)
             {
                 statsPanel?.Hide();
+            }
+            else if (activePanel == MainMenuPanelMode.Settings)
+            {
+                settingsPanel?.Hide();
             }
 
             if (wasInventory && panelMode != MainMenuPanelMode.Inventory)
@@ -284,6 +312,10 @@ namespace ShooterPrototype.UI
             else if (panelMode == MainMenuPanelMode.Stats)
             {
                 statsPanel?.Show();
+            }
+            else if (panelMode == MainMenuPanelMode.Settings)
+            {
+                settingsPanel?.Show();
             }
 
             StartTransition(showBackButton: true);

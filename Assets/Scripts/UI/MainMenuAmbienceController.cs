@@ -1,9 +1,6 @@
-using ShooterPrototype.Network;
+using ShooterPrototype.Player;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-#if ENABLE_INPUT_SYSTEM
-using UnityEngine.InputSystem;
-#endif
 
 namespace ShooterPrototype.UI
 {
@@ -11,47 +8,30 @@ namespace ShooterPrototype.UI
     public sealed class MainMenuAmbienceController : MonoBehaviour
     {
         private const string MainMenuSceneName = "MainMenu";
-        private const string MutePrefKey = "client_audio_muted";
 
         [Header("Resources")]
         [SerializeField] private string rainResourcePath = "Sounds/rain";
         [SerializeField] private string musicResourcePath = "Sounds/music";
 
-        [Header("Volume")]
-        [SerializeField] private float rainVolume = 0.42f;
-        [SerializeField] private float musicVolume = 0.2f;
-
         private AudioSource rainSource;
         private AudioSource musicSource;
-        private bool isMuted;
 
         private void Awake()
         {
             EnsureSources();
-            LoadMuteState();
+            ClientSettingsService.EnsureLoaded();
         }
 
         private void OnEnable()
         {
+            ClientSettingsService.SettingsChanged += ApplyAudioSettings;
             RefreshAmbienceForActiveScene();
         }
 
         private void OnDisable()
         {
+            ClientSettingsService.SettingsChanged -= ApplyAudioSettings;
             StopAmbience();
-        }
-
-        private void Update()
-        {
-            if (!ShouldPlayAmbience())
-            {
-                return;
-            }
-
-            if (ReadToggleMutePressed())
-            {
-                ToggleMute();
-            }
         }
 
         private void RefreshAmbienceForActiveScene()
@@ -73,7 +53,7 @@ namespace ShooterPrototype.UI
                 return false;
             }
 
-            var launcher = FindFirstObjectByType<NetworkLauncher>();
+            var launcher = FindFirstObjectByType<Network.NetworkLauncher>();
             if (launcher != null && launcher.IsMockServerRunning && !launcher.IsClientConnected)
             {
                 return false;
@@ -88,16 +68,16 @@ namespace ShooterPrototype.UI
         {
             if (rainSource == null)
             {
-                rainSource = CreateLoopSource("RainLoop", rainVolume);
+                rainSource = CreateLoopSource("RainLoop");
             }
 
             if (musicSource == null)
             {
-                musicSource = CreateLoopSource("MusicLoop", musicVolume);
+                musicSource = CreateLoopSource("MusicLoop");
             }
         }
 
-        private AudioSource CreateLoopSource(string objectName, float volume)
+        private AudioSource CreateLoopSource(string objectName)
         {
             var child = new GameObject(objectName);
             child.transform.SetParent(transform, false);
@@ -106,7 +86,6 @@ namespace ShooterPrototype.UI
             source.playOnAwake = false;
             source.loop = true;
             source.spatialBlend = 0f;
-            source.volume = volume;
             source.priority = objectName.Contains("Music") ? 64 : 128;
             return source;
         }
@@ -114,19 +93,9 @@ namespace ShooterPrototype.UI
         private void StartAmbience()
         {
             EnsureSources();
-            if (rainSource != null)
-            {
-                rainSource.volume = rainVolume;
-            }
-
-            if (musicSource != null)
-            {
-                musicSource.volume = musicVolume;
-            }
-
+            ApplyAudioSettings();
             PlayLoop(rainSource, rainResourcePath);
             PlayLoop(musicSource, musicResourcePath);
-            ApplyMuteState();
         }
 
         private void StopAmbience()
@@ -139,6 +108,22 @@ namespace ShooterPrototype.UI
             if (musicSource != null)
             {
                 musicSource.Stop();
+            }
+        }
+
+        private void ApplyAudioSettings()
+        {
+            ClientSettingsService.EnsureLoaded();
+            ClientSettingsService.ApplyMasterVolume();
+
+            if (rainSource != null)
+            {
+                rainSource.volume = ClientSettingsService.RainVolume;
+            }
+
+            if (musicSource != null)
+            {
+                musicSource.volume = ClientSettingsService.MusicVolume;
             }
         }
 
@@ -165,39 +150,6 @@ namespace ShooterPrototype.UI
             {
                 source.Play();
             }
-        }
-
-        private void ToggleMute()
-        {
-            isMuted = !isMuted;
-            PlayerPrefs.SetInt(MutePrefKey, isMuted ? 1 : 0);
-            PlayerPrefs.Save();
-            ApplyMuteState();
-        }
-
-        private void LoadMuteState()
-        {
-            isMuted = PlayerPrefs.GetInt(MutePrefKey, 0) == 1;
-            ApplyMuteState();
-        }
-
-        private void ApplyMuteState()
-        {
-            if (!ShouldPlayAmbience())
-            {
-                return;
-            }
-
-            AudioListener.volume = isMuted ? 0f : 1f;
-        }
-
-        private static bool ReadToggleMutePressed()
-        {
-#if ENABLE_INPUT_SYSTEM
-            return Keyboard.current != null && Keyboard.current.f8Key.wasPressedThisFrame;
-#else
-            return Input.GetKeyDown(KeyCode.F8);
-#endif
         }
     }
 }

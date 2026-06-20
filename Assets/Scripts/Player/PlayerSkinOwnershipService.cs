@@ -141,6 +141,14 @@ namespace ShooterPrototype.Player
             }
 
             AppendMissingOwnedDefinitions(owned, seenIds);
+            for (var i = owned.Count - 1; i >= 0; i--)
+            {
+                if (!ShouldShowInInventory(owned[i]))
+                {
+                    owned.RemoveAt(i);
+                }
+            }
+
             return owned;
         }
 
@@ -297,16 +305,37 @@ namespace ShooterPrototype.Player
             if (PlayerSkinSelectionService.TryGetDefinitionById(skinId, out var definition) &&
                 definition.IsValid)
             {
+                if (!ShouldShowInInventory(definition))
+                {
+                    return;
+                }
+
                 owned.Add(definition);
                 seenIds.Add(skinId);
                 return;
             }
 
-            if (ShopCatalogService.TryGetSkinDefinition(skinId, out definition) && definition.IsValid)
+            if (ShopCatalogService.TryGetSkinDefinition(skinId, out definition) &&
+                definition.IsValid)
             {
+                if (!ShouldShowInInventory(definition))
+                {
+                    return;
+                }
+
                 owned.Add(definition);
                 seenIds.Add(skinId);
             }
+        }
+
+        public static bool ShouldShowInInventory(PlayerSkinDefinition item)
+        {
+            if (!item.IsValid || !IsOwned(item.Id))
+            {
+                return false;
+            }
+
+            return !(item.IsWeaponSkin && IsDefaultOwnedSkin(item.Id));
         }
 
         private static bool IsDefaultOwnedSkin(string skinId)

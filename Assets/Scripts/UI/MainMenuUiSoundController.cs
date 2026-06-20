@@ -1,3 +1,4 @@
+using ShooterPrototype.Player;
 using UnityEngine;
 
 namespace ShooterPrototype.UI
@@ -5,12 +6,9 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuUiSoundController : MonoBehaviour
     {
-        private const string MutePrefKey = "client_audio_muted";
-
         [SerializeField] private string startClipPath = "Sounds/start";
         [SerializeField] private string cancelClipPath = "Sounds/cancel";
         [SerializeField] private string buttonClipPath = "Sounds/buttons";
-        [SerializeField] private float volume = 0.75f;
 
         private AudioSource audioSource;
         private AudioClip startClip;
@@ -21,6 +19,17 @@ namespace ShooterPrototype.UI
         {
             EnsureSource();
             LoadClips();
+            ClientSettingsService.EnsureLoaded();
+        }
+
+        private void OnEnable()
+        {
+            ClientSettingsService.SettingsChanged += HandleSettingsChanged;
+        }
+
+        private void OnDisable()
+        {
+            ClientSettingsService.SettingsChanged -= HandleSettingsChanged;
         }
 
         public void PlayStart()
@@ -36,6 +45,11 @@ namespace ShooterPrototype.UI
         public void PlayButton()
         {
             PlayClip(buttonClip);
+        }
+
+        private void HandleSettingsChanged()
+        {
+            // Master volume is applied globally via AudioListener.
         }
 
         private void EnsureSource()
@@ -76,17 +90,12 @@ namespace ShooterPrototype.UI
 
         private void PlayClip(AudioClip clip)
         {
-            if (clip == null || audioSource == null || IsMuted())
+            if (clip == null || audioSource == null || ClientSettingsService.IsEffectivelyMuted())
             {
                 return;
             }
 
-            audioSource.PlayOneShot(clip, volume);
-        }
-
-        private static bool IsMuted()
-        {
-            return PlayerPrefs.GetInt(MutePrefKey, 0) == 1;
+            audioSource.PlayOneShot(clip, ClientSettingsService.SfxVolume);
         }
     }
 }

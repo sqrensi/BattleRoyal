@@ -35,7 +35,13 @@ namespace ShooterPrototype.UI
             }
 
             EnsureLoaded();
-            return PendingNewSkinIds.Contains(skinId.Trim());
+            var normalized = skinId.Trim();
+            if (!PendingNewSkinIds.Contains(normalized))
+            {
+                return false;
+            }
+
+            return ShouldShowSkinNotification(normalized);
         }
 
         public static bool IsCaseUnviewed(string caseId)
@@ -46,11 +52,29 @@ namespace ShooterPrototype.UI
             }
 
             EnsureLoaded();
-            return PendingNewCaseIds.Contains(caseId.Trim());
+            var normalized = caseId.Trim();
+            if (!PendingNewCaseIds.Contains(normalized))
+            {
+                return false;
+            }
+
+            return ShouldShowCaseNotification(normalized);
         }
 
-        public static bool HasInventoryNotifications =>
-            PendingNewSkinIds.Count > 0 || PendingNewCaseIds.Count > 0;
+        public static bool HasInventoryNotifications
+        {
+            get
+            {
+                EnsureLoaded();
+                return HasVisibleUnviewedSkins() || HasVisibleUnviewedCases();
+            }
+        }
+
+        public static void SyncInventoryNotifications()
+        {
+            EnsureLoaded();
+            PruneStalePendingNotifications(saveChanges: true);
+        }
 
         public static bool HasAchievementNotifications
         {
@@ -122,6 +146,7 @@ namespace ShooterPrototype.UI
             }
 
             ViewedSkinIds.Add(normalized);
+            PruneStalePendingNotifications(saveChanges: false);
             SaveState();
             NotifyChanged();
         }
@@ -175,6 +200,7 @@ namespace ShooterPrototype.UI
             }
 
             ViewedCaseIds.Add(normalized);
+            PruneStalePendingNotifications(saveChanges: false);
             SaveState();
             NotifyChanged();
         }
@@ -191,6 +217,7 @@ namespace ShooterPrototype.UI
             LoadSet(PendingSkinsPrefKey, PendingNewSkinIds);
             LoadSet(PendingCasesPrefKey, PendingNewCaseIds);
             loaded = true;
+            PruneStalePendingNotifications(saveChanges: true);
         }
 
         private static bool TrackNewSkins(
@@ -343,6 +370,109 @@ namespace ShooterPrototype.UI
                         ViewedCaseIds.Add(entry.caseId.Trim());
                     }
                 }
+            }
+        }
+
+        private static bool HasVisibleUnviewedSkins()
+        {
+            foreach (var skinId in PendingNewSkinIds)
+            {
+                if (ShouldShowSkinNotification(skinId))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool HasVisibleUnviewedCases()
+        {
+            foreach (var caseId in PendingNewCaseIds)
+            {
+                if (ShouldShowCaseNotification(caseId))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ShouldShowSkinNotification(string skinId)
+        {
+            if (string.IsNullOrWhiteSpace(skinId) || !PlayerSkinOwnershipService.IsOwned(skinId))
+            {
+                return false;
+            }
+
+            if (PlayerSkinSelectionService.TryGetDefinitionById(skinId, out var definition) ||
+                ShopCatalogService.TryGetSkinDefinition(skinId, out definition))
+            {
+                return PlayerSkinOwnershipService.ShouldShowInInventory(definition);
+            }
+
+            return !ShopCatalogService.IsDefaultOwnedSkin(skinId);
+        }
+
+        private static bool ShouldShowCaseNotification(string caseId)
+        {
+            return !string.IsNullOrWhiteSpace(caseId) &&
+                   PlayerProfileService.GetOwnedCaseQuantity(caseId) > 0;
+        }
+
+        private static void PruneStalePendingNotifications(bool saveChanges)
+        {
+            var changed = false;
+
+            if (PendingNewSkinIds.Count > 0)
+            {
+                var staleSkinIds = new List<string>();
+                foreach (var skinId in PendingNewSkinIds)
+                {
+                    if (!ShouldShowSkinNotification(skinId))
+                    {
+                        staleSkinIds.Add(skinId);
+                    }
+                }
+
+                for (var i = 0; i < staleSkinIds.Count; i++)
+                {
+                    var skinId = staleSkinIds[i];
+                    if (PendingNewSkinIds.Remove(skinId))
+                    {
+                        ViewedSkinIds.Add(skinId);
+                        changed = true;
+                    }
+                }
+            }
+
+            if (PendingNewCaseIds.Count > 0)
+            {
+                var staleCaseIds = new List<string>();
+                foreach (var caseId in PendingNewCaseIds)
+                {
+                    if (!ShouldShowCaseNotification(caseId))
+                    {
+                        staleCaseIds.Add(caseId);
+                    }
+                }
+
+                for (var i = 0; i < staleCaseIds.Count; i++)
+                {
+                    var caseId = staleCaseIds[i];
+                    if (PendingNewCaseIds.Remove(caseId))
+                    {
+                        ViewedCaseIds.Add(caseId);
+                        changed = true;
+                    }
+                }
+            }
+
+            if (changed && saveChanges)
+            {
+                SaveState();
+                NotifyChanged();
             }
         }
 

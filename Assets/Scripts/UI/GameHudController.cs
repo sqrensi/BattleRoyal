@@ -18,7 +18,6 @@ namespace ShooterPrototype.UI
     {
         private const string CanvasObjectName = "RuntimeGameHudCanvas";
         public const string RuntimeCanvasObjectName = CanvasObjectName;
-        private const string MutePrefKey = "client_audio_muted";
         private const int CornerStatsLayoutVersion = 2;
         private const int MatchCornerStatsLayoutVersion = 2;
         private const float GameOverPanelDelaySeconds = 5f;
@@ -105,7 +104,6 @@ namespace ShooterPrototype.UI
         }
         private int consecutivePingFailures;
         private bool returnToMenuRequested;
-        private bool isMuted;
 
         public void Initialize(NetworkLauncher launcher, string menuSceneName, PerformancePresetController presetController = null)
         {
@@ -126,6 +124,10 @@ namespace ShooterPrototype.UI
             }
 
             EnsureHudExists();
+            ClientSettingsService.SettingsChanged += HandleClientSettingsChanged;
+            ClientSettingsService.EnsureLoaded();
+            ClientSettingsService.ApplyMasterVolume();
+            ClientSettingsService.ApplyGraphicsPreset();
             LoadMuteState();
             RefreshPerfButtonVisuals();
             RefreshConnectionText();
@@ -138,11 +140,6 @@ namespace ShooterPrototype.UI
             if (canvas == null || !canvas.gameObject.activeSelf)
             {
                 return;
-            }
-
-            if (ReadToggleMutePressed())
-            {
-                HandleMutePressed();
             }
 
             if (ReadEscapePressed())
@@ -249,15 +246,6 @@ namespace ShooterPrototype.UI
             RequestReturnToMenu("pause_exit");
         }
 
-        private static bool ReadToggleMutePressed()
-        {
-#if ENABLE_INPUT_SYSTEM
-            return Keyboard.current != null && Keyboard.current.f8Key.wasPressedThisFrame;
-#else
-            return Input.GetKeyDown(KeyCode.F8);
-#endif
-        }
-
         private void SetTopBarVisible(bool visible)
         {
             topBarVisible = visible;
@@ -306,11 +294,19 @@ namespace ShooterPrototype.UI
         private void OnDestroy()
         {
             StopPingRefresh();
+            ClientSettingsService.SettingsChanged -= HandleClientSettingsChanged;
 
             if (networkLauncher != null)
             {
                 networkLauncher.StatusChanged -= HandleNetworkStatusChanged;
             }
+        }
+
+        private void HandleClientSettingsChanged()
+        {
+            RefreshMuteButtonText();
+            RefreshPerfButtonVisuals();
+            RefreshPauseSettingsButtonLabels();
         }
 
         private void HandleNetworkStatusChanged(string status)
@@ -776,26 +772,17 @@ namespace ShooterPrototype.UI
 
         private void HandleMutePressed()
         {
-            isMuted = !isMuted;
-            PlayerPrefs.SetInt(MutePrefKey, isMuted ? 1 : 0);
-            PlayerPrefs.Save();
-            ApplyMuteState();
+            ClientSettingsService.EnsureLoaded();
+            ClientSettingsService.SetMasterVolume(
+                ClientSettingsService.IsEffectivelyMuted()
+                    ? ClientSettingsService.DefaultMasterVolume
+                    : 0f);
             RefreshPauseSettingsButtonLabels();
         }
 
         private void HandlePerfPressed()
         {
-            if (performancePreset == null)
-            {
-                performancePreset = FindObjectOfType<PerformancePresetController>();
-            }
-
-            if (performancePreset == null)
-            {
-                return;
-            }
-
-            performancePreset.ToggleMaxPerformance();
+            ClientSettingsService.ToggleMaxPerformance();
             RefreshPerfButtonVisuals();
             RefreshPauseSettingsButtonLabels();
         }
@@ -804,26 +791,24 @@ namespace ShooterPrototype.UI
         {
             if (pauseMuteButtonLabel != null)
             {
-                pauseMuteButtonLabel.text = isMuted ? "Звук: выкл" : "Звук: вкл";
+                pauseMuteButtonLabel.text = ClientSettingsService.IsEffectivelyMuted()
+                    ? "Звук: выкл"
+                    : "Звук: вкл";
             }
 
             if (pausePerfButtonLabel != null)
             {
-                var maxPerformance = performancePreset != null && performancePreset.MaxPerformanceEnabled;
+                var maxPerformance = ClientSettingsService.MaxPerformanceEnabled;
                 pausePerfButtonLabel.text = maxPerformance ? "Графика: MAX" : "Графика: качество";
             }
         }
 
         private void LoadMuteState()
         {
-            isMuted = PlayerPrefs.GetInt(MutePrefKey, 0) == 1;
-            ApplyMuteState();
-        }
-
-        private void ApplyMuteState()
-        {
-            AudioListener.volume = isMuted ? 0f : 1f;
+            ClientSettingsService.EnsureLoaded();
+            ClientSettingsService.ApplyMasterVolume();
             RefreshMuteButtonText();
+            RefreshPauseSettingsButtonLabels();
         }
 
         private void EnsureHudExists()
@@ -1561,14 +1546,14 @@ namespace ShooterPrototype.UI
                 pauseSettingsPanel.transform,
                 "MuteButton",
                 new Vector2(0f, 48f),
-                isMuted ? "Звук: выкл" : "Звук: вкл",
+                ClientSettingsService.IsEffectivelyMuted() ? "Звук: выкл" : "Звук: вкл",
                 HandleMutePressed);
 
             pausePerfButtonLabel = CreatePauseMenuButton(
                 pauseSettingsPanel.transform,
                 "PerfButton",
                 new Vector2(0f, -16f),
-                performancePreset != null && performancePreset.MaxPerformanceEnabled ? "Графика: MAX" : "Графика: качество",
+                ClientSettingsService.MaxPerformanceEnabled ? "Графика: MAX" : "Графика: качество",
                 HandlePerfPressed);
 
             CreatePauseMenuButton(
@@ -2036,7 +2021,7 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            muteButtonLabel.text = isMuted ? "Sound: OFF" : "Sound: ON";
+            muteButtonLabel.text = ClientSettingsService.IsEffectivelyMuted() ? "Sound: OFF" : "Sound: ON";
         }
 
         private void RefreshPerfButtonVisuals()
@@ -2046,7 +2031,7 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            var maxPerformance = performancePreset != null && performancePreset.MaxPerformanceEnabled;
+            var maxPerformance = ClientSettingsService.MaxPerformanceEnabled;
             perfButtonLabel.text = maxPerformance ? "Perf: MAX" : "Perf: QUALITY";
 
             if (perfButtonImage != null)

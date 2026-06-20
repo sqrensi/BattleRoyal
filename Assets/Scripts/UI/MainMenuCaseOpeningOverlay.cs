@@ -143,7 +143,7 @@ namespace ShooterPrototype.UI
 
         private void UpdateCardTickSounds(float stripX, float itemStep, int totalItems)
         {
-            if (tickAudioSource == null || tickClip == null || IsMuted() || viewportRect == null)
+            if (tickAudioSource == null || tickClip == null || ClientSettingsService.IsEffectivelyMuted() || viewportRect == null)
             {
                 previousStripX = stripX;
                 return;
@@ -157,14 +157,14 @@ namespace ShooterPrototype.UI
             {
                 if (lastTickedCardIndex == int.MinValue)
                 {
-                    tickAudioSource.PlayOneShot(tickClip, soundVolume);
+                    tickAudioSource.PlayOneShot(tickClip, GetCaseSoundVolume());
                 }
                 else
                 {
                     var direction = focusedIndex > lastTickedCardIndex ? 1 : -1;
                     for (var index = lastTickedCardIndex + direction; ; index += direction)
                     {
-                        tickAudioSource.PlayOneShot(tickClip, soundVolume);
+                        tickAudioSource.PlayOneShot(tickClip, GetCaseSoundVolume());
                         if (index == focusedIndex)
                         {
                             break;
@@ -180,17 +180,18 @@ namespace ShooterPrototype.UI
 
         private void PlayRevealSound()
         {
-            if (tickAudioSource == null || revealClip == null || IsMuted())
+            if (tickAudioSource == null || revealClip == null || ClientSettingsService.IsEffectivelyMuted())
             {
                 return;
             }
 
-            tickAudioSource.PlayOneShot(revealClip, soundVolume);
+            tickAudioSource.PlayOneShot(revealClip, GetCaseSoundVolume());
         }
 
-        private static bool IsMuted()
+        private float GetCaseSoundVolume()
         {
-            return PlayerPrefs.GetInt("client_audio_muted", 0) == 1;
+            ClientSettingsService.EnsureLoaded();
+            return soundVolume * ClientSettingsService.SfxVolume;
         }
 
         private void BuildTitle(string caseName)

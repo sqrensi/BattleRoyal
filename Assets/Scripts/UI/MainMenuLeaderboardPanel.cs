@@ -31,6 +31,8 @@ namespace ShooterPrototype.UI
         [SerializeField] private float rowSpacing = 4f;
         [SerializeField] private float titleFontSize = 18f;
         [SerializeField] private float rowFontSize = 14f;
+        [SerializeField] private float scrollbarWidth = 10f;
+        [SerializeField] private float scrollbarGap = 10f;
         [SerializeField] private int entryLimit = 25;
 
         private RectTransform contentRect;
@@ -67,7 +69,7 @@ namespace ShooterPrototype.UI
             background.sprite = GetWhiteSprite();
             background.type = Image.Type.Simple;
             background.color = PanelColor;
-            background.raycastTarget = true;
+            background.raycastTarget = false;
 
             var layout = rootObject.AddComponent<VerticalLayoutGroup>();
             layout.childAlignment = TextAnchor.UpperLeft;
@@ -190,19 +192,22 @@ namespace ShooterPrototype.UI
             StretchFull(scrollRectTransform);
 
             var scroll = scrollObject.AddComponent<ScrollRect>();
-            scroll.horizontal = false;
-            scroll.vertical = true;
-            scroll.movementType = ScrollRect.MovementType.Clamped;
-            scroll.scrollSensitivity = 24f;
+            MainMenuScrollSupport.ConfigureVerticalScroll(scroll);
 
             var viewportObject = new GameObject("Viewport");
             viewportObject.transform.SetParent(scrollObject.transform, false);
             var viewportRect = viewportObject.AddComponent<RectTransform>();
             StretchFull(viewportRect);
-            viewportRect.offsetMax = new Vector2(-12f, 0f);
+            viewportRect.offsetMax = new Vector2(-(scrollbarWidth + scrollbarGap), 0f);
             viewportObject.AddComponent<RectMask2D>();
+            MainMenuScrollSupport.EnableViewportScrollCapture(viewportObject, GetWhiteSprite());
 
-            var scrollbar = CreateVerticalScrollbar(scrollObject.transform);
+            var scrollbar = MainMenuScrollSupport.CreateVerticalScrollbar(
+                scrollObject.transform,
+                scrollbarWidth,
+                ScrollTrackColor,
+                ScrollHandleColor,
+                GetWhiteSprite());
             scroll.verticalScrollbar = scrollbar;
             scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
 
@@ -214,6 +219,7 @@ namespace ShooterPrototype.UI
             contentRect.pivot = new Vector2(0.5f, 1f);
             contentRect.anchoredPosition = Vector2.zero;
             contentRect.sizeDelta = new Vector2(0f, 0f);
+            MainMenuScrollSupport.EnableContentScrollCapture(contentObject, GetWhiteSprite());
 
             var contentLayout = contentObject.AddComponent<VerticalLayoutGroup>();
             contentLayout.spacing = rowSpacing;
@@ -356,41 +362,6 @@ namespace ShooterPrototype.UI
             ratingText.alignment = TextAlignmentOptions.MidlineRight;
             ratingText.color = RatingColor;
             ratingText.raycastTarget = false;
-        }
-
-        private static Scrollbar CreateVerticalScrollbar(Transform parent)
-        {
-            var scrollbarObject = new GameObject("Scrollbar");
-            scrollbarObject.transform.SetParent(parent, false);
-
-            var scrollbarRect = scrollbarObject.AddComponent<RectTransform>();
-            scrollbarRect.anchorMin = new Vector2(1f, 0f);
-            scrollbarRect.anchorMax = new Vector2(1f, 1f);
-            scrollbarRect.pivot = new Vector2(1f, 0.5f);
-            scrollbarRect.sizeDelta = new Vector2(8f, 0f);
-            scrollbarRect.anchoredPosition = Vector2.zero;
-
-            var trackImage = scrollbarObject.AddComponent<Image>();
-            trackImage.sprite = GetWhiteSprite();
-            trackImage.type = Image.Type.Simple;
-            trackImage.color = ScrollTrackColor;
-
-            var scrollbar = scrollbarObject.AddComponent<Scrollbar>();
-            scrollbar.direction = Scrollbar.Direction.BottomToTop;
-
-            var handleObject = new GameObject("Handle");
-            handleObject.transform.SetParent(scrollbarObject.transform, false);
-            var handleRect = handleObject.AddComponent<RectTransform>();
-            StretchFull(handleRect);
-
-            var handleImage = handleObject.AddComponent<Image>();
-            handleImage.sprite = GetWhiteSprite();
-            handleImage.type = Image.Type.Simple;
-            handleImage.color = ScrollHandleColor;
-
-            scrollbar.handleRect = handleRect;
-            scrollbar.targetGraphic = handleImage;
-            return scrollbar;
         }
 
         private static void StretchFull(RectTransform rect)
