@@ -30,6 +30,7 @@ namespace ShooterPrototype.Player
         public const float DefaultGlobalAdsSensitivity = 1f;
 
         private static bool loaded;
+        private static string loadedForPlayerId;
 
         public static event Action SettingsChanged;
 
@@ -55,36 +56,40 @@ namespace ShooterPrototype.Player
 
         public static void EnsureLoaded()
         {
-            if (loaded)
+            var playerId = PlayerIdentityService.GetOrCreatePlayerId();
+            if (loaded && string.Equals(loadedForPlayerId, playerId, StringComparison.Ordinal))
             {
                 return;
             }
 
-            if (PlayerPrefs.HasKey(LegacyMuteKey) && !PlayerPrefs.HasKey(MasterVolumeKey))
+            loaded = false;
+            loadedForPlayerId = playerId;
+
+            if (UserScopedPlayerPrefs.HasKey(LegacyMuteKey) && !UserScopedPlayerPrefs.HasKey(MasterVolumeKey))
             {
-                MasterVolume = PlayerPrefs.GetInt(LegacyMuteKey, 0) == 1 ? 0f : DefaultMasterVolume;
+                MasterVolume = UserScopedPlayerPrefs.GetInt(LegacyMuteKey, 0) == 1 ? 0f : DefaultMasterVolume;
             }
             else
             {
-                MasterVolume = PlayerPrefs.GetFloat(MasterVolumeKey, DefaultMasterVolume);
+                MasterVolume = UserScopedPlayerPrefs.GetFloat(MasterVolumeKey, DefaultMasterVolume);
             }
 
-            MusicVolume = PlayerPrefs.GetFloat(MusicVolumeKey, DefaultMusicVolume);
-            RainVolume = PlayerPrefs.GetFloat(RainVolumeKey, DefaultRainVolume);
-            SfxVolume = PlayerPrefs.GetFloat(SfxVolumeKey, DefaultSfxVolume);
-            MouseSensitivity = PlayerPrefs.GetFloat(MouseSensitivityKey, DefaultMouseSensitivity);
-            RenderScale = PlayerPrefs.GetFloat(RenderScaleKey, DefaultRenderScale);
-            GlobalAdsSensitivityMultiplier = PlayerPrefs.GetFloat(
+            MusicVolume = UserScopedPlayerPrefs.GetFloat(MusicVolumeKey, DefaultMusicVolume);
+            RainVolume = UserScopedPlayerPrefs.GetFloat(RainVolumeKey, DefaultRainVolume);
+            SfxVolume = UserScopedPlayerPrefs.GetFloat(SfxVolumeKey, DefaultSfxVolume);
+            MouseSensitivity = UserScopedPlayerPrefs.GetFloat(MouseSensitivityKey, DefaultMouseSensitivity);
+            RenderScale = UserScopedPlayerPrefs.GetFloat(RenderScaleKey, DefaultRenderScale);
+            GlobalAdsSensitivityMultiplier = UserScopedPlayerPrefs.GetFloat(
                 GlobalAdsSensitivityKey,
                 DefaultGlobalAdsSensitivity);
-            MaxPerformanceEnabled = PlayerPrefs.GetInt(MaxPerformanceKey, 0) == 1;
+            MaxPerformanceEnabled = UserScopedPlayerPrefs.GetInt(MaxPerformanceKey, 0) == 1;
 
-            if (PlayerPrefs.HasKey(ShadowsEnabledKey))
+            if (UserScopedPlayerPrefs.HasKey(ShadowsEnabledKey))
             {
-                ShadowsEnabled = PlayerPrefs.GetInt(ShadowsEnabledKey, 1) == 1;
-                PostProcessingEnabled = PlayerPrefs.GetInt(PostProcessingKey, 1) == 1;
-                MsaaSampleCount = NormalizeMsaa(PlayerPrefs.GetInt(MsaaKey, 4));
-                TextureMipmapLimit = Mathf.Clamp(PlayerPrefs.GetInt(TextureMipmapLimitKey, 0), 0, 2);
+                ShadowsEnabled = UserScopedPlayerPrefs.GetInt(ShadowsEnabledKey, 1) == 1;
+                PostProcessingEnabled = UserScopedPlayerPrefs.GetInt(PostProcessingKey, 1) == 1;
+                MsaaSampleCount = NormalizeMsaa(UserScopedPlayerPrefs.GetInt(MsaaKey, 4));
+                TextureMipmapLimit = Mathf.Clamp(UserScopedPlayerPrefs.GetInt(TextureMipmapLimitKey, 0), 0, 2);
             }
             else if (MaxPerformanceEnabled)
             {
@@ -143,7 +148,7 @@ namespace ShooterPrototype.Player
         public static float GetAdsSensitivity(WeaponKind kind)
         {
             EnsureLoaded();
-            var perWeapon = PlayerPrefs.GetFloat(
+            var perWeapon = UserScopedPlayerPrefs.GetFloat(
                 BuildAdsSensitivityKey(kind),
                 GetDefaultAdsSensitivity(kind));
             return perWeapon * GlobalAdsSensitivityMultiplier;
@@ -152,15 +157,15 @@ namespace ShooterPrototype.Player
         public static float GetWeaponAdsSensitivity(WeaponKind kind)
         {
             EnsureLoaded();
-            return PlayerPrefs.GetFloat(BuildAdsSensitivityKey(kind), GetDefaultAdsSensitivity(kind));
+            return UserScopedPlayerPrefs.GetFloat(BuildAdsSensitivityKey(kind), GetDefaultAdsSensitivity(kind));
         }
 
         public static void SetMasterVolume(float value)
         {
             EnsureLoaded();
             MasterVolume = Mathf.Clamp01(value);
-            PlayerPrefs.SetFloat(MasterVolumeKey, MasterVolume);
-            PlayerPrefs.SetInt(LegacyMuteKey, MasterVolume <= 0.001f ? 1 : 0);
+            UserScopedPlayerPrefs.SetFloat(MasterVolumeKey, MasterVolume);
+            UserScopedPlayerPrefs.SetInt(LegacyMuteKey, MasterVolume <= 0.001f ? 1 : 0);
             SaveAndNotify();
             ApplyMasterVolume();
         }
@@ -169,7 +174,7 @@ namespace ShooterPrototype.Player
         {
             EnsureLoaded();
             MusicVolume = Mathf.Clamp01(value);
-            PlayerPrefs.SetFloat(MusicVolumeKey, MusicVolume);
+            UserScopedPlayerPrefs.SetFloat(MusicVolumeKey, MusicVolume);
             SaveAndNotify();
         }
 
@@ -177,7 +182,7 @@ namespace ShooterPrototype.Player
         {
             EnsureLoaded();
             RainVolume = Mathf.Clamp01(value);
-            PlayerPrefs.SetFloat(RainVolumeKey, RainVolume);
+            UserScopedPlayerPrefs.SetFloat(RainVolumeKey, RainVolume);
             SaveAndNotify();
         }
 
@@ -185,7 +190,7 @@ namespace ShooterPrototype.Player
         {
             EnsureLoaded();
             SfxVolume = Mathf.Clamp01(value);
-            PlayerPrefs.SetFloat(SfxVolumeKey, SfxVolume);
+            UserScopedPlayerPrefs.SetFloat(SfxVolumeKey, SfxVolume);
             SaveAndNotify();
         }
 
@@ -193,7 +198,7 @@ namespace ShooterPrototype.Player
         {
             EnsureLoaded();
             MouseSensitivity = Mathf.Clamp(value, 0.1f, 10f);
-            PlayerPrefs.SetFloat(MouseSensitivityKey, MouseSensitivity);
+            UserScopedPlayerPrefs.SetFloat(MouseSensitivityKey, MouseSensitivity);
             SaveAndNotify();
         }
 
@@ -201,7 +206,7 @@ namespace ShooterPrototype.Player
         {
             EnsureLoaded();
             GlobalAdsSensitivityMultiplier = Mathf.Clamp(value, 0.1f, 3f);
-            PlayerPrefs.SetFloat(GlobalAdsSensitivityKey, GlobalAdsSensitivityMultiplier);
+            UserScopedPlayerPrefs.SetFloat(GlobalAdsSensitivityKey, GlobalAdsSensitivityMultiplier);
             SaveAndNotify();
         }
 
@@ -209,7 +214,7 @@ namespace ShooterPrototype.Player
         {
             EnsureLoaded();
             var clamped = Mathf.Clamp(value, 0.1f, 5f);
-            PlayerPrefs.SetFloat(BuildAdsSensitivityKey(kind), clamped);
+            UserScopedPlayerPrefs.SetFloat(BuildAdsSensitivityKey(kind), clamped);
             SaveAndNotify();
         }
 
@@ -217,9 +222,9 @@ namespace ShooterPrototype.Player
         {
             EnsureLoaded();
             RenderScale = Mathf.Clamp(value, 0.65f, 1f);
-            PlayerPrefs.SetFloat(RenderScaleKey, RenderScale);
+            UserScopedPlayerPrefs.SetFloat(RenderScaleKey, RenderScale);
             MaxPerformanceEnabled = false;
-            PlayerPrefs.SetInt(MaxPerformanceKey, 0);
+            UserScopedPlayerPrefs.SetInt(MaxPerformanceKey, 0);
             SaveAndNotify();
             ApplyGraphicsPreset();
         }
@@ -228,9 +233,9 @@ namespace ShooterPrototype.Player
         {
             EnsureLoaded();
             ShadowsEnabled = enabled;
-            PlayerPrefs.SetInt(ShadowsEnabledKey, enabled ? 1 : 0);
+            UserScopedPlayerPrefs.SetInt(ShadowsEnabledKey, enabled ? 1 : 0);
             MaxPerformanceEnabled = false;
-            PlayerPrefs.SetInt(MaxPerformanceKey, 0);
+            UserScopedPlayerPrefs.SetInt(MaxPerformanceKey, 0);
             SaveAndNotify();
             ApplyGraphicsPreset();
         }
@@ -239,9 +244,9 @@ namespace ShooterPrototype.Player
         {
             EnsureLoaded();
             PostProcessingEnabled = enabled;
-            PlayerPrefs.SetInt(PostProcessingKey, enabled ? 1 : 0);
+            UserScopedPlayerPrefs.SetInt(PostProcessingKey, enabled ? 1 : 0);
             MaxPerformanceEnabled = false;
-            PlayerPrefs.SetInt(MaxPerformanceKey, 0);
+            UserScopedPlayerPrefs.SetInt(MaxPerformanceKey, 0);
             SaveAndNotify();
             ApplyGraphicsPreset();
         }
@@ -250,9 +255,9 @@ namespace ShooterPrototype.Player
         {
             EnsureLoaded();
             MsaaSampleCount = NormalizeMsaa(sampleCount);
-            PlayerPrefs.SetInt(MsaaKey, MsaaSampleCount);
+            UserScopedPlayerPrefs.SetInt(MsaaKey, MsaaSampleCount);
             MaxPerformanceEnabled = false;
-            PlayerPrefs.SetInt(MaxPerformanceKey, 0);
+            UserScopedPlayerPrefs.SetInt(MaxPerformanceKey, 0);
             SaveAndNotify();
             ApplyGraphicsPreset();
         }
@@ -261,18 +266,30 @@ namespace ShooterPrototype.Player
         {
             EnsureLoaded();
             TextureMipmapLimit = Mathf.Clamp(limit, 0, 2);
-            PlayerPrefs.SetInt(TextureMipmapLimitKey, TextureMipmapLimit);
+            UserScopedPlayerPrefs.SetInt(TextureMipmapLimitKey, TextureMipmapLimit);
             MaxPerformanceEnabled = false;
-            PlayerPrefs.SetInt(MaxPerformanceKey, 0);
+            UserScopedPlayerPrefs.SetInt(MaxPerformanceKey, 0);
             SaveAndNotify();
             ApplyGraphicsPreset();
+        }
+
+        public static int TextureQualitySliderIndex => 2 - TextureMipmapLimit;
+
+        public static void SetTextureQualitySliderIndex(int index)
+        {
+            SetTextureMipmapLimit(2 - Mathf.Clamp(index, 0, 2));
+        }
+
+        public static string GetTextureQualityLabelFromSliderIndex(int index)
+        {
+            return GetTextureQualityLabel(2 - Mathf.Clamp(index, 0, 2));
         }
 
         public static void SetMaxPerformanceEnabled(bool enabled)
         {
             EnsureLoaded();
             MaxPerformanceEnabled = enabled;
-            PlayerPrefs.SetInt(MaxPerformanceKey, enabled ? 1 : 0);
+            UserScopedPlayerPrefs.SetInt(MaxPerformanceKey, enabled ? 1 : 0);
             if (enabled)
             {
                 ApplyLowQualityBundle(save: true);
@@ -391,11 +408,11 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            PlayerPrefs.SetFloat(RenderScaleKey, RenderScale);
-            PlayerPrefs.SetInt(ShadowsEnabledKey, 0);
-            PlayerPrefs.SetInt(PostProcessingKey, 0);
-            PlayerPrefs.SetInt(MsaaKey, MsaaSampleCount);
-            PlayerPrefs.SetInt(TextureMipmapLimitKey, TextureMipmapLimit);
+            UserScopedPlayerPrefs.SetFloat(RenderScaleKey, RenderScale);
+            UserScopedPlayerPrefs.SetInt(ShadowsEnabledKey, 0);
+            UserScopedPlayerPrefs.SetInt(PostProcessingKey, 0);
+            UserScopedPlayerPrefs.SetInt(MsaaKey, MsaaSampleCount);
+            UserScopedPlayerPrefs.SetInt(TextureMipmapLimitKey, TextureMipmapLimit);
         }
 
         private static void ApplyHighQualityBundle(bool save)
@@ -411,11 +428,11 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            PlayerPrefs.SetFloat(RenderScaleKey, RenderScale);
-            PlayerPrefs.SetInt(ShadowsEnabledKey, 1);
-            PlayerPrefs.SetInt(PostProcessingKey, 1);
-            PlayerPrefs.SetInt(MsaaKey, MsaaSampleCount);
-            PlayerPrefs.SetInt(TextureMipmapLimitKey, TextureMipmapLimit);
+            UserScopedPlayerPrefs.SetFloat(RenderScaleKey, RenderScale);
+            UserScopedPlayerPrefs.SetInt(ShadowsEnabledKey, 1);
+            UserScopedPlayerPrefs.SetInt(PostProcessingKey, 1);
+            UserScopedPlayerPrefs.SetInt(MsaaKey, MsaaSampleCount);
+            UserScopedPlayerPrefs.SetInt(TextureMipmapLimitKey, TextureMipmapLimit);
         }
 
         private static int NormalizeMsaa(int sampleCount)

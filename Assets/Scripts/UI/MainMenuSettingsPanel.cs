@@ -257,11 +257,11 @@ namespace ShooterPrototype.UI
                 "Качество текстур",
                 0f,
                 2f,
-                () => ClientSettingsService.TextureMipmapLimit,
-                value => ClientSettingsService.SetTextureMipmapLimit(Mathf.RoundToInt(value)),
+                () => ClientSettingsService.TextureQualitySliderIndex,
+                value => ClientSettingsService.SetTextureQualitySliderIndex(Mathf.RoundToInt(value)),
                 wholeNumbers: true,
                 valueLabelFormatter: value =>
-                    ClientSettingsService.GetTextureQualityLabel(Mathf.RoundToInt(value)));
+                    ClientSettingsService.GetTextureQualityLabelFromSliderIndex(Mathf.RoundToInt(value)));
 
             CreateSectionTitle(parent, "Звук");
             CreateSliderRow(

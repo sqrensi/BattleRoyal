@@ -234,6 +234,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextEventCheck.cs" />
     <Compile Include="Assets\Scripts\UI\GameHudController.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerPickupController.cs" />
+    <Compile Include="Assets\Scripts\Player\UserScopedPlayerPrefs.cs" />
     <Compile Include="Assets\Scripts\UI\MatchOutcomeSummary.cs" />
     <Compile Include="Assets\Scripts\Bootstrap\LaunchMode.cs" />
     <Compile Include="Assets\Opsive\OmniAnimation\Packs\Shared\Scripts\CharacterItemEvent.cs" />

@@ -24,6 +24,7 @@ namespace ShooterPrototype.UI
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         private static bool loaded;
+        private static string loadedForPlayerId;
 
         public static event Action Changed;
 
@@ -112,10 +113,10 @@ namespace ShooterPrototype.UI
 
             EnsureLoaded();
 
-            if (PlayerPrefs.GetInt(InitializedPrefKey, 0) != 1)
+            if (UserScopedPlayerPrefs.GetInt(InitializedPrefKey, 0) != 1)
             {
                 MarkAllCurrentAsViewed(profile);
-                PlayerPrefs.SetInt(InitializedPrefKey, 1);
+                UserScopedPlayerPrefs.SetInt(InitializedPrefKey, 1);
                 SaveState();
                 NotifyChanged();
                 return;
@@ -140,12 +141,13 @@ namespace ShooterPrototype.UI
 
             EnsureLoaded();
             var normalized = skinId.Trim();
-            if (!PendingNewSkinIds.Remove(normalized))
+            var wasPending = PendingNewSkinIds.Remove(normalized);
+            var addedViewed = ViewedSkinIds.Add(normalized);
+            if (!wasPending && !addedViewed)
             {
                 return;
             }
 
-            ViewedSkinIds.Add(normalized);
             PruneStalePendingNotifications(saveChanges: false);
             SaveState();
             NotifyChanged();
@@ -159,7 +161,7 @@ namespace ShooterPrototype.UI
             }
 
             EnsureLoaded();
-            if (!MarkSkinAsPending(skinId))
+            if (!ForceSkinAsPending(skinId))
             {
                 return;
             }
@@ -176,7 +178,7 @@ namespace ShooterPrototype.UI
             }
 
             EnsureLoaded();
-            if (!MarkCaseAsPending(caseId))
+            if (!ForceCaseAsPending(caseId))
             {
                 return;
             }
@@ -194,12 +196,12 @@ namespace ShooterPrototype.UI
 
             EnsureLoaded();
             var normalized = caseId.Trim();
-            if (!PendingNewCaseIds.Remove(normalized))
+            var wasPending = PendingNewCaseIds.Remove(normalized);
+            var addedViewed = ViewedCaseIds.Add(normalized);
+            if (!wasPending && !addedViewed)
             {
                 return;
             }
-
-            ViewedCaseIds.Add(normalized);
             PruneStalePendingNotifications(saveChanges: false);
             SaveState();
             NotifyChanged();
@@ -207,10 +209,17 @@ namespace ShooterPrototype.UI
 
         private static void EnsureLoaded()
         {
-            if (loaded)
+            var playerId = PlayerIdentityService.GetOrCreatePlayerId();
+            if (loaded && string.Equals(loadedForPlayerId, playerId, StringComparison.Ordinal))
             {
                 return;
             }
+
+            loadedForPlayerId = playerId;
+            PendingNewSkinIds.Clear();
+            PendingNewCaseIds.Clear();
+            ViewedSkinIds.Clear();
+            ViewedCaseIds.Clear();
 
             LoadSet(ViewedSkinsPrefKey, ViewedSkinIds);
             LoadSet(ViewedCasesPrefKey, ViewedCaseIds);
@@ -320,11 +329,33 @@ namespace ShooterPrototype.UI
         private static bool MarkSkinAsPending(string skinId)
         {
             var normalized = skinId.Trim();
+            if (ViewedSkinIds.Contains(normalized))
+            {
+                return false;
+            }
+
+            return PendingNewSkinIds.Add(normalized);
+        }
+
+        private static bool ForceSkinAsPending(string skinId)
+        {
+            var normalized = skinId.Trim();
             ViewedSkinIds.Remove(normalized);
             return PendingNewSkinIds.Add(normalized);
         }
 
         private static bool MarkCaseAsPending(string caseId)
+        {
+            var normalized = caseId.Trim();
+            if (ViewedCaseIds.Contains(normalized))
+            {
+                return false;
+            }
+
+            return PendingNewCaseIds.Add(normalized);
+        }
+
+        private static bool ForceCaseAsPending(string caseId)
         {
             var normalized = caseId.Trim();
             ViewedCaseIds.Remove(normalized);
@@ -476,10 +507,10 @@ namespace ShooterPrototype.UI
             }
         }
 
-        private static void LoadSet(string prefKey, HashSet<string> target)
+        private static void LoadSet(string basePrefKey, HashSet<string> target)
         {
             target.Clear();
-            var raw = PlayerPrefs.GetString(prefKey, string.Empty);
+            var raw = UserScopedPlayerPrefs.GetString(basePrefKey, string.Empty);
             if (string.IsNullOrWhiteSpace(raw))
             {
                 return;
@@ -497,10 +528,10 @@ namespace ShooterPrototype.UI
 
         private static void SaveState()
         {
-            PlayerPrefs.SetString(ViewedSkinsPrefKey, JoinSet(ViewedSkinIds));
-            PlayerPrefs.SetString(ViewedCasesPrefKey, JoinSet(ViewedCaseIds));
-            PlayerPrefs.SetString(PendingSkinsPrefKey, JoinSet(PendingNewSkinIds));
-            PlayerPrefs.SetString(PendingCasesPrefKey, JoinSet(PendingNewCaseIds));
+            UserScopedPlayerPrefs.SetString(ViewedSkinsPrefKey, JoinSet(ViewedSkinIds));
+            UserScopedPlayerPrefs.SetString(ViewedCasesPrefKey, JoinSet(ViewedCaseIds));
+            UserScopedPlayerPrefs.SetString(PendingSkinsPrefKey, JoinSet(PendingNewSkinIds));
+            UserScopedPlayerPrefs.SetString(PendingCasesPrefKey, JoinSet(PendingNewCaseIds));
             PlayerPrefs.Save();
         }
 
