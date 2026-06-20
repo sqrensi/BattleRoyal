@@ -1025,7 +1025,7 @@ namespace ShooterPrototype.Player
 
         private bool CanAcceptInput()
         {
-            if (PlayerInventoryPanelController.IsOpen)
+            if (PlayerInventoryPanelController.IsOpen || GameHudController.IsPauseMenuOpen)
             {
                 return false;
             }

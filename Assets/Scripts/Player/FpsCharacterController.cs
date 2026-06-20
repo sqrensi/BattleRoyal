@@ -622,6 +622,7 @@ namespace ShooterPrototype.Player
         private void HandleCursorToggle()
         {
             if (SuppressTabCursorToggle ||
+                GameHudController.IsPauseMenuOpen ||
                 PlayerInventoryPanelController.IsOpen ||
                 !toggleCursorWithTab ||
                 !ReadToggleCursorPressed())
@@ -636,6 +637,11 @@ namespace ShooterPrototype.Player
 
         private bool ShouldPauseControls()
         {
+            if (GameHudController.IsPauseMenuOpen)
+            {
+                return true;
+            }
+
             if (gameOverMode)
             {
                 return true;
@@ -1335,7 +1341,7 @@ namespace ShooterPrototype.Player
 
         private bool IsAimBlockedDuringMedkit()
         {
-            if (PlayerInventoryPanelController.IsOpen)
+            if (PlayerInventoryPanelController.IsOpen || GameHudController.IsPauseMenuOpen)
             {
                 return true;
             }

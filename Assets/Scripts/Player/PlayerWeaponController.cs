@@ -316,14 +316,14 @@ namespace ShooterPrototype.Player
         {
             TryResolveRuntimeMuzzle();
 
+            if (PlayerInventoryPanelController.IsOpen || GameHudController.IsPauseMenuOpen)
+            {
+                return;
+            }
+
             if (ReadReloadPressed())
             {
                 TryStartReload();
-            }
-
-            if (PlayerInventoryPanelController.IsOpen)
-            {
-                return;
             }
 
             var firePressed = ReadFirePressed();

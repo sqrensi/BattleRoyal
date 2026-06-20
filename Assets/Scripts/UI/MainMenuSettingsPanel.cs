@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using ShooterPrototype.Player;
@@ -43,6 +44,7 @@ namespace ShooterPrototype.UI
         private bool isVisible;
         private bool suppressRefresh;
         private Coroutine transitionCoroutine;
+        private Action backHandler;
 
         private readonly List<SliderRowBinding> sliderRows = new List<SliderRowBinding>(16);
         private readonly List<ToggleRowBinding> toggleRows = new List<ToggleRowBinding>(4);
@@ -70,6 +72,21 @@ namespace ShooterPrototype.UI
         public void Configure(MainMenuUiSoundController sound)
         {
             uiSound = sound;
+        }
+
+        public void ConfigureLayout(
+            float edgeMarginOverride = 28f,
+            float leftReservedWidthOverride = 228f,
+            float topReservedHeightOverride = 92f)
+        {
+            edgeMargin = edgeMarginOverride;
+            leftReservedWidth = leftReservedWidthOverride;
+            topReservedHeight = topReservedHeightOverride;
+        }
+
+        public void SetBackHandler(Action handler)
+        {
+            backHandler = handler;
         }
 
         public void Build(RectTransform canvasRect)
@@ -157,6 +174,49 @@ namespace ShooterPrototype.UI
             title.alignment = TextAlignmentOptions.Center;
             title.color = TitleColor;
             title.raycastTarget = false;
+
+            if (backHandler != null)
+            {
+                BuildBackButton(headerObject.transform);
+            }
+        }
+
+        private void BuildBackButton(Transform header)
+        {
+            var buttonObject = new GameObject("BackButton");
+            buttonObject.transform.SetParent(header, false);
+
+            var rect = buttonObject.AddComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 0.5f);
+            rect.anchorMax = new Vector2(0f, 0.5f);
+            rect.pivot = new Vector2(0f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = new Vector2(120f, 40f);
+
+            var image = buttonObject.AddComponent<Image>();
+            image.sprite = GetWhiteSprite();
+            image.type = Image.Type.Simple;
+            image.color = ToggleOffColor;
+
+            var button = buttonObject.AddComponent<Button>();
+            button.onClick.AddListener(() =>
+            {
+                uiSound?.PlayButton();
+                backHandler?.Invoke();
+            });
+
+            var labelObject = new GameObject("Label");
+            labelObject.transform.SetParent(buttonObject.transform, false);
+            var labelRect = labelObject.AddComponent<RectTransform>();
+            StretchFull(labelRect);
+
+            var label = labelObject.AddComponent<TextMeshProUGUI>();
+            label.text = "Назад";
+            label.fontSize = 20f;
+            label.fontStyle = FontStyles.Bold;
+            label.alignment = TextAlignmentOptions.Center;
+            label.color = ValueColor;
+            label.raycastTarget = false;
         }
 
         private void BuildScrollContent(Transform parent)

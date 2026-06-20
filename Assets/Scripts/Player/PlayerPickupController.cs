@@ -128,7 +128,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (PlayerInventoryPanelController.IsOpen)
+            if (PlayerInventoryPanelController.IsOpen || GameHudController.IsPauseMenuOpen)
             {
                 return;
             }
@@ -146,6 +146,7 @@ namespace ShooterPrototype.Player
             EnsureGameHud();
 
             if (PlayerInventoryPanelController.IsOpen ||
+                GameHudController.IsPauseMenuOpen ||
                 (medkitController != null && medkitController.IsUsingMedkit) ||
                 (health != null && health.IsDead))
             {

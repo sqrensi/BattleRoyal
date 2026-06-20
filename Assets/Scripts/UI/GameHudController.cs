@@ -80,9 +80,8 @@ namespace ShooterPrototype.UI
         private Coroutine matchStatsCoroutine;
         private bool gameOverInputLocked;
         private GameObject pauseMenuPanel;
-        private GameObject pauseSettingsPanel;
-        private Text pauseMuteButtonLabel;
-        private Text pausePerfButtonLabel;
+        private GameObject pauseMainPanel;
+        private MainMenuSettingsPanel pauseSettingsPanel;
         private bool pauseMenuOpen;
         private bool pauseSettingsOpen;
         private Button backButton;
@@ -93,6 +92,8 @@ namespace ShooterPrototype.UI
         private Image perfButtonImage;
         private Coroutine pingRefreshCoroutine;
         private float fpsSmoothed;
+
+        public static bool IsPauseMenuOpen { get; private set; }
 
         public static void SetLegacyInventoryVisible(bool visible)
         {
@@ -186,13 +187,11 @@ namespace ShooterPrototype.UI
             EnsureHudExists();
             EnsurePauseMenuPanel(canvas != null ? canvas.transform : null);
             pauseMenuOpen = open;
+            IsPauseMenuOpen = open;
+            FpsCharacterController.SuppressTabCursorToggle = open;
             if (!open)
             {
-                pauseSettingsOpen = false;
-                if (pauseSettingsPanel != null)
-                {
-                    pauseSettingsPanel.SetActive(false);
-                }
+                SetPauseSettingsOpen(false);
             }
 
             if (pauseMenuPanel != null)
@@ -206,9 +205,23 @@ namespace ShooterPrototype.UI
         private void SetPauseSettingsOpen(bool open)
         {
             pauseSettingsOpen = open;
-            if (pauseSettingsPanel != null)
+            if (pauseMainPanel != null)
             {
-                pauseSettingsPanel.SetActive(open);
+                pauseMainPanel.SetActive(!open);
+            }
+
+            if (pauseSettingsPanel == null)
+            {
+                return;
+            }
+
+            if (open)
+            {
+                pauseSettingsPanel.Show();
+            }
+            else
+            {
+                pauseSettingsPanel.Hide();
             }
         }
 
@@ -231,8 +244,12 @@ namespace ShooterPrototype.UI
 
         private void HandlePauseSettingsPressed()
         {
-            RefreshPauseSettingsButtonLabels();
             SetPauseSettingsOpen(true);
+        }
+
+        private void HandlePauseResumePressed()
+        {
+            SetPauseMenuOpen(false);
         }
 
         private void HandlePauseSettingsBackPressed()
@@ -285,6 +302,7 @@ namespace ShooterPrototype.UI
             }
             else
             {
+                SetPauseMenuOpen(false);
                 StopPingRefresh();
                 combatHud?.SetActiveForScene(false);
                 killFeed?.SetActiveForScene(false);
@@ -294,6 +312,8 @@ namespace ShooterPrototype.UI
         private void OnDestroy()
         {
             StopPingRefresh();
+            IsPauseMenuOpen = false;
+            FpsCharacterController.SuppressTabCursorToggle = false;
             ClientSettingsService.SettingsChanged -= HandleClientSettingsChanged;
 
             if (networkLauncher != null)
@@ -306,7 +326,6 @@ namespace ShooterPrototype.UI
         {
             RefreshMuteButtonText();
             RefreshPerfButtonVisuals();
-            RefreshPauseSettingsButtonLabels();
         }
 
         private void HandleNetworkStatusChanged(string status)
@@ -777,30 +796,13 @@ namespace ShooterPrototype.UI
                 ClientSettingsService.IsEffectivelyMuted()
                     ? ClientSettingsService.DefaultMasterVolume
                     : 0f);
-            RefreshPauseSettingsButtonLabels();
+            RefreshMuteButtonText();
         }
 
         private void HandlePerfPressed()
         {
             ClientSettingsService.ToggleMaxPerformance();
             RefreshPerfButtonVisuals();
-            RefreshPauseSettingsButtonLabels();
-        }
-
-        private void RefreshPauseSettingsButtonLabels()
-        {
-            if (pauseMuteButtonLabel != null)
-            {
-                pauseMuteButtonLabel.text = ClientSettingsService.IsEffectivelyMuted()
-                    ? "Звук: выкл"
-                    : "Звук: вкл";
-            }
-
-            if (pausePerfButtonLabel != null)
-            {
-                var maxPerformance = ClientSettingsService.MaxPerformanceEnabled;
-                pausePerfButtonLabel.text = maxPerformance ? "Графика: MAX" : "Графика: качество";
-            }
         }
 
         private void LoadMuteState()
@@ -808,7 +810,6 @@ namespace ShooterPrototype.UI
             ClientSettingsService.EnsureLoaded();
             ClientSettingsService.ApplyMasterVolume();
             RefreshMuteButtonText();
-            RefreshPauseSettingsButtonLabels();
         }
 
         private void EnsureHudExists()
@@ -1481,11 +1482,12 @@ namespace ShooterPrototype.UI
 
             var panelObject = new GameObject("Panel");
             panelObject.transform.SetParent(overlayObject.transform, false);
+            pauseMainPanel = panelObject;
             var panelRect = panelObject.AddComponent<RectTransform>();
             panelRect.anchorMin = new Vector2(0.5f, 0.5f);
             panelRect.anchorMax = new Vector2(0.5f, 0.5f);
             panelRect.pivot = new Vector2(0.5f, 0.5f);
-            panelRect.sizeDelta = new Vector2(420f, 320f);
+            panelRect.sizeDelta = new Vector2(420f, 360f);
 
             var panelImage = panelObject.AddComponent<Image>();
             panelImage.color = new Color(0.08f, 0.1f, 0.12f, 0.96f);
@@ -1507,63 +1509,38 @@ namespace ShooterPrototype.UI
 
             CreatePauseMenuButton(
                 panelObject.transform,
+                "ResumeButton",
+                new Vector2(0f, 54f),
+                "Продолжить игру",
+                HandlePauseResumePressed);
+
+            CreatePauseMenuButton(
+                panelObject.transform,
                 "SettingsButton",
-                new Vector2(0f, 36f),
+                new Vector2(0f, -6f),
                 "Настройки",
                 HandlePauseSettingsPressed);
 
             CreatePauseMenuButton(
                 panelObject.transform,
                 "ExitButton",
-                new Vector2(0f, -36f),
+                new Vector2(0f, -66f),
                 "Выйти в меню",
                 HandlePauseExitPressed);
 
-            pauseSettingsPanel = new GameObject("SettingsPanel");
-            pauseSettingsPanel.transform.SetParent(panelObject.transform, false);
-            var settingsRect = pauseSettingsPanel.AddComponent<RectTransform>();
-            settingsRect.anchorMin = Vector2.zero;
-            settingsRect.anchorMax = Vector2.one;
-            settingsRect.offsetMin = Vector2.zero;
-            settingsRect.offsetMax = Vector2.zero;
+            var settingsHostObject = new GameObject("PauseSettingsHost");
+            settingsHostObject.transform.SetParent(overlayObject.transform, false);
+            var settingsHostRect = settingsHostObject.AddComponent<RectTransform>();
+            settingsHostRect.anchorMin = Vector2.zero;
+            settingsHostRect.anchorMax = Vector2.one;
+            settingsHostRect.offsetMin = Vector2.zero;
+            settingsHostRect.offsetMax = Vector2.zero;
 
-            var settingsTitleObject = new GameObject("SettingsTitle");
-            settingsTitleObject.transform.SetParent(pauseSettingsPanel.transform, false);
-            var settingsTitleRect = settingsTitleObject.AddComponent<RectTransform>();
-            settingsTitleRect.anchorMin = new Vector2(0.5f, 1f);
-            settingsTitleRect.anchorMax = new Vector2(0.5f, 1f);
-            settingsTitleRect.pivot = new Vector2(0.5f, 1f);
-            settingsTitleRect.anchoredPosition = new Vector2(0f, -24f);
-            settingsTitleRect.sizeDelta = new Vector2(360f, 48f);
-            var settingsTitleText = settingsTitleObject.AddComponent<Text>();
-            settingsTitleText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            settingsTitleText.fontSize = 30;
-            settingsTitleText.fontStyle = FontStyle.Bold;
-            settingsTitleText.alignment = TextAnchor.MiddleCenter;
-            settingsTitleText.text = "Настройки";
+            pauseSettingsPanel = settingsHostObject.AddComponent<MainMenuSettingsPanel>();
+            pauseSettingsPanel.ConfigureLayout(edgeMarginOverride: 28f, leftReservedWidthOverride: 28f, topReservedHeightOverride: 28f);
+            pauseSettingsPanel.SetBackHandler(HandlePauseSettingsBackPressed);
+            pauseSettingsPanel.Build(settingsHostRect);
 
-            pauseMuteButtonLabel = CreatePauseMenuButton(
-                pauseSettingsPanel.transform,
-                "MuteButton",
-                new Vector2(0f, 48f),
-                ClientSettingsService.IsEffectivelyMuted() ? "Звук: выкл" : "Звук: вкл",
-                HandleMutePressed);
-
-            pausePerfButtonLabel = CreatePauseMenuButton(
-                pauseSettingsPanel.transform,
-                "PerfButton",
-                new Vector2(0f, -16f),
-                ClientSettingsService.MaxPerformanceEnabled ? "Графика: MAX" : "Графика: качество",
-                HandlePerfPressed);
-
-            CreatePauseMenuButton(
-                pauseSettingsPanel.transform,
-                "BackButton",
-                new Vector2(0f, -96f),
-                "Назад",
-                HandlePauseSettingsBackPressed);
-
-            pauseSettingsPanel.SetActive(false);
             overlayObject.SetActive(false);
             overlayObject.transform.SetAsLastSibling();
         }

@@ -194,6 +194,7 @@ namespace ShooterPrototype.Player
 
         private bool BlocksLocalAimInput =>
             PlayerInventoryPanelController.IsOpen ||
+            GameHudController.IsPauseMenuOpen ||
             (medkitController != null && medkitController.IsUsingMedkit) ||
             (holsterController != null && holsterController.IsMedkitWeaponLocked) ||
             (holsterController != null && holsterController.IsSwimmingWeaponLocked) ||

@@ -1,3 +1,4 @@
+using ShooterPrototype.UI;
 using UnityEngine;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -450,6 +451,11 @@ namespace ShooterPrototype.Player
         private bool CanAcceptInput()
         {
             if (playerHealth != null && playerHealth.IsDead)
+            {
+                return false;
+            }
+
+            if (PlayerInventoryPanelController.IsOpen || GameHudController.IsPauseMenuOpen)
             {
                 return false;
             }

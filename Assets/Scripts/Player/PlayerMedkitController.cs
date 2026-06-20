@@ -1,5 +1,6 @@
 using System.Collections;
 using ShooterPrototype.Network;
+using ShooterPrototype.UI;
 using UnityEngine;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
@@ -69,6 +70,11 @@ namespace ShooterPrototype.Player
                     RequestCancelMedkit(notifyServer: true);
                 }
 
+                return;
+            }
+
+            if (GameHudController.IsPauseMenuOpen)
+            {
                 return;
             }
 
