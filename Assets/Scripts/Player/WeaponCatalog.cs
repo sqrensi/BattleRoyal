@@ -35,10 +35,10 @@ namespace ShooterPrototype.Player
         private const string Mp7ReloadInsertPath =
             "Assets/Weapons of Choice FREE - Komposite Sound/GUN/Handling_Gun_01_Clip_In_SFX.wav";
 
-        private static GameObject assaultPrefabCache;
-        private static GameObject sniperPrefabCache;
-        private static GameObject pistolPrefabCache;
-        private static GameObject mp7PrefabCache;
+        private const string PrefabRegistryResourcePath = "Weapons/WeaponPrefabRegistry";
+        private const string EquipResourceRoot = "Weapons/Equip";
+
+        private static GameObject[] equipPrefabsByKind;
         private static GameObject assaultMuzzleFlashCache;
         private static GameObject sniperMuzzleFlashCache;
         private static GameObject pistolMuzzleFlashCache;
@@ -55,9 +55,14 @@ namespace ShooterPrototype.Player
         private static AudioClip sniperReloadInsertCache;
         private static AudioClip pistolReloadInsertCache;
         private static AudioClip mp7ReloadInsertCache;
+        private static bool equipPrefabsInitialized;
 
-        private const string PrefabRegistryResourcePath = "Weapons/WeaponPrefabRegistry";
-        private static bool runtimePrefabsRegistered;
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStaticState()
+        {
+            equipPrefabsByKind = null;
+            equipPrefabsInitialized = false;
+        }
 
         public static WeaponKind ResolveKindFromItemId(string itemId)
         {
@@ -124,78 +129,49 @@ namespace ShooterPrototype.Player
 
         public static void RegisterWeaponPrefab(WeaponKind kind, GameObject prefab)
         {
-            if (!IsValidEquipPrefab(prefab, kind))
+            EnsureEquipPrefabsInitialized();
+            if (!TryResolveEquipPrefab(kind, prefab, out var resolved))
             {
                 return;
             }
 
-            switch (kind)
-            {
-                case WeaponKind.SniperRifle:
-                    sniperPrefabCache = prefab;
-                    break;
-                case WeaponKind.Pistol:
-                    pistolPrefabCache = prefab;
-                    break;
-                case WeaponKind.Mp7:
-                    mp7PrefabCache = prefab;
-                    break;
-                default:
-                    assaultPrefabCache = prefab;
-                    break;
-            }
+            equipPrefabsByKind[(int)kind] = resolved;
+        }
+
+        public static void EnsureWeaponPrefabRegistered(WeaponKind kind)
+        {
+            EnsureEquipPrefabsInitialized();
+            ResolveEquipPrefab(kind);
+        }
+
+        public static bool TryGetWeaponPrefab(WeaponKind kind, out GameObject prefab)
+        {
+            prefab = GetWeaponPrefab(kind);
+            return prefab != null;
         }
 
         public static GameObject GetWeaponPrefab(WeaponKind kind)
         {
-            EnsureRuntimePrefabsRegistered();
-
-            switch (kind)
-            {
-                case WeaponKind.SniperRifle:
-                    if (IsValidEquipPrefab(sniperPrefabCache, WeaponKind.SniperRifle))
-                    {
-                        return sniperPrefabCache;
-                    }
-
-                    sniperPrefabCache = LoadAsset<GameObject>(SniperPrefabPath);
-                    return sniperPrefabCache;
-                case WeaponKind.Pistol:
-                    if (IsValidEquipPrefab(pistolPrefabCache, WeaponKind.Pistol))
-                    {
-                        return pistolPrefabCache;
-                    }
-
-                    pistolPrefabCache = LoadAsset<GameObject>(PistolPrefabPath);
-                    return pistolPrefabCache;
-                case WeaponKind.Mp7:
-                    if (IsValidEquipPrefab(mp7PrefabCache, WeaponKind.Mp7))
-                    {
-                        return mp7PrefabCache;
-                    }
-
-                    mp7PrefabCache = LoadAsset<GameObject>(Mp7PrefabPath);
-                    return mp7PrefabCache;
-                default:
-                    if (IsValidEquipPrefab(assaultPrefabCache, WeaponKind.AssaultRifle))
-                    {
-                        return assaultPrefabCache;
-                    }
-
-                    assaultPrefabCache = LoadAsset<GameObject>(AssaultPrefabPath);
-                    return assaultPrefabCache;
-            }
+            EnsureEquipPrefabsInitialized();
+            return ResolveEquipPrefab(kind);
         }
 
-        private static bool IsValidEquipPrefab(GameObject prefab, WeaponKind expectedKind)
+        public static void PrewarmAllWeaponPrefabs()
         {
-            if (!TryGetProfile(prefab, out var profile))
+            EnsureEquipPrefabsInitialized();
+            for (var kindValue = 0; kindValue <= WeaponKindUtility.MaxKindId; kindValue++)
             {
-                return false;
+                ResolveEquipPrefab((WeaponKind)kindValue);
             }
-
-            return profile.Kind == expectedKind;
         }
+
+#if UNITY_EDITOR
+        public static void ResetEquipPrefabsForEditor()
+        {
+            equipPrefabsByKind = null;
+            equipPrefabsInitialized = false;
+        }
+#endif
 
         public static string GetDefaultItemId(WeaponKind kind)
         {
@@ -212,10 +188,12 @@ namespace ShooterPrototype.Player
             }
         }
 
+        public static string ResolveItemId(WeaponKind kind) => GetDefaultItemId(kind);
+
         public static WeaponProfile GetProfileTemplate(WeaponKind kind)
         {
             var prefab = GetWeaponPrefab(kind);
-            return prefab != null ? prefab.GetComponent<WeaponProfile>() : null;
+            return prefab != null && TryGetProfile(prefab, out var profile) ? profile : null;
         }
 
         public static GameObject LoadMuzzleFlash(WeaponKind kind)
@@ -310,28 +288,122 @@ namespace ShooterPrototype.Player
             }
         }
 
-        private static void EnsureRuntimePrefabsRegistered()
+        private static void EnsureEquipPrefabsInitialized()
         {
-            if (runtimePrefabsRegistered)
+            if (equipPrefabsInitialized)
             {
                 return;
             }
 
-            runtimePrefabsRegistered = true;
+            equipPrefabsInitialized = true;
+            equipPrefabsByKind = new GameObject[WeaponKindUtility.MaxKindId + 1];
 
-#if !UNITY_EDITOR
-            var registry = Resources.Load<WeaponPrefabRegistry>(PrefabRegistryResourcePath);
-            if (registry != null)
+            for (var kindValue = 0; kindValue <= WeaponKindUtility.MaxKindId; kindValue++)
             {
-                registry.RegisterAll();
+                var kind = (WeaponKind)kindValue;
+                equipPrefabsByKind[kindValue] = LoadEquipPrefab(kind);
             }
-            else
+
+            var loadedKinds = string.Empty;
+            for (var kindValue = 0; kindValue <= WeaponKindUtility.MaxKindId; kindValue++)
             {
-                Debug.LogWarning(
-                    $"[WeaponCatalog] Missing Resources/{PrefabRegistryResourcePath}. " +
-                    "Weapon prefabs will not load in builds.");
+                var kind = (WeaponKind)kindValue;
+                if (equipPrefabsByKind[kindValue] != null)
+                {
+                    loadedKinds += kind + "=" + equipPrefabsByKind[kindValue].name + "; ";
+                    continue;
+                }
+
+                Debug.LogError(
+                    $"[WeaponCatalog] Missing equip prefab for {kind}. " +
+                    $"Run 'Shooter Prototype/Weapons/Setup Weapon Prefab Registry' or add " +
+                    $"Resources/{EquipResourceRoot}/{GetDefaultItemId(kind)}.prefab");
+            }
+
+            if (!string.IsNullOrEmpty(loadedKinds))
+            {
+                Debug.Log($"[WeaponCatalog] Equip prefabs loaded: {loadedKinds}");
+            }
+        }
+
+        private static GameObject LoadEquipPrefab(WeaponKind kind)
+        {
+#if UNITY_EDITOR
+            var editorPrefab = LoadAsset<GameObject>(GetPrefabPath(kind));
+            if (TryResolveEquipPrefab(kind, editorPrefab, out var editorResolved))
+            {
+                return editorResolved;
             }
 #endif
+
+            var resourcePrefab = Resources.Load<GameObject>($"{EquipResourceRoot}/{GetDefaultItemId(kind)}");
+            if (TryResolveEquipPrefab(kind, resourcePrefab, out var resourceResolved))
+            {
+                return resourceResolved;
+            }
+
+            var registry = LoadRegistryAsset();
+            if (registry != null &&
+                TryResolveEquipPrefab(kind, registry.GetPrefab(kind), out var registryResolved))
+            {
+                return registryResolved;
+            }
+
+            return null;
+        }
+
+        private static WeaponPrefabRegistry LoadRegistryAsset()
+        {
+#if UNITY_EDITOR
+            var editorRegistry = LoadAsset<WeaponPrefabRegistry>(
+                $"Assets/Resources/{PrefabRegistryResourcePath}.asset");
+            if (editorRegistry != null)
+            {
+                return editorRegistry;
+            }
+#endif
+
+            return Resources.Load<WeaponPrefabRegistry>(PrefabRegistryResourcePath);
+        }
+
+        private static GameObject ResolveEquipPrefab(WeaponKind kind)
+        {
+            var kindIndex = (int)WeaponKindUtility.ClampKind((int)kind);
+            return equipPrefabsByKind != null ? equipPrefabsByKind[kindIndex] : null;
+        }
+
+        private static bool TryResolveEquipPrefab(WeaponKind kind, GameObject prefab, out GameObject resolved)
+        {
+            resolved = null;
+            if (prefab == null || !TryGetProfile(prefab, out var profile))
+            {
+                return false;
+            }
+
+            if (profile.Kind != kind)
+            {
+                Debug.LogWarning(
+                    $"[WeaponCatalog] Prefab '{prefab.name}' profile kind {profile.Kind} " +
+                    $"does not match requested {kind}.");
+            }
+
+            resolved = prefab;
+            return true;
+        }
+
+        private static string GetPrefabPath(WeaponKind kind)
+        {
+            switch (kind)
+            {
+                case WeaponKind.SniperRifle:
+                    return SniperPrefabPath;
+                case WeaponKind.Pistol:
+                    return PistolPrefabPath;
+                case WeaponKind.Mp7:
+                    return Mp7PrefabPath;
+                default:
+                    return AssaultPrefabPath;
+            }
         }
 
         private static T LoadAsset<T>(string assetPath) where T : Object

@@ -1,5 +1,8 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 namespace ShooterPrototype.UI
 {
@@ -34,9 +37,9 @@ namespace ShooterPrototype.UI
         [SerializeField] private float rotationSmoothTime = 0.68f;
 
         [Header("Inventory View")]
-        [SerializeField] private float inventoryForwardOffset = 0.58f;
-        [SerializeField] private float inventoryRightOffset = 0.28f;
-        [SerializeField] private float inventoryFov = 24f;
+        [SerializeField] private float inventoryForwardOffset = 0.36f;
+        [SerializeField] private float inventoryRightOffset = 0.2f;
+        [SerializeField] private float inventoryFov = 36f;
         [SerializeField] private float inventoryTransitionSmoothTime = 0.72f;
 
         [Header("Mouse Parallax")]
@@ -190,9 +193,10 @@ namespace ShooterPrototype.UI
                 Mathf.Infinity,
                 Time.unscaledDeltaTime);
 
+            var mouseScreen = ReadMouseScreenPosition();
             var mouseNormalized = new Vector2(
-                (Input.mousePosition.x / Mathf.Max(1f, Screen.width) - 0.5f) * 2f,
-                (Input.mousePosition.y / Mathf.Max(1f, Screen.height) - 0.5f) * 2f);
+                (mouseScreen.x / Mathf.Max(1f, Screen.width) - 0.5f) * 2f,
+                (mouseScreen.y / Mathf.Max(1f, Screen.height) - 0.5f) * 2f);
             var targetMouseParallax = new Vector3(
                 mouseNormalized.x * mouseParallaxPosition * parallaxScale,
                 mouseNormalized.y * mouseParallaxPosition * 0.55f * parallaxScale,
@@ -277,6 +281,20 @@ namespace ShooterPrototype.UI
 
             var tagged = GameObject.FindGameObjectWithTag("MainCamera");
             return tagged != null ? tagged.GetComponent<Camera>() : null;
+        }
+
+        private static Vector2 ReadMouseScreenPosition()
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (Mouse.current != null)
+            {
+                return Mouse.current.position.ReadValue();
+            }
+
+            return new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+#else
+            return Input.mousePosition;
+#endif
         }
 
         private static bool IsMainMenuScene()

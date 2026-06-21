@@ -1436,22 +1436,11 @@ namespace ShooterPrototype.Player
                 fpsController = GetComponent<FpsCharacterController>();
             }
 
-            var profile = weaponInstance.GetComponent<WeaponProfile>();
-            if (profile == null)
+            if (!WeaponCatalog.TryGetProfile(weaponInstance, out var profile) &&
+                weaponPrefab != null &&
+                !WeaponCatalog.TryGetProfile(weaponPrefab, out profile))
             {
-                if (weaponInstance.name.IndexOf("sniper", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    profile = WeaponProfile.CreateRuntimeSniperDefaults(weaponInstance);
-                }
-                else if (weaponInstance.name.IndexOf("pistol", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    profile = WeaponProfile.CreateRuntimePistolDefaults(weaponInstance);
-                }
-                else if (weaponInstance.name.IndexOf("mp7", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         weaponInstance.name.IndexOf("ppsh", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    profile = WeaponProfile.CreateRuntimeMp7Defaults(weaponInstance);
-                }
+                profile = null;
             }
 
             var weaponController = GetComponent<PlayerWeaponController>();

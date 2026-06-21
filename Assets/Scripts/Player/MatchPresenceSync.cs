@@ -44,7 +44,7 @@ namespace ShooterPrototype.Player
         [SerializeField] private float snapshotSilenceReconnectSeconds = 6f;
         [SerializeField] private float wsReconnectIntervalSeconds = 2f;
         [SerializeField] private float wsJoinGraceSeconds = 8f;
-        [SerializeField] private bool debugRealtimeLogs = false;
+        [SerializeField] private bool debugRealtimeLogs = true;
         [SerializeField] private string charactersResourcesFolder = "Characters";
 
         private RealtimeTransportClient realtimeClient;
@@ -60,6 +60,7 @@ namespace ShooterPrototype.Player
         private bool hasSmoothedServerClock;
         private float lastSnapshotReceivedAt;
         private int lastAppliedServerTick = -1;
+        private int lastAppliedSnapshotSignature;
         private int lastReconciledSelfAuthSampleTick = -1;
         private int lastSnapshotBinaryVersion;
         private float lastConnectRequestAt = -10f;
@@ -133,6 +134,8 @@ namespace ShooterPrototype.Player
             public string AppliedCharacterModelName;
             public PlayerSkinNetworkState AppliedSkinState;
             public bool HasAppliedSkinState;
+            public int LastDebugLoggedWeaponPickupSeq = -1;
+            public int LastDebugLoggedSkinSignature;
             public RemoteWeaponPresentation RemoteWeapon;
             public RemoteLookPitchPosture RemotePitchPosture;
             public RemoteMedkitPresentation RemoteMedkit;
@@ -166,6 +169,12 @@ namespace ShooterPrototype.Player
             syncTickRate = Mathf.Clamp(tickRate, 10, 128);
         }
 
+        private void SyncRemotePresentationDebugLogs()
+        {
+            RemoteThirdPersonPlayerBootstrap.DebugLogs = debugRealtimeLogs;
+            RemoteWeaponPresentation.DebugLogs = debugRealtimeLogs;
+        }
+
         public void Initialize(NetworkLauncher launcher, RealtimeTransportClient transportClient, string ticketId, GameObject remotePrefab)
         {
             networkLauncher = launcher;
@@ -174,6 +183,7 @@ namespace ShooterPrototype.Player
             remotePlayerPrefab = remotePrefab;
             lastSnapshotReceivedAt = Time.unscaledTime;
             lastAppliedServerTick = -1;
+            lastAppliedSnapshotSignature = 0;
             lastReconciledSelfAuthSampleTick = -1;
             hasSmoothedServerClock = false;
             smoothedServerTimeSeconds = 0.0;
@@ -188,6 +198,7 @@ namespace ShooterPrototype.Player
             localLocomotionRig = GetComponent<ProceduralLocomotionRig>();
             localHealth = GetComponent<PlayerHealth>();
             localMedkitController = GetComponent<PlayerMedkitController>();
+            SyncRemotePresentationDebugLogs();
             if (localLocomotionRig == null)
             {
                 localLocomotionRig = GetComponentInChildren<ProceduralLocomotionRig>(true);
@@ -680,14 +691,48 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
-                avatar.Snapshots.Clear();
-                avatar.HorizontalSmoothVelocity = Vector2.zero;
-                avatar.VerticalSmoothVelocity = 0f;
-                avatar.HasSmoothedPlaneLocalPosition = false;
-                avatar.Root.transform.SetPositionAndRotation(
-                    avatar.LastKnownPosition,
-                    Quaternion.Euler(0f, avatar.LastKnownYaw, 0f));
+                SnapRemoteAvatarToPose(avatar, avatar.LastKnownPosition, avatar.LastKnownYaw);
             }
+        }
+
+        private static void SnapRemoteAvatarToPose(RemoteAvatar avatar, Vector3 position, float yaw)
+        {
+            if (avatar?.Root == null)
+            {
+                return;
+            }
+
+            avatar.Snapshots.Clear();
+            avatar.HorizontalSmoothVelocity = Vector2.zero;
+            avatar.VerticalSmoothVelocity = 0f;
+            avatar.HasSmoothedPlaneLocalPosition = false;
+            avatar.Root.transform.SetPositionAndRotation(
+                position,
+                Quaternion.Euler(0f, yaw, 0f));
+        }
+
+        private bool ShouldSnapRemoteTeleport(RemoteAvatar avatar, Vector3 position)
+        {
+            if (avatar?.Root == null)
+            {
+                return false;
+            }
+
+            if (Vector3.Distance(avatar.Root.transform.position, position) >= teleportSnapDistance)
+            {
+                return true;
+            }
+
+            if (avatar.Snapshots.Count > 0)
+            {
+                var lastSnapshot = avatar.Snapshots[avatar.Snapshots.Count - 1].Position;
+                if (Vector3.Distance(lastSnapshot, position) >= teleportSnapDistance)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void ApplyRemoteAvatarSuppressionState()
@@ -843,8 +888,15 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            return player.weaponSlot0Kind != PlayerWeaponLoadout.EmptySlotKind ||
-                   player.weaponSlot1Kind != PlayerWeaponLoadout.EmptySlotKind;
+            if (player.weaponSlot0Kind != PlayerWeaponLoadout.EmptySlotKind ||
+                player.weaponSlot1Kind != PlayerWeaponLoadout.EmptySlotKind)
+            {
+                return true;
+            }
+
+            return player.hasWeapon &&
+                   player.weaponKind >= 0 &&
+                   player.weaponKind <= (int)WeaponKind.Mp7;
         }
 
         private static WeaponKind ResolveRemoteActiveWeaponKind(RealtimeTransportClient.RealtimePlayerState player)
@@ -1094,11 +1146,24 @@ namespace ShooterPrototype.Player
             }
 
             var serverTick = snapshot.serverTick;
-            if (serverTick > 0 && serverTick == lastAppliedServerTick)
+            var signature = ComputeSnapshotPresenceSignature(snapshot);
+            if (serverTick > 0 &&
+                serverTick == lastAppliedServerTick &&
+                signature == lastAppliedSnapshotSignature)
             {
                 lastSnapshotReceivedAt = Time.unscaledTime;
                 lastSnapshotBinaryVersion = snapshot.binaryVersion;
                 return;
+            }
+
+            if (debugRealtimeLogs)
+            {
+                var sameTick = serverTick > 0 && serverTick == lastAppliedServerTick;
+                var reason = sameTick ? "same-tick-signature-change" : "new-server-tick";
+                Debug.Log(
+                    $"[MatchPresenceSync] apply snapshot tick={serverTick} sig={signature} " +
+                    $"prevTick={lastAppliedServerTick} prevSig={lastAppliedSnapshotSignature} " +
+                    $"reason={reason} players={snapshot.players?.Length ?? 0} binVer={snapshot.binaryVersion}");
             }
 
             if (serverTick > 0)
@@ -1106,7 +1171,140 @@ namespace ShooterPrototype.Player
                 lastAppliedServerTick = serverTick;
             }
 
+            lastAppliedSnapshotSignature = signature;
             ApplyRealtimeSnapshot(snapshot);
+        }
+
+        private static string ShortTicketId(string ticketId)
+        {
+            if (string.IsNullOrWhiteSpace(ticketId))
+            {
+                return "?";
+            }
+
+            return ticketId.Length <= 6 ? ticketId : ticketId.Substring(0, 6);
+        }
+
+        private void LogRemoteWeaponApply(
+            RemoteAvatar avatar,
+            RealtimeTransportClient.RealtimePlayerState player,
+            string path)
+        {
+            if (!debugRealtimeLogs || avatar == null || player == null)
+            {
+                return;
+            }
+
+            if (player.weaponPickupSeq == avatar.LastDebugLoggedWeaponPickupSeq)
+            {
+                return;
+            }
+
+            avatar.LastDebugLoggedWeaponPickupSeq = player.weaponPickupSeq;
+            var weaponRoot = avatar.RemoteWeapon != null ? avatar.RemoteWeapon.WeaponRoot : null;
+            Debug.Log(
+                $"[MatchPresenceSync] remote weapon ticket={ShortTicketId(player.ticketId)} path={path} " +
+                $"pickSeq={player.weaponPickupSeq} hasWeapon={player.hasWeapon} holstered={player.isHolstered} " +
+                $"slots={player.weaponSlot0Kind},{player.weaponSlot1Kind} active={player.activeWeaponSlot} " +
+                $"kind={player.weaponKind} weaponRoot={(weaponRoot != null ? weaponRoot.name : "null")}");
+        }
+
+        private void LogRemoteSkinApply(
+            RemoteAvatar avatar,
+            RealtimeTransportClient.RealtimePlayerState player,
+            PlayerSkinNetworkState skinState,
+            string action)
+        {
+            if (!debugRealtimeLogs || avatar == null || player == null)
+            {
+                return;
+            }
+
+            var skinSignature = ComputeSkinStateSignature(skinState);
+            if (action == "skip" && skinSignature == avatar.LastDebugLoggedSkinSignature)
+            {
+                return;
+            }
+
+            avatar.LastDebugLoggedSkinSignature = skinSignature;
+            Debug.Log(
+                $"[MatchPresenceSync] remote skin {action} ticket={ShortTicketId(player.ticketId)} " +
+                $"shirt={skinState.ShirtId} pants={skinState.PantsId} boots={skinState.BootsId} " +
+                $"gloves={skinState.GlovesId} face={skinState.FaceId} hair={skinState.HairId} " +
+                $"wpn={skinState.WeaponAssaultId}/{skinState.WeaponSniperId}/" +
+                $"{skinState.WeaponPistolId}/{skinState.WeaponMp7Id} model={player.characterModel}");
+        }
+
+        private static int ComputeSkinStateSignature(in PlayerSkinNetworkState skinState)
+        {
+            unchecked
+            {
+                var hash = 17;
+                hash = (hash * 31) + HashSkinField(skinState.ShirtId);
+                hash = (hash * 31) + HashSkinField(skinState.PantsId);
+                hash = (hash * 31) + HashSkinField(skinState.BootsId);
+                hash = (hash * 31) + HashSkinField(skinState.GlovesId);
+                hash = (hash * 31) + HashSkinField(skinState.FaceId);
+                hash = (hash * 31) + HashSkinField(skinState.HairId);
+                hash = (hash * 31) + HashSkinField(skinState.WeaponAssaultId);
+                hash = (hash * 31) + HashSkinField(skinState.WeaponSniperId);
+                hash = (hash * 31) + HashSkinField(skinState.WeaponPistolId);
+                hash = (hash * 31) + HashSkinField(skinState.WeaponMp7Id);
+                return hash;
+            }
+        }
+
+        private static int ComputeSnapshotPresenceSignature(RealtimeTransportClient.RealtimeSnapshot snapshot)
+        {
+            if (snapshot?.players == null || snapshot.players.Length == 0)
+            {
+                return 0;
+            }
+
+            unchecked
+            {
+                var hash = 17;
+                hash = (hash * 31) + snapshot.players.Length;
+                for (var i = 0; i < snapshot.players.Length; i++)
+                {
+                    var player = snapshot.players[i];
+                    if (player == null)
+                    {
+                        continue;
+                    }
+
+                    hash = (hash * 31) + (player.ticketId?.GetHashCode(StringComparison.Ordinal) ?? 0);
+                    hash = (hash * 31) + player.weaponPickupSeq;
+                    hash = (hash * 31) + (player.hasWeapon ? 1 : 0);
+                    hash = (hash * 31) + player.weaponKind;
+                    hash = (hash * 31) + player.weaponSlot0Kind;
+                    hash = (hash * 31) + player.weaponSlot1Kind;
+                    hash = (hash * 31) + player.activeWeaponSlot;
+                    hash = (hash * 31) + (player.isHolstered ? 1 : 0);
+                    hash = (hash * 31) + HashSkinField(player.characterModel);
+                    hash = (hash * 31) + HashSkinField(player.skinShirt);
+                    hash = (hash * 31) + HashSkinField(player.skinPants);
+                    hash = (hash * 31) + HashSkinField(player.skinBoots);
+                    hash = (hash * 31) + HashSkinField(player.skinGloves);
+                    hash = (hash * 31) + HashSkinField(player.skinFace);
+                    hash = (hash * 31) + HashSkinField(player.skinHair);
+                    hash = (hash * 31) + HashSkinField(player.skinWeaponAssault);
+                    hash = (hash * 31) + HashSkinField(player.skinWeaponSniper);
+                    hash = (hash * 31) + HashSkinField(player.skinWeaponPistol);
+                    hash = (hash * 31) + HashSkinField(player.skinWeaponMp7);
+                    hash = (hash * 31) + (player.isDead ? 1 : 0);
+                    hash = (hash * 31) + player.deathSeq;
+                }
+
+                return hash;
+            }
+        }
+
+        private static int HashSkinField(string value)
+        {
+            return string.IsNullOrEmpty(value)
+                ? 0
+                : StringComparer.OrdinalIgnoreCase.GetHashCode(value);
         }
 
         private void ApplyRemoteWeaponPresence(RealtimeTransportClient.RealtimePlayerState[] players)
@@ -1147,7 +1345,7 @@ namespace ShooterPrototype.Player
                     remoteWeapon.SetWeaponEquipped(p.hasWeapon);
                     if (p.hasWeapon)
                     {
-                        remoteWeapon.SetWeaponKind(WeaponKindUtility.ClampKind(p.weaponKind));
+                        remoteWeapon.SetWeaponKind(ResolveRemoteActiveWeaponKind(p));
                     }
 
                     remoteWeapon.SetHolstered(p.isHolstered);
@@ -1416,6 +1614,21 @@ namespace ShooterPrototype.Player
 
             tickRate = Math.Max(1.0, tickRate);
 
+            if (player.position != null &&
+                player.sampleTick > avatar.LastAppliedStateTick &&
+                ShouldSnapRemoteTeleport(
+                    avatar,
+                    new Vector3(player.position.x, player.position.y, player.position.z)))
+            {
+                var latestPosition = new Vector3(player.position.x, player.position.y, player.position.z);
+                SnapRemoteAvatarToPose(avatar, latestPosition, player.yaw);
+                var timeSeconds = player.sampleTick / tickRate;
+                var velocity = new Vector3(player.velX, player.velY, player.velZ);
+                AddSnapshot(avatar.Snapshots, timeSeconds, latestPosition, player.yaw, velocity, true);
+                avatar.LastAppliedStateTick = player.sampleTick;
+                return;
+            }
+
             if (player.history != null)
             {
                 for (var i = 0; i < player.history.Length; i++)
@@ -1428,6 +1641,11 @@ namespace ShooterPrototype.Player
 
                     var timeSeconds = sample.sampleTick / tickRate;
                     var position = new Vector3(sample.x, sample.y, sample.z);
+                    if (ShouldSnapRemoteTeleport(avatar, position))
+                    {
+                        SnapRemoteAvatarToPose(avatar, position, sample.yaw);
+                    }
+
                     var velocity = new Vector3(sample.velX, sample.velY, sample.velZ);
                     AddSnapshot(avatar.Snapshots, timeSeconds, position, sample.yaw, velocity, true);
                     avatar.LastAppliedStateTick = sample.sampleTick;
@@ -1500,8 +1718,13 @@ namespace ShooterPrototype.Player
 
                     if (avatar.WasDead && !p.isDead)
                     {
-                        RemoveAvatar(p.ticketId);
-                        continue;
+                        var revivedPosition = new Vector3(p.position.x, p.position.y, p.position.z);
+                        avatar.Health?.SetNetworkDeadState(
+                            false,
+                            p.deathSeq,
+                            new Vector3(p.deathFallDirX, p.deathFallDirY, p.deathFallDirZ));
+                        avatar.WasDead = false;
+                        SnapRemoteAvatarToPose(avatar, revivedPosition, p.yaw);
                     }
 
                     avatar.LastSeenAt = now;
@@ -1535,16 +1758,18 @@ namespace ShooterPrototype.Player
                             p.isHolstered,
                             p.hasWeapon,
                             WeaponKindUtility.ClampKindByte(p.weaponKind));
+                        LogRemoteWeaponApply(avatar, p, "loadout");
                     }
                     else
                     {
                         remoteWeapon?.SetWeaponEquipped(p.hasWeapon);
                         if (p.hasWeapon)
                         {
-                            remoteWeapon?.SetWeaponKind(WeaponKindUtility.ClampKind(p.weaponKind));
+                            remoteWeapon?.SetWeaponKind(ResolveRemoteActiveWeaponKind(p));
                         }
 
                         remoteWeapon?.SetHolstered(p.isHolstered);
+                        LogRemoteWeaponApply(avatar, p, "legacy");
                     }
 
                     remoteWeapon?.RefreshAllWeaponSkins();
@@ -1724,13 +1949,33 @@ namespace ShooterPrototype.Player
                 avatar.AppliedCharacterModelName = modelName;
                 avatar.HasAppliedSkinState = false;
                 CacheRemoteAvatarComponents(avatar);
+                avatar.RemoteWeapon?.RebindThirdPersonBody(avatar.Root.transform.Find("ThirdPersonBody"));
+                if (debugRealtimeLogs)
+                {
+                    var ticketId = avatar.Root.GetComponent<PlayerNetworkIdentity>()?.TicketId ?? "?";
+                    Debug.Log(
+                        $"[MatchPresenceSync] remote model applied ticket={ShortTicketId(ticketId)} model={modelName}");
+                }
             }
         }
 
         private void ApplyRemoteSkins(RemoteAvatar avatar, RealtimeTransportClient.RealtimePlayerState player)
         {
-            if (avatar?.Root == null || player == null || lastSnapshotBinaryVersion < 11)
+            if (avatar?.Root == null || player == null)
             {
+                return;
+            }
+
+            if (!CharacterModelApplier.HasCharacterBody(avatar.Root))
+            {
+                EnsureAvatarHasFallbackModel(avatar.Root);
+                CacheRemoteAvatarComponents(avatar);
+                avatar.RemoteWeapon?.RebindThirdPersonBody(avatar.Root.transform.Find("ThirdPersonBody"));
+            }
+
+            if (lastSnapshotBinaryVersion > 0 && lastSnapshotBinaryVersion < 11)
+            {
+                LogRemoteSkinApply(avatar, player, default, "skip-binver");
                 return;
             }
 
@@ -1747,6 +1992,7 @@ namespace ShooterPrototype.Player
                 player.skinWeaponMp7);
             if (avatar.HasAppliedSkinState && skinState.Equals(avatar.AppliedSkinState))
             {
+                LogRemoteSkinApply(avatar, player, skinState, "skip-unchanged");
                 return;
             }
 
@@ -1754,6 +2000,7 @@ namespace ShooterPrototype.Player
             avatar.RemoteWeapon?.SetNetworkWeaponSkins(skinState);
             avatar.AppliedSkinState = skinState;
             avatar.HasAppliedSkinState = true;
+            LogRemoteSkinApply(avatar, player, skinState, "apply");
         }
 
         private void EnsureAvatarHasFallbackModel(GameObject avatarRoot)
@@ -2170,6 +2417,7 @@ namespace ShooterPrototype.Player
 
             remoteAvatars.Clear();
             lastAppliedServerTick = -1;
+            lastAppliedSnapshotSignature = 0;
             lastReconciledSelfAuthSampleTick = -1;
         }
 

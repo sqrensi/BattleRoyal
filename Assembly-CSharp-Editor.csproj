@@ -55,6 +55,7 @@
     <Compile Include="Assets\TutorialInfo\Scripts\Editor\ReadmeEditor.cs" />
     <Compile Include="Assets\Scripts\Editor\Day5PlayerPrefabCreator.cs" />
     <Compile Include="Assets\Scripts\Editor\PlayerPrefabOptimization.cs" />
+    <Compile Include="Assets\Scripts\Editor\WeaponPrefabRegistrySetupMenu.cs" />
     <Compile Include="Assets\JMO Assets\Cartoon FX Easy Editor\Editor\CFXEasyEditor.cs" />
     <Compile Include="Assets\Scripts\Editor\LeartesStudiosUrPAdapter.cs" />
     <Compile Include="Assets\Scripts\Editor\WeaponBlockSetup.cs" />

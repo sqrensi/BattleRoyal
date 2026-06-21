@@ -63,6 +63,7 @@ namespace ShooterPrototype.Player
         public float CurrentHealth => Mathf.Clamp(currentHealth, 0f, MaxHealth);
         public bool IsDead => isDead;
         public event System.Action<float> LocalDamageTaken;
+        public event System.Action LocalHealthReplenished;
         public int DeathSequence => deathSequence;
         public Vector3 DeathFallDirection => deathFallDirection;
 
@@ -289,6 +290,17 @@ namespace ShooterPrototype.Player
             eliminationMode = enabled;
         }
 
+        public void RestoreFullHealthForRoundStart()
+        {
+            if (networkMode)
+            {
+                return;
+            }
+
+            currentHealth = MaxHealth;
+            LocalHealthReplenished?.Invoke();
+        }
+
         public void ForceReviveAt(Vector3 position, Quaternion rotation)
         {
             if (respawnRoutine != null)
@@ -305,6 +317,7 @@ namespace ShooterPrototype.Player
 
             transform.SetPositionAndRotation(position, rotation);
             ExitDeathState(restoreHealth: true);
+            LocalHealthReplenished?.Invoke();
             presenceSync?.FlushLocalPose();
         }
 

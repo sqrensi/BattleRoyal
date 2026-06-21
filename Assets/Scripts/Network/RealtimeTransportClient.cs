@@ -1512,6 +1512,27 @@ namespace ShooterPrototype.Network
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 
+        [Serializable]
+        private sealed class DuelWeaponPickMessage
+        {
+            public string type;
+            public int weaponKind;
+        }
+
+        public void SendDuelWeaponPick(int weaponKind)
+        {
+            if (!IsReady)
+            {
+                return;
+            }
+
+            _ = SendJsonAsync(new DuelWeaponPickMessage
+            {
+                type = "duel_weapon_pick",
+                weaponKind = Mathf.Clamp(weaponKind, 0, (int)WeaponKind.Mp7)
+            }, cts != null ? cts.Token : CancellationToken.None);
+        }
+
         public void SendPickupRequest(string spawnId, int targetWeaponSlot = -1)
         {
             if (!IsReady || string.IsNullOrWhiteSpace(spawnId))

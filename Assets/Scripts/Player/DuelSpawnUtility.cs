@@ -8,6 +8,9 @@ namespace ShooterPrototype.Player
     {
         private const string TeamOneRootName = "SpawnPoints1";
         private const string TeamTwoRootName = "SpawnPoints2";
+        private const float SpawnProbeHeight = 8f;
+        private const float SpawnProbeDistance = 40f;
+        private const float SpawnSurfaceOffset = 0.05f;
 
         private static Transform teamOneRoot;
         private static Transform teamTwoRoot;
@@ -42,15 +45,60 @@ namespace ShooterPrototype.Player
             return true;
         }
 
+        public static bool TryApplyGroundedPose(
+            Transform playerRoot,
+            CharacterController characterController,
+            Vector3 groundedPosition,
+            Quaternion rotation)
+        {
+            if (playerRoot == null)
+            {
+                return false;
+            }
+
+            var wasEnabled = characterController != null && characterController.enabled;
+            if (characterController != null)
+            {
+                characterController.enabled = false;
+            }
+
+            playerRoot.SetPositionAndRotation(groundedPosition, rotation);
+            Physics.SyncTransforms();
+
+            if (characterController != null)
+            {
+                characterController.enabled = wasEnabled;
+            }
+
+            return true;
+        }
+
         private static Vector3 ResolveGroundedFeetPosition(Vector3 requestedPosition)
         {
-            var origin = requestedPosition + Vector3.up * 2f;
-            if (Physics.Raycast(origin, Vector3.down, out var hit, 6f, ~0, QueryTriggerInteraction.Ignore))
+            if (TryRaycastGround(requestedPosition, SpawnProbeHeight, SpawnProbeDistance, out var hit) ||
+                TryRaycastGround(requestedPosition, 16f, 64f, out hit) ||
+                TryRaycastGround(requestedPosition, 2f, 12f, out hit))
             {
-                return hit.point;
+                return hit.point + Vector3.up * SpawnSurfaceOffset;
             }
 
             return requestedPosition;
+        }
+
+        private static bool TryRaycastGround(
+            Vector3 requestedPosition,
+            float probeHeight,
+            float probeDistance,
+            out RaycastHit hit)
+        {
+            var origin = requestedPosition + Vector3.up * probeHeight;
+            return Physics.Raycast(
+                origin,
+                Vector3.down,
+                out hit,
+                probeHeight + probeDistance,
+                PickupGroundLayers.EnvironmentMask,
+                QueryTriggerInteraction.Ignore);
         }
 
         private static Transform ResolveTeamRoot(int teamIndex)

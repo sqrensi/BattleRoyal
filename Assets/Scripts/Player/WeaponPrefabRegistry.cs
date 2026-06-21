@@ -28,20 +28,34 @@ namespace ShooterPrototype.Player
             }
         }
 
-        public void RegisterAll()
+        public bool TryValidate(out string error)
         {
-            RegisterIfValid(WeaponKind.AssaultRifle, assaultRiflePrefab);
-            RegisterIfValid(WeaponKind.SniperRifle, sniperRiflePrefab);
-            RegisterIfValid(WeaponKind.Pistol, pistolPrefab);
-            RegisterIfValid(WeaponKind.Mp7, mp7Prefab);
-        }
-
-        private static void RegisterIfValid(WeaponKind kind, GameObject prefab)
-        {
-            if (prefab != null)
+            for (var kindValue = 0; kindValue <= WeaponKindUtility.MaxKindId; kindValue++)
             {
-                WeaponCatalog.RegisterWeaponPrefab(kind, prefab);
+                var kind = (WeaponKind)kindValue;
+                var prefab = GetPrefab(kind);
+                if (prefab == null)
+                {
+                    error = $"Missing prefab for {kind}.";
+                    return false;
+                }
+
+                if (!WeaponCatalog.TryGetProfile(prefab, out var profile))
+                {
+                    error = $"Prefab '{prefab.name}' for {kind} has no WeaponProfile.";
+                    return false;
+                }
+
+                if (profile.Kind != kind)
+                {
+                    error =
+                        $"Prefab '{prefab.name}' profile kind is {profile.Kind}, expected {kind}.";
+                    return false;
+                }
             }
+
+            error = string.Empty;
+            return true;
         }
     }
 }

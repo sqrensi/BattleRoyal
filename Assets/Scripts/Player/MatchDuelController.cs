@@ -15,6 +15,7 @@ namespace ShooterPrototype.Player
         private FpsCharacterController fpsController;
         private CharacterController characterController;
         private PlayerWeaponController weaponController;
+        private PlayerWeaponLoadoutController weaponLoadoutController;
         private PlayerPickupController pickupController;
         private PlayerHealth playerHealth;
         private MatchPresenceSync presenceSync;
@@ -24,22 +25,37 @@ namespace ShooterPrototype.Player
         private bool matchOutcomeScheduled;
         private MatchOutcomeSummary? capturedOutcome;
         private bool remotesRevealed;
+        private const int DuelWeaponSpareAmmo = 60;
+
         private int lastSpawnTeleportRound = int.MinValue;
+        private int lastTeleportTeamIndex = -1;
+        private int lastTeleportSlotIndex = -1;
+        private bool localWeaponPickedThisRoundPick;
 
         public bool ShouldSuppressPoseReconcile =>
             string.Equals(currentPhase, "ending", StringComparison.Ordinal);
+
+        public bool IsDuelRoundResetPhase =>
+            string.Equals(currentPhase, "round_pick", StringComparison.Ordinal) ||
+            string.Equals(currentPhase, "round_end", StringComparison.Ordinal) ||
+            string.Equals(currentPhase, "prep", StringComparison.Ordinal);
 
         public void PrepareForNewMatch()
         {
             matchOutcomeScheduled = false;
             capturedOutcome = null;
             lastSpawnTeleportRound = int.MinValue;
+            lastTeleportTeamIndex = -1;
+            lastTeleportSlotIndex = -1;
+            localWeaponPickedThisRoundPick = false;
             remotesRevealed = false;
             currentPhase = "lobby";
             lastState = null;
             DuelSpawnUtility.ClearCachedRoots();
+            WeaponCatalog.PrewarmAllWeaponPrefabs();
             presenceSync?.SetRemoteAvatarsVisible(false);
             fpsController?.SetWeaponPickUiMode(false);
+            gameHud?.HideDuelWeaponPickPanel();
             weaponController?.SetDuelFireBlocked(true);
         }
 
@@ -159,6 +175,7 @@ namespace ShooterPrototype.Player
             fpsController = player.GetComponent<FpsCharacterController>();
             characterController = player.GetComponent<CharacterController>();
             weaponController = player.GetComponent<PlayerWeaponController>();
+            weaponLoadoutController = player.GetComponent<PlayerWeaponLoadoutController>();
             pickupController = player.GetComponent<PlayerPickupController>();
             playerHealth = player.GetComponent<PlayerHealth>();
             presenceSync = player.GetComponent<MatchPresenceSync>();
@@ -222,20 +239,35 @@ namespace ShooterPrototype.Player
             UpdateHud(state);
             gameHud?.SetMatchStatusMessage(string.Empty);
             UpdateDuelPhasePresentation(state, previousPhase, phaseEntered);
+
+            if (phaseEntered &&
+                (string.Equals(currentPhase, "round_pick", StringComparison.Ordinal) ||
+                 string.Equals(currentPhase, "round", StringComparison.Ordinal)))
+            {
+                PrepareLocalPlayerForRoundStart(state);
+            }
+
             TryApplySpawnTeleport(state, phaseEntered);
 
             switch (currentPhase)
             {
+                case "round_pick":
+                    ApplyRoundPickPhase(state, phaseEntered);
+                    break;
                 case "round":
                     ApplyRoundPhase(state, phaseEntered);
                     break;
                 case "prep":
                     SetMovementLocked(false);
                     SetCombatEnabled(false);
+                    fpsController?.SetWeaponPickUiMode(false);
+                    gameHud?.HideDuelWeaponPickPanel();
                     break;
                 case "round_end":
                     SetMovementLocked(false);
                     SetCombatEnabled(IsLocalPlayerAlive());
+                    fpsController?.SetWeaponPickUiMode(false);
+                    gameHud?.HideDuelWeaponPickPanel();
                     UpdateRoundEndBanner(state);
                     break;
                 case "ending":
@@ -245,6 +277,8 @@ namespace ShooterPrototype.Player
                 default:
                     SetMovementLocked(state.duelMovementLocked);
                     SetCombatEnabled(false);
+                    fpsController?.SetWeaponPickUiMode(false);
+                    gameHud?.HideDuelWeaponPickPanel();
                     break;
             }
         }
@@ -254,6 +288,13 @@ namespace ShooterPrototype.Player
             string previousPhase,
             bool phaseEntered)
         {
+            if (phaseEntered && currentPhase == "round_pick")
+            {
+                presenceSync?.SnapAllRemoteAvatarsToLastKnownPose();
+                presenceSync?.SetRemoteAvatarsVisible(true);
+                gameHud?.ClearDuelRoundBanner();
+            }
+
             if (phaseEntered && currentPhase == "round")
             {
                 presenceSync?.SnapAllRemoteAvatarsToLastKnownPose();
@@ -284,7 +325,7 @@ namespace ShooterPrototype.Player
 
         private void TryApplySpawnTeleport(RealtimeTransportClient.MatchStateMessage state, bool phaseEntered)
         {
-            if (currentPhase != "round" || !phaseEntered)
+            if (currentPhase != "round_pick" || !phaseEntered)
             {
                 return;
             }
@@ -299,7 +340,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (!TeleportToAssignedSpawn(state, reviveIfDead: false))
+            if (!TeleportToAssignedSpawn(state, reviveIfDead: true))
             {
                 return;
             }
@@ -307,42 +348,182 @@ namespace ShooterPrototype.Player
             lastSpawnTeleportRound = state.duelRoundNumber;
         }
 
-        private void ApplyRoundPhase(RealtimeTransportClient.MatchStateMessage state, bool phaseEntered)
+        private void ApplyRoundPickPhase(RealtimeTransportClient.MatchStateMessage state, bool phaseEntered)
         {
-            SetMovementLocked(false);
-            SetCombatEnabled(state.duelCombatEnabled && IsLocalPlayerAlive());
+            SetMovementLocked(true);
+            SetCombatEnabled(false);
             fpsController?.SetServerReconciliationSuspended(false);
             EnableCharacterControllerIfNeeded();
 
             if (phaseEntered)
             {
-                ReviveLocalPlayerForRoundStart(state);
+                localWeaponPickedThisRoundPick = false;
+                ClearLocalLoadoutForRoundPick();
+            }
+
+            if (!localWeaponPickedThisRoundPick)
+            {
+                fpsController?.SetWeaponPickUiMode(true);
+                gameHud?.ShowDuelWeaponPickPanel(HandleDuelWeaponPicked);
             }
         }
 
-        private void ReviveLocalPlayerForRoundStart(RealtimeTransportClient.MatchStateMessage state)
+        private void ApplyRoundPhase(RealtimeTransportClient.MatchStateMessage state, bool phaseEntered)
         {
-            if (localPlayer == null || playerHealth == null || !playerHealth.IsDead)
+            SetMovementLocked(false);
+            SetCombatEnabled(state.duelCombatEnabled && IsLocalPlayerAlive());
+            fpsController?.SetServerReconciliationSuspended(false);
+            fpsController?.SetWeaponPickUiMode(false);
+            gameHud?.HideDuelWeaponPickPanel();
+            EnableCharacterControllerIfNeeded();
+
+            if (phaseEntered)
+            {
+                EnsureLocalWeaponFromServerState(state);
+            }
+        }
+
+        private void HandleDuelWeaponPicked(WeaponKind kind)
+        {
+            if (currentPhase != "round_pick" || localWeaponPickedThisRoundPick)
             {
                 return;
             }
 
-            if (!DuelSpawnUtility.TryResolveSpawnPose(
-                    state.duelTeamIndex,
-                    state.duelSpawnSlotIndex,
-                    out var position,
-                    out var rotation))
+            EnsureLocalPlayerBound();
+            if (localPlayer == null)
             {
                 return;
             }
 
-            ForceReviveLocalPlayer(position, rotation, reviveIfDead: true);
+            weaponLoadoutController ??= localPlayer.GetComponent<PlayerWeaponLoadoutController>();
+            if (weaponLoadoutController == null)
+            {
+                return;
+            }
+
+            localWeaponPickedThisRoundPick = true;
+            transportClient?.SendDuelWeaponPick((int)kind);
+            fpsController?.SetWeaponPickUiMode(false);
+            gameHud?.HideDuelWeaponPickPanel();
+        }
+
+        public void HandleWeaponPickRejected(string reason)
+        {
+            if (currentPhase != "round_pick")
+            {
+                return;
+            }
+
+            localWeaponPickedThisRoundPick = false;
+            fpsController?.SetWeaponPickUiMode(true);
+            gameHud?.ShowDuelWeaponPickPanel(HandleDuelWeaponPicked);
+
+            if (!string.IsNullOrWhiteSpace(reason))
+            {
+                Debug.LogWarning($"[MatchDuel] Weapon pick rejected: {reason}");
+            }
+        }
+
+        private void ClearLocalLoadoutForRoundPick()
+        {
+            if (localPlayer == null)
+            {
+                return;
+            }
+
+            weaponLoadoutController ??= localPlayer.GetComponent<PlayerWeaponLoadoutController>();
+            weaponLoadoutController?.Loadout?.ClearForSpawn();
+
+            var weaponMount = localPlayer.GetComponent<PlayerWeaponMount>();
+            if (weaponMount != null && weaponMount.HasMountedWeapon)
+            {
+                weaponMount.UnequipWeapon();
+            }
+
+            localPlayer.GetComponent<PlayerWeaponHolsterController>()?.ForceHolsteredIdleState();
+            pickupController?.RefreshWeaponAvailability();
+        }
+
+        private bool HasLocalWeapon()
+        {
+            return weaponLoadoutController != null &&
+                   weaponLoadoutController.Loadout != null &&
+                   weaponLoadoutController.Loadout.HasAnyWeapon;
+        }
+
+        private void EnsureLocalWeaponFromServerState(RealtimeTransportClient.MatchStateMessage state)
+        {
+            if (HasLocalWeapon() || state == null || state.duelPickedWeaponKind < 0)
+            {
+                return;
+            }
+
+            ApplyLocalWeaponKind(WeaponKindUtility.ClampKind(state.duelPickedWeaponKind));
+        }
+
+        private bool ApplyLocalWeaponKind(WeaponKind kind)
+        {
+            if (localPlayer == null)
+            {
+                return false;
+            }
+
+            weaponLoadoutController ??= localPlayer.GetComponent<PlayerWeaponLoadoutController>();
+            if (weaponLoadoutController == null)
+            {
+                return false;
+            }
+
+            if (!weaponLoadoutController.ApplyDuelRoundWeaponPick(kind, DuelWeaponSpareAmmo))
+            {
+                return false;
+            }
+
+            localPlayer.GetComponent<PlayerWeaponHolsterController>()?.ForceArmedState();
+            pickupController?.RefreshWeaponAvailability();
+            return true;
+        }
+
+        private void PrepareLocalPlayerForRoundStart(RealtimeTransportClient.MatchStateMessage state)
+        {
+            EnsureLocalPlayerBound();
+            if (localPlayer == null || playerHealth == null)
+            {
+                return;
+            }
+
+            if (playerHealth.IsDead)
+            {
+                if (DuelSpawnUtility.TryResolveSpawnPose(
+                        state.duelTeamIndex,
+                        state.duelSpawnSlotIndex,
+                        out var position,
+                        out var rotation))
+                {
+                    ForceReviveLocalPlayer(position, rotation, reviveIfDead: true);
+                }
+                else
+                {
+                    playerHealth.ForceReviveAt(localPlayer.position, localPlayer.rotation);
+                    fpsController?.NotifyLocalRespawned(1.5f);
+                }
+            }
+            else
+            {
+                playerHealth.RestoreFullHealthForRoundStart();
+            }
+
+            presenceSync?.ResetSelfAuthoritativeReconcileCursor();
+            presenceSync?.FlushLocalPose();
         }
 
         private void ApplyLockedPhase(RealtimeTransportClient.MatchStateMessage state)
         {
             SetMovementLocked(true);
             SetCombatEnabled(false);
+            fpsController?.SetWeaponPickUiMode(false);
+            gameHud?.HideDuelWeaponPickPanel();
             fpsController?.SetServerReconciliationSuspended(true);
         }
 
@@ -364,6 +545,8 @@ namespace ShooterPrototype.Player
             {
                 case "prep":
                     return $"Подготовка — {countdown} сек.";
+                case "round_pick":
+                    return $"Выбор оружия — {countdown} сек.";
                 case "round":
                     return $"Раунд {Mathf.Max(1, state.duelRoundNumber)} — {countdown} сек.";
                 case "round_end":
@@ -401,6 +584,8 @@ namespace ShooterPrototype.Player
             }
 
             ForceReviveLocalPlayer(position, rotation, reviveIfDead);
+            lastTeleportTeamIndex = state.duelTeamIndex;
+            lastTeleportSlotIndex = state.duelSpawnSlotIndex;
             presenceSync?.ResetSelfAuthoritativeReconcileCursor();
             StartCoroutine(FlushPoseAfterTeleport());
             return true;
@@ -408,9 +593,26 @@ namespace ShooterPrototype.Player
 
         private System.Collections.IEnumerator FlushPoseAfterTeleport()
         {
-            for (var i = 0; i < 4; i++)
+            for (var i = 0; i < 6; i++)
             {
                 yield return null;
+
+                if (localPlayer != null &&
+                    lastTeleportTeamIndex >= 0 &&
+                    lastTeleportSlotIndex >= 0 &&
+                    DuelSpawnUtility.TryResolveSpawnPose(
+                        lastTeleportTeamIndex,
+                        lastTeleportSlotIndex,
+                        out var groundedPosition,
+                        out var groundedRotation))
+                {
+                    DuelSpawnUtility.TryApplyGroundedPose(
+                        localPlayer.transform,
+                        characterController,
+                        groundedPosition,
+                        groundedRotation);
+                }
+
                 Physics.SyncTransforms();
                 presenceSync?.FlushLocalPose();
             }

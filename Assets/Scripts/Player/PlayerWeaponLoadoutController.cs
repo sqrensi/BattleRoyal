@@ -1,3 +1,4 @@
+using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
 using ShooterPrototype.UI;
 using System.Collections;
@@ -226,6 +227,11 @@ namespace ShooterPrototype.Player
 
         public void RequestDropWeaponSlot(int slotIndex)
         {
+            if (!CanDropWeaponToWorld())
+            {
+                return;
+            }
+
             if (loadout == null || slotIndex < 0 || slotIndex > 1 || !loadout.IsSlotOccupied(slotIndex))
             {
                 return;
@@ -487,7 +493,9 @@ namespace ShooterPrototype.Player
             }
 
             var weaponRoot = weaponMount.MountedWeaponRoot;
-            return weaponRoot != null ? weaponRoot.GetComponent<WeaponProfile>() : null;
+            return weaponRoot != null && WeaponCatalog.TryGetProfile(weaponRoot.gameObject, out var profile)
+                ? profile
+                : null;
         }
 
         public void ApplyServerDrop(int slotIndex, in WeaponLoadoutServerState serverState)
@@ -557,6 +565,7 @@ namespace ShooterPrototype.Player
             int magAmmo = -1,
             int preferredSlot = -1)
         {
+            EnsureRuntimeReferences();
             if (loadout == null)
             {
                 return false;
@@ -577,7 +586,7 @@ namespace ShooterPrototype.Player
             {
                 if (loadout.IsSlotOccupied(preferredSlot))
                 {
-                    ApplyLocalDrop(preferredSlot, spawnWorldPickup: true);
+                    ApplyLocalDrop(preferredSlot, spawnWorldPickup: CanDropWeaponToWorld());
                 }
             }
             else if (loadout.OccupiedCount >= PlayerWeaponLoadout.MaxSlots)
@@ -585,7 +594,7 @@ namespace ShooterPrototype.Player
                 var dropSlot = ResolveDropSlotIndex();
                 if (dropSlot >= 0)
                 {
-                    ApplyLocalDrop(dropSlot, spawnWorldPickup: true);
+                    ApplyLocalDrop(dropSlot, spawnWorldPickup: CanDropWeaponToWorld());
                 }
             }
 
@@ -631,8 +640,108 @@ namespace ShooterPrototype.Player
             return true;
         }
 
+        public void ApplyAuthoritativeSnapshotLoadout(RealtimeTransportClient.RealtimePlayerState player)
+        {
+            if (player == null)
+            {
+                return;
+            }
+
+            EnsureRuntimeReferences();
+            if (loadout == null)
+            {
+                return;
+            }
+
+            var slot0Kind = (byte)Mathf.Clamp(player.weaponSlot0Kind, 0, 255);
+            var slot1Kind = (byte)Mathf.Clamp(player.weaponSlot1Kind, 0, 255);
+            var hasLoadout = player.hasWeapon ||
+                             slot0Kind != PlayerWeaponLoadout.EmptySlotKind ||
+                             slot1Kind != PlayerWeaponLoadout.EmptySlotKind;
+            if (!hasLoadout)
+            {
+                return;
+            }
+
+            var activeSlot = player.activeWeaponSlot;
+            if (activeSlot != 0 && activeSlot != 1)
+            {
+                activeSlot = slot0Kind != PlayerWeaponLoadout.EmptySlotKind ? 0 : 1;
+            }
+
+            var activeKind = ResolveSnapshotActiveKind(slot0Kind, slot1Kind, activeSlot, player.weaponKind);
+            var magAmmo = ResolveDefaultMagAmmo(activeKind);
+            var assaultReserveAmmo = HasSlotKind(slot0Kind, slot1Kind, WeaponKind.AssaultRifle) ? 60 : -1;
+            var sniperReserveAmmo = HasSlotKind(slot0Kind, slot1Kind, WeaponKind.SniperRifle) ? 0 : -1;
+            var pistolReserveAmmo = HasSlotKind(slot0Kind, slot1Kind, WeaponKind.Pistol) ? 0 : -1;
+            var mp7ReserveAmmo = HasSlotKind(slot0Kind, slot1Kind, WeaponKind.Mp7) ? 0 : -1;
+
+            ApplyServerPickup(new WeaponLoadoutServerState(
+                true,
+                slot0Kind,
+                slot1Kind,
+                ResolveItemIdForSlotKind(slot0Kind),
+                ResolveItemIdForSlotKind(slot1Kind),
+                activeSlot,
+                player.isHolstered,
+                string.Empty,
+                magAmmo,
+                -1,
+                assaultReserveAmmo,
+                sniperReserveAmmo,
+                pistolReserveAmmo,
+                mp7ReserveAmmo));
+        }
+
+        public bool ApplyDuelRoundWeaponPick(WeaponKind kind, int spareAmmo = 60)
+        {
+            EnsureRuntimeReferences();
+            if (loadout == null)
+            {
+                return false;
+            }
+
+            if (WeaponCatalog.GetWeaponPrefab(kind) == null)
+            {
+                Debug.LogWarning($"[WeaponLoadout] Duel pick failed: missing prefab for {kind}.");
+                return false;
+            }
+
+            var itemId = WeaponCatalog.ResolveItemId(kind);
+            var magAmmo = ResolveDefaultMagAmmo(kind);
+            var clampedSpareAmmo = Mathf.Clamp(spareAmmo, 0, 999);
+            BuildSpareAmmoForKind(
+                kind,
+                clampedSpareAmmo,
+                out var assaultReserveAmmo,
+                out var sniperReserveAmmo,
+                out var pistolReserveAmmo,
+                out var mp7ReserveAmmo);
+
+            ApplyServerPickup(new WeaponLoadoutServerState(
+                true,
+                WeaponKindUtility.ClampKindByte((int)kind),
+                PlayerWeaponLoadout.EmptySlotKind,
+                itemId,
+                string.Empty,
+                0,
+                false,
+                string.Empty,
+                magAmmo,
+                clampedSpareAmmo,
+                assaultReserveAmmo,
+                sniperReserveAmmo,
+                pistolReserveAmmo,
+                mp7ReserveAmmo));
+
+            return loadout.HasAnyWeapon &&
+                   weaponMount != null &&
+                   weaponMount.HasMountedWeapon;
+        }
+
         public void EnsureActiveWeaponEquipped(bool drawWeapon = true)
         {
+            EnsureRuntimeReferences();
             if (loadout == null || !loadout.HasAnyWeapon || weaponMount == null)
             {
                 return;
@@ -848,6 +957,7 @@ namespace ShooterPrototype.Player
 
         private void EquipActiveSlotWeapon(bool drawIfHolstered)
         {
+            EnsureRuntimeReferences();
             if (loadout == null || weaponMount == null)
             {
                 return;
@@ -931,6 +1041,119 @@ namespace ShooterPrototype.Player
             EquipActiveSlotWeapon(true);
         }
 
+        private void EnsureRuntimeReferences()
+        {
+            if (loadout == null)
+            {
+                loadout = GetComponent<PlayerWeaponLoadout>();
+            }
+
+            if (weaponMount == null)
+            {
+                weaponMount = GetComponent<PlayerWeaponMount>();
+            }
+
+            if (weaponHolster == null)
+            {
+                weaponHolster = GetComponent<PlayerWeaponHolsterController>();
+            }
+
+            if (weaponController == null)
+            {
+                weaponController = GetComponent<PlayerWeaponController>();
+            }
+
+            if (presenceSync == null)
+            {
+                presenceSync = GetComponent<MatchPresenceSync>();
+            }
+        }
+
+        private static string ResolveItemIdForSlotKind(byte slotKind)
+        {
+            if (slotKind == PlayerWeaponLoadout.EmptySlotKind)
+            {
+                return string.Empty;
+            }
+
+            return WeaponCatalog.GetDefaultItemId(WeaponKindUtility.ClampKind(slotKind));
+        }
+
+        private static WeaponKind ResolveSnapshotActiveKind(
+            byte slot0Kind,
+            byte slot1Kind,
+            int activeSlot,
+            int fallbackWeaponKind)
+        {
+            if (activeSlot == 0 && slot0Kind != PlayerWeaponLoadout.EmptySlotKind)
+            {
+                return WeaponKindUtility.ClampKind(slot0Kind);
+            }
+
+            if (activeSlot == 1 && slot1Kind != PlayerWeaponLoadout.EmptySlotKind)
+            {
+                return WeaponKindUtility.ClampKind(slot1Kind);
+            }
+
+            if (slot0Kind != PlayerWeaponLoadout.EmptySlotKind)
+            {
+                return WeaponKindUtility.ClampKind(slot0Kind);
+            }
+
+            if (slot1Kind != PlayerWeaponLoadout.EmptySlotKind)
+            {
+                return WeaponKindUtility.ClampKind(slot1Kind);
+            }
+
+            return WeaponKindUtility.ClampKind(fallbackWeaponKind);
+        }
+
+        private static bool HasSlotKind(byte slot0Kind, byte slot1Kind, WeaponKind kind)
+        {
+            var kindByte = WeaponKindUtility.ClampKindByte((int)kind);
+            return slot0Kind == kindByte || slot1Kind == kindByte;
+        }
+
+        private static int ResolveDefaultMagAmmo(WeaponKind kind)
+        {
+            return kind switch
+            {
+                WeaponKind.SniperRifle => 7,
+                WeaponKind.Pistol => 12,
+                _ => 30
+            };
+        }
+
+        private static void BuildSpareAmmoForKind(
+            WeaponKind kind,
+            int spareAmmo,
+            out int assaultReserveAmmo,
+            out int sniperReserveAmmo,
+            out int pistolReserveAmmo,
+            out int mp7ReserveAmmo)
+        {
+            assaultReserveAmmo = -1;
+            sniperReserveAmmo = -1;
+            pistolReserveAmmo = -1;
+            mp7ReserveAmmo = -1;
+
+            switch (kind)
+            {
+                case WeaponKind.SniperRifle:
+                    sniperReserveAmmo = spareAmmo;
+                    break;
+                case WeaponKind.Pistol:
+                    pistolReserveAmmo = spareAmmo;
+                    break;
+                case WeaponKind.Mp7:
+                    mp7ReserveAmmo = spareAmmo;
+                    break;
+                default:
+                    assaultReserveAmmo = spareAmmo;
+                    break;
+            }
+        }
+
         private void ApplyServerLoadout(in WeaponLoadoutServerState serverState)
         {
             if (!serverState.HasWeaponLoadout || loadout == null)
@@ -1001,6 +1224,8 @@ namespace ShooterPrototype.Player
 
             return loadout.IsSlotOccupied(0) ? 0 : 1;
         }
+
+        private static bool CanDropWeaponToWorld() => !ActiveMatchContext.IsDuel;
 
         private bool CanAcceptWeaponSlotInput()
         {

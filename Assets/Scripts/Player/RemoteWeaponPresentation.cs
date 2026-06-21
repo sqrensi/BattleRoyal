@@ -55,6 +55,8 @@ namespace ShooterPrototype.Player
         [SerializeField] private float weaponSwapIdleSeconds = 0.12f;
         [SerializeField] private float remoteSniperScaleMultiplier = 0.5882353f;
 
+        public static bool DebugLogs { get; set; }
+
         private Transform weaponRoot;
         private Transform thirdPersonBody;
         private Vector3 baseAttachLocalPosition;
@@ -149,7 +151,21 @@ namespace ShooterPrototype.Player
                 activeWeaponKind == appliedActiveWeaponKind &&
                 IsHandWeaponPresentationCurrent(resolvedWeaponKind, hasWeapon, holstered))
             {
+                if (DebugLogs)
+                {
+                    Debug.Log(
+                        $"[RemoteWeaponPresentation] skip loadout kind={resolvedWeaponKind} hasWeapon={hasWeapon} " +
+                        $"holstered={holstered} weaponRoot={(weaponRoot != null ? weaponRoot.name : "null")}");
+                }
+
                 return;
+            }
+
+            if (DebugLogs)
+            {
+                Debug.Log(
+                    $"[RemoteWeaponPresentation] apply loadout kind={resolvedWeaponKind} hasWeapon={hasWeapon} " +
+                    $"holstered={holstered} slots={slot0Kind},{slot1Kind} active={activeWeaponSlot}");
             }
 
             appliedSlot0Kind = slot0Kind;
@@ -443,6 +459,14 @@ namespace ShooterPrototype.Player
 
             if (networkHasWeapon == equipped)
             {
+                if (equipped &&
+                    !networkHolstered &&
+                    (weaponRoot == null || !HandWeaponRootMatchesKind(networkWeaponKind)))
+                {
+                    appliedHasWeapon = false;
+                    EnsureAttached();
+                }
+
                 return;
             }
 
@@ -609,6 +633,28 @@ namespace ShooterPrototype.Player
             }
 
             EnsureAttachTarget(body);
+        }
+
+        public void RebindThirdPersonBody(Transform body)
+        {
+            InvalidateAttachTarget();
+            Configure(body);
+            ResetAppliedLoadout();
+            var hasLoadout = networkHasWeapon ||
+                             networkSlot0Kind != PlayerWeaponLoadout.EmptySlotKind ||
+                             networkSlot1Kind != PlayerWeaponLoadout.EmptySlotKind;
+            if (!hasLoadout)
+            {
+                return;
+            }
+
+            SetWeaponLoadout(
+                networkSlot0Kind,
+                networkSlot1Kind,
+                networkActiveWeaponSlot,
+                networkHolstered,
+                networkHasWeapon || hasLoadout,
+                (byte)networkWeaponKind);
         }
 
         public void InvalidateAttachTarget()

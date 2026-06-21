@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using ShooterPrototype.Bootstrap;
 using ShooterPrototype.Matchmaking;
@@ -29,6 +30,7 @@ namespace ShooterPrototype.UI
         private const int MatchWaitStatusLayoutVersion = 5;
         private const int DuelTopCenterHudLayoutVersion = 1;
         private const int DuelRoundCountdownLayoutVersion = 1;
+        private const int DuelWeaponPickLayoutVersion = 1;
         private const float GameplayHintOffsetX = 72f;
         private const float GameplayHintOffsetY = -48f;
 
@@ -61,6 +63,9 @@ namespace ShooterPrototype.UI
         private TMP_Text matchStatusText;
         private TMP_Text duelTopCenterText;
         private TMP_Text duelRoundCountdownText;
+        private RectTransform duelWeaponPickPanel;
+        private Action<WeaponKind> duelWeaponPickHandler;
+        private bool duelWeaponPickVisible;
         private GameObject gameplayHintPanel;
         private TMP_Text gameplayHintText;
         private string brGameplayHint = string.Empty;
@@ -555,6 +560,28 @@ namespace ShooterPrototype.UI
         public void ClearDuelRoundBanner()
         {
             combatHud?.ClearDuelRoundBanner();
+        }
+
+        public void ShowDuelWeaponPickPanel(Action<WeaponKind> onPick)
+        {
+            EnsureHudExists();
+            EnsureDuelWeaponPickPanel(canvas != null ? canvas.transform : null);
+            duelWeaponPickHandler = onPick;
+            duelWeaponPickVisible = true;
+            if (duelWeaponPickPanel != null)
+            {
+                duelWeaponPickPanel.gameObject.SetActive(true);
+            }
+        }
+
+        public void HideDuelWeaponPickPanel()
+        {
+            duelWeaponPickHandler = null;
+            duelWeaponPickVisible = false;
+            if (duelWeaponPickPanel != null)
+            {
+                duelWeaponPickPanel.gameObject.SetActive(false);
+            }
         }
 
         public Transform GetHudCanvasTransform()
@@ -1178,6 +1205,7 @@ namespace ShooterPrototype.UI
             EnsureMatchWaitStatusText(root);
             EnsureDuelTopCenterHud(root);
             EnsureDuelRoundCountdownText(root);
+            EnsureDuelWeaponPickPanel(root);
 
             if (victoryBannerText == null)
             {
@@ -1360,6 +1388,118 @@ namespace ShooterPrototype.UI
             duelRoundCountdownText.raycastTarget = false;
             duelRoundCountdownText.text = string.Empty;
             countdownObject.SetActive(false);
+        }
+
+        private void EnsureDuelWeaponPickPanel(Transform root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var existingPanel = root.Find("DuelWeaponPickPanel");
+            if (existingPanel != null)
+            {
+                var versionMarker = existingPanel.GetComponent<CornerStatsLayoutMarker>();
+                if (versionMarker != null &&
+                    versionMarker.Version >= DuelWeaponPickLayoutVersion &&
+                    duelWeaponPickPanel != null)
+                {
+                    return;
+                }
+
+                duelWeaponPickPanel = null;
+                Destroy(existingPanel.gameObject);
+            }
+
+            var panelObject = new GameObject("DuelWeaponPickPanel");
+            panelObject.transform.SetParent(root, false);
+            panelObject.AddComponent<CornerStatsLayoutMarker>().Version = DuelWeaponPickLayoutVersion;
+
+            duelWeaponPickPanel = panelObject.AddComponent<RectTransform>();
+            duelWeaponPickPanel.anchorMin = new Vector2(0.5f, 0.5f);
+            duelWeaponPickPanel.anchorMax = new Vector2(0.5f, 0.5f);
+            duelWeaponPickPanel.pivot = new Vector2(0.5f, 0.5f);
+            duelWeaponPickPanel.sizeDelta = new Vector2(760f, 220f);
+            duelWeaponPickPanel.anchoredPosition = new Vector2(0f, -24f);
+
+            var panelImage = panelObject.AddComponent<Image>();
+            UiTheme.ApplyPanel(panelImage, UiPanelStyle.Hud);
+            panelImage.raycastTarget = true;
+
+            var titleObject = new GameObject("DuelWeaponPickTitle");
+            titleObject.transform.SetParent(panelObject.transform, false);
+            var titleRect = titleObject.AddComponent<RectTransform>();
+            titleRect.anchorMin = new Vector2(0f, 1f);
+            titleRect.anchorMax = new Vector2(1f, 1f);
+            titleRect.pivot = new Vector2(0.5f, 1f);
+            titleRect.sizeDelta = new Vector2(0f, 36f);
+            titleRect.anchoredPosition = new Vector2(0f, -8f);
+            var titleText = titleObject.AddComponent<TextMeshProUGUI>();
+            ApplyBoldHudText(titleText);
+            titleText.fontSize = 24f;
+            titleText.alignment = TextAlignmentOptions.Center;
+            titleText.text = "Выберите оружие";
+
+            var buttonsRoot = new GameObject("DuelWeaponPickButtons");
+            buttonsRoot.transform.SetParent(panelObject.transform, false);
+            var buttonsRect = buttonsRoot.AddComponent<RectTransform>();
+            buttonsRect.anchorMin = new Vector2(0.05f, 0.08f);
+            buttonsRect.anchorMax = new Vector2(0.95f, 0.72f);
+            buttonsRect.offsetMin = Vector2.zero;
+            buttonsRect.offsetMax = Vector2.zero;
+
+            var weaponKinds = new[]
+            {
+                WeaponKind.AssaultRifle,
+                WeaponKind.SniperRifle,
+                WeaponKind.Pistol,
+                WeaponKind.Mp7
+            };
+
+            for (var i = 0; i < weaponKinds.Length; i++)
+            {
+                CreateDuelWeaponPickButton(buttonsRoot.transform, weaponKinds[i], i, weaponKinds.Length);
+            }
+
+            panelObject.SetActive(false);
+        }
+
+        private void CreateDuelWeaponPickButton(Transform parent, WeaponKind kind, int index, int count)
+        {
+            var slotWidth = 1f / Mathf.Max(1, count);
+            var minX = index * slotWidth;
+            var maxX = minX + slotWidth;
+
+            var buttonObject = new GameObject($"DuelWeaponPick_{kind}");
+            buttonObject.transform.SetParent(parent, false);
+
+            var buttonRect = buttonObject.AddComponent<RectTransform>();
+            buttonRect.anchorMin = new Vector2(minX, 0f);
+            buttonRect.anchorMax = new Vector2(maxX, 1f);
+            buttonRect.offsetMin = new Vector2(8f, 0f);
+            buttonRect.offsetMax = new Vector2(-8f, 0f);
+
+            var background = buttonObject.AddComponent<Image>();
+            UiTheme.ApplyPanel(background, UiPanelStyle.Hud);
+            background.raycastTarget = true;
+
+            var iconObject = new GameObject("Icon");
+            iconObject.transform.SetParent(buttonObject.transform, false);
+            var iconRect = iconObject.AddComponent<RectTransform>();
+            iconRect.anchorMin = new Vector2(0.12f, 0.12f);
+            iconRect.anchorMax = new Vector2(0.88f, 0.88f);
+            iconRect.offsetMin = Vector2.zero;
+            iconRect.offsetMax = Vector2.zero;
+            var iconImage = iconObject.AddComponent<Image>();
+            iconImage.sprite = InventoryIconCatalog.GetWeaponIcon(kind);
+            iconImage.preserveAspect = true;
+            iconImage.raycastTarget = false;
+
+            var button = buttonObject.AddComponent<Button>();
+            button.targetGraphic = background;
+            var capturedKind = kind;
+            button.onClick.AddListener(() => duelWeaponPickHandler?.Invoke(capturedKind));
         }
 
         private void EnsureGameplayHintPanel(Transform root)

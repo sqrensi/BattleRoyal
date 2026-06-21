@@ -122,12 +122,16 @@ namespace ShooterPrototype.Player
 
         public void RegisterWeaponSourcePrefab(GameObject sourcePrefab, string itemId = null)
         {
-            if (!WeaponCatalog.IsFullWeaponPrefab(sourcePrefab))
+            var kind = !string.IsNullOrWhiteSpace(itemId)
+                ? WeaponCatalog.ResolveKindFromItemId(itemId)
+                : WeaponCatalog.ResolveKindFromPrefab(sourcePrefab, itemId);
+            WeaponCatalog.EnsureWeaponPrefabRegistered(kind);
+
+            if (sourcePrefab == null || !WeaponCatalog.IsFullWeaponPrefab(sourcePrefab))
             {
                 return;
             }
 
-            var kind = WeaponCatalog.ResolveKindFromPrefab(sourcePrefab, itemId);
             WeaponCatalog.RegisterWeaponPrefab(kind, sourcePrefab);
         }
     }

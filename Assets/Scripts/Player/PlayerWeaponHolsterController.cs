@@ -142,14 +142,25 @@ namespace ShooterPrototype.Player
 
         private void Awake()
         {
-            networkIdentity = GetComponent<PlayerNetworkIdentity>();
-            if (GetComponent<RemoteThirdPersonPlayerBootstrap>() != null ||
-                (networkIdentity != null && !networkIdentity.IsLocalPlayer))
+            if (GetComponent<RemoteThirdPersonPlayerBootstrap>() != null)
             {
                 enabled = false;
                 return;
             }
 
+            ResolveComponentReferences();
+
+            networkIdentity = GetComponent<PlayerNetworkIdentity>();
+            if (networkIdentity != null &&
+                !string.IsNullOrWhiteSpace(networkIdentity.TicketId) &&
+                !networkIdentity.IsLocalPlayer)
+            {
+                enabled = false;
+            }
+        }
+
+        private void ResolveComponentReferences()
+        {
             weaponMount = GetComponent<PlayerWeaponMount>();
             weaponController = GetComponent<PlayerWeaponController>();
             playerHealth = GetComponent<PlayerHealth>();
@@ -285,6 +296,7 @@ namespace ShooterPrototype.Player
 
         public void SyncFirstPersonArmsPresentation()
         {
+            ResolveComponentReferences();
             var hideArms = ShouldHideFirstPersonArms;
             ApplyHolsteredPresentation(hideArms);
             if (hideArms)
@@ -346,6 +358,7 @@ namespace ShooterPrototype.Player
 
         public void ForceArmedState()
         {
+            ResolveComponentReferences();
             if (weaponMount == null || !weaponMount.HasMountedWeapon)
             {
                 return;
@@ -441,6 +454,7 @@ namespace ShooterPrototype.Player
 
         public void ForceHolsteredIdleState()
         {
+            ResolveComponentReferences();
             transitionElapsed = 0f;
             weaponMount?.SetHolsterTransitionActive(false);
             weaponMount?.SetLocalHolstered(true);

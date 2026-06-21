@@ -111,7 +111,7 @@ namespace ShooterPrototype.UI
 
         private void Update()
         {
-            if (hpFillImage == null)
+            if (!sceneActive || hpFillImage == null)
             {
                 return;
             }
@@ -324,6 +324,7 @@ namespace ShooterPrototype.UI
             if (trackedHealth != null)
             {
                 trackedHealth.LocalDamageTaken += HandleLocalDamageTaken;
+                trackedHealth.LocalHealthReplenished += HandleLocalHealthReplenished;
             }
         }
 
@@ -332,8 +333,30 @@ namespace ShooterPrototype.UI
             if (trackedHealth != null)
             {
                 trackedHealth.LocalDamageTaken -= HandleLocalDamageTaken;
+                trackedHealth.LocalHealthReplenished -= HandleLocalHealthReplenished;
                 trackedHealth = null;
             }
+        }
+
+        private void HandleLocalHealthReplenished()
+        {
+            SnapHealthBarToCurrent();
+        }
+
+        public void SnapHealthBarToCurrent()
+        {
+            if (trackedHealth == null)
+            {
+                return;
+            }
+
+            lastObservedHealth = trackedHealth.CurrentHealth;
+            var targetRatio = trackedHealth.MaxHealth > 0.001f
+                ? Mathf.Clamp01(trackedHealth.CurrentHealth / trackedHealth.MaxHealth)
+                : 1f;
+            displayedHealthRatio = targetRatio;
+            trailHealthRatio = targetRatio;
+            ApplyBarVisuals(ResolveHealthColor(targetRatio));
         }
 
         private void HandleLocalDamageTaken(float damageAmount)
@@ -355,6 +378,12 @@ namespace ShooterPrototype.UI
 
         private void TryForceLocalDeathFromKillFeed(RealtimeTransportClient.KillFeedMessage message)
         {
+            var duelController = FindFirstObjectByType<MatchDuelController>();
+            if (duelController != null && duelController.IsDuelRoundResetPhase)
+            {
+                return;
+            }
+
             var local = FindFirstObjectByType<LocalPlayerMarker>();
             var health = local != null ? local.GetComponent<PlayerHealth>() : null;
             if (health == null || health.IsDead)
@@ -378,16 +407,24 @@ namespace ShooterPrototype.UI
                 TriggerDamageFeedback(lastObservedHealth - currentHealth);
             }
 
-            lastObservedHealth = currentHealth;
-
             var targetRatio = trackedHealth.MaxHealth > 0.001f
                 ? Mathf.Clamp01(currentHealth / trackedHealth.MaxHealth)
                 : 0f;
-            displayedHealthRatio = targetRatio;
-            trailHealthRatio = Mathf.MoveTowards(
-                trailHealthRatio,
-                targetRatio,
-                TrailCatchUpSpeed * Time.unscaledDeltaTime);
+            if (currentHealth > lastObservedHealth + 0.01f)
+            {
+                displayedHealthRatio = targetRatio;
+                trailHealthRatio = targetRatio;
+            }
+            else
+            {
+                displayedHealthRatio = targetRatio;
+                trailHealthRatio = Mathf.MoveTowards(
+                    trailHealthRatio,
+                    targetRatio,
+                    TrailCatchUpSpeed * Time.unscaledDeltaTime);
+            }
+
+            lastObservedHealth = currentHealth;
             ApplyBarVisuals(ResolveHealthColor(targetRatio));
         }
 

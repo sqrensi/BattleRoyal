@@ -253,6 +253,25 @@ namespace ShooterPrototype.Player
 
             if (entries.Count > 0)
             {
+                for (var i = 0; i < entries.Count; i++)
+                {
+                    var entry = entries[i];
+                    if (entry == null || entry.kind != PickupKind.Weapon)
+                    {
+                        continue;
+                    }
+
+                    if (entry.visualPrefab == null)
+                    {
+                        entry.visualPrefab = WeaponCatalog.GetWeaponPrefab(entry.weaponKind);
+                    }
+
+                    if (string.IsNullOrWhiteSpace(entry.itemId))
+                    {
+                        entry.itemId = WeaponCatalog.GetDefaultItemId(entry.weaponKind);
+                    }
+                }
+
                 NormalizeEntryWeights();
                 return;
             }

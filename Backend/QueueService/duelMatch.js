@@ -1,10 +1,13 @@
 "use strict";
 
 const DUEL_PREP_SECONDS = Math.max(3, Number(process.env.DUEL_PREP_SECONDS) || 15);
+const DUEL_ROUND_PICK_SECONDS = Math.max(3, Number(process.env.DUEL_ROUND_PICK_SECONDS) || 10);
 const DUEL_ROUND_SECONDS = Math.max(5, Number(process.env.DUEL_ROUND_SECONDS) || 30);
 const DUEL_ROUND_END_SECONDS = Math.max(1, Number(process.env.DUEL_ROUND_END_SECONDS) || 5);
 const DUEL_ROUNDS_TO_WIN = Math.max(1, Number(process.env.DUEL_ROUNDS_TO_WIN) || 5);
 const DUEL_MATCH_STATE_BROADCAST_MS = Math.max(100, Number(process.env.DUEL_MATCH_STATE_BROADCAST_MS) || 250);
+const DUEL_WEAPON_SPARE_AMMO = 60;
+const DUEL_WEAPON_KIND_MAX = 3;
 
 let deps = null;
 
@@ -66,6 +69,140 @@ function getDuelRoundWins(duel, ticketId) {
   return Math.max(0, duel.roundWinsByTicket.get(ticketId) || 0);
 }
 
+function normalizeDuelWeaponKind(value) {
+  const kind = Math.max(0, Math.min(DUEL_WEAPON_KIND_MAX, Number(value) || 0));
+  return Number.isFinite(kind) ? kind : 0;
+}
+
+function resolveDuelWeaponItemId(kind) {
+  const normalized = normalizeDuelWeaponKind(kind);
+  if (normalized === 1) {
+    return "sniper_rifle";
+  }
+  if (normalized === 2) {
+    return "pistol";
+  }
+  if (normalized === 3) {
+    return "mp7";
+  }
+  return "assault_rifle";
+}
+
+function clearDuelRoundWeapons(presence) {
+  if (!presence) {
+    return;
+  }
+
+  const emptySlot = Number.isFinite(deps.WEAPON_SLOT_EMPTY) ? deps.WEAPON_SLOT_EMPTY : 255;
+  presence.weaponSlot0Kind = emptySlot;
+  presence.weaponSlot1Kind = emptySlot;
+  presence.weaponSlot0ItemId = "";
+  presence.weaponSlot1ItemId = "";
+  presence.weaponSlot0MagAmmo = -1;
+  presence.weaponSlot1MagAmmo = -1;
+  presence.activeWeaponSlot = emptySlot;
+  presence.isHolstered = true;
+  presence.hasWeapon = false;
+  presence.weaponKind = 0;
+
+  if (!Array.isArray(presence.spareAmmoByKind) || presence.spareAmmoByKind.length < 4) {
+    presence.spareAmmoByKind = [0, 0, 0, 0];
+  }
+  presence.spareAmmoByKind[0] = 0;
+  presence.spareAmmoByKind[1] = 0;
+  presence.spareAmmoByKind[2] = 0;
+  presence.spareAmmoByKind[3] = 0;
+
+  if (typeof deps.syncWeaponPresenceFlags === "function") {
+    deps.syncWeaponPresenceFlags(presence);
+  }
+}
+
+function grantDuelWeaponToTicket(presence, weaponKind) {
+  if (!presence) {
+    return false;
+  }
+
+  const kind = normalizeDuelWeaponKind(weaponKind);
+  const emptySlot = Number.isFinite(deps.WEAPON_SLOT_EMPTY) ? deps.WEAPON_SLOT_EMPTY : 255;
+  const magSize = typeof deps.resolveMagazineSizeForKind === "function"
+    ? deps.resolveMagazineSizeForKind(kind)
+    : 30;
+  const itemId = resolveDuelWeaponItemId(kind);
+
+  clearDuelRoundWeapons(presence);
+
+  presence.weaponSlot0Kind = kind;
+  presence.weaponSlot0ItemId = itemId;
+  presence.weaponSlot0MagAmmo = magSize;
+  presence.activeWeaponSlot = 0;
+  presence.isHolstered = false;
+  presence.spareAmmoByKind[kind] = DUEL_WEAPON_SPARE_AMMO;
+  presence.weaponPickupSeq = Math.max(0, Number(presence.weaponPickupSeq) || 0) + 1;
+
+  if (typeof deps.syncWeaponPresenceFlags === "function") {
+    deps.syncWeaponPresenceFlags(presence);
+  } else {
+    presence.hasWeapon = true;
+    presence.weaponKind = kind;
+  }
+
+  return true;
+}
+
+function ensureDuelWeaponsBeforeFight(session) {
+  if (!session) {
+    return;
+  }
+
+  for (const ticketId of session.ticketIds) {
+    const ticket = deps.ticketsById.get(ticketId);
+    if (!ticket || !ticket.presence || ticket.presence.hasWeapon) {
+      continue;
+    }
+
+    if (!grantDuelWeaponToTicket(ticket.presence, 0)) {
+      continue;
+    }
+
+    if (typeof deps.sendPickupResultToSocket !== "function") {
+      continue;
+    }
+
+    const socket = typeof deps.getTicketSocket === "function"
+      ? deps.getTicketSocket(ticketId)
+      : null;
+    if (!socket) {
+      continue;
+    }
+
+    const kind = normalizeDuelWeaponKind(ticket.presence.weaponKind);
+    const itemId = resolveDuelWeaponItemId(kind);
+    const magAmmo = Number.isFinite(ticket.presence.weaponSlot0MagAmmo)
+      ? ticket.presence.weaponSlot0MagAmmo
+      : (typeof deps.resolveMagazineSizeForKind === "function" ? deps.resolveMagazineSizeForKind(kind) : 30);
+    const loadoutPayload = typeof deps.buildWeaponLoadoutPayload === "function"
+      ? deps.buildWeaponLoadoutPayload(ticket.presence)
+      : {};
+    const sparePayload = typeof deps.buildSpareAmmoPayload === "function"
+      ? deps.buildSpareAmmoPayload(ticket.presence)
+      : {};
+
+    deps.sendPickupResultToSocket(socket, true, "ok", {
+      ticketId,
+      weaponPickupSeq: ticket.presence.weaponPickupSeq,
+      pickupKind: "weapon",
+      itemId,
+      weaponId: itemId,
+      amount: 1,
+      magAmmo,
+      reserveAmmo: typeof deps.getSpareAmmo === "function" ? deps.getSpareAmmo(ticket.presence) : DUEL_WEAPON_SPARE_AMMO,
+      ...sparePayload,
+      ...loadoutPayload,
+    });
+  }
+}
+
 function resetTicketPresenceForDuelRound(ticket) {
   if (!ticket) {
     return;
@@ -86,6 +223,56 @@ function resetTicketPresenceForDuelRound(ticket) {
   presence.deathSeq = Math.max(0, Number(presence.deathSeq) || 0);
   presence.isUsingMedkit = false;
   presence.medkitUseEndsAtMs = 0;
+  ticket.poseHistory = [];
+  clearDuelRoundWeapons(presence);
+}
+
+function isDuelRoundPresencePhase(ticket) {
+  if (!ticket || !ticket.matchId) {
+    return false;
+  }
+
+  const session = deps.matchesById.get(ticket.matchId);
+  if (!isDuelSession(session)) {
+    return false;
+  }
+
+  const duel = ensureDuelState(session);
+  if (!duel) {
+    return false;
+  }
+
+  return duel.phase === "round_pick" || duel.phase === "round" || duel.phase === "round_end";
+}
+
+function shouldIgnoreClientDeathFlag(ticket, clientIsDead) {
+  if (!clientIsDead) {
+    return false;
+  }
+
+  if (!isDuelRoundPresencePhase(ticket)) {
+    return false;
+  }
+
+  return !ticket.deathCause;
+}
+
+function canReviveForDuelRound(ticket) {
+  if (!ticket || !ticket.matchId || ticket.deathCause) {
+    return false;
+  }
+
+  const session = deps.matchesById.get(ticket.matchId);
+  if (!isDuelSession(session)) {
+    return false;
+  }
+
+  const duel = ensureDuelState(session);
+  if (!duel) {
+    return false;
+  }
+
+  return duel.phase === "round_pick" || duel.phase === "round";
 }
 
 function assignDuelTeams(session) {
@@ -173,6 +360,22 @@ function startDuelRound(session, nowMs) {
     }
   }
 
+  duel.phase = "round_pick";
+  duel.phaseEndsAtMs = nowMs + (DUEL_ROUND_PICK_SECONDS * 1000);
+  duel.roundResolved = false;
+  duel.winnerTicketId = "";
+  deps.broadcastMatchState(session.matchId);
+  deps.broadcastMatchSnapshots(session.matchId);
+}
+
+function startDuelRoundFight(session, nowMs) {
+  const duel = ensureDuelState(session);
+  if (!duel) {
+    return;
+  }
+
+  ensureDuelWeaponsBeforeFight(session);
+
   duel.phase = "round";
   duel.phaseEndsAtMs = nowMs + (DUEL_ROUND_SECONDS * 1000);
   duel.roundResolved = false;
@@ -259,8 +462,94 @@ function handleWsJoin(session, ticketId) {
   return true;
 }
 
-function handleWsWeaponPick() {
-  // Weapon pick UI/grant removed from duel mode.
+function tryPickDuelWeapon(ticket, weaponKind) {
+  if (!ticket || !ticket.matchId) {
+    return { ok: false, reason: "no_ticket" };
+  }
+
+  const session = deps.matchesById.get(ticket.matchId);
+  if (!isDuelSession(session)) {
+    return { ok: false, reason: "not_duel" };
+  }
+
+  const duel = ensureDuelState(session);
+  if (!duel || duel.phase !== "round_pick") {
+    return { ok: false, reason: "pick_closed" };
+  }
+
+  if (!ticket.presence) {
+    ticket.presence = deps.createDefaultPresence(
+      typeof deps.getCurrentServerTick === "function" ? deps.getCurrentServerTick() : 0,
+      Date.now()
+    );
+  }
+
+  if (ticket.presence.hasWeapon) {
+    return { ok: false, reason: "already_picked" };
+  }
+
+  const kind = normalizeDuelWeaponKind(weaponKind);
+  if (!grantDuelWeaponToTicket(ticket.presence, kind)) {
+    return { ok: false, reason: "grant_failed" };
+  }
+
+  const itemId = resolveDuelWeaponItemId(kind);
+  const magAmmo = Number.isFinite(ticket.presence.weaponSlot0MagAmmo)
+    ? ticket.presence.weaponSlot0MagAmmo
+    : (typeof deps.resolveMagazineSizeForKind === "function" ? deps.resolveMagazineSizeForKind(kind) : 30);
+  const loadoutPayload = typeof deps.buildWeaponLoadoutPayload === "function"
+    ? deps.buildWeaponLoadoutPayload(ticket.presence)
+    : {};
+  const sparePayload = typeof deps.buildSpareAmmoPayload === "function"
+    ? deps.buildSpareAmmoPayload(ticket.presence)
+    : {};
+
+  return {
+    ok: true,
+    reason: "ok",
+    details: {
+      ticketId: ticket.ticketId,
+      weaponPickupSeq: ticket.presence.weaponPickupSeq,
+      pickupKind: "weapon",
+      itemId,
+      weaponId: itemId,
+      amount: 1,
+      magAmmo,
+      reserveAmmo: typeof deps.getSpareAmmo === "function" ? deps.getSpareAmmo(ticket.presence) : DUEL_WEAPON_SPARE_AMMO,
+      ...sparePayload,
+      ...loadoutPayload,
+    },
+  };
+}
+
+function handleWsWeaponPick(socket, message) {
+  if (!socket || !message) {
+    return false;
+  }
+
+  const ticket = typeof deps.resolveTicketFromSocket === "function"
+    ? deps.resolveTicketFromSocket(socket)
+    : null;
+  if (!ticket) {
+    return false;
+  }
+
+  const result = tryPickDuelWeapon(ticket, message.weaponKind);
+  if (typeof deps.sendPickupResultToSocket === "function") {
+    deps.sendPickupResultToSocket(
+      socket,
+      !!result.ok,
+      result.reason || "",
+      result.details || {}
+    );
+  }
+
+  if (result.ok && ticket.matchId) {
+    deps.broadcastMatchSnapshots(ticket.matchId);
+    deps.broadcastMatchState(ticket.matchId);
+  }
+
+  return !!result.ok;
 }
 
 function shouldIgnoreClientWeaponPoseSync(ticket) {
@@ -278,7 +567,7 @@ function shouldIgnoreClientWeaponPoseSync(ticket) {
     return false;
   }
 
-  return duel.phase === "round" || duel.phase === "round_end";
+  return duel.phase === "round" || duel.phase === "round_end" || duel.phase === "round_pick";
 }
 
 function resolveDuelSnapshotHolstered(ticket) {
@@ -346,7 +635,7 @@ function isDuelMovementLocked(ticket) {
     return false;
   }
 
-  return duel.phase === "ending";
+  return duel.phase === "ending" || duel.phase === "round_pick";
 }
 
 function isDuelRespawnBlocked(ticket) {
@@ -364,7 +653,7 @@ function isDuelRespawnBlocked(ticket) {
     return false;
   }
 
-  return duel.phase === "round" || duel.phase === "round_end";
+  return duel.phase === "round" || duel.phase === "round_end" || duel.phase === "round_pick";
 }
 
 function isDuelCombatAllowed(ticket) {
@@ -378,7 +667,7 @@ function isDuelCombatAllowed(ticket) {
   }
 
   const duel = ensureDuelState(session);
-  if (!duel || (duel.phase !== "round" && duel.phase !== "round_end")) {
+  if (!duel || duel.phase !== "round") {
     return false;
   }
 
@@ -434,9 +723,13 @@ function buildDuelMatchStatePayload(session, ticketId) {
   const teamIndex = duel.teamIndexByTicket.get(ticketId);
   const spawnSlotIndex = duel.spawnSlotIndexByTicket.get(ticketId);
   const ticketPresence = ticketId ? deps.ticketsById.get(ticketId)?.presence : null;
-  const movementLocked = duel.phase === "ending";
+  const movementLocked = duel.phase === "ending" || duel.phase === "round_pick";
   const isAlive = !!(ticketPresence && !ticketPresence.isDead);
-  const combatEnabled = (duel.phase === "round" || duel.phase === "round_end") && isAlive;
+  const hasWeapon = !!(ticketPresence && ticketPresence.hasWeapon);
+  const combatEnabled = (duel.phase === "round" || duel.phase === "round_end") && isAlive && hasWeapon;
+  const pickedWeaponKind = ticketPresence && ticketPresence.hasWeapon
+    ? normalizeDuelWeaponKind(ticketPresence.weaponKind)
+    : -1;
   const isLocalWinner = !!(ticketId && duel.winnerTicketId && ticketId === duel.winnerTicketId && duel.phase === "ending");
 
   return {
@@ -482,7 +775,7 @@ function buildDuelMatchStatePayload(session, ticketId) {
     duelRoundsToWin: DUEL_ROUNDS_TO_WIN,
     duelMovementLocked: movementLocked,
     duelCombatEnabled: combatEnabled,
-    duelPickedWeaponKind: -1,
+    duelPickedWeaponKind: pickedWeaponKind,
     duelTeamIndex: Number.isFinite(teamIndex) ? teamIndex : -1,
     duelSpawnSlotIndex: Number.isFinite(spawnSlotIndex) ? spawnSlotIndex : -1
   };
@@ -501,6 +794,11 @@ function tickDuelMatches(nowMs) {
 
     if (duel.phase === "prep" && duel.phaseEndsAtMs > 0 && nowMs >= duel.phaseEndsAtMs) {
       startDuelRound(session, nowMs);
+      continue;
+    }
+
+    if (duel.phase === "round_pick" && duel.phaseEndsAtMs > 0 && nowMs >= duel.phaseEndsAtMs) {
+      startDuelRoundFight(session, nowMs);
       continue;
     }
 
@@ -540,8 +838,12 @@ module.exports = {
   isDuelCombatAllowed,
   isDuelMovementLocked,
   isDuelRespawnBlocked,
+  shouldIgnoreClientDeathFlag,
+  canReviveForDuelRound,
   onDuelPlayerDied,
   buildDuelMatchStatePayload,
   tickDuelMatches,
+  tryPickDuelWeapon,
+  startDuelRoundFight,
   DUEL_ROUNDS_TO_WIN
 };

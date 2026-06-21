@@ -10,6 +10,9 @@ namespace ShooterPrototype.Player
     {
         [SerializeField] private bool applyOnAwake = true;
         [SerializeField] private RuntimeAnimatorController remoteAnimatorController;
+        private bool hasInitializedRemoteWeapon;
+
+        public static bool DebugLogs { get; set; }
 
         private void Awake()
         {
@@ -57,9 +60,31 @@ namespace ShooterPrototype.Player
             }
 
             presentation.Configure(thirdPersonBody);
-            if (!MainMenuPlayerPreview.IsMenuPreviewSpawn)
+            if (MainMenuPlayerPreview.IsMenuPreviewSpawn)
             {
+                return;
+            }
+
+            if (presentation.HasWeapon)
+            {
+                if (DebugLogs)
+                {
+                    Debug.Log("[RemoteThirdPersonBootstrap] rebind weapon after body refresh");
+                }
+
+                presentation.RebindThirdPersonBody(thirdPersonBody);
+                return;
+            }
+
+            if (!hasInitializedRemoteWeapon)
+            {
+                if (DebugLogs)
+                {
+                    Debug.Log("[RemoteThirdPersonBootstrap] initial remote weapon disarm");
+                }
+
                 presentation.SetWeaponEquipped(false);
+                hasInitializedRemoteWeapon = true;
             }
         }
 

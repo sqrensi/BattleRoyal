@@ -315,6 +315,15 @@ namespace ShooterPrototype.Player
         {
             if (string.IsNullOrWhiteSpace(confirmed.SpawnId))
             {
+                if (!serverState.WeaponLoadout.HasWeaponLoadout)
+                {
+                    return;
+                }
+
+                pendingSpawnId = string.Empty;
+                var weaponLoadout = GetComponent<PlayerWeaponLoadoutController>();
+                weaponLoadout?.ApplyServerPickup(serverState.WeaponLoadout);
+                RefreshWeaponAvailability();
                 return;
             }
 

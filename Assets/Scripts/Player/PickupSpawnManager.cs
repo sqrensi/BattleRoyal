@@ -1825,25 +1825,7 @@ namespace ShooterPrototype.Player
 
         public GameObject ResolveWeaponSourcePrefab(WeaponKind kind)
         {
-            switch (kind)
-            {
-                case WeaponKind.SniperRifle:
-                    return defaultSniperWeaponPrefab != null
-                        ? defaultSniperWeaponPrefab
-                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.SniperRifle);
-                case WeaponKind.Pistol:
-                    return defaultPistolWeaponPrefab != null
-                        ? defaultPistolWeaponPrefab
-                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.Pistol);
-                case WeaponKind.Mp7:
-                    return defaultMp7WeaponPrefab != null
-                        ? defaultMp7WeaponPrefab
-                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.Mp7);
-                default:
-                    return defaultVisualPrefab != null
-                        ? defaultVisualPrefab
-                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.AssaultRifle);
-            }
+            return WeaponCatalog.GetWeaponPrefab(kind);
         }
 
         private PickupItemDefinition EnsureWeaponSourcePrefab(in PickupItemDefinition definition)
@@ -1858,21 +1840,34 @@ namespace ShooterPrototype.Player
                 return definition;
             }
 
-            if (definition.VisualPrefab != null)
+            var kind = !string.IsNullOrWhiteSpace(definition.ResolvedItemId)
+                ? WeaponCatalog.ResolveKindFromItemId(definition.ResolvedItemId)
+                : WeaponCatalog.ResolveKindFromPrefab(definition.VisualPrefab, definition.ResolvedItemId);
+
+            var equipPrefab = WeaponCatalog.GetWeaponPrefab(kind);
+            if (equipPrefab == null &&
+                definition.VisualPrefab != null &&
+                WeaponCatalog.IsFullWeaponPrefab(definition.VisualPrefab))
             {
-                definition.RegisterWeaponSourcePrefab(definition.VisualPrefab, definition.ResolvedItemId);
+                var visualKind = WeaponCatalog.ResolveKindFromPrefab(
+                    definition.VisualPrefab,
+                    definition.ResolvedItemId);
+                if (visualKind == kind)
+                {
+                    WeaponCatalog.RegisterWeaponPrefab(kind, definition.VisualPrefab);
+                    equipPrefab = definition.VisualPrefab;
+                }
+            }
+
+            if (equipPrefab == null)
+            {
                 return definition;
             }
 
-            var kind = WeaponCatalog.ResolveKindFromItemId(definition.ResolvedItemId);
-            var sourcePrefab = ResolveWeaponSourcePrefab(kind);
-            if (sourcePrefab == null)
-            {
-                return definition;
-            }
-
-            var updated = definition.WithWorldVisual(sourcePrefab);
-            updated.RegisterWeaponSourcePrefab(sourcePrefab, definition.ResolvedItemId);
+            var updated = definition.VisualPrefab != null
+                ? definition
+                : definition.WithWorldVisual(equipPrefab);
+            updated.RegisterWeaponSourcePrefab(equipPrefab, definition.ResolvedItemId);
             return updated;
         }
 

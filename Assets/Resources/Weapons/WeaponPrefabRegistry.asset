@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f94a8c2e1b3d4f5a6c7e8d9f0a1b2c3d, type: 3}
   m_Name: WeaponPrefabRegistry
   m_EditorClassIdentifier: Assembly-CSharp::ShooterPrototype.Player.WeaponPrefabRegistry
-  assaultRiflePrefab: {fileID: 100100000, guid: c0b9a0ada3999914a8bce7552f3d83a3, type: 3}
-  sniperRiflePrefab: {fileID: 100100000, guid: ff8235cae3149824eaccda4c1683ebea, type: 3}
-  pistolPrefab: {fileID: 100100000, guid: 1621f1a6517996d499e288046c6054bc, type: 3}
-  mp7Prefab: {fileID: 100100000, guid: 63d2e9c613baccf41bcc8587ca57a699, type: 3}
+  assaultRiflePrefab: {fileID: 6405278687639400286, guid: c0b9a0ada3999914a8bce7552f3d83a3, type: 3}
+  sniperRiflePrefab: {fileID: 1387354669614330, guid: ff8235cae3149824eaccda4c1683ebea, type: 3}
+  pistolPrefab: {fileID: 1508934165754910, guid: 1621f1a6517996d499e288046c6054bc, type: 3}
+  mp7Prefab: {fileID: 1540458763532602, guid: 63d2e9c613baccf41bcc8587ca57a699, type: 3}

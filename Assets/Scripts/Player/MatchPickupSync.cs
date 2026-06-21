@@ -201,6 +201,11 @@ namespace ShooterPrototype.Player
                         $"[MatchPickupSync] Pickup rejected: {message.reason} spawn={message.spawnId}");
                 }
 
+                if (string.IsNullOrWhiteSpace(message.spawnId))
+                {
+                    FindFirstObjectByType<MatchDuelController>()?.HandleWeaponPickRejected(message.reason);
+                }
+
                 localPickupController?.HandlePickupRejected(message.spawnId, message.reason);
                 return;
             }
@@ -222,6 +227,13 @@ namespace ShooterPrototype.Player
                 itemId,
                 message.amount > 0 ? message.amount : 1);
             localPickupController?.ApplyConfirmedPickup(confirmed, serverState);
+            if (kind == PickupKind.Weapon)
+            {
+                var holster = localPickupController != null
+                    ? localPickupController.GetComponent<PlayerWeaponHolsterController>()
+                    : null;
+                holster?.ForceArmedState();
+            }
             if (kind == PickupKind.Grenade && message.grenadeCount >= 0)
             {
                 var inventory = localPickupController != null

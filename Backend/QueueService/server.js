@@ -443,6 +443,11 @@ wsServer.on("connection", (socket) => {
         return;
       }
 
+      if (message.type === "duel_weapon_pick") {
+        duelMatch.handleWsWeaponPick(socket, message);
+        return;
+      }
+
       if (message.type === "weapon_drop") {
         handleWsWeaponDrop(socket, message);
         return;
@@ -575,6 +580,10 @@ function isMatchRespawnBlocked(ticket) {
 function shouldLockBattleRoyaleDeathState(ticket, prevWasDead) {
   if (!ticket || !isMatchRespawnBlocked(ticket)) {
     return false;
+  }
+
+  if (duelMatch.isDuelRespawnBlocked(ticket)) {
+    return !!ticket.deathCause;
   }
 
   return !!prevWasDead || !!ticket.deathCause;
@@ -1034,6 +1043,15 @@ function getMatchedTicketsForMatch(matchId) {
   }
 
   return results;
+}
+
+function resolveTicketFromSocket(socket) {
+  const meta = wsMetaBySocket.get(socket);
+  if (!meta || !meta.ticketId) {
+    return null;
+  }
+
+  return ticketsById.get(meta.ticketId) || null;
 }
 
 function handleWsJoin(socket, ticketId) {
@@ -1853,7 +1871,10 @@ function handleWsPose(socket, message) {
   const isSprinting = !!message.isSprinting;
   const isSwimming = !!message.isSwimming;
   const wallAvoidBlend = Math.max(0, Math.min(1, normalizeNumber(message.wallAvoidBlend, 0)));
-  const isDead = !!message.isDead;
+  let isDead = !!message.isDead;
+  if (duelMatch.shouldIgnoreClientDeathFlag(ticket, isDead)) {
+    isDead = false;
+  }
   const deathSeq = Math.max(0, normalizeInt64(message.deathSeq, 0));
   const deathFallDirX = normalizeNumber(message.deathFallDirX, 0);
   const deathFallDirY = normalizeNumber(message.deathFallDirY, 0);
@@ -1927,7 +1948,7 @@ function handleWsPose(socket, message) {
   }
 
   if (!isDead && prevWasDead) {
-    if (isMatchRespawnBlocked(ticket)) {
+    if (isMatchRespawnBlocked(ticket) && !duelMatch.canReviveForDuelRound(ticket)) {
       presence.isDead = true;
       presence.health = 0;
       positionBranch = "br_dead_no_respawn";
@@ -2743,6 +2764,12 @@ function handleWsWeaponDrop(socket, message) {
 
   if (!ticket.presence || !ticket.presence.hasPose || !ticket.presence.position) {
     sendWeaponDropResultToSocket(socket, false, "no_pose");
+    return;
+  }
+
+  const session = matchesById.get(ticket.matchId);
+  if (session && duelMatch.isDuelSession(session)) {
+    sendWeaponDropResultToSocket(socket, false, "duel_drop_disabled");
     return;
   }
 
@@ -4310,30 +4337,51 @@ function handleWsHit(socket, message) {
       cause: "player",
     });
     if (duelMatch.onDuelPlayerDied(targetTicket, attackerTicket.ticketId)) {
+      const duelKillSocket = wsClientsByTicketId.get(targetTicket.ticketId);
+      if (duelKillSocket && duelKillSocket.readyState === WebSocket.OPEN) {
+        try {
+          duelKillSocket.send(JSON.stringify({
+            type: "damage",
+            attackerTicketId: attackerTicket.ticketId,
+            targetTicketId: targetTicket.ticketId,
+            damage,
+            remainingHealth: targetPresence.health,
+            dirX,
+            dirY,
+            dirZ
+          }));
+        } catch {
+          // ignored
+        }
+      }
+
+      touchMatchSession(attackerTicket.matchId);
+      broadcastMatchSnapshots(attackerTicket.matchId);
       return;
     }
     onBattleRoyalePlayerDied(targetTicket);
   }
 
   const targetSocket = wsClientsByTicketId.get(targetTicket.ticketId);
-  if (!targetSocket || targetSocket.readyState !== WebSocket.OPEN) {
-    return;
+  if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
+    try {
+      targetSocket.send(JSON.stringify({
+        type: "damage",
+        attackerTicketId: attackerTicket.ticketId,
+        targetTicketId: targetTicket.ticketId,
+        damage,
+        remainingHealth: targetPresence.health,
+        dirX,
+        dirY,
+        dirZ
+      }));
+    } catch {
+      // ignored
+    }
   }
 
-  try {
-    targetSocket.send(JSON.stringify({
-      type: "damage",
-      attackerTicketId: attackerTicket.ticketId,
-      targetTicketId: targetTicket.ticketId,
-      damage,
-      remainingHealth: targetPresence.health,
-      dirX,
-      dirY,
-      dirZ
-    }));
-  } catch {
-    // ignored
-  }
+  touchMatchSession(attackerTicket.matchId);
+  broadcastMatchSnapshots(attackerTicket.matchId);
 }
 
 function handleWsDisconnect(socket) {
@@ -6175,7 +6223,15 @@ duelMatch.initDuelMatchModule({
   normalizeMatchMode,
   createDefaultPresence,
   resolveMagazineSizeForKind,
+  syncWeaponPresenceFlags,
+  WEAPON_SLOT_EMPTY,
   resolveTicketNickname,
+  resolveTicketFromSocket,
+  sendPickupResultToSocket,
+  buildWeaponLoadoutPayload,
+  buildSpareAmmoPayload,
+  getSpareAmmo,
+  getTicketSocket: (ticketId) => wsClientsByTicketId.get(ticketId),
   broadcastMatchState,
   broadcastMatchSnapshots,
   broadcastKillFeed,
