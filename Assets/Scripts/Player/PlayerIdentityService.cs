@@ -6,6 +6,8 @@ namespace ShooterPrototype.Player
     public static class PlayerIdentityService
     {
         private const string PlayerIdPrefKey = "player_external_id_v1";
+        private const string YandexUniqueIdPrefKey = "player_yandex_unique_id_v1";
+        private const string YandexPlayerIdPrefix = "yg-";
 
         public static string GetOrCreatePlayerId()
         {
@@ -27,12 +29,50 @@ namespace ShooterPrototype.Player
             return generated;
         }
 
+        public static bool TryGetSavedYandexUniqueId(out string uniqueId)
+        {
+            uniqueId = PlayerPrefs.GetString(YandexUniqueIdPrefKey, string.Empty).Trim();
+            return !string.IsNullOrWhiteSpace(uniqueId);
+        }
+
+        public static bool TryApplyYandexUniqueId(string uniqueId)
+        {
+            var normalizedUniqueId = NormalizePlayerId(uniqueId);
+            if (string.IsNullOrWhiteSpace(normalizedUniqueId))
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrWhiteSpace(ResolveLaunchPlayerIdOverride()))
+            {
+                return false;
+            }
+
+            var externalPlayerId = BuildExternalPlayerIdFromYandexUniqueId(normalizedUniqueId);
+            PlayerPrefs.SetString(YandexUniqueIdPrefKey, normalizedUniqueId);
+            PlayerPrefs.SetString(PlayerIdPrefKey, externalPlayerId);
+            PlayerPrefs.Save();
+            return true;
+        }
+
+        public static string BuildExternalPlayerIdFromYandexUniqueId(string uniqueId)
+        {
+            var normalizedUniqueId = NormalizePlayerId(uniqueId);
+            if (string.IsNullOrWhiteSpace(normalizedUniqueId))
+            {
+                return string.Empty;
+            }
+
+            return YandexPlayerIdPrefix + normalizedUniqueId;
+        }
+
         /// <summary>
         /// Clears saved player id so the next launch creates a fresh profile (unless -playerId is passed).
         /// </summary>
         public static void ResetSavedPlayerId()
         {
             PlayerPrefs.DeleteKey(PlayerIdPrefKey);
+            PlayerPrefs.DeleteKey(YandexUniqueIdPrefKey);
             PlayerPrefs.Save();
         }
 

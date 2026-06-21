@@ -1,6 +1,7 @@
 using System.Collections;
 using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
+using ShooterPrototype.Platform;
 using ShooterPrototype.Player;
 using TMPro;
 using UnityEngine;
@@ -471,11 +472,18 @@ namespace ShooterPrototype.UI
             if (profileApiClient == null)
             {
                 ApplyServerConnectionState(MainMenuServerConnectionState.Unavailable, "Сервер недоступен");
+                YandexGamesIntegrationService.NotifyMainMenuLoadingComplete();
                 yield break;
             }
 
-            ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Подключение к серверу...");
+            ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Авторизация...");
+            yield return YandexGamesIntegrationService.PrepareAccountAndBindProfile(
+                this,
+                playerId => localPlayerId = playerId);
+            ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Загрузка профиля...");
             yield return PlayerProfileService.SyncProfile(this, profileApiClient, localPlayerId, fallbackToLocalOnFailure: false);
+
+            YandexGamesIntegrationService.NotifyMainMenuLoadingComplete();
 
             if (PlayerProfileService.IsServerSynced)
             {
@@ -688,25 +696,49 @@ namespace ShooterPrototype.UI
 
         private void TryLoadGameScene()
         {
+            StartCoroutine(LoadGameSceneRoutine());
+        }
+
+        private IEnumerator LoadGameSceneRoutine()
+        {
             var targetScene = ActiveMatchContext.ResolveGameSceneName(gameSceneName, duelSceneName);
             if (string.IsNullOrWhiteSpace(targetScene))
             {
+                LoadingScreenOverlay.Hide();
                 SetStatus("Сцена матча не задана. Остаемся в MainMenu.");
-                return;
+                yield break;
             }
 
             if (!Application.CanStreamedLevelBeLoaded(targetScene))
             {
+                LoadingScreenOverlay.Hide();
                 SetStatus($"Сцена '{targetScene}' не найдена в Build Settings.");
-                return;
+                yield break;
             }
 
+            LoadingScreenOverlay.SetMessage("Загрузка матча...");
             SetStatus($"Загрузка сцены '{targetScene}'...");
-            SceneManager.LoadScene(targetScene);
+
+            var loadOperation = SceneManager.LoadSceneAsync(targetScene);
+            loadOperation.allowSceneActivation = false;
+            while (loadOperation.progress < 0.9f)
+            {
+                LoadingScreenOverlay.SetProgress(loadOperation.progress / 0.9f);
+                yield return null;
+            }
+
+            LoadingScreenOverlay.SetProgress(1f);
+            LoadingScreenOverlay.SetMessage("Подготовка матча...");
+            loadOperation.allowSceneActivation = true;
+            while (!loadOperation.isDone)
+            {
+                yield return null;
+            }
         }
 
         private IEnumerator ConnectAndEnterGameRoutine(string address, int port)
         {
+            LoadingScreenOverlay.Show(connectingStatusText);
             var connectTask = networkLauncher.ConnectToServerAsync(address, port);
             while (!connectTask.IsCompleted)
             {
@@ -721,6 +753,7 @@ namespace ShooterPrototype.UI
             var connected = networkLauncher != null && networkLauncher.IsClientConnected;
             if (!connected)
             {
+                LoadingScreenOverlay.Hide();
                 if (queueApiClient != null && networkLauncher != null && !string.IsNullOrWhiteSpace(networkLauncher.CurrentTicketId))
                 {
                     yield return StartCoroutine(SendLeaveMatchBestEffort(networkLauncher.CurrentTicketId));
@@ -744,7 +777,11 @@ namespace ShooterPrototype.UI
             SetStartButtonState(isQueueing: false, interactable: true);
             if (autoLoadGameSceneOnSuccess)
             {
-                TryLoadGameScene();
+                yield return StartCoroutine(LoadGameSceneRoutine());
+            }
+            else
+            {
+                LoadingScreenOverlay.Hide();
             }
         }
     }

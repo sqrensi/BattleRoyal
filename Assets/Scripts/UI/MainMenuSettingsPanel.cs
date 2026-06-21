@@ -31,6 +31,8 @@ namespace ShooterPrototype.UI
         private MainMenuUiSoundController uiSound;
         private bool isVisible;
         private bool suppressRefresh;
+        private bool useMenuBackdrop = true;
+        private bool instantTransitions;
         private Coroutine transitionCoroutine;
         private Action backHandler;
 
@@ -77,6 +79,16 @@ namespace ShooterPrototype.UI
             backHandler = handler;
         }
 
+        public void SetUseMenuBackdrop(bool enabled)
+        {
+            useMenuBackdrop = enabled;
+        }
+
+        public void SetInstantTransitions(bool enabled)
+        {
+            instantTransitions = enabled;
+        }
+
         public void Build(RectTransform canvasRect)
         {
             if (panelRect != null || canvasRect == null)
@@ -117,6 +129,8 @@ namespace ShooterPrototype.UI
         private void OnDisable()
         {
             ClientSettingsService.SettingsChanged -= RefreshFromSettings;
+            StopTransition();
+            ApplyVisibilityImmediate(visible: false);
         }
 
         public void Show()
@@ -124,12 +138,23 @@ namespace ShooterPrototype.UI
             if (isVisible)
             {
                 RefreshFromSettings();
+                ApplyVisibilityImmediate(visible: true);
                 return;
             }
 
             isVisible = true;
-            UiMenuBackdrop.PushOpen(hostCanvas);
+            if (useMenuBackdrop)
+            {
+                UiMenuBackdrop.PushOpen(hostCanvas);
+            }
+
             RefreshFromSettings();
+            if (instantTransitions)
+            {
+                ApplyVisibilityImmediate(visible: true);
+                return;
+            }
+
             StartTransition(show: true);
         }
 
@@ -137,12 +162,35 @@ namespace ShooterPrototype.UI
         {
             if (!isVisible)
             {
+                ApplyVisibilityImmediate(visible: false);
                 return;
             }
 
             isVisible = false;
-            UiMenuBackdrop.PopClosed();
+            if (useMenuBackdrop)
+            {
+                UiMenuBackdrop.PopClosed();
+            }
+
+            if (instantTransitions)
+            {
+                ApplyVisibilityImmediate(visible: false);
+                return;
+            }
+
             StartTransition(show: false);
+        }
+
+        public void HideImmediate()
+        {
+            if (isVisible && useMenuBackdrop)
+            {
+                UiMenuBackdrop.PopClosed();
+            }
+
+            isVisible = false;
+            StopTransition();
+            ApplyVisibilityImmediate(visible: false);
         }
 
         private void BuildHeader(Transform parent)
@@ -669,19 +717,36 @@ namespace ShooterPrototype.UI
                 : value.ToString(binding.ValueFormat);
         }
 
-        private void StartTransition(bool show)
+        private void StopTransition()
         {
             if (transitionCoroutine != null)
             {
                 StopCoroutine(transitionCoroutine);
+                transitionCoroutine = null;
+            }
+        }
+
+        private void ApplyVisibilityImmediate(bool visible)
+        {
+            if (panelGroup == null)
+            {
+                return;
             }
 
+            panelGroup.alpha = visible ? 1f : 0f;
+            panelGroup.interactable = visible;
+            panelGroup.blocksRaycasts = visible;
+        }
+
+        private void StartTransition(bool show)
+        {
+            StopTransition();
             transitionCoroutine = StartCoroutine(TransitionRoutine(show));
         }
 
         private IEnumerator TransitionRoutine(bool show)
         {
-            var fromAlpha = show ? 0f : 1f;
+            var fromAlpha = panelGroup != null ? panelGroup.alpha : (show ? 0f : 1f);
             var toAlpha = show ? 1f : 0f;
 
             if (show)
@@ -691,6 +756,7 @@ namespace ShooterPrototype.UI
             else
             {
                 panelGroup.interactable = false;
+                panelGroup.blocksRaycasts = false;
             }
 
             var elapsed = 0f;

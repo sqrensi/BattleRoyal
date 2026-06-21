@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.Networking;
 
 namespace ShooterPrototype.Network
 {
@@ -46,6 +47,10 @@ namespace ShooterPrototype.Network
 
         public void StartDedicatedServer()
         {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            EmitStatus("Dedicated server is not supported in WebGL builds.");
+            return;
+#else
             if (IsMockServerRunning)
             {
                 EmitStatus("Dedicated server is already running.");
@@ -76,10 +81,14 @@ namespace ShooterPrototype.Network
                 EmitStatus($"Failed to start dedicated server: {exception.Message}");
                 StopDedicatedServer();
             }
+#endif
         }
 
         public void StopDedicatedServer()
         {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            return;
+#else
             if (!IsMockServerRunning)
             {
                 return;
@@ -101,6 +110,7 @@ namespace ShooterPrototype.Network
                 serverCancellation = null;
                 EmitStatus("Dedicated server stopped.");
             }
+#endif
         }
 
         public void ConnectToConfiguredServer()
@@ -154,7 +164,7 @@ namespace ShooterPrototype.Network
 
             var timeout = Mathf.Max(1, Mathf.RoundToInt(config.ConnectTimeoutSeconds * 1000f));
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var connected = await TryConnectTcpAsync(address, port, timeout);
+            var connected = await TryConnectServerReachableAsync(address, port, timeout);
             stopwatch.Stop();
 
             isConnecting = false;
@@ -261,7 +271,7 @@ namespace ShooterPrototype.Network
 
             var timeout = Mathf.Max(100, timeoutMilliseconds);
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var connected = await TryConnectTcpAsync(connectedServerAddress, connectedServerPort, timeout);
+            var connected = await TryConnectServerReachableAsync(connectedServerAddress, connectedServerPort, timeout);
             stopwatch.Stop();
 
             if (!connected)
@@ -296,6 +306,39 @@ namespace ShooterPrototype.Network
 
                     break;
                 }
+            }
+        }
+
+        private async Task<bool> TryConnectServerReachableAsync(string address, int port, int timeoutMilliseconds)
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            return await TryConnectHttpHealthAsync(address, port, timeoutMilliseconds);
+#else
+            return await TryConnectTcpAsync(address, port, timeoutMilliseconds);
+#endif
+        }
+
+        private static async Task<bool> TryConnectHttpHealthAsync(string address, int port, int timeoutMilliseconds)
+        {
+            if (string.IsNullOrWhiteSpace(address) || port <= 0)
+            {
+                return false;
+            }
+
+            var scheme = port == 443 || port == 8443 ? "https" : "http";
+            var url = $"{scheme}://{address.Trim()}:{port}/health";
+            using (var request = UnityWebRequest.Get(url))
+            {
+                request.timeout = Mathf.Max(1, Mathf.CeilToInt(timeoutMilliseconds / 1000f));
+                var operation = request.SendWebRequest();
+                while (!operation.isDone)
+                {
+                    await Task.Yield();
+                }
+
+                return request.result == UnityWebRequest.Result.Success &&
+                       request.responseCode >= 200 &&
+                       request.responseCode < 300;
             }
         }
 

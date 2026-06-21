@@ -2,6 +2,7 @@ using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
 using ShooterPrototype.Player;
 using ShooterPrototype.UI;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -27,6 +28,7 @@ namespace ShooterPrototype.Bootstrap
         [SerializeField] private GameObject battleRoyalePlanePrefab;
 
         private bool initialized;
+        private Coroutine matchWarmupCoroutine;
         private QueueApiClient queueApiClient;
         private RealtimeTransportClient realtimeTransportClient;
         private GameHudController gameHudController;
@@ -210,6 +212,49 @@ namespace ShooterPrototype.Bootstrap
             {
                 EnsureDuelController();
             }
+
+            if (isMatchScene && !Application.isBatchMode)
+            {
+                if (matchWarmupCoroutine != null)
+                {
+                    StopCoroutine(matchWarmupCoroutine);
+                }
+
+                matchWarmupCoroutine = StartCoroutine(WarmUpMatchSceneRoutine());
+            }
+            else if (!isMatchScene && !Application.isBatchMode)
+            {
+                LoadingScreenOverlay.Hide();
+            }
+        }
+
+        private IEnumerator WarmUpMatchSceneRoutine()
+        {
+            if (!LoadingScreenOverlay.IsVisible)
+            {
+                LoadingScreenOverlay.Show("Загрузка...");
+            }
+
+            LoadingScreenOverlay.SetMessage("Подгрузка интерфейса...");
+            LoadingScreenOverlay.SetProgress(-1f);
+
+            gameHudController?.WarmUpMatchUi();
+
+            yield return null;
+            yield return null;
+
+            const float timeoutSeconds = 5f;
+            var deadline = Time.unscaledTime + timeoutSeconds;
+            while (FindFirstObjectByType<LocalPlayerMarker>() == null && Time.unscaledTime < deadline)
+            {
+                yield return null;
+            }
+
+            Canvas.ForceUpdateCanvases();
+            yield return null;
+
+            LoadingScreenOverlay.Hide();
+            matchWarmupCoroutine = null;
         }
 
         private void EnsureDuelController()

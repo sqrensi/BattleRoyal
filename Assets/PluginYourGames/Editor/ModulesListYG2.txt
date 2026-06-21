@@ -1,0 +1,3 @@
+Authorization v1.023
+AutoTranslateLangs v1.003
+Localization v1.02

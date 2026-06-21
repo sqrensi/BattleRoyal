@@ -239,7 +239,6 @@ namespace ShooterPrototype.Player
             var phaseEntered = !string.Equals(previousPhase, currentPhase, StringComparison.Ordinal);
 
             UpdateHud(state);
-            gameHud?.SetMatchStatusMessage(string.Empty);
             UpdateDuelPhasePresentation(state, previousPhase, phaseEntered);
 
             if (phaseEntered &&
@@ -538,6 +537,36 @@ namespace ShooterPrototype.Player
                 state.duelRoundsToWin,
                 state.countdownRemainingSeconds,
                 BuildDuelPhaseLabel(state));
+            RefreshMatchWaitStatus(state);
+        }
+
+        private void RefreshMatchWaitStatus(RealtimeTransportClient.MatchStateMessage message)
+        {
+            if (gameHud == null || message == null)
+            {
+                return;
+            }
+
+            if (currentPhase == "ending" || message.phase == "ending" || matchOutcomeScheduled)
+            {
+                gameHud.SetMatchStatusMessage(string.Empty);
+                return;
+            }
+
+            switch (message.phase)
+            {
+                case "lobby":
+                    gameHud.SetMatchStatusMessage(
+                        $"Ожидание игроков... ({message.connectedCount}/2)");
+                    break;
+                case "countdown":
+                    gameHud.SetMatchStatusMessage(
+                        $"Старт через {Mathf.Max(0, message.countdownRemainingSeconds)}...");
+                    break;
+                default:
+                    gameHud.SetMatchStatusMessage(string.Empty);
+                    break;
+            }
         }
 
         private string BuildDuelPhaseLabel(RealtimeTransportClient.MatchStateMessage state)

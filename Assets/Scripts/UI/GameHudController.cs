@@ -205,7 +205,21 @@ namespace ShooterPrototype.UI
             FpsCharacterController.SuppressTabCursorToggle = open;
             if (!open)
             {
-                SetPauseSettingsOpen(false);
+                pauseSettingsOpen = false;
+                pauseSettingsPanel?.HideImmediate();
+                if (pauseMainPanel != null)
+                {
+                    pauseMainPanel.SetActive(true);
+                }
+            }
+            else
+            {
+                pauseSettingsOpen = false;
+                pauseSettingsPanel?.HideImmediate();
+                if (pauseMainPanel != null)
+                {
+                    pauseMainPanel.SetActive(true);
+                }
             }
 
             if (pauseMenuPanel != null)
@@ -235,7 +249,7 @@ namespace ShooterPrototype.UI
             }
             else
             {
-                pauseSettingsPanel.Hide();
+                pauseSettingsPanel.HideImmediate();
             }
         }
 
@@ -1075,6 +1089,25 @@ namespace ShooterPrototype.UI
             }
 
             EnsureEventSystemExists();
+        }
+
+        public void WarmUpMatchUi()
+        {
+            EnsureHudExists();
+            if (canvas == null)
+            {
+                return;
+            }
+
+            var root = canvas.transform;
+            EnsureCornerStatsPanel(root);
+            EnsureMatchCornerStatsPanel(root);
+            EnsureMatchOverlayElements(root);
+            EnsureGameplayHintPanel(root);
+            EnsurePauseMenuPanel(root);
+            combatHud?.EnsureOnCanvas(canvas);
+            killFeed?.EnsureOnCanvas(canvas);
+            Canvas.ForceUpdateCanvases();
         }
 
         private void EnsureCombatHud()
@@ -1986,6 +2019,8 @@ namespace ShooterPrototype.UI
 
             pauseSettingsPanel = settingsHostObject.AddComponent<MainMenuSettingsPanel>();
             pauseSettingsPanel.ConfigureLayout(edgeMarginOverride: 28f, leftReservedWidthOverride: 28f, topReservedHeightOverride: 28f);
+            pauseSettingsPanel.SetUseMenuBackdrop(false);
+            pauseSettingsPanel.SetInstantTransitions(true);
             pauseSettingsPanel.SetBackHandler(HandlePauseSettingsBackPressed);
             pauseSettingsPanel.Build(settingsHostRect);
 
