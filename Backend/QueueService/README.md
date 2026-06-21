@@ -2,7 +2,24 @@
 
 Minimal local Queue + Matchmaker service for day 3-4 MVP flow.
 
-Persistent player data (skins, currency, nicknames, future achievements/rewards) is stored in **SQLite** (`data/shooterprototype.db` by default).
+Persistent player data (skins, currency, nicknames, achievements, match stats) is stored in **SQLite** locally or **PostgreSQL** in production.
+
+## Database
+
+| Environment | Driver | Config |
+|-------------|--------|--------|
+| Local dev (default) | SQLite | `DATABASE_PATH` (default `Backend/QueueService/data/shooterprototype.db`) |
+| Production | PostgreSQL | `DATABASE_URL=postgres://user:pass@host:5432/dbname` |
+
+Optional PostgreSQL pool tuning:
+
+- `DB_POOL_MAX` (default `20`)
+- `DB_POOL_IDLE_MS` (default `30000`)
+- `DB_POOL_CONNECT_MS` (default `5000`)
+
+When `DATABASE_URL` is set, PostgreSQL is used automatically. For local PostgreSQL testing without `DATABASE_URL`, set `DB_DRIVER=postgres` and provide `DATABASE_URL`.
+
+**Production deploy on a single VPS:** see [DEPLOY-VPS.md](./DEPLOY-VPS.md).
 
 ## Endpoints
 
@@ -59,4 +76,7 @@ Optional env vars:
 - `MIN_PLAYERS_TO_MATCH` (default `1`)
 - `MATCH_TIMEOUT_SECONDS` (default `20`)
 - `MATCH_BATCH_WINDOW_SECONDS` (default `2`) - waits briefly to group near-simultaneous joins into one match
-- `DATABASE_PATH` (default `Backend/QueueService/data/shooterprototype.db`)
+- `DATABASE_PATH` (default `Backend/QueueService/data/shooterprototype.db`) — SQLite only
+- `DATABASE_URL` — PostgreSQL connection string (enables production DB)
+- `DB_DRIVER` (`sqlite` or `postgres`, default `sqlite` when `DATABASE_URL` is unset)
+- `DB_POOL_MAX`, `DB_POOL_IDLE_MS`, `DB_POOL_CONNECT_MS` — PostgreSQL pool settings

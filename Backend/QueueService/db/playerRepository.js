@@ -14,7 +14,11 @@ const {
   getAllAchievements,
 } = require("../data/achievement-catalog");
 const crypto = require("crypto");
-const { openDatabase, nowMs, newId } = require("./database");
+const { get, all, run, transaction, nowMs, newId } = require("./database");
+
+function useDb(tx) {
+  return tx || { get, all, run };
+}
 
 const STARTER_CURRENCY = 100000;
 const ITEM_TYPE_SKIN = "skin";
@@ -43,19 +47,18 @@ function normalizeNickname(value) {
   return trimmed;
 }
 
-function findPlayerIdByNickname(nickname, excludeInternalPlayerId) {
+async function findPlayerIdByNickname(nickname, excludeInternalPlayerId) {
   if (!nickname) {
     return null;
   }
 
-  const row = openDatabase()
-    .prepare(
-      `SELECT player_id
-       FROM player_profiles
-       WHERE nickname = ? COLLATE NOCASE
-       LIMIT 1`
-    )
-    .get(nickname);
+  const row = await get(
+    `SELECT player_id
+     FROM player_profiles
+     WHERE nickname = ? COLLATE NOCASE
+     LIMIT 1`,
+    [nickname]
+  );
 
   if (!row) {
     return null;
@@ -68,10 +71,10 @@ function findPlayerIdByNickname(nickname, excludeInternalPlayerId) {
   return row.player_id;
 }
 
-function generateUniqueNickname() {
+async function generateUniqueNickname() {
   for (let attempt = 0; attempt < 64; attempt++) {
     const candidate = `Игрок_${1000 + Math.floor(Math.random() * 9000)}`;
-    if (!findPlayerIdByNickname(candidate, null)) {
+    if (!(await findPlayerIdByNickname(candidate, null))) {
       return candidate;
     }
   }
@@ -79,8 +82,8 @@ function generateUniqueNickname() {
   return `Игрок_${crypto.randomUUID().slice(0, 6)}`;
 }
 
-function resolvePlayerNickname(externalPlayerId, ticketIdFallback) {
-  const playerRow = getPlayerByExternalId(externalPlayerId);
+async function resolvePlayerNickname(externalPlayerId, ticketIdFallback) {
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
   if (playerRow && playerRow.nickname) {
     return playerRow.nickname;
   }
@@ -92,7 +95,7 @@ function resolvePlayerNickname(externalPlayerId, ticketIdFallback) {
   return "Игрок";
 }
 
-function isNicknameAvailable(nickname, externalPlayerId) {
+async function isNicknameAvailable(nickname, externalPlayerId) {
   const normalized = normalizeNickname(nickname);
   if (!normalized) {
     return {
@@ -103,8 +106,8 @@ function isNicknameAvailable(nickname, externalPlayerId) {
     };
   }
 
-  const playerRow = externalPlayerId ? getPlayerByExternalId(externalPlayerId) : null;
-  const takenBy = findPlayerIdByNickname(normalized, playerRow ? playerRow.id : null);
+  const playerRow = externalPlayerId ? await getPlayerByExternalId(externalPlayerId) : null;
+  const takenBy = await findPlayerIdByNickname(normalized, playerRow ? playerRow.id : null);
   if (takenBy) {
     return {
       ok: true,
@@ -122,34 +125,30 @@ function isNicknameAvailable(nickname, externalPlayerId) {
   };
 }
 
-function getPlayerByExternalId(externalPlayerId) {
-  const db = openDatabase();
-  return db
-    .prepare(
-      `SELECT p.id, p.external_player_id, p.created_at, p.updated_at,
-              pp.nickname, pp.selected_character_model, pp.currency_balance,
-              pp.starter_pack_granted, pp.rating, pp.updated_at AS profile_updated_at
-       FROM players p
-       LEFT JOIN player_profiles pp ON pp.player_id = p.id
-       WHERE p.external_player_id = ?`
-    )
-    .get(normalizeExternalPlayerId(externalPlayerId));
+async function getPlayerByExternalId(externalPlayerId) {
+  return get(
+    `SELECT p.id, p.external_player_id, p.created_at, p.updated_at,
+            pp.nickname, pp.selected_character_model, pp.currency_balance,
+            pp.starter_pack_granted, pp.rating, pp.updated_at AS profile_updated_at
+     FROM players p
+     LEFT JOIN player_profiles pp ON pp.player_id = p.id
+     WHERE p.external_player_id = ?`,
+    [normalizeExternalPlayerId(externalPlayerId)]
+  );
 }
 
-function getOwnedSkinIds(playerId) {
-  return getOwnedSkinQuantities(playerId).map((entry) => entry.skinId);
+async function getOwnedSkinIds(playerId) {
+  return (await getOwnedSkinQuantities(playerId)).map((entry) => entry.skinId);
 }
 
-function getOwnedSkinQuantities(playerId) {
-  const db = openDatabase();
-  const rows = db
-    .prepare(
-      `SELECT item_id, quantity
-       FROM player_owned_items
-       WHERE player_id = ? AND item_type = ?
-       ORDER BY item_id ASC`
-    )
-    .all(playerId, ITEM_TYPE_SKIN);
+async function getOwnedSkinQuantities(playerId) {
+  const rows = await all(
+    `SELECT item_id, quantity
+     FROM player_owned_items
+     WHERE player_id = ? AND item_type = ?
+     ORDER BY item_id ASC`,
+    [playerId, ITEM_TYPE_SKIN]
+  );
 
   return rows.map((row) => ({
     skinId: row.item_id,
@@ -157,55 +156,54 @@ function getOwnedSkinQuantities(playerId) {
   }));
 }
 
-function grantOwnedSkin(playerId, skinId, source, allowDuplicateIncrement) {
+async function grantOwnedSkin(playerId, skinId, source, allowDuplicateIncrement, tx = null) {
   const normalizedSkinId = String(skinId || "").trim();
   if (!normalizedSkinId || !isKnownSkinId(normalizedSkinId)) {
     return false;
   }
 
-  const db = openDatabase();
+  const db = useDb(tx);
   const timestamp = nowMs();
-  const existing = db
-    .prepare(
-      `SELECT id, quantity
-       FROM player_owned_items
-       WHERE player_id = ? AND item_type = ? AND item_id = ?`
-    )
-    .get(playerId, ITEM_TYPE_SKIN, normalizedSkinId);
+  const existing = await db.get(
+    `SELECT id, quantity
+     FROM player_owned_items
+     WHERE player_id = ? AND item_type = ? AND item_id = ?`,
+    [playerId, ITEM_TYPE_SKIN, normalizedSkinId]
+  );
 
   if (existing) {
     if (!allowDuplicateIncrement) {
       return false;
     }
 
-    db.prepare(
+    await db.run(
       `UPDATE player_owned_items
        SET quantity = quantity + 1,
            source = ?,
            acquired_at = ?
-       WHERE id = ?`
-    ).run(source, timestamp, existing.id);
+       WHERE id = ?`,
+      [source, timestamp, existing.id]
+    );
     return true;
   }
 
-  db.prepare(
+  await db.run(
     `INSERT INTO player_owned_items
      (player_id, item_type, item_id, source, acquired_at, quantity)
-     VALUES (?, ?, ?, ?, ?, 1)`
-  ).run(playerId, ITEM_TYPE_SKIN, normalizedSkinId, source, timestamp);
+     VALUES (?, ?, ?, ?, ?, 1)`,
+    [playerId, ITEM_TYPE_SKIN, normalizedSkinId, source, timestamp]
+  );
   return true;
 }
 
-function getOwnedCaseQuantities(playerId) {
-  const db = openDatabase();
-  const rows = db
-    .prepare(
-      `SELECT item_id, quantity
-       FROM player_owned_items
-       WHERE player_id = ? AND item_type = ?
-       ORDER BY item_id ASC`
-    )
-    .all(playerId, ITEM_TYPE_CASE);
+async function getOwnedCaseQuantities(playerId) {
+  const rows = await all(
+    `SELECT item_id, quantity
+     FROM player_owned_items
+     WHERE player_id = ? AND item_type = ?
+     ORDER BY item_id ASC`,
+    [playerId, ITEM_TYPE_CASE]
+  );
 
   return rows.map((row) => ({
     caseId: row.item_id,
@@ -213,86 +211,85 @@ function getOwnedCaseQuantities(playerId) {
   }));
 }
 
-function grantOwnedCase(playerId, caseId, source, allowDuplicateIncrement) {
+async function grantOwnedCase(playerId, caseId, source, allowDuplicateIncrement, tx = null) {
   const normalizedCaseId = String(caseId || "").trim();
   if (!normalizedCaseId || !getCaseDefinition(normalizedCaseId)) {
     return false;
   }
 
-  const db = openDatabase();
+  const db = useDb(tx);
   const timestamp = nowMs();
-  const existing = db
-    .prepare(
-      `SELECT id, quantity
-       FROM player_owned_items
-       WHERE player_id = ? AND item_type = ? AND item_id = ?`
-    )
-    .get(playerId, ITEM_TYPE_CASE, normalizedCaseId);
+  const existing = await db.get(
+    `SELECT id, quantity
+     FROM player_owned_items
+     WHERE player_id = ? AND item_type = ? AND item_id = ?`,
+    [playerId, ITEM_TYPE_CASE, normalizedCaseId]
+  );
 
   if (existing) {
     if (!allowDuplicateIncrement) {
       return false;
     }
 
-    db.prepare(
+    await db.run(
       `UPDATE player_owned_items
        SET quantity = quantity + 1,
            source = ?,
            acquired_at = ?
-       WHERE id = ?`
-    ).run(source, timestamp, existing.id);
+       WHERE id = ?`,
+      [source, timestamp, existing.id]
+    );
     return true;
   }
 
-  db.prepare(
+  await db.run(
     `INSERT INTO player_owned_items
      (player_id, item_type, item_id, source, acquired_at, quantity)
-     VALUES (?, ?, ?, ?, ?, 1)`
-  ).run(playerId, ITEM_TYPE_CASE, normalizedCaseId, source, timestamp);
+     VALUES (?, ?, ?, ?, ?, 1)`,
+    [playerId, ITEM_TYPE_CASE, normalizedCaseId, source, timestamp]
+  );
   return true;
 }
 
-function consumeOwnedCase(playerId, caseId) {
+async function consumeOwnedCase(playerId, caseId, tx = null) {
   const normalizedCaseId = String(caseId || "").trim();
   if (!normalizedCaseId) {
     return false;
   }
 
-  const db = openDatabase();
-  const existing = db
-    .prepare(
-      `SELECT id, quantity
-       FROM player_owned_items
-       WHERE player_id = ? AND item_type = ? AND item_id = ?`
-    )
-    .get(playerId, ITEM_TYPE_CASE, normalizedCaseId);
+  const db = useDb(tx);
+  const existing = await db.get(
+    `SELECT id, quantity
+     FROM player_owned_items
+     WHERE player_id = ? AND item_type = ? AND item_id = ?`,
+    [playerId, ITEM_TYPE_CASE, normalizedCaseId]
+  );
 
   if (!existing || existing.quantity <= 0) {
     return false;
   }
 
   if (existing.quantity <= 1) {
-    db.prepare(`DELETE FROM player_owned_items WHERE id = ?`).run(existing.id);
+    await db.run(`DELETE FROM player_owned_items WHERE id = ?`, [existing.id]);
   } else {
-    db.prepare(
+    await db.run(
       `UPDATE player_owned_items
        SET quantity = quantity - 1
-       WHERE id = ?`
-    ).run(existing.id);
+       WHERE id = ?`,
+      [existing.id]
+    );
   }
 
   return true;
 }
 
-function getEquippedMap(playerId) {
-  const db = openDatabase();
-  const rows = db
-    .prepare(
-      `SELECT slot_key, item_id
-       FROM player_equipped_items
-       WHERE player_id = ?`
-    )
-    .all(playerId);
+async function getEquippedMap(playerId) {
+  const rows = await all(
+    `SELECT slot_key, item_id
+     FROM player_equipped_items
+     WHERE player_id = ?`,
+    [playerId]
+  );
 
   const equipped = {};
   for (const slot of EQUIPMENT_SLOTS) {
@@ -324,8 +321,7 @@ function mapEquippedForClient(equippedMap) {
   };
 }
 
-function ensureWeaponSkinDefaults(playerId) {
-  const db = openDatabase();
+async function ensureWeaponSkinDefaults(playerId) {
   const timestamp = nowMs();
   const weaponDefaults = [
     "weapon_ak47_000",
@@ -340,52 +336,51 @@ function ensureWeaponSkinDefaults(playerId) {
     weapon_mp7: "weapon_mp7_000",
   };
 
-  const insertOwned = db.prepare(
-    `INSERT OR IGNORE INTO player_owned_items
-     (player_id, item_type, item_id, source, acquired_at)
-     VALUES (?, ?, ?, ?, ?)`
-  );
   for (const skinId of weaponDefaults) {
-    insertOwned.run(playerId, ITEM_TYPE_SKIN, skinId, "weapon_defaults", timestamp);
+    await run(
+      `INSERT OR IGNORE INTO player_owned_items
+       (player_id, item_type, item_id, source, acquired_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [playerId, ITEM_TYPE_SKIN, skinId, "weapon_defaults", timestamp]
+    );
   }
 
-  const selectEquipped = db.prepare(
-    `SELECT item_id
-     FROM player_equipped_items
-     WHERE player_id = ? AND slot_key = ?`
-  );
-  const insertEquipped = db.prepare(
-    `INSERT INTO player_equipped_items (player_id, slot_key, item_id, updated_at)
-     VALUES (?, ?, ?, ?)`
-  );
-  const updateEquipped = db.prepare(
-    `UPDATE player_equipped_items
-     SET item_id = ?, updated_at = ?
-     WHERE player_id = ? AND slot_key = ?`
-  );
-
   for (const [slot, skinId] of Object.entries(weaponEquipped)) {
-    const existing = selectEquipped.get(playerId, slot);
+    const existing = await get(
+      `SELECT item_id
+       FROM player_equipped_items
+       WHERE player_id = ? AND slot_key = ?`,
+      [playerId, slot]
+    );
     if (!existing) {
-      insertEquipped.run(playerId, slot, skinId, timestamp);
+      await run(
+        `INSERT INTO player_equipped_items (player_id, slot_key, item_id, updated_at)
+         VALUES (?, ?, ?, ?)`,
+        [playerId, slot, skinId, timestamp]
+      );
       continue;
     }
 
     if (!existing.item_id) {
-      updateEquipped.run(skinId, timestamp, playerId, slot);
+      await run(
+        `UPDATE player_equipped_items
+         SET item_id = ?, updated_at = ?
+         WHERE player_id = ? AND slot_key = ?`,
+        [skinId, timestamp, playerId, slot]
+      );
     }
   }
 }
 
-function buildProfileResponse(playerRow) {
+async function buildProfileResponse(playerRow) {
   if (!playerRow) {
     return null;
   }
 
-  ensureWeaponSkinDefaults(playerRow.id);
+  await ensureWeaponSkinDefaults(playerRow.id);
 
-  const ownedSkins = getOwnedSkinIds(playerRow.id);
-  const equipped = mapEquippedForClient(getEquippedMap(playerRow.id));
+  const ownedSkins = await getOwnedSkinIds(playerRow.id);
+  const equipped = mapEquippedForClient(await getEquippedMap(playerRow.id));
 
   return {
     playerId: playerRow.external_player_id,
@@ -398,40 +393,38 @@ function buildProfileResponse(playerRow) {
     rating: Number.isFinite(playerRow.rating) ? Math.max(0, playerRow.rating) : 1000,
     starterPackGranted: !!playerRow.starter_pack_granted,
     ownedSkins: ownedSkins,
-    ownedSkinQuantities: getOwnedSkinQuantities(playerRow.id),
-    ownedCaseQuantities: getOwnedCaseQuantities(playerRow.id),
+    ownedSkinQuantities: await getOwnedSkinQuantities(playerRow.id),
+    ownedCaseQuantities: await getOwnedCaseQuantities(playerRow.id),
     equipped,
-    achievements: listPlayerAchievements(playerRow.id),
-    claimedRewards: listPlayerRewardClaims(playerRow.id),
-    stats: getPlayerMatchStats(playerRow.id),
+    achievements: await listPlayerAchievements(playerRow.id),
+    claimedRewards: await listPlayerRewardClaims(playerRow.id),
+    stats: await getPlayerMatchStats(playerRow.id),
   };
 }
 
-function ensurePlayerMatchStats(playerId) {
+async function ensurePlayerMatchStats(playerId) {
   if (!playerId) {
     return;
   }
 
-  const db = openDatabase();
-  db.prepare(
+  await run(
     `INSERT OR IGNORE INTO player_match_stats
      (player_id, match_count, total_kills, total_deaths, total_wins,
       total_placement_sum, total_damage, updated_at)
-     VALUES (?, 0, 0, 0, 0, 0, 0, ?)`
-  ).run(playerId, nowMs());
+     VALUES (?, 0, 0, 0, 0, 0, 0, ?)`,
+    [playerId, nowMs()]
+  );
 }
 
-function getPlayerMatchStats(playerId) {
-  ensurePlayerMatchStats(playerId);
-  const db = openDatabase();
-  const row = db
-    .prepare(
-      `SELECT match_count, total_kills, total_deaths, total_wins,
-              total_placement_sum, total_damage
-       FROM player_match_stats
-       WHERE player_id = ?`
-    )
-    .get(playerId);
+async function getPlayerMatchStats(playerId) {
+  await ensurePlayerMatchStats(playerId);
+  const row = await get(
+    `SELECT match_count, total_kills, total_deaths, total_wins,
+            total_placement_sum, total_damage
+     FROM player_match_stats
+     WHERE player_id = ?`,
+    [playerId]
+  );
 
   const matchCount = row && Number.isFinite(row.match_count) ? row.match_count : 0;
   const totalKills = row && Number.isFinite(row.total_kills) ? row.total_kills : 0;
@@ -470,7 +463,7 @@ function calculateRatingDelta(placement, kills, matchMode) {
   return Math.max(-30, Math.min(30, placementDelta + killBonus));
 }
 
-function recordMatchStats(externalPlayerId, payload) {
+async function recordMatchStats(externalPlayerId, payload) {
   const normalizedSourceId = String(payload && payload.sourceId ? payload.sourceId : "").trim();
   if (!normalizedSourceId) {
     return { ok: false, error: "MissingSourceId", message: "Match source id is required." };
@@ -486,25 +479,23 @@ function recordMatchStats(externalPlayerId, payload) {
     return { ok: false, error: "InvalidStats", message: "Match stats payload is invalid." };
   }
 
-  const playerRow = getPlayerByExternalId(externalPlayerId);
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
   if (!playerRow) {
     return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
   }
 
-  ensurePlayerMatchStats(playerRow.id);
-  const db = openDatabase();
+  await ensurePlayerMatchStats(playerRow.id);
   const timestamp = nowMs();
 
   try {
     let ratingDelta = 0;
-    const alreadyReported = db.transaction(() => {
-      const existing = db
-        .prepare(
-          `SELECT id, rating_delta
-           FROM player_match_stat_reports
-           WHERE player_id = ? AND source_id = ?`
-        )
-        .get(playerRow.id, normalizedSourceId);
+    const alreadyReported = await transaction(async (tx) => {
+      const existing = await tx.get(
+        `SELECT id, rating_delta
+         FROM player_match_stat_reports
+         WHERE player_id = ? AND source_id = ?`,
+        [playerRow.id, normalizedSourceId]
+      );
 
       if (existing) {
         ratingDelta = Number.isFinite(existing.rating_delta) ? existing.rating_delta : 0;
@@ -513,7 +504,7 @@ function recordMatchStats(externalPlayerId, payload) {
 
       ratingDelta = calculateRatingDelta(placement, kills, payload && payload.matchMode);
 
-      db.prepare(
+      await tx.run(
         `UPDATE player_match_stats
          SET match_count = match_count + 1,
              total_kills = total_kills + ?,
@@ -522,30 +513,33 @@ function recordMatchStats(externalPlayerId, payload) {
              total_placement_sum = total_placement_sum + ?,
              total_damage = total_damage + ?,
              updated_at = ?
-         WHERE player_id = ?`
-      ).run(kills, deaths, won ? 1 : 0, placement, damageDealt, timestamp, playerRow.id);
+         WHERE player_id = ?`,
+        [kills, deaths, won ? 1 : 0, placement, damageDealt, timestamp, playerRow.id]
+      );
 
-      db.prepare(
+      await tx.run(
         `UPDATE player_profiles
          SET rating = MAX(0, rating + ?),
              updated_at = ?
-         WHERE player_id = ?`
-      ).run(ratingDelta, timestamp, playerRow.id);
+         WHERE player_id = ?`,
+        [ratingDelta, timestamp, playerRow.id]
+      );
 
-      db.prepare(
+      await tx.run(
         `INSERT INTO player_match_stat_reports
          (player_id, source_id, reported_at, rating_delta)
-         VALUES (?, ?, ?, ?)`
-      ).run(playerRow.id, normalizedSourceId, timestamp, ratingDelta);
+         VALUES (?, ?, ?, ?)`,
+        [playerRow.id, normalizedSourceId, timestamp, ratingDelta]
+      );
 
       return false;
-    })();
+    });
 
     return {
       ok: true,
       alreadyReported,
       ratingDelta,
-      profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)),
+      profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)),
     };
   } catch (error) {
     return {
@@ -556,138 +550,138 @@ function recordMatchStats(externalPlayerId, payload) {
   }
 }
 
-function syncPlayerAchievements(playerId) {
+async function syncPlayerAchievements(playerId) {
   if (!playerId) {
     return;
   }
 
-  const db = openDatabase();
   const achievements = getAllAchievements();
   if (!Array.isArray(achievements) || achievements.length === 0) {
     return;
   }
 
   const timestamp = nowMs();
-  const insert = db.prepare(
-    `INSERT OR IGNORE INTO player_achievements
-     (player_id, achievement_id, progress, target, completed_at, updated_at)
-     VALUES (?, ?, 0, ?, NULL, ?)`
-  );
-
   for (let i = 0; i < achievements.length; i++) {
     const entry = achievements[i];
     if (!entry || !entry.achievementId) {
       continue;
     }
 
-    insert.run(playerId, entry.achievementId, entry.target, timestamp);
+    await run(
+      `INSERT OR IGNORE INTO player_achievements
+       (player_id, achievement_id, progress, target, completed_at, updated_at)
+       VALUES (?, ?, 0, ?, NULL, ?)`,
+      [playerId, entry.achievementId, entry.target, timestamp]
+    );
   }
 }
 
-function assignDefaultNicknameIfMissing(internalPlayerId) {
+async function assignDefaultNicknameIfMissing(internalPlayerId) {
   if (!internalPlayerId) {
     return;
   }
 
-  const db = openDatabase();
-  const row = db
-    .prepare(`SELECT nickname FROM player_profiles WHERE player_id = ?`)
-    .get(internalPlayerId);
+  const row = await get(`SELECT nickname FROM player_profiles WHERE player_id = ?`, [
+    internalPlayerId,
+  ]);
   if (!row || (typeof row.nickname === "string" && row.nickname.trim())) {
     return;
   }
 
-  db.prepare(
+  await run(
     `UPDATE player_profiles
      SET nickname = ?, updated_at = ?
-     WHERE player_id = ?`
-  ).run(generateUniqueNickname(), nowMs(), internalPlayerId);
+     WHERE player_id = ?`,
+    [await generateUniqueNickname(), nowMs(), internalPlayerId]
+  );
 }
 
-function ensurePlayer(externalPlayerId) {
+async function ensurePlayer(externalPlayerId) {
   const normalizedExternalId = normalizeExternalPlayerId(externalPlayerId);
-  let playerRow = getPlayerByExternalId(normalizedExternalId);
+  let playerRow = await getPlayerByExternalId(normalizedExternalId);
   if (playerRow) {
     if (!playerRow.nickname) {
-      assignDefaultNicknameIfMissing(playerRow.id);
-      playerRow = getPlayerByExternalId(normalizedExternalId);
+      await assignDefaultNicknameIfMissing(playerRow.id);
+      playerRow = await getPlayerByExternalId(normalizedExternalId);
     }
     if (!playerRow.starter_pack_granted) {
-      grantStarterPack(playerRow.id);
-      playerRow = getPlayerByExternalId(normalizedExternalId);
+      await grantStarterPack(playerRow.id);
+      playerRow = await getPlayerByExternalId(normalizedExternalId);
     }
-    syncPlayerAchievements(playerRow.id);
-    ensurePlayerMatchStats(playerRow.id);
+    await syncPlayerAchievements(playerRow.id);
+    await ensurePlayerMatchStats(playerRow.id);
     return buildProfileResponse(playerRow);
   }
 
-  const db = openDatabase();
   const createdAt = nowMs();
   const playerId = newId();
 
-  const createPlayer = db.transaction(() => {
-    db.prepare(
+  await transaction(async (tx) => {
+    await tx.run(
       `INSERT INTO players (id, external_player_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?)`
-    ).run(playerId, normalizedExternalId, createdAt, createdAt);
+       VALUES (?, ?, ?, ?)`,
+      [playerId, normalizedExternalId, createdAt, createdAt]
+    );
 
-    db.prepare(
+    await tx.run(
       `INSERT INTO player_profiles (
          player_id, nickname, selected_character_model, currency_balance,
          starter_pack_granted, updated_at
-       ) VALUES (?, ?, NULL, 0, 0, ?)`
-    ).run(playerId, generateUniqueNickname(), createdAt);
+       ) VALUES (?, ?, NULL, 0, FALSE, ?)`,
+      [playerId, await generateUniqueNickname(), createdAt]
+    );
 
-    grantStarterPack(playerId);
+    await grantStarterPack(playerId, tx);
   });
 
-  createPlayer();
-  playerRow = getPlayerByExternalId(normalizedExternalId);
-  syncPlayerAchievements(playerRow.id);
-  ensurePlayerMatchStats(playerRow.id);
+  playerRow = await getPlayerByExternalId(normalizedExternalId);
+  await syncPlayerAchievements(playerRow.id);
+  await ensurePlayerMatchStats(playerRow.id);
   return buildProfileResponse(playerRow);
 }
 
-function grantStarterPack(playerId) {
-  const db = openDatabase();
+async function grantStarterPack(playerId, outerTx = null) {
   const timestamp = nowMs();
 
-  const grant = db.transaction(() => {
-    db.prepare(
+  const work = async (tx) => {
+    await tx.run(
       `UPDATE player_profiles
        SET currency_balance = currency_balance + ?,
-           starter_pack_granted = 1,
+           starter_pack_granted = TRUE,
            updated_at = ?
-       WHERE player_id = ?`
-    ).run(STARTER_CURRENCY, timestamp, playerId);
-
-    const insertOwned = db.prepare(
-      `INSERT OR IGNORE INTO player_owned_items
-       (player_id, item_type, item_id, source, acquired_at)
-       VALUES (?, ?, ?, ?, ?)`
+       WHERE player_id = ?`,
+      [STARTER_CURRENCY, timestamp, playerId]
     );
 
     for (const skinId of DEFAULT_OWNED_SKIN_IDS) {
-      insertOwned.run(playerId, ITEM_TYPE_SKIN, skinId, "starter", timestamp);
+      await tx.run(
+        `INSERT OR IGNORE INTO player_owned_items
+         (player_id, item_type, item_id, source, acquired_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        [playerId, ITEM_TYPE_SKIN, skinId, "starter", timestamp]
+      );
     }
-
-    const upsertEquipped = db.prepare(
-      `INSERT INTO player_equipped_items (player_id, slot_key, item_id, updated_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(player_id, slot_key) DO UPDATE SET
-         item_id = excluded.item_id,
-         updated_at = excluded.updated_at`
-    );
 
     for (const slot of EQUIPMENT_SLOTS) {
-      upsertEquipped.run(playerId, slot, DEFAULT_EQUIPPED[slot] || "", timestamp);
+      await tx.run(
+        `INSERT INTO player_equipped_items (player_id, slot_key, item_id, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(player_id, slot_key) DO UPDATE SET
+           item_id = excluded.item_id,
+           updated_at = excluded.updated_at`,
+        [playerId, slot, DEFAULT_EQUIPPED[slot] || "", timestamp]
+      );
     }
-  });
+  };
 
-  grant();
+  if (outerTx) {
+    return work(outerTx);
+  }
+
+  return transaction(work);
 }
 
-function purchaseSkin(externalPlayerId, skinId) {
+async function purchaseSkin(externalPlayerId, skinId) {
   const normalizedSkinId = String(skinId || "").trim();
   if (!isKnownSkinId(normalizedSkinId)) {
     return { ok: false, error: "UnknownSkin", message: "Unknown skin id." };
@@ -696,12 +690,12 @@ function purchaseSkin(externalPlayerId, skinId) {
     return { ok: false, error: "NotForSale", message: "Skin is not sold in shop." };
   }
 
-  const playerRow = getPlayerByExternalId(externalPlayerId);
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
   if (!playerRow) {
     return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
   }
 
-  const owned = getOwnedSkinIds(playerRow.id);
+  const owned = await getOwnedSkinIds(playerRow.id);
   if (owned.includes(normalizedSkinId)) {
     return { ok: false, error: "AlreadyOwned", message: "Skin already owned." };
   }
@@ -711,38 +705,36 @@ function purchaseSkin(externalPlayerId, skinId) {
     return { ok: false, error: "NotForSale", message: "Skin is not sold in shop." };
   }
 
-  const db = openDatabase();
   const timestamp = nowMs();
 
   try {
-    const purchase = db.transaction(() => {
-      const profile = db
-        .prepare(
-          `SELECT currency_balance
-           FROM player_profiles
-           WHERE player_id = ?`
-        )
-        .get(playerRow.id);
+    await transaction(async (tx) => {
+      const profile = await tx.get(
+        `SELECT currency_balance
+         FROM player_profiles
+         WHERE player_id = ?`,
+        [playerRow.id]
+      );
 
       if (!profile || profile.currency_balance < price) {
         throw new Error("INSUFFICIENT_FUNDS");
       }
 
-      db.prepare(
+      await tx.run(
         `UPDATE player_profiles
          SET currency_balance = currency_balance - ?,
              updated_at = ?
-         WHERE player_id = ?`
-      ).run(price, timestamp, playerRow.id);
+         WHERE player_id = ?`,
+        [price, timestamp, playerRow.id]
+      );
 
-      db.prepare(
+      await tx.run(
         `INSERT INTO player_owned_items
          (player_id, item_type, item_id, source, acquired_at)
-         VALUES (?, ?, ?, ?, ?)`
-      ).run(playerRow.id, ITEM_TYPE_SKIN, normalizedSkinId, "purchase", timestamp);
+         VALUES (?, ?, ?, ?, ?)`,
+        [playerRow.id, ITEM_TYPE_SKIN, normalizedSkinId, "purchase", timestamp]
+      );
     });
-
-    purchase();
   } catch (error) {
     if (String(error.message || error) === "INSUFFICIENT_FUNDS") {
       return { ok: false, error: "InsufficientFunds", message: "Not enough currency." };
@@ -750,10 +742,10 @@ function purchaseSkin(externalPlayerId, skinId) {
     throw error;
   }
 
-  return { ok: true, profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)) };
+  return { ok: true, profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)) };
 }
 
-function purchaseCase(externalPlayerId, caseId) {
+async function purchaseCase(externalPlayerId, caseId) {
   const normalizedCaseId = String(caseId || "").trim();
   const caseDefinition = getCaseDefinition(normalizedCaseId);
   if (!caseDefinition) {
@@ -769,41 +761,38 @@ function purchaseCase(externalPlayerId, caseId) {
     return { ok: false, error: "NotForSale", message: "Case is not sold in shop." };
   }
 
-  const playerRow = getPlayerByExternalId(externalPlayerId);
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
   if (!playerRow) {
     return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
   }
 
-  const db = openDatabase();
   const timestamp = nowMs();
 
   try {
-    const purchase = db.transaction(() => {
-      const profile = db
-        .prepare(
-          `SELECT currency_balance
-           FROM player_profiles
-           WHERE player_id = ?`
-        )
-        .get(playerRow.id);
+    await transaction(async (tx) => {
+      const profile = await tx.get(
+        `SELECT currency_balance
+         FROM player_profiles
+         WHERE player_id = ?`,
+        [playerRow.id]
+      );
 
       if (!profile || profile.currency_balance < price) {
         throw new Error("INSUFFICIENT_FUNDS");
       }
 
-      db.prepare(
+      await tx.run(
         `UPDATE player_profiles
          SET currency_balance = currency_balance - ?,
              updated_at = ?
-         WHERE player_id = ?`
-      ).run(price, timestamp, playerRow.id);
+         WHERE player_id = ?`,
+        [price, timestamp, playerRow.id]
+      );
 
-      if (!grantOwnedCase(playerRow.id, normalizedCaseId, "purchase", true)) {
+      if (!(await grantOwnedCase(playerRow.id, normalizedCaseId, "purchase", true, tx))) {
         throw new Error("GRANT_FAILED");
       }
     });
-
-    purchase();
   } catch (error) {
     if (String(error.message || error) === "INSUFFICIENT_FUNDS") {
       return { ok: false, error: "InsufficientFunds", message: "Not enough currency." };
@@ -818,11 +807,11 @@ function purchaseCase(externalPlayerId, caseId) {
 
   return {
     ok: true,
-    profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)),
+    profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)),
   };
 }
 
-function openCase(externalPlayerId, caseId) {
+async function openCase(externalPlayerId, caseId) {
   const normalizedCaseId = String(caseId || "").trim();
   const caseDefinition = getCaseDefinition(normalizedCaseId);
   if (!caseDefinition) {
@@ -833,7 +822,7 @@ function openCase(externalPlayerId, caseId) {
     return { ok: false, error: "EmptyCase", message: "Case loot pool is empty." };
   }
 
-  const playerRow = getPlayerByExternalId(externalPlayerId);
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
   if (!playerRow) {
     return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
   }
@@ -843,27 +832,25 @@ function openCase(externalPlayerId, caseId) {
     return { ok: false, error: "RollFailed", message: "Failed to roll case reward." };
   }
 
-  const db = openDatabase();
   const timestamp = nowMs();
 
   try {
-    const open = db.transaction(() => {
-      if (!consumeOwnedCase(playerRow.id, normalizedCaseId)) {
+    await transaction(async (tx) => {
+      if (!(await consumeOwnedCase(playerRow.id, normalizedCaseId, tx))) {
         throw new Error("CASE_NOT_OWNED");
       }
 
-      if (!grantOwnedSkin(playerRow.id, rolledSkinId, "case_open", true)) {
+      if (!(await grantOwnedSkin(playerRow.id, rolledSkinId, "case_open", true, tx))) {
         throw new Error("GRANT_FAILED");
       }
 
-      db.prepare(
+      await tx.run(
         `UPDATE player_profiles
          SET updated_at = ?
-         WHERE player_id = ?`
-      ).run(timestamp, playerRow.id);
+         WHERE player_id = ?`,
+        [timestamp, playerRow.id]
+      );
     });
-
-    open();
   } catch (error) {
     if (String(error.message || error) === "CASE_NOT_OWNED") {
       return { ok: false, error: "CaseNotOwned", message: "Case is not in inventory." };
@@ -879,17 +866,17 @@ function openCase(externalPlayerId, caseId) {
   return {
     ok: true,
     rolledSkinId,
-    profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)),
+    profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)),
   };
 }
 
-function setEquippedSlot(externalPlayerId, slotKey, itemId) {
+async function setEquippedSlot(externalPlayerId, slotKey, itemId) {
   const normalizedSlot = String(slotKey || "").trim().toLowerCase();
   if (!EQUIPMENT_SLOTS.includes(normalizedSlot)) {
     return { ok: false, error: "InvalidSlot", message: "Unknown equipment slot." };
   }
 
-  const playerRow = getPlayerByExternalId(externalPlayerId);
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
   if (!playerRow) {
     return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
   }
@@ -918,55 +905,55 @@ function setEquippedSlot(externalPlayerId, slotKey, itemId) {
       return { ok: false, error: "WrongSlot", message: "Skin does not belong to this slot." };
     }
 
-    const owned = getOwnedSkinIds(playerRow.id);
+    const owned = await getOwnedSkinIds(playerRow.id);
     if (!owned.includes(normalizedItemId)) {
       return { ok: false, error: "NotOwned", message: "Skin is not owned." };
     }
   }
 
-  const db = openDatabase();
-  db.prepare(
+  await run(
     `INSERT INTO player_equipped_items (player_id, slot_key, item_id, updated_at)
      VALUES (?, ?, ?, ?)
      ON CONFLICT(player_id, slot_key) DO UPDATE SET
        item_id = excluded.item_id,
-       updated_at = excluded.updated_at`
-  ).run(playerRow.id, normalizedSlot, normalizedItemId, nowMs());
+       updated_at = excluded.updated_at`,
+    [playerRow.id, normalizedSlot, normalizedItemId, nowMs()]
+  );
 
-  return { ok: true, profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)) };
+  return { ok: true, profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)) };
 }
 
-function setNickname(externalPlayerId, nickname) {
+async function setNickname(externalPlayerId, nickname) {
   const normalizedNickname = normalizeNickname(nickname);
   if (!normalizedNickname) {
     return { ok: false, error: "InvalidNickname", message: "Nickname is empty or invalid." };
   }
 
-  const playerRow = getPlayerByExternalId(externalPlayerId);
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
   if (!playerRow) {
     return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
   }
 
-  if (findPlayerIdByNickname(normalizedNickname, playerRow.id)) {
+  if (await findPlayerIdByNickname(normalizedNickname, playerRow.id)) {
     return { ok: false, error: "NicknameTaken", message: "Nickname is already taken." };
   }
 
-  const db = openDatabase();
   const timestamp = nowMs();
   try {
-    const update = db.transaction(() => {
-      db.prepare(
+    await transaction(async (tx) => {
+      await tx.run(
         `UPDATE player_profiles
          SET nickname = ?, updated_at = ?
-         WHERE player_id = ?`
-      ).run(normalizedNickname, timestamp, playerRow.id);
+         WHERE player_id = ?`,
+        [normalizedNickname, timestamp, playerRow.id]
+      );
 
-      db.prepare(
+      await tx.run(
         `INSERT INTO player_nickname_history (player_id, nickname, changed_at)
-         VALUES (?, ?, ?)`
-      ).run(playerRow.id, normalizedNickname, timestamp);
+         VALUES (?, ?, ?)`,
+        [playerRow.id, normalizedNickname, timestamp]
+      );
     });
-    update();
   } catch (error) {
     if (String(error.message || error).includes("UNIQUE")) {
       return { ok: false, error: "NicknameTaken", message: "Nickname is already taken." };
@@ -975,38 +962,36 @@ function setNickname(externalPlayerId, nickname) {
     throw error;
   }
 
-  return { ok: true, profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)) };
+  return { ok: true, profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)) };
 }
 
-function setSelectedCharacterModel(externalPlayerId, modelName) {
+async function setSelectedCharacterModel(externalPlayerId, modelName) {
   const normalizedModel = typeof modelName === "string" ? modelName.trim().slice(0, 64) : "";
-  const playerRow = getPlayerByExternalId(externalPlayerId);
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
   if (!playerRow) {
     return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
   }
 
-  const db = openDatabase();
-  db.prepare(
+  await run(
     `UPDATE player_profiles
      SET selected_character_model = ?, updated_at = ?
-     WHERE player_id = ?`
-  ).run(normalizedModel, nowMs(), playerRow.id);
+     WHERE player_id = ?`,
+    [normalizedModel, nowMs(), playerRow.id]
+  );
 
-  return { ok: true, profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)) };
+  return { ok: true, profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)) };
 }
 
-function listPlayerAchievements(playerId) {
-  const db = openDatabase();
-  const rows = db
-    .prepare(
-      `SELECT pa.achievement_id, pa.progress, pa.target, pa.completed_at, pa.claimed_at,
-              ad.code, ad.title, ad.description, ad.category, ad.is_hidden
-       FROM player_achievements pa
-       JOIN achievement_definitions ad ON ad.id = pa.achievement_id
-       WHERE pa.player_id = ? AND pa.claimed_at IS NULL
-       ORDER BY ad.sort_order ASC, ad.title ASC`
-    )
-    .all(playerId);
+async function listPlayerAchievements(playerId) {
+  const rows = await all(
+    `SELECT pa.achievement_id, pa.progress, pa.target, pa.completed_at, pa.claimed_at,
+            ad.code, ad.title, ad.description, ad.category, ad.is_hidden
+     FROM player_achievements pa
+     JOIN achievement_definitions ad ON ad.id = pa.achievement_id
+     WHERE pa.player_id = ? AND pa.claimed_at IS NULL
+     ORDER BY ad.sort_order ASC, ad.title ASC`,
+    [playerId]
+  );
 
   return rows.map((row) => {
     const definition = getAchievementDefinition(row.achievement_id);
@@ -1033,42 +1018,40 @@ function listPlayerAchievements(playerId) {
   });
 }
 
-function reportAchievementEvent(externalPlayerId, eventType, amount) {
+async function reportAchievementEvent(externalPlayerId, eventType, amount) {
   const normalizedEventType = String(eventType || "").trim();
   if (!normalizedEventType) {
     return { ok: false, error: "MissingEventType", message: "Event type is required." };
   }
 
   const increment = Math.max(1, Math.floor(Number(amount) || 1));
-  const playerRow = getPlayerByExternalId(externalPlayerId);
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
   if (!playerRow) {
     return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
   }
 
-  syncPlayerAchievements(playerRow.id);
+  await syncPlayerAchievements(playerRow.id);
   const matching = getAchievementsByEventType(normalizedEventType);
   if (!Array.isArray(matching) || matching.length === 0) {
     return {
       ok: true,
       newlyCompleted: [],
-      profile: buildProfileResponse(playerRow),
+      profile: await buildProfileResponse(playerRow),
     };
   }
 
-  const db = openDatabase();
   const timestamp = nowMs();
   const newlyCompleted = [];
 
-  const report = db.transaction(() => {
+  await transaction(async (tx) => {
     for (let i = 0; i < matching.length; i++) {
       const definition = matching[i];
-      const row = db
-        .prepare(
-          `SELECT progress, target, completed_at, claimed_at
-           FROM player_achievements
-           WHERE player_id = ? AND achievement_id = ?`
-        )
-        .get(playerRow.id, definition.achievementId);
+      const row = await tx.get(
+        `SELECT progress, target, completed_at, claimed_at
+         FROM player_achievements
+         WHERE player_id = ? AND achievement_id = ?`,
+        [playerRow.id, definition.achievementId]
+      );
 
       if (!row || row.completed_at || row.claimed_at) {
         continue;
@@ -1078,14 +1061,15 @@ function reportAchievementEvent(externalPlayerId, eventType, amount) {
       const nextProgress = Math.min(target, (Number(row.progress) || 0) + increment);
       const completedAt = nextProgress >= target ? timestamp : null;
 
-      db.prepare(
+      await tx.run(
         `UPDATE player_achievements
          SET progress = ?,
              target = ?,
              completed_at = COALESCE(completed_at, ?),
              updated_at = ?
-         WHERE player_id = ? AND achievement_id = ?`
-      ).run(nextProgress, target, completedAt, timestamp, playerRow.id, definition.achievementId);
+         WHERE player_id = ? AND achievement_id = ?`,
+        [nextProgress, target, completedAt, timestamp, playerRow.id, definition.achievementId]
+      );
 
       if (completedAt && !row.completed_at) {
         newlyCompleted.push({
@@ -1097,36 +1081,32 @@ function reportAchievementEvent(externalPlayerId, eventType, amount) {
     }
   });
 
-  report();
-
   return {
     ok: true,
     newlyCompleted,
-    profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)),
+    profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)),
   };
 }
 
-function claimAchievement(externalPlayerId, achievementId) {
+async function claimAchievement(externalPlayerId, achievementId) {
   const normalizedAchievementId = String(achievementId || "").trim();
   const definition = getAchievementDefinition(normalizedAchievementId);
   if (!definition) {
     return { ok: false, error: "UnknownAchievement", message: "Unknown achievement id." };
   }
 
-  const playerRow = getPlayerByExternalId(externalPlayerId);
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
   if (!playerRow) {
     return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
   }
 
-  const db = openDatabase();
   const timestamp = nowMs();
-  const row = db
-    .prepare(
-      `SELECT completed_at, claimed_at
-       FROM player_achievements
-       WHERE player_id = ? AND achievement_id = ?`
-    )
-    .get(playerRow.id, normalizedAchievementId);
+  const row = await get(
+    `SELECT completed_at, claimed_at
+     FROM player_achievements
+     WHERE player_id = ? AND achievement_id = ?`,
+    [playerRow.id, normalizedAchievementId]
+  );
 
   if (!row || !row.completed_at) {
     return { ok: false, error: "NotCompleted", message: "Achievement is not completed yet." };
@@ -1137,17 +1117,18 @@ function claimAchievement(externalPlayerId, achievementId) {
   }
 
   try {
-    const claim = db.transaction(() => {
+    await transaction(async (tx) => {
       if (definition.reward.type === "currency") {
-        db.prepare(
+        await tx.run(
           `UPDATE player_profiles
            SET currency_balance = currency_balance + ?,
                updated_at = ?
-           WHERE player_id = ?`
-        ).run(definition.reward.amount, timestamp, playerRow.id);
+           WHERE player_id = ?`,
+          [definition.reward.amount, timestamp, playerRow.id]
+        );
       } else if (definition.reward.type === "case") {
         for (let i = 0; i < definition.reward.amount; i++) {
-          if (!grantOwnedCase(playerRow.id, definition.reward.caseId, "achievement", true)) {
+          if (!(await grantOwnedCase(playerRow.id, definition.reward.caseId, "achievement", true, tx))) {
             throw new Error("GRANT_FAILED");
           }
         }
@@ -1155,15 +1136,14 @@ function claimAchievement(externalPlayerId, achievementId) {
         throw new Error("UNKNOWN_REWARD");
       }
 
-      db.prepare(
+      await tx.run(
         `UPDATE player_achievements
          SET claimed_at = ?,
              updated_at = ?
-         WHERE player_id = ? AND achievement_id = ?`
-      ).run(timestamp, timestamp, playerRow.id, normalizedAchievementId);
+         WHERE player_id = ? AND achievement_id = ?`,
+        [timestamp, timestamp, playerRow.id, normalizedAchievementId]
+      );
     });
-
-    claim();
   } catch (error) {
     if (String(error.message || error) === "GRANT_FAILED") {
       return { ok: false, error: "GrantFailed", message: "Failed to grant achievement reward." };
@@ -1178,22 +1158,20 @@ function claimAchievement(externalPlayerId, achievementId) {
 
   return {
     ok: true,
-    profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)),
+    profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)),
   };
 }
 
-function listPlayerRewardClaims(playerId) {
-  const db = openDatabase();
-  const rows = db
-    .prepare(
-      `SELECT prc.reward_id, prc.source_type, prc.source_id, prc.claimed_at,
-              rd.code, rd.reward_type, rd.payload_json
-       FROM player_reward_claims prc
-       JOIN reward_definitions rd ON rd.id = prc.reward_id
-       WHERE prc.player_id = ?
-       ORDER BY prc.claimed_at DESC`
-    )
-    .all(playerId);
+async function listPlayerRewardClaims(playerId) {
+  const rows = await all(
+    `SELECT prc.reward_id, prc.source_type, prc.source_id, prc.claimed_at,
+            rd.code, rd.reward_type, rd.payload_json
+     FROM player_reward_claims prc
+     JOIN reward_definitions rd ON rd.id = prc.reward_id
+     WHERE prc.player_id = ?
+     ORDER BY prc.claimed_at DESC`,
+    [playerId]
+  );
 
   return rows.map((row) => ({
     rewardId: row.reward_id,
@@ -1206,8 +1184,8 @@ function listPlayerRewardClaims(playerId) {
   }));
 }
 
-function playerOwnsSkin(externalPlayerId, skinId) {
-  const playerRow = getPlayerByExternalId(externalPlayerId);
+async function playerOwnsSkin(externalPlayerId, skinId) {
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
   if (!playerRow) {
     return false;
   }
@@ -1215,11 +1193,11 @@ function playerOwnsSkin(externalPlayerId, skinId) {
   if (!normalizedSkinId) {
     return false;
   }
-  const owned = getOwnedSkinIds(playerRow.id);
+  const owned = await getOwnedSkinIds(playerRow.id);
   return owned.includes(normalizedSkinId);
 }
 
-function grantMatchCurrency(externalPlayerId, amount, sourceId) {
+async function grantMatchCurrency(externalPlayerId, amount, sourceId) {
   const normalizedAmount = Math.floor(Number(amount));
   if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
     return { ok: false, error: "InvalidAmount", message: "Reward amount must be positive." };
@@ -1230,49 +1208,49 @@ function grantMatchCurrency(externalPlayerId, amount, sourceId) {
     return { ok: false, error: "MissingSourceId", message: "Match source id is required." };
   }
 
-  const playerRow = getPlayerByExternalId(externalPlayerId);
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
   if (!playerRow) {
     return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
   }
 
-  const db = openDatabase();
   const timestamp = nowMs();
   const grantType = "match_reward";
 
   try {
-    const alreadyGranted = db.transaction(() => {
-      const existing = db
-        .prepare(
-          `SELECT id
-           FROM player_currency_grants
-           WHERE player_id = ? AND grant_type = ? AND source_id = ?`
-        )
-        .get(playerRow.id, grantType, normalizedSourceId);
+    const alreadyGranted = await transaction(async (tx) => {
+      const existing = await tx.get(
+        `SELECT id
+         FROM player_currency_grants
+         WHERE player_id = ? AND grant_type = ? AND source_id = ?`,
+        [playerRow.id, grantType, normalizedSourceId]
+      );
 
       if (existing) {
         return true;
       }
 
-      db.prepare(
+      await tx.run(
         `UPDATE player_profiles
          SET currency_balance = currency_balance + ?,
              updated_at = ?
-         WHERE player_id = ?`
-      ).run(normalizedAmount, timestamp, playerRow.id);
+         WHERE player_id = ?`,
+        [normalizedAmount, timestamp, playerRow.id]
+      );
 
-      db.prepare(
+      await tx.run(
         `INSERT INTO player_currency_grants
          (player_id, grant_type, source_id, amount, granted_at)
-         VALUES (?, ?, ?, ?, ?)`
-      ).run(playerRow.id, grantType, normalizedSourceId, normalizedAmount, timestamp);
+         VALUES (?, ?, ?, ?, ?)`,
+        [playerRow.id, grantType, normalizedSourceId, normalizedAmount, timestamp]
+      );
 
       return false;
-    })();
+    });
 
     return {
       ok: true,
       alreadyGranted,
-      profile: buildProfileResponse(getPlayerByExternalId(externalPlayerId)),
+      profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)),
     };
   } catch (error) {
     return {
@@ -1283,20 +1261,18 @@ function grantMatchCurrency(externalPlayerId, amount, sourceId) {
   }
 }
 
-function getLeaderboard(limit = 25) {
-  const db = openDatabase();
+async function getLeaderboard(limit = 25) {
   const normalizedLimit = Math.max(1, Math.min(25, Math.floor(Number(limit) || 25)));
-  const rows = db
-    .prepare(
-      `SELECT COALESCE(NULLIF(TRIM(pp.nickname), ''), 'Игрок') AS nickname,
-              pp.rating,
-              p.external_player_id AS player_id
-       FROM player_profiles pp
-       INNER JOIN players p ON p.id = pp.player_id
-       ORDER BY pp.rating DESC, pp.updated_at ASC
-       LIMIT ?`
-    )
-    .all(normalizedLimit);
+  const rows = await all(
+    `SELECT COALESCE(NULLIF(TRIM(pp.nickname), ''), 'Игрок') AS nickname,
+            pp.rating,
+            p.external_player_id AS player_id
+     FROM player_profiles pp
+     INNER JOIN players p ON p.id = pp.player_id
+     ORDER BY pp.rating DESC, pp.updated_at ASC
+     LIMIT ?`,
+    [normalizedLimit]
+  );
 
   return rows.map((row, index) => ({
     rank: index + 1,
@@ -1308,17 +1284,17 @@ function getLeaderboard(limit = 25) {
 
 module.exports = {
   ensurePlayer,
-  getProfile: (externalPlayerId) => {
-    const playerRow = getPlayerByExternalId(externalPlayerId);
+  getProfile: async (externalPlayerId) => {
+    const playerRow = await getPlayerByExternalId(externalPlayerId);
     if (!playerRow) {
       return null;
     }
     if (!playerRow.starter_pack_granted) {
-      grantStarterPack(playerRow.id);
+      await grantStarterPack(playerRow.id);
     }
-    syncPlayerAchievements(playerRow.id);
-    ensurePlayerMatchStats(playerRow.id);
-    return buildProfileResponse(getPlayerByExternalId(externalPlayerId));
+    await syncPlayerAchievements(playerRow.id);
+    await ensurePlayerMatchStats(playerRow.id);
+    return buildProfileResponse(await getPlayerByExternalId(externalPlayerId));
   },
   purchaseSkin,
   purchaseCase,

@@ -90,6 +90,13 @@ namespace ShooterPrototype.UI
 
         private void Start()
         {
+            if (ConnectionRecoveryState.TryConsumePending(out var recoveryMessage))
+            {
+                ApplyServerConnectionState(
+                    MainMenuServerConnectionState.Unavailable,
+                    recoveryMessage);
+            }
+
             profileSyncCoroutine = StartCoroutine(SyncProfileRoutine());
         }
 

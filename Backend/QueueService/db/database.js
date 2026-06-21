@@ -1,6 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { resolveDriver } = require("./sqlDialect");
+const { PostgresDriver } = require("./postgresDriver");
 
 let Database;
 try {
@@ -12,7 +14,9 @@ try {
 const DEFAULT_DB_PATH = path.join(__dirname, "..", "data", "shooterprototype.db");
 const SCHEMA_PATH = path.join(__dirname, "schema.sql");
 
-let dbInstance = null;
+let sqliteDb = null;
+let postgresDriver = null;
+let activeDriver = "sqlite";
 
 function nowMs() {
   return Date.now();
@@ -22,30 +26,7 @@ function newId() {
   return crypto.randomUUID();
 }
 
-function openDatabase(dbPath = process.env.DATABASE_PATH || DEFAULT_DB_PATH) {
-  if (dbInstance) {
-    return dbInstance;
-  }
-
-  if (!Database) {
-    throw new Error(
-      "better-sqlite3 is not installed. Run `npm install` in Backend/QueueService."
-    );
-  }
-
-  const dir = path.dirname(dbPath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-
-  dbInstance = new Database(dbPath);
-  dbInstance.pragma("journal_mode = WAL");
-  dbInstance.pragma("foreign_keys = ON");
-  applyMigrations(dbInstance);
-  return dbInstance;
-}
-
-function applyMigrations(db) {
+function applySqliteMigrations(db) {
   db.exec(fs.readFileSync(SCHEMA_PATH, "utf8"));
 
   const insertMigration = db.prepare(
@@ -221,16 +202,142 @@ function applyPlayerAchievementClaimedAtMigration(db, insertMigration) {
   insertMigration.run(migrationName, nowMs());
 }
 
-function closeDatabase() {
-  if (dbInstance) {
-    dbInstance.close();
-    dbInstance = null;
+function openSqliteDatabase(dbPath = process.env.DATABASE_PATH || DEFAULT_DB_PATH) {
+  if (sqliteDb) {
+    return sqliteDb;
+  }
+
+  if (!Database) {
+    throw new Error(
+      "better-sqlite3 is not installed. Run `npm install` in Backend/QueueService."
+    );
+  }
+
+  const dir = path.dirname(dbPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  sqliteDb = new Database(dbPath);
+  sqliteDb.pragma("journal_mode = WAL");
+  sqliteDb.pragma("foreign_keys = ON");
+  applySqliteMigrations(sqliteDb);
+  return sqliteDb;
+}
+
+async function initDatabase() {
+  activeDriver = resolveDriver();
+  if (activeDriver === "postgres") {
+    const connectionString = String(process.env.DATABASE_URL || "").trim();
+    if (!connectionString) {
+      throw new Error("DATABASE_URL is required when DB_DRIVER=postgres.");
+    }
+
+    postgresDriver = new PostgresDriver(connectionString);
+    await postgresDriver.init();
+    return {
+      driver: "postgres",
+      message: "[db] PostgreSQL profile database ready.",
+    };
+  }
+
+  openSqliteDatabase();
+  return {
+    driver: "sqlite",
+    message: "[db] SQLite profile database ready.",
+  };
+}
+
+function getDriverName() {
+  return activeDriver;
+}
+
+function openDatabase() {
+  if (activeDriver === "postgres") {
+    throw new Error("openDatabase() is sync-only for SQLite. Use initDatabase() and async db helpers.");
+  }
+
+  return openSqliteDatabase();
+}
+
+async function get(sql, params = []) {
+  if (activeDriver === "postgres") {
+    return postgresDriver.get(sql, params);
+  }
+
+  return openSqliteDatabase().prepare(sql).get(...params);
+}
+
+async function all(sql, params = []) {
+  if (activeDriver === "postgres") {
+    return postgresDriver.all(sql, params);
+  }
+
+  return openSqliteDatabase().prepare(sql).all(...params);
+}
+
+async function run(sql, params = []) {
+  if (activeDriver === "postgres") {
+    return postgresDriver.run(sql, params);
+  }
+
+  const result = openSqliteDatabase().prepare(sql).run(...params);
+  return {
+    changes: result.changes,
+    lastInsertRowid: result.lastInsertRowid,
+  };
+}
+
+async function transaction(work) {
+  if (activeDriver === "postgres") {
+    return postgresDriver.transaction(work);
+  }
+
+  const sqlite = openSqliteDatabase();
+  const adapter = {
+    get: (sql, params = []) => sqlite.prepare(sql).get(...params),
+    all: (sql, params = []) => sqlite.prepare(sql).all(...params),
+    run: (sql, params = []) => sqlite.prepare(sql).run(...params),
+  };
+
+  const asyncAdapter = {
+    get: async (sql, params = []) => adapter.get(sql, params),
+    all: async (sql, params = []) => adapter.all(sql, params),
+    run: async (sql, params = []) => adapter.run(sql, params),
+  };
+
+  try {
+    sqlite.exec("BEGIN IMMEDIATE");
+    const result = await work(asyncAdapter);
+    sqlite.exec("COMMIT");
+    return result;
+  } catch (error) {
+    sqlite.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+async function closeDatabase() {
+  if (postgresDriver) {
+    await postgresDriver.close();
+    postgresDriver = null;
+  }
+
+  if (sqliteDb) {
+    sqliteDb.close();
+    sqliteDb = null;
   }
 }
 
 module.exports = {
+  initDatabase,
   openDatabase,
   closeDatabase,
+  getDriverName,
+  get,
+  all,
+  run,
+  transaction,
   nowMs,
   newId,
 };

@@ -226,6 +226,27 @@ namespace ShooterPrototype.Player
             slotSwitchRoutineStartedAt = -1f;
         }
 
+        /// <summary>
+        /// Pickup while armed: hide the old model immediately (it may already be on the ground),
+        /// mount the new weapon hidden, then draw once.
+        /// </summary>
+        private IEnumerator AnimatePickupWeaponRoutine()
+        {
+            loadout.SetBothHolstered(true);
+            weaponHolster?.BeginHolsterAllImmediate();
+            presenceSync?.FlushLocalPose();
+
+            EquipActiveSlotWeapon(false, holdHolsteredPresentation: true);
+            presenceSync?.FlushLocalPose();
+
+            weaponHolster?.BeginDrawEquippedWeapon();
+            yield return WaitForDrawSettledOrTimeout(holsterTransitionTimeoutSeconds);
+
+            FinalizeAnimatedSlotSwitch();
+            slotSwitchRoutine = null;
+            slotSwitchRoutineStartedAt = -1f;
+        }
+
         public void PublishAmmoStateToServer()
         {
             if (loadout == null || !ShouldUseServerActions() || transportClient == null)
@@ -567,34 +588,21 @@ namespace ShooterPrototype.Player
             }
 
             EnsureRuntimeReferences();
-            CancelSlotSwitchRoutine();
-
-            if (weaponMount == null || !weaponMount.HasMountedWeapon)
-            {
-                ApplyServerLoadout(serverState);
-                BeginSlotSwitchRoutine(AnimateEquipAndDrawRoutine());
-                return true;
-            }
-
             if (weaponHolster == null || weaponHolster.IsTransitioning)
             {
                 return false;
             }
 
-            if (weaponHolster.IsHolstered)
+            CancelSlotSwitchRoutine();
+            ApplyServerLoadout(serverState);
+
+            if (weaponMount == null || !weaponMount.HasMountedWeapon || weaponHolster.IsHolstered)
             {
-                ApplyServerLoadout(serverState);
                 BeginSlotSwitchRoutine(AnimateEquipAndDrawRoutine());
                 return true;
             }
 
-            if (!ShouldAnimateServerWeaponChange(serverState))
-            {
-                return false;
-            }
-
-            ApplyServerLoadout(serverState);
-            BeginSlotSwitchRoutine(AnimateServerLoadoutSwitchRoutine(true));
+            BeginSlotSwitchRoutine(AnimatePickupWeaponRoutine());
             return true;
         }
 
@@ -689,8 +697,7 @@ namespace ShooterPrototype.Player
                 loadout.IsSlotOccupied(previousActiveSlot) &&
                 assignedSlot != previousActiveSlot)
             {
-                loadout.SetActiveSlot(previousActiveSlot);
-                BeginSlotSwitchRoutine(AnimateSlotSwitchRoutine(assignedSlot));
+                BeginSlotSwitchRoutine(AnimatePickupWeaponRoutine());
                 GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
                 return true;
             }
@@ -833,75 +840,6 @@ namespace ShooterPrototype.Player
             }
 
             GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
-        }
-
-        private bool ShouldAnimateServerWeaponChange(in WeaponLoadoutServerState serverState)
-        {
-            if (!serverState.HasWeaponLoadout ||
-                serverState.BothHolstered ||
-                weaponHolster == null ||
-                weaponMount == null ||
-                !weaponMount.HasMountedWeapon ||
-                weaponHolster.IsHolstered ||
-                weaponHolster.IsTransitioning)
-            {
-                return false;
-            }
-
-            var currentSlot = loadout.ActiveSlotIndex;
-            if (currentSlot != 0 && currentSlot != 1)
-            {
-                return true;
-            }
-
-            if (serverState.ActiveWeaponSlot != 0 && serverState.ActiveWeaponSlot != 1)
-            {
-                return false;
-            }
-
-            if (serverState.ActiveWeaponSlot != currentSlot)
-            {
-                return true;
-            }
-
-            var currentKind = loadout.IsSlotOccupied(currentSlot)
-                ? WeaponKindUtility.ClampKindByte((int)loadout.GetSlot(currentSlot).Kind)
-                : PlayerWeaponLoadout.EmptySlotKind;
-            var nextKind = serverState.ActiveWeaponSlot == 0
-                ? serverState.Slot0Kind
-                : serverState.Slot1Kind;
-            return currentKind != nextKind;
-        }
-
-        private IEnumerator AnimateServerLoadoutSwitchRoutine(bool shouldDrawAfterSwitch)
-        {
-            loadout.SetBothHolstered(true);
-            weaponHolster.BeginHolsterAll();
-            presenceSync?.FlushLocalPose();
-
-            yield return WaitForHolsterSettledOrTimeout(holsterTransitionTimeoutSeconds);
-
-            if (!loadout.HasAnyWeapon)
-            {
-                RefreshWeaponPresentationAfterServerChange();
-                slotSwitchRoutine = null;
-                slotSwitchRoutineStartedAt = -1f;
-                yield break;
-            }
-
-            loadout.SetBothHolstered(true);
-            EquipActiveSlotWeapon(false, holdHolsteredPresentation: true);
-            presenceSync?.FlushLocalPose();
-
-            if (shouldDrawAfterSwitch)
-            {
-                weaponHolster?.BeginDrawEquippedWeapon();
-                yield return WaitForDrawSettledOrTimeout(holsterTransitionTimeoutSeconds);
-            }
-
-            FinalizeAnimatedSlotSwitch();
-            slotSwitchRoutine = null;
-            slotSwitchRoutineStartedAt = -1f;
         }
 
         private void ApplyLocalDrop(int slotIndex, bool spawnWorldPickup = true)

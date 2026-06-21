@@ -6,7 +6,7 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
       const requestUrl = getRequestUrl ? getRequestUrl(req) : null;
       const nickname = requestUrl ? requestUrl.searchParams.get("nickname") : "";
       const playerId = requestUrl ? requestUrl.searchParams.get("playerId") : "";
-      const result = playerRepository.isNicknameAvailable(nickname, playerId);
+      const result = await playerRepository.isNicknameAvailable(nickname, playerId);
       respondJson(res, 200, result);
       return true;
     }
@@ -19,7 +19,7 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         return true;
       }
 
-      const profile = playerRepository.ensurePlayer(playerId);
+      const profile = await playerRepository.ensurePlayer(playerId);
       respondJson(res, 200, { ok: true, profile });
       return true;
     }
@@ -27,7 +27,7 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
     if (method === "GET" && path === "/profile/leaderboard") {
       const requestUrl = getRequestUrl ? getRequestUrl(req) : null;
       const limitRaw = requestUrl ? requestUrl.searchParams.get("limit") : "25";
-      const entries = playerRepository.getLeaderboard(limitRaw);
+      const entries = await playerRepository.getLeaderboard(limitRaw);
       respondJson(res, 200, { ok: true, entries });
       return true;
     }
@@ -39,7 +39,7 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         return true;
       }
 
-      const profile = playerRepository.getProfile(externalPlayerId);
+      const profile = await playerRepository.getProfile(externalPlayerId);
       if (!profile) {
         respondJson(res, 404, { ok: false, error: "PlayerNotFound" });
         return true;
@@ -61,7 +61,7 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
       );
       const body = await readJsonBody(req);
       const caseId = body && body.caseId;
-      const result = playerRepository.openCase(externalPlayerId, caseId);
+      const result = await playerRepository.openCase(externalPlayerId, caseId);
       respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
@@ -79,7 +79,7 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
       const body = await readJsonBody(req);
       const eventType = body && body.eventType;
       const amount = body && body.amount;
-      const result = playerRepository.reportAchievementEvent(externalPlayerId, eventType, amount);
+      const result = await playerRepository.reportAchievementEvent(externalPlayerId, eventType, amount);
       respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
@@ -96,7 +96,7 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
       );
       const body = await readJsonBody(req);
       const achievementId = body && body.achievementId;
-      const result = playerRepository.claimAchievement(externalPlayerId, achievementId);
+      const result = await playerRepository.claimAchievement(externalPlayerId, achievementId);
       respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
@@ -113,7 +113,7 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
       );
       const body = await readJsonBody(req);
       const caseId = body && body.caseId;
-      const result = playerRepository.purchaseCase(externalPlayerId, caseId);
+      const result = await playerRepository.purchaseCase(externalPlayerId, caseId);
       respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
@@ -130,7 +130,7 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
       );
       const body = await readJsonBody(req);
       const skinId = body && body.skinId;
-      const result = playerRepository.purchaseSkin(externalPlayerId, skinId);
+      const result = await playerRepository.purchaseSkin(externalPlayerId, skinId);
       respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
@@ -148,7 +148,7 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
       const body = await readJsonBody(req);
       const slot = body && body.slot;
       const skinId = body && body.skinId;
-      const result = playerRepository.setEquippedSlot(externalPlayerId, slot, skinId);
+      const result = await playerRepository.setEquippedSlot(externalPlayerId, slot, skinId);
       respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
@@ -164,7 +164,7 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         path.slice(prefix.length, path.length - suffix.length)
       );
       const body = await readJsonBody(req);
-      const result = playerRepository.setNickname(externalPlayerId, body && body.nickname);
+      const result = await playerRepository.setNickname(externalPlayerId, body && body.nickname);
       respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
@@ -180,7 +180,7 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         path.slice(prefix.length, path.length - suffix.length)
       );
       const body = await readJsonBody(req);
-      const result = playerRepository.setSelectedCharacterModel(
+      const result = await playerRepository.setSelectedCharacterModel(
         externalPlayerId,
         body && body.selectedCharacterModel
       );
@@ -199,7 +199,7 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         path.slice(prefix.length, path.length - suffix.length)
       );
       const body = await readJsonBody(req);
-      const result = playerRepository.recordMatchStats(externalPlayerId, body);
+      const result = await playerRepository.recordMatchStats(externalPlayerId, body);
       respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
@@ -217,7 +217,7 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
       const body = await readJsonBody(req);
       const amount = body && body.amount;
       const sourceId = body && body.sourceId;
-      const result = playerRepository.grantMatchCurrency(externalPlayerId, amount, sourceId);
+      const result = await playerRepository.grantMatchCurrency(externalPlayerId, amount, sourceId);
       respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }

@@ -173,6 +173,7 @@ namespace ShooterPrototype.Player
 
                 TrySpawnDynamicPickupFromEvent(message);
                 pickupSpawnManager.ApplyServerPickupRespawn(message.spawnId, true);
+                TryHideLocalWeaponForOwnPickupDrop(message);
                 return;
             }
 
@@ -227,13 +228,6 @@ namespace ShooterPrototype.Player
                 itemId,
                 message.amount > 0 ? message.amount : 1);
             localPickupController?.ApplyConfirmedPickup(confirmed, serverState);
-            if (kind == PickupKind.Weapon)
-            {
-                var holster = localPickupController != null
-                    ? localPickupController.GetComponent<PlayerWeaponHolsterController>()
-                    : null;
-                holster?.ForceArmedState();
-            }
             if (kind == PickupKind.Grenade && message.grenadeCount >= 0)
             {
                 var inventory = localPickupController != null
@@ -242,6 +236,65 @@ namespace ShooterPrototype.Player
                 inventory?.SetCount(InventoryItemIds.Grenade, message.grenadeCount);
             }
 
+            localPresenceSync?.FlushLocalPose();
+        }
+
+        private void TryHideLocalWeaponForOwnPickupDrop(RealtimeTransportClient.PickupEventMessage message)
+        {
+            if (message == null ||
+                string.IsNullOrWhiteSpace(localTicketId) ||
+                !string.Equals(message.ticketId, localTicketId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var kind = PickupKindUtility.FromProtocol(message.pickupKind);
+            if (string.IsNullOrWhiteSpace(message.pickupKind))
+            {
+                kind = PickupKind.Weapon;
+            }
+
+            if (kind != PickupKind.Weapon)
+            {
+                return;
+            }
+
+            var itemId = !string.IsNullOrWhiteSpace(message.itemId)
+                ? message.itemId
+                : message.weaponId;
+            if (string.IsNullOrWhiteSpace(itemId))
+            {
+                return;
+            }
+
+            var holster = localPickupController != null
+                ? localPickupController.GetComponent<PlayerWeaponHolsterController>()
+                : null;
+            var mount = localPickupController != null
+                ? localPickupController.GetComponent<PlayerWeaponMount>()
+                : null;
+            var weaponController = localPickupController != null
+                ? localPickupController.GetComponent<PlayerWeaponController>()
+                : null;
+            if (holster == null || mount == null || !mount.HasMountedWeapon ||
+                holster.IsHolstered || holster.IsTransitioning)
+            {
+                return;
+            }
+
+            var droppedKind = WeaponCatalog.ResolveKindFromItemId(itemId);
+            var mountedKind = weaponController != null
+                ? weaponController.CurrentWeaponKind
+                : mount.ActiveWeaponProfile != null
+                    ? mount.ActiveWeaponProfile.Kind
+                    : WeaponKind.AssaultRifle;
+            if (droppedKind != mountedKind)
+            {
+                return;
+            }
+
+            localLoadoutController?.Loadout?.SetBothHolstered(true);
+            holster.BeginHolsterAllImmediate();
             localPresenceSync?.FlushLocalPose();
         }
 

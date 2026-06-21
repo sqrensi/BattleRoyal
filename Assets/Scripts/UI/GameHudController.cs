@@ -979,6 +979,26 @@ namespace ShooterPrototype.UI
             StartCoroutine(LeaveMatchAndReturnRoutine());
         }
 
+        public void RequestConnectionRecovery(string reason)
+        {
+            if (returnToMenuRequested)
+            {
+                return;
+            }
+
+            returnToMenuRequested = true;
+            StopGameOverFlow();
+            HideGameOverPanel();
+            SetPauseMenuOpen(false);
+            SetVictoryBanner(false);
+            ConnectionRecoveryState.MarkPending(reason ?? "Соединение с сервером потеряно");
+
+            var realtimeClient = FindFirstObjectByType<RealtimeTransportClient>();
+            realtimeClient?.Disconnect();
+            networkLauncher?.DisconnectClient(reason ?? "Lost connection to dedicated server.");
+            StartCoroutine(LeaveMatchAndReturnRoutine());
+        }
+
         private void HandleBackPressed()
         {
             if (backButton != null)
@@ -2179,7 +2199,9 @@ namespace ShooterPrototype.UI
                                           realtimeClient.IsReady &&
                                           realtimeClient.LastSnapshotReceivedUnscaledTime > 0f &&
                                           (Time.unscaledTime - realtimeClient.LastSnapshotReceivedUnscaledTime) < 2f;
-                    if (displayPingMs > 0 || snapshotFresh)
+                    var wsConnected = realtimeClient != null &&
+                                      (realtimeClient.IsConnected || realtimeClient.IsConnecting);
+                    if ((displayPingMs > 0 || snapshotFresh) && wsConnected)
                     {
                         consecutivePingFailures = 0;
                     }
@@ -2190,9 +2212,7 @@ namespace ShooterPrototype.UI
                             Application.isFocused &&
                             consecutivePingFailures >= 8)
                         {
-                            returnToMenuRequested = true;
-                            networkLauncher.DisconnectClient("Lost connection to dedicated server.");
-                            StartCoroutine(LeaveMatchAndReturnRoutine());
+                            RequestConnectionRecovery("Соединение с сервером потеряно");
                             yield break;
                         }
                     }
@@ -2201,7 +2221,22 @@ namespace ShooterPrototype.UI
                 }
                 else
                 {
-                    consecutivePingFailures = 0;
+                    if (!returnToMenuRequested &&
+                        Application.isFocused &&
+                        SceneManager.GetActiveScene().name != mainMenuSceneName)
+                    {
+                        consecutivePingFailures++;
+                        if (consecutivePingFailures >= 3)
+                        {
+                            RequestConnectionRecovery("Соединение с сервером потеряно");
+                            yield break;
+                        }
+                    }
+                    else
+                    {
+                        consecutivePingFailures = 0;
+                    }
+
                     RefreshPingText();
                 }
 

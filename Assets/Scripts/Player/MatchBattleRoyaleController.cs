@@ -33,6 +33,8 @@ namespace ShooterPrototype.Player
         [SerializeField] private float planeOrbitHeight = 14f;
         [SerializeField] private float planeOrbitYaw = 200f;
         [SerializeField] private float planeOrbitPitch = 18f;
+        [SerializeField] private float planeOrbitMinPitch = -10f;
+        [SerializeField] private float planeOrbitMaxPitch = 70f;
         [SerializeField] private float planeOrbitSensitivity = 0.925f;
         [SerializeField] private float planeColliderRestoreDistance = 28f;
 
@@ -1824,11 +1826,10 @@ namespace ShooterPrototype.Player
             }
 
             planeOrbitYaw += mouseDelta.x * planeOrbitSensitivity;
-            planeOrbitYaw = NormalizeYawDegrees(planeOrbitYaw);
             planeOrbitPitch = Mathf.Clamp(
                 planeOrbitPitch - (mouseDelta.y * planeOrbitSensitivity),
-                -35f,
-                82f);
+                planeOrbitMinPitch,
+                planeOrbitMaxPitch);
         }
 
         private void UpdatePlaneOrbitCamera()
@@ -1839,15 +1840,9 @@ namespace ShooterPrototype.Player
             }
 
             var orbitCenter = planeInstance.transform.position + Vector3.up * 2f;
-            var pitchRad = planeOrbitPitch * Mathf.Deg2Rad;
-            var yawRad = planeOrbitYaw * Mathf.Deg2Rad;
-            var horizontalRadius = Mathf.Max(4f, planeOrbitDistance * Mathf.Cos(pitchRad));
-            var verticalOffset = planeOrbitHeight + (planeOrbitDistance * Mathf.Sin(pitchRad));
-            var offset = new Vector3(
-                Mathf.Sin(yawRad) * horizontalRadius,
-                verticalOffset,
-                Mathf.Cos(yawRad) * horizontalRadius);
-            var cameraPosition = orbitCenter + offset;
+            var orbitRotation = Quaternion.Euler(planeOrbitPitch, planeOrbitYaw, 0f);
+            var cameraOffset = orbitRotation * new Vector3(0f, planeOrbitHeight, -planeOrbitDistance);
+            var cameraPosition = orbitCenter + cameraOffset;
             planeCamera.transform.position = cameraPosition;
 
             var forward = orbitCenter - cameraPosition;
@@ -1856,29 +1851,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            forward.Normalize();
-            var up = Vector3.up;
-            if (Mathf.Abs(Vector3.Dot(forward, up)) > 0.98f)
-            {
-                up = Vector3.forward;
-            }
-
-            planeCamera.transform.rotation = Quaternion.LookRotation(forward, up);
-        }
-
-        private static float NormalizeYawDegrees(float yaw)
-        {
-            yaw %= 360f;
-            if (yaw > 180f)
-            {
-                yaw -= 360f;
-            }
-            else if (yaw < -180f)
-            {
-                yaw += 360f;
-            }
-
-            return yaw;
+            planeCamera.transform.rotation = Quaternion.LookRotation(forward.normalized, Vector3.up);
         }
 
         private static Vector2 ReadMouseDelta()

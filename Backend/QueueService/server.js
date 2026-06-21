@@ -3,7 +3,7 @@ const { URL } = require("url");
 const crypto = require("crypto");
 const WebSocket = require("ws");
 const { WebSocketServer } = WebSocket;
-const { openDatabase } = require("./db/database");
+const { initDatabase } = require("./db/database");
 const { registerProfileRoutes } = require("./db/profileRoutes");
 const playerRepository = require("./db/playerRepository");
 const duelMatch = require("./duelMatch");
@@ -12,12 +12,17 @@ const PORT = toInt(process.env.PORT, 5050);
 const MATCH_SERVER_ADDRESS = process.env.MATCH_SERVER_ADDRESS || "127.0.0.1";
 const MATCH_SERVER_PORT = toInt(process.env.MATCH_SERVER_PORT, 7777);
 const MIN_PLAYERS_TO_MATCH = Math.max(2, toInt(process.env.MIN_PLAYERS_TO_MATCH, 2));
-const TARGET_PLAYERS_PER_MATCH = Math.max(2, toInt(process.env.TARGET_PLAYERS_PER_MATCH, 2));
+const TARGET_PLAYERS_PER_MATCH = Math.min(20, Math.max(MIN_PLAYERS_TO_MATCH, toInt(process.env.TARGET_PLAYERS_PER_MATCH, 20)));
+const BR_COUNTDOWN_MIN_PLAYERS = Math.max(2, toInt(process.env.BR_COUNTDOWN_MIN_PLAYERS, 2));
+const BR_FUTURE_COUNTDOWN_MIN_PLAYERS = Math.max(BR_COUNTDOWN_MIN_PLAYERS, toInt(process.env.BR_FUTURE_COUNTDOWN_MIN_PLAYERS, 5));
+const BR_USE_FUTURE_COUNTDOWN_MIN = (process.env.BR_USE_FUTURE_COUNTDOWN_MIN || "0") === "1";
 const MATCH_TIMEOUT_SECONDS = Math.max(3, toInt(process.env.MATCH_TIMEOUT_SECONDS, 20));
 const MATCH_BATCH_WINDOW_SECONDS = Math.max(0, toInt(process.env.MATCH_BATCH_WINDOW_SECONDS, 2));
+const MAX_CONCURRENT_BR_MATCHES = Math.max(1, toInt(process.env.MAX_CONCURRENT_BR_MATCHES, 5));
+const MAX_CONCURRENT_DUEL_MATCHES = Math.max(1, toInt(process.env.MAX_CONCURRENT_DUEL_MATCHES, 20));
 const PRESENCE_TIMEOUT_SECONDS = Math.max(2, toInt(process.env.PRESENCE_TIMEOUT_SECONDS, 5));
 const MATCH_CONNECT_GRACE_SECONDS = Math.max(5, toInt(process.env.MATCH_CONNECT_GRACE_SECONDS, 45));
-const QUEUED_TICKET_TTL_SECONDS = Math.max(5, toInt(process.env.QUEUED_TICKET_TTL_SECONDS, Math.max(MATCH_TIMEOUT_SECONDS, 20)));
+const QUEUED_TICKET_TTL_SECONDS = toInt(process.env.QUEUED_TICKET_TTL_SECONDS, 0);
 const SERVER_TICK_RATE = Math.max(10, toInt(process.env.SERVER_TICK_RATE, 64));
 const REALTIME_WS_PORT = toInt(process.env.REALTIME_WS_PORT, 5051);
 const DEBUG_REALTIME = (process.env.DEBUG_REALTIME || "0") !== "0";
@@ -27,12 +32,17 @@ const POSE_HISTORY_KEEP_MS = Math.max(200, toInt(process.env.POSE_HISTORY_KEEP_M
 const SNAPSHOT_HISTORY_SAMPLES = Math.max(4, toInt(process.env.SNAPSHOT_HISTORY_SAMPLES, 16));
 const USE_BINARY_SNAPSHOTS = (process.env.USE_BINARY_SNAPSHOTS || "1") !== "0";
 
-try {
-  openDatabase();
-  console.log("[db] SQLite profile database ready.");
-} catch (error) {
-  console.error("[db] Failed to initialize SQLite database:", error.message || error);
-  process.exit(1);
+let databaseDriver = "sqlite";
+
+async function bootstrapDatabase() {
+  try {
+    const info = await initDatabase();
+    databaseDriver = info.driver;
+    console.log(info.message);
+  } catch (error) {
+    console.error("[db] Failed to initialize database:", error.message || error);
+    process.exit(1);
+  }
 }
 
 const handleProfileRoutes = registerProfileRoutes({
@@ -148,7 +158,12 @@ const server = http.createServer(async (req, res) => {
       ticketCount: ticketsById.size,
       activeMatchId: activeMatch ? activeMatch.matchId : "",
       activeSessionCount: Array.from(matchesById.values()).filter((m) => m.state !== "Ended").length,
-      database: "sqlite"
+      activeBattleRoyaleMatches: countActiveSessionsByMode("battle_royale"),
+      activeDuelMatches: countActiveSessionsByMode("duel"),
+      maxConcurrentBattleRoyaleMatches: MAX_CONCURRENT_BR_MATCHES,
+      maxConcurrentDuelMatches: MAX_CONCURRENT_DUEL_MATCHES,
+      queueTicketTtlSeconds: QUEUED_TICKET_TTL_SECONDS,
+      database: databaseDriver
     });
     return;
   }
@@ -186,9 +201,9 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && path === "/enqueue") {
     const body = await readJsonBody(req);
     const playerId = normalizePlayerId(body && body.playerId);
-    playerRepository.ensurePlayer(playerId);
+    await playerRepository.ensurePlayer(playerId);
     const ticket = createQueuedTicket(playerId, body && body.matchMode);
-    syncTicketNickname(ticket);
+    await syncTicketNickname(ticket);
     if (DEBUG_REALTIME) {
       console.log(`[http][enqueue] player=${playerId} ticket=${ticket.ticketId} mode=${ticket.matchMode}`);
     }
@@ -350,11 +365,13 @@ const server = http.createServer(async (req, res) => {
   respondJson(res, 404, { error: "NotFound" });
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`[QueueService] listening on http://127.0.0.1:${PORT}`);
-  console.log(
-    `[QueueService] match endpoint -> ${MATCH_SERVER_ADDRESS}:${MATCH_SERVER_PORT}, minPlayers=${MIN_PLAYERS_TO_MATCH}, timeout=${MATCH_TIMEOUT_SECONDS}s, batchWindow=${MATCH_BATCH_WINDOW_SECONDS}s`
-  );
+bootstrapDatabase().then(() => {
+  server.listen(PORT, "0.0.0.0", () => {
+    console.log(`[QueueService] listening on http://127.0.0.1:${PORT}`);
+    console.log(
+      `[QueueService] match endpoint -> ${MATCH_SERVER_ADDRESS}:${MATCH_SERVER_PORT}, minQueue=${MIN_PLAYERS_TO_MATCH}, maxMatch=${TARGET_PLAYERS_PER_MATCH}, brCountdownMin=${resolveBattleRoyaleCountdownMinPlayers()}, maxConcurrentBR=${MAX_CONCURRENT_BR_MATCHES}, maxConcurrentDuel=${MAX_CONCURRENT_DUEL_MATCHES}, queueTtl=${QUEUED_TICKET_TTL_SECONDS <= 0 ? "none" : `${QUEUED_TICKET_TTL_SECONDS}s`}, timeout=${MATCH_TIMEOUT_SECONDS}s, batchWindow=${MATCH_BATCH_WINDOW_SECONDS}s`
+    );
+  });
 });
 
 const wsServer = new WebSocketServer({ port: REALTIME_WS_PORT });
@@ -531,13 +548,18 @@ wsServer.on("connection", (socket) => {
 
 function syncTicketNickname(ticket) {
   if (!ticket) {
-    return;
+    return Promise.resolve();
   }
 
-  ticket.nickname = playerRepository.resolvePlayerNickname(ticket.playerId, ticket.ticketId);
-  if (ticket.presence) {
-    ticket.presence.nickname = ticket.nickname;
-  }
+  return playerRepository
+    .resolvePlayerNickname(ticket.playerId, ticket.ticketId)
+    .then((nickname) => {
+      ticket.nickname = nickname;
+      if (ticket.presence) {
+        ticket.presence.nickname = ticket.nickname;
+      }
+    })
+    .catch(() => {});
 }
 
 function resolveTicketNickname(ticket) {
@@ -549,8 +571,12 @@ function resolveTicketNickname(ticket) {
     return ticket.nickname;
   }
 
-  syncTicketNickname(ticket);
-  return ticket.nickname || "Игрок";
+  void syncTicketNickname(ticket);
+  if (typeof ticket.ticketId === "string" && ticket.ticketId.length >= 4) {
+    return `Игрок_${ticket.ticketId.slice(0, 4)}`;
+  }
+
+  return "Игрок";
 }
 
 function markTicketDeathCause(ticket, cause) {
@@ -627,6 +653,31 @@ function normalizeMatchMode(value) {
   return "battle_royale";
 }
 
+function getMaxConcurrentMatches(matchMode) {
+  const normalized = normalizeMatchMode(matchMode);
+  if (normalized === "duel") {
+    return MAX_CONCURRENT_DUEL_MATCHES;
+  }
+  if (normalized === "battle_royale") {
+    return MAX_CONCURRENT_BR_MATCHES;
+  }
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function countActiveSessionsByMode(matchMode) {
+  const normalized = normalizeMatchMode(matchMode);
+  let count = 0;
+  for (const session of matchesById.values()) {
+    if (!session || session.state === "Ended") {
+      continue;
+    }
+    if (normalizeMatchMode(session.matchMode) === normalized) {
+      count++;
+    }
+  }
+  return count;
+}
+
 function getMatchModeConfig(matchMode) {
   const normalized = normalizeMatchMode(matchMode);
   if (normalized === "training") {
@@ -636,7 +687,7 @@ function getMatchModeConfig(matchMode) {
     return { minPlayers: 2, targetPlayers: 2 };
   }
   return {
-    minPlayers: Math.max(MIN_PLAYERS_TO_MATCH, TARGET_PLAYERS_PER_MATCH),
+    minPlayers: MIN_PLAYERS_TO_MATCH,
     targetPlayers: TARGET_PLAYERS_PER_MATCH,
   };
 }
@@ -718,6 +769,10 @@ function tryMatchModeBucket(matchMode, nowMs) {
     return;
   }
 
+  if (countActiveSessionsByMode(matchMode) >= getMaxConcurrentMatches(matchMode)) {
+    return;
+  }
+
   const matchSize = Math.min(config.targetPlayers, bucketIds.length);
   const matchedTickets = [];
   for (let i = 0; i < matchSize; i++) {
@@ -749,6 +804,10 @@ function tryMatchModeBucket(matchMode, nowMs) {
 
 function expireTicketIfNeeded(ticket) {
   if (!ticket || ticket.status !== "Queued") {
+    return;
+  }
+
+  if (QUEUED_TICKET_TTL_SECONDS <= 0) {
     return;
   }
 
@@ -5251,7 +5310,7 @@ function maybeStartBattleRoyaleCountdown(session) {
     return;
   }
 
-  if (br.connectedTickets.size < MIN_PLAYERS_TO_MATCH) {
+  if (br.connectedTickets.size < resolveBattleRoyaleCountdownMinPlayers()) {
     return;
   }
 
@@ -5520,18 +5579,24 @@ function rollAutoDropPositionAtPlaneRouteEnd(br, ticketId) {
   const perpZ = dirX;
 
   const mapEdgeEnd = computeMapSquareEdgePoint(centerX, centerZ, dirX, dirZ, BR_DROP_MAX_DISTANCE_FROM_CENTER);
+  const edgeRelX = mapEdgeEnd.x - centerX;
+  const edgeRelZ = mapEdgeEnd.z - centerZ;
+  const edgeRelLen = Math.max(0.001, Math.hypot(edgeRelX, edgeRelZ));
+  const outwardX = edgeRelX / edgeRelLen;
+  const outwardZ = edgeRelZ / edgeRelLen;
+  const dropRadius = BR_DROP_MAX_DISTANCE_FROM_CENTER * (0.88 + (Math.random() * 0.12));
+
   const spawnIndex = br.planeSpawnIndexByTicket && ticketId
     ? (br.planeSpawnIndexByTicket.get(ticketId) ?? 0)
     : 0;
   const spawnCount = Math.max(1, BR_PLANE_SPAWN_SLOTS);
-  const lateralStep = 3.25;
+  const lateralStep = 4.5;
   const lateralOffset = (spawnIndex - ((spawnCount - 1) * 0.5)) * lateralStep;
-  const alongJitter = (Math.random() - 0.5) * 2.5;
-  const lateralJitter = (Math.random() - 0.5) * 1.0;
+  const lateralJitter = (Math.random() - 0.5) * 2.0;
 
   const raw = {
-    x: mapEdgeEnd.x + (perpX * (lateralOffset + lateralJitter)) + (dirX * alongJitter),
-    z: mapEdgeEnd.z + (perpZ * (lateralOffset + lateralJitter)) + (dirZ * alongJitter)
+    x: centerX + (outwardX * dropRadius) + (perpX * (lateralOffset + lateralJitter)),
+    z: centerZ + (outwardZ * dropRadius) + (perpZ * (lateralOffset + lateralJitter))
   };
   return clampPositionToMapSquare(raw.x, raw.z, centerX, centerZ, BR_DROP_MAX_DISTANCE_FROM_CENTER);
 }
@@ -5982,7 +6047,7 @@ function recordDuelForfeitStats(leaverTicketId) {
     return;
   }
 
-  playerRepository.recordMatchStats(leaverTicket.playerId, {
+  void playerRepository.recordMatchStats(leaverTicket.playerId, {
     sourceId: leaverTicketId,
     kills: 0,
     deaths: 1,
@@ -5993,11 +6058,26 @@ function recordDuelForfeitStats(leaverTicketId) {
   });
 }
 
+function resolveBattleRoyaleCountdownMinPlayers() {
+  return BR_USE_FUTURE_COUNTDOWN_MIN
+    ? BR_FUTURE_COUNTDOWN_MIN_PLAYERS
+    : BR_COUNTDOWN_MIN_PLAYERS;
+}
+
 function handleMatchPlayerLeft(ticketId) {
   const ticket = ticketsById.get(ticketId);
   if (!ticket || !ticket.matchId) {
     return;
   }
+
+  broadcastKillFeed(ticket.matchId, {
+    killerTicketId: "",
+    victimTicketId: ticketId,
+    killerNickname: "",
+    victimNickname: resolveTicketNickname(ticket),
+    weaponKind: 0,
+    cause: "disconnect",
+  });
 
   const session = matchesById.get(ticket.matchId);
   if (session && duelMatch.isDuelSession(session)) {

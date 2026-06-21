@@ -202,6 +202,11 @@ namespace ShooterPrototype.UI
                 return $"<color=#{ColorToHex(UiTheme.KillFeedVictim)}>{victim}</color> <color=#{ColorToHex(UiTheme.KillFeedWeapon)}>погиб от зоны</color>";
             }
 
+            if (string.Equals(message.cause, "disconnect", System.StringComparison.OrdinalIgnoreCase))
+            {
+                return $"<color=#{ColorToHex(UiTheme.KillFeedVictim)}>{victim}</color> <color=#{ColorToHex(UiTheme.KillFeedWeapon)}>отключился</color>";
+            }
+
             var killer = string.IsNullOrWhiteSpace(message.killerNickname) ? "Игрок" : message.killerNickname.Trim();
             return $"<color=#{ColorToHex(UiTheme.KillFeedKiller)}>{killer}</color> <color=#{ColorToHex(UiTheme.KillFeedWeapon)}>убил</color> <color=#{ColorToHex(UiTheme.KillFeedVictim)}>{victim}</color>";
         }
