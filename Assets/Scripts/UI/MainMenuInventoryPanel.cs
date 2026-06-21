@@ -841,6 +841,7 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            InventoryIconCatalog.ClearCache();
             for (var i = contentRect.childCount - 1; i >= 0; i--)
             {
                 var child = contentRect.GetChild(i);
@@ -1104,7 +1105,7 @@ namespace ShooterPrototype.UI
             var iconImage = iconObject.AddComponent<Image>();
             iconImage.preserveAspect = true;
             iconImage.raycastTarget = false;
-            iconImage.sprite = InventoryIconCatalog.GetSkinIcon(item.PictureResourcePath);
+            iconImage.sprite = InventoryIconCatalog.GetSkinIcon(item);
 
             var frameObject = new GameObject("EquippedFrame", typeof(RectTransform));
             frameObject.transform.SetParent(cardObject.transform, false);

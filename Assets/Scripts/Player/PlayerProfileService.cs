@@ -129,8 +129,8 @@ namespace ShooterPrototype.Player
 
             if (profile.starterPackGranted)
             {
-                PlayerPrefs.SetInt(CurrencyGrantKey, 1);
-                PlayerPrefs.SetInt(OwnershipInitKey, 1);
+                UserScopedPlayerPrefs.SetInt(CurrencyGrantKey, 1);
+                UserScopedPlayerPrefs.SetInt(OwnershipInitKey, 1);
             }
 
             PlayerPrefs.Save();

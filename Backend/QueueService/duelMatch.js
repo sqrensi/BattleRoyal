@@ -225,6 +225,7 @@ function resetTicketPresenceForDuelRound(ticket) {
   presence.medkitUseEndsAtMs = 0;
   ticket.poseHistory = [];
   clearDuelRoundWeapons(presence);
+  presence.weaponPickupSeq = Math.max(0, Number(presence.weaponPickupSeq) || 0) + 1;
 }
 
 function isDuelRoundPresencePhase(ticket) {

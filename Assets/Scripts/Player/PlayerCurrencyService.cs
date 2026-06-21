@@ -9,19 +9,19 @@ namespace ShooterPrototype.Player
 
         public static event Action BalanceChanged;
 
-        public static int Balance => PlayerPrefs.GetInt(BalancePrefKey, 0);
+        public static int Balance => UserScopedPlayerPrefs.GetInt(BalancePrefKey, 0);
 
         public static void ApplyFromServer(int amount)
         {
             var clamped = Mathf.Max(0, amount);
-            PlayerPrefs.SetInt(BalancePrefKey, clamped);
+            UserScopedPlayerPrefs.SetInt(BalancePrefKey, clamped);
             BalanceChanged?.Invoke();
         }
 
         public static void SetBalance(int amount)
         {
             var clamped = Mathf.Max(0, amount);
-            PlayerPrefs.SetInt(BalancePrefKey, clamped);
+            UserScopedPlayerPrefs.SetInt(BalancePrefKey, clamped);
             PlayerPrefs.Save();
             BalanceChanged?.Invoke();
         }

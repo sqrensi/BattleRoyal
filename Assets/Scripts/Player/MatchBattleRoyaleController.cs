@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
 using ShooterPrototype.UI;
 using UnityEngine;
@@ -454,6 +455,8 @@ namespace ShooterPrototype.Player
             {
                 return;
             }
+
+            ActiveMatchContext.SetMode(MainMenuGameMode.BattleRoyale);
 
             var previousPhase = currentPhase;
             lastState = message;

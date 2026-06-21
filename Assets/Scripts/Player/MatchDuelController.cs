@@ -193,6 +193,8 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            ActiveMatchContext.SetMode(MainMenuGameMode.Duel1v1);
+
             ResolveDependencies();
             if (localPlayer == null)
             {

@@ -14,11 +14,9 @@ namespace ShooterPrototype.UI
 
         public static Sprite GetWeaponIcon(WeaponKind kind)
         {
-            if (PlayerSkinSelectionService.TryGetEquippedWeaponSkin(kind, out var skin) &&
-                skin.IsValid &&
-                !string.IsNullOrWhiteSpace(skin.PictureResourcePath))
+            if (PlayerSkinSelectionService.TryGetEquippedWeaponSkin(kind, out var skin) && skin.IsValid)
             {
-                var skinIcon = GetSkinIcon(skin.PictureResourcePath);
+                var skinIcon = GetSkinIcon(skin);
                 if (skinIcon != null)
                 {
                     return skinIcon;
@@ -51,6 +49,26 @@ namespace ShooterPrototype.UI
                 default:
                     return LoadSprite("ak-47Ammo.PNG");
             }
+        }
+
+        public static Sprite GetSkinIcon(PlayerSkinDefinition definition)
+        {
+            if (!definition.IsValid)
+            {
+                return null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(definition.Id) &&
+                PlayerSkinResourcePaths.TryResolvePictureResourcePath(definition.Id, out var picturePath))
+            {
+                var bySkinId = LoadSpriteFromResources(picturePath);
+                if (bySkinId != null)
+                {
+                    return bySkinId;
+                }
+            }
+
+            return LoadSpriteFromResources(definition.PictureResourcePath);
         }
 
         public static Sprite GetSkinIcon(string pictureResourcePath)

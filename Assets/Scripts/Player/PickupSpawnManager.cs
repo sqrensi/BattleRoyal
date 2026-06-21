@@ -1825,7 +1825,25 @@ namespace ShooterPrototype.Player
 
         public GameObject ResolveWeaponSourcePrefab(WeaponKind kind)
         {
-            return WeaponCatalog.GetWeaponPrefab(kind);
+            switch (kind)
+            {
+                case WeaponKind.SniperRifle:
+                    return defaultSniperWeaponPrefab != null
+                        ? defaultSniperWeaponPrefab
+                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.SniperRifle);
+                case WeaponKind.Pistol:
+                    return defaultPistolWeaponPrefab != null
+                        ? defaultPistolWeaponPrefab
+                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.Pistol);
+                case WeaponKind.Mp7:
+                    return defaultMp7WeaponPrefab != null
+                        ? defaultMp7WeaponPrefab
+                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.Mp7);
+                default:
+                    return defaultVisualPrefab != null
+                        ? defaultVisualPrefab
+                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.AssaultRifle);
+            }
         }
 
         private PickupItemDefinition EnsureWeaponSourcePrefab(in PickupItemDefinition definition)
@@ -2429,12 +2447,12 @@ namespace ShooterPrototype.Player
                         resolvedItemId = WeaponCatalog.GetDefaultItemId(weaponKind);
                     }
 
-                    if (WeaponCatalog.GetWeaponPrefab(weaponKind) == null)
+                    var sourcePrefab = ResolveWeaponSourcePrefab(weaponKind);
+                    if (sourcePrefab == null)
                     {
                         return default;
                     }
 
-                    var sourcePrefab = ResolveWeaponSourcePrefab(weaponKind);
                     var definition = PickupItemDefinition.Create(
                         PickupKind.Weapon,
                         sourcePrefab,

@@ -44,7 +44,7 @@ namespace ShooterPrototype.Player
         [SerializeField] private float snapshotSilenceReconnectSeconds = 6f;
         [SerializeField] private float wsReconnectIntervalSeconds = 2f;
         [SerializeField] private float wsJoinGraceSeconds = 8f;
-        [SerializeField] private bool debugRealtimeLogs = true;
+        [SerializeField] private bool debugRealtimeLogs = false;
         [SerializeField] private string charactersResourcesFolder = "Characters";
 
         private RealtimeTransportClient realtimeClient;
@@ -66,6 +66,7 @@ namespace ShooterPrototype.Player
         private float lastConnectRequestAt = -10f;
         private float wsJoinGraceUntilRealtime = -1f;
         private float lastSnapshotDebugAt;
+        private float lastSnapshotApplyDebugAt;
         private PlayerWeaponMount localWeaponMount;
         private PlayerWeaponController localWeaponController;
         private PlayerWeaponHolsterController localWeaponHolster;
@@ -135,6 +136,7 @@ namespace ShooterPrototype.Player
             public PlayerSkinNetworkState AppliedSkinState;
             public bool HasAppliedSkinState;
             public int LastDebugLoggedWeaponPickupSeq = -1;
+            public int LastAppliedWeaponPickupSeq = -1;
             public int LastDebugLoggedSkinSignature;
             public RemoteWeaponPresentation RemoteWeapon;
             public RemoteLookPitchPosture RemotePitchPosture;
@@ -1159,11 +1161,15 @@ namespace ShooterPrototype.Player
             if (debugRealtimeLogs)
             {
                 var sameTick = serverTick > 0 && serverTick == lastAppliedServerTick;
-                var reason = sameTick ? "same-tick-signature-change" : "new-server-tick";
-                Debug.Log(
-                    $"[MatchPresenceSync] apply snapshot tick={serverTick} sig={signature} " +
-                    $"prevTick={lastAppliedServerTick} prevSig={lastAppliedSnapshotSignature} " +
-                    $"reason={reason} players={snapshot.players?.Length ?? 0} binVer={snapshot.binaryVersion}");
+                if (sameTick || Time.unscaledTime - lastSnapshotApplyDebugAt >= 1f)
+                {
+                    lastSnapshotApplyDebugAt = Time.unscaledTime;
+                    var reason = sameTick ? "same-tick-signature-change" : "new-server-tick";
+                    Debug.Log(
+                        $"[MatchPresenceSync] apply snapshot tick={serverTick} sig={signature} " +
+                        $"prevTick={lastAppliedServerTick} prevSig={lastAppliedSnapshotSignature} " +
+                        $"reason={reason} players={snapshot.players?.Length ?? 0} binVer={snapshot.binaryVersion}");
+                }
             }
 
             if (serverTick > 0)
@@ -1744,6 +1750,14 @@ namespace ShooterPrototype.Player
                     avatar.LocomotionRig?.SetNetworkLookPitch(p.lookPitch);
                     IngestPlayerStateSamples(avatar, p);
                     ApplyRemoteCharacterModel(avatar, p.characterModel);
+
+                    if (p.weaponPickupSeq != avatar.LastAppliedWeaponPickupSeq)
+                    {
+                        avatar.LastAppliedWeaponPickupSeq = p.weaponPickupSeq;
+                        avatar.RemoteWeapon?.ResetAppliedLoadout();
+                        avatar.HasAppliedSkinState = false;
+                    }
+
                     ApplyRemoteSkins(avatar, p);
 
                     var remoteWeapon = avatar.RemoteWeapon;
@@ -1830,7 +1844,7 @@ namespace ShooterPrototype.Player
                 }
 
                 remoteWeapon.Configure(thirdPersonBody);
-                remoteWeapon.SetWeaponEquipped(false);
+                remoteWeapon.ClearEmbeddedPrefabWeapons();
                 EnsureRemoteVisuals(root);
             }
             RefreshRemoteAvatarHitboxes(root);
@@ -1992,8 +2006,15 @@ namespace ShooterPrototype.Player
                 player.skinWeaponMp7);
             if (avatar.HasAppliedSkinState && skinState.Equals(avatar.AppliedSkinState))
             {
-                LogRemoteSkinApply(avatar, player, skinState, "skip-unchanged");
-                return;
+                if (!HasRemoteClothingVisual(avatar.Root))
+                {
+                    avatar.HasAppliedSkinState = false;
+                }
+                else
+                {
+                    LogRemoteSkinApply(avatar, player, skinState, "skip-unchanged");
+                    return;
+                }
             }
 
             PlayerSkinSelectionService.ApplyNetworkStateToPlayer(avatar.Root, skinState, forceReapply: true);
@@ -2001,6 +2022,18 @@ namespace ShooterPrototype.Player
             avatar.AppliedSkinState = skinState;
             avatar.HasAppliedSkinState = true;
             LogRemoteSkinApply(avatar, player, skinState, "apply");
+        }
+
+        private static bool HasRemoteClothingVisual(GameObject avatarRoot)
+        {
+            if (avatarRoot == null)
+            {
+                return false;
+            }
+
+            var thirdPersonBody = avatarRoot.transform.Find("ThirdPersonBody");
+            var syntyVisual = thirdPersonBody != null ? thirdPersonBody.Find("SyntyVisual") : null;
+            return syntyVisual != null && syntyVisual.Find("RemoteResourceClothing") != null;
         }
 
         private void EnsureAvatarHasFallbackModel(GameObject avatarRoot)

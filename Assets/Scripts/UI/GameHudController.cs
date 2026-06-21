@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using ShooterPrototype.Bootstrap;
 using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Matchmaking;
@@ -64,6 +65,7 @@ namespace ShooterPrototype.UI
         private TMP_Text duelTopCenterText;
         private TMP_Text duelRoundCountdownText;
         private RectTransform duelWeaponPickPanel;
+        private readonly Dictionary<WeaponKind, Image> duelWeaponPickIcons = new Dictionary<WeaponKind, Image>(4);
         private Action<WeaponKind> duelWeaponPickHandler;
         private bool duelWeaponPickVisible;
         private GameObject gameplayHintPanel;
@@ -568,6 +570,7 @@ namespace ShooterPrototype.UI
             EnsureDuelWeaponPickPanel(canvas != null ? canvas.transform : null);
             duelWeaponPickHandler = onPick;
             duelWeaponPickVisible = true;
+            RefreshDuelWeaponPickIcons();
             if (duelWeaponPickPanel != null)
             {
                 duelWeaponPickPanel.gameObject.SetActive(true);
@@ -1409,6 +1412,7 @@ namespace ShooterPrototype.UI
                 }
 
                 duelWeaponPickPanel = null;
+                duelWeaponPickIcons.Clear();
                 Destroy(existingPanel.gameObject);
             }
 
@@ -1495,11 +1499,25 @@ namespace ShooterPrototype.UI
             iconImage.sprite = InventoryIconCatalog.GetWeaponIcon(kind);
             iconImage.preserveAspect = true;
             iconImage.raycastTarget = false;
+            duelWeaponPickIcons[kind] = iconImage;
 
             var button = buttonObject.AddComponent<Button>();
             button.targetGraphic = background;
             var capturedKind = kind;
             button.onClick.AddListener(() => duelWeaponPickHandler?.Invoke(capturedKind));
+        }
+
+        private void RefreshDuelWeaponPickIcons()
+        {
+            foreach (var pair in duelWeaponPickIcons)
+            {
+                if (pair.Value == null)
+                {
+                    continue;
+                }
+
+                pair.Value.sprite = InventoryIconCatalog.GetWeaponIcon(pair.Key);
+            }
         }
 
         private void EnsureGameplayHintPanel(Transform root)

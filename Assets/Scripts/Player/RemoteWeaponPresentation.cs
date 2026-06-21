@@ -151,6 +151,11 @@ namespace ShooterPrototype.Player
                 activeWeaponKind == appliedActiveWeaponKind &&
                 IsHandWeaponPresentationCurrent(resolvedWeaponKind, hasWeapon, holstered))
             {
+                if (hasWeapon && !holstered)
+                {
+                    EnsureHandWeaponVisible(resolvedWeaponKind);
+                }
+
                 if (DebugLogs)
                 {
                     Debug.Log(
@@ -247,7 +252,46 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            return HandWeaponRootMatchesKind(expectedKind);
+            if (!HandWeaponRootMatchesKind(expectedKind))
+            {
+                return false;
+            }
+
+            return IsAnyWeaponRendererEnabled(weaponRoot);
+        }
+
+        private void EnsureHandWeaponVisible(WeaponKind expectedKind)
+        {
+            if (weaponRoot == null || !HandWeaponRootMatchesKind(expectedKind))
+            {
+                appliedHasWeapon = false;
+                EnsureAttached();
+            }
+
+            if (weaponRoot != null && networkHasWeapon && !networkHolstered)
+            {
+                SetWeaponRenderersEnabled(true);
+                RefreshAllWeaponSkins();
+            }
+        }
+
+        private static bool IsAnyWeaponRendererEnabled(Transform root)
+        {
+            if (root == null)
+            {
+                return false;
+            }
+
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            for (var i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] != null && renderers[i].enabled)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static WeaponKind ResolveNetworkWeaponKind(
@@ -721,6 +765,28 @@ namespace ShooterPrototype.Player
             }
         }
 
+        public void ClearEmbeddedPrefabWeapons()
+        {
+            if (weaponSwapRoutine != null)
+            {
+                StopCoroutine(weaponSwapRoutine);
+                weaponSwapRoutine = null;
+            }
+
+            thirdPersonBody = thirdPersonBody != null
+                ? thirdPersonBody
+                : transform.Find("ThirdPersonBody");
+            DestroyAllWeaponModelsUnderPlayer();
+            ClearBackWeaponRoots();
+            weaponRoot = null;
+            attachTarget = null;
+            hasBaseAttachPose = false;
+            hasHandPoseSnapshot = false;
+            ResetAppliedLoadout();
+            networkHasWeapon = false;
+            networkHolstered = true;
+        }
+
         public void ResetAppliedLoadout()
         {
             appliedSlot0Kind = PlayerWeaponLoadout.EmptySlotKind;
@@ -864,6 +930,7 @@ namespace ShooterPrototype.Player
             var instance = Instantiate(weaponPrefab, attachTarget);
             instance.name = "WeaponModel";
             weaponRoot = instance.transform;
+            SanitizeRemoteWeaponColliders(weaponRoot);
 
             if (alignGripToAttachTarget)
             {
@@ -1491,24 +1558,63 @@ namespace ShooterPrototype.Player
         {
             networkHolstered = true;
 
-            if (weaponRoot == null)
-            {
-                weaponRoot = FindAnyWeaponModelUnderAttachTarget();
-                if (weaponRoot == null)
-                {
-                    weaponRoot = FindAnyExistingWeaponModel(transform);
-                }
-            }
-
             if (weaponRoot != null)
             {
                 SetWeaponRenderersEnabled(false);
             }
+            else
+            {
+                var strayWeapon = FindAnyWeaponModelUnderAttachTarget()
+                    ?? FindAnyExistingWeaponModel(transform);
+                if (strayWeapon != null)
+                {
+                    Destroy(strayWeapon.gameObject);
+                }
+            }
+
+            weaponRoot = null;
+            hasHandPoseSnapshot = false;
 
             ResolveHolsterAnimation()?.SetHolstered(true);
 
             var handBinder = GetComponent<RemoteLeftHandIkBinder>();
             handBinder?.SetHandIkEnabled(false);
+        }
+
+        private static void SanitizeRemoteWeaponColliders(Transform root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var rigidbodies = root.GetComponentsInChildren<Rigidbody>(true);
+            for (var i = 0; i < rigidbodies.Length; i++)
+            {
+                var body = rigidbodies[i];
+                if (body == null)
+                {
+                    continue;
+                }
+
+                body.isKinematic = true;
+                body.useGravity = false;
+            }
+
+            var colliders = root.GetComponentsInChildren<Collider>(true);
+            for (var i = 0; i < colliders.Length; i++)
+            {
+                var collider = colliders[i];
+                if (collider == null)
+                {
+                    continue;
+                }
+
+                if (collider is MeshCollider meshCollider && !meshCollider.convex)
+                {
+                    Destroy(collider);
+                }
+            }
         }
 
         private void SetWeaponRenderersEnabled(bool enabled)
@@ -1812,6 +1918,7 @@ namespace ShooterPrototype.Player
             var instance = Instantiate(prefab, parent);
             instance.name = slotIndex == 0 ? "BackWeaponModel0" : "BackWeaponModel1";
             var root = instance.transform;
+            SanitizeRemoteWeaponColliders(root);
             root.localPosition = Vector3.zero;
             root.localRotation = Quaternion.identity;
             root.localScale *= ResolveRemoteWeaponScale(kind);

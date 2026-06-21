@@ -189,6 +189,8 @@ namespace ShooterPrototype.Bootstrap
 
         private void HandleSceneLoaded(Scene scene, LoadSceneMode _)
         {
+            ActiveMatchContext.SyncFromScene(scene.name, gameSceneName, duelSceneName);
+
             var isMatchScene = scene.name == gameSceneName || scene.name == duelSceneName;
             if (gameHudController != null)
             {

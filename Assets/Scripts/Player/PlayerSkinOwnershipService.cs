@@ -18,16 +18,16 @@ namespace ShooterPrototype.Player
         {
             ShopCatalogService.EnsureLoaded();
 
-            if (!PlayerPrefs.HasKey(CurrencyGrantKey))
+            if (!UserScopedPlayerPrefs.HasKey(CurrencyGrantKey))
             {
                 PlayerCurrencyService.AddCurrency(100000);
-                PlayerPrefs.SetInt(CurrencyGrantKey, 1);
+                UserScopedPlayerPrefs.SetInt(CurrencyGrantKey, 1);
                 PlayerPrefs.Save();
             }
 
             EnsureDefaultWeaponOwnership();
 
-            if (PlayerPrefs.HasKey(OwnershipInitKey))
+            if (UserScopedPlayerPrefs.HasKey(OwnershipInitKey))
             {
                 return;
             }
@@ -39,7 +39,7 @@ namespace ShooterPrototype.Player
             }
 
             EnsureDefaultEquipped();
-            PlayerPrefs.SetInt(OwnershipInitKey, 1);
+            UserScopedPlayerPrefs.SetInt(OwnershipInitKey, 1);
             PlayerPrefs.Save();
             OwnershipChanged?.Invoke();
         }
@@ -56,7 +56,7 @@ namespace ShooterPrototype.Player
                 return PlayerProfileService.IsOwned(skinId);
             }
 
-            return PlayerPrefs.GetInt(OwnedPrefPrefix + skinId, 0) == 1 ||
+            return UserScopedPlayerPrefs.GetInt(OwnedPrefPrefix + skinId, 0) == 1 ||
                    GetOwnedCount(skinId) > 0;
         }
 
@@ -72,13 +72,13 @@ namespace ShooterPrototype.Player
                 return PlayerProfileService.GetOwnedQuantity(skinId);
             }
 
-            var count = PlayerPrefs.GetInt(OwnedCountPrefPrefix + skinId, 0);
+            var count = UserScopedPlayerPrefs.GetInt(OwnedCountPrefPrefix + skinId, 0);
             if (count > 0)
             {
                 return count;
             }
 
-            return PlayerPrefs.GetInt(OwnedPrefPrefix + skinId, 0) == 1 ? 1 : 0;
+            return UserScopedPlayerPrefs.GetInt(OwnedPrefPrefix + skinId, 0) == 1 ? 1 : 0;
         }
 
         public static void GrantOwnedSkin(string skinId, bool allowDuplicate = false)
@@ -118,8 +118,8 @@ namespace ShooterPrototype.Player
 
             var normalized = skinId.Trim();
             var safeQuantity = Mathf.Max(1, quantity);
-            PlayerPrefs.SetInt(OwnedPrefPrefix + normalized, 1);
-            PlayerPrefs.SetInt(OwnedCountPrefPrefix + normalized, safeQuantity);
+            UserScopedPlayerPrefs.SetInt(OwnedPrefPrefix + normalized, 1);
+            UserScopedPlayerPrefs.SetInt(OwnedCountPrefPrefix + normalized, safeQuantity);
         }
 
         public static bool IsOwned(PlayerSkinDefinition item)
@@ -352,8 +352,8 @@ namespace ShooterPrototype.Player
 
             var normalized = skinId.Trim();
             var safeQuantity = Mathf.Max(1, quantity);
-            PlayerPrefs.SetInt(OwnedPrefPrefix + normalized, 1);
-            PlayerPrefs.SetInt(OwnedCountPrefPrefix + normalized, safeQuantity);
+            UserScopedPlayerPrefs.SetInt(OwnedPrefPrefix + normalized, 1);
+            UserScopedPlayerPrefs.SetInt(OwnedCountPrefPrefix + normalized, safeQuantity);
             if (persist)
             {
                 PlayerPrefs.Save();
@@ -396,7 +396,7 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
-                if (PlayerPrefs.HasKey(BuildEquippedPrefKey(slot)))
+                if (UserScopedPlayerPrefs.HasKey(BuildEquippedPrefKey(slot)))
                 {
                     continue;
                 }

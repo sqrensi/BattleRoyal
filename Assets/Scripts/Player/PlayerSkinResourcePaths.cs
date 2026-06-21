@@ -78,6 +78,45 @@ namespace ShooterPrototype.Player
             return $"{SkinsRoot}/{categoryFolder}/{variantId}/picture";
         }
 
+        public static bool TryResolvePictureResourcePath(string skinId, out string pictureResourcePath)
+        {
+            pictureResourcePath = string.Empty;
+            if (string.IsNullOrWhiteSpace(skinId))
+            {
+                return false;
+            }
+
+            var normalized = skinId.Trim();
+            if (WeaponSkinResourcePaths.TryParseSkinId(normalized, out var weaponKind, out var weaponVariant))
+            {
+                pictureResourcePath = WeaponSkinResourcePaths.BuildPicturePath(weaponKind, weaponVariant);
+                return true;
+            }
+
+            if (normalized.StartsWith("attachment_", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = normalized.Split('_');
+                if (parts.Length < 3)
+                {
+                    return false;
+                }
+
+                pictureResourcePath = BuildAttachmentPicturePath(parts[1], parts[2]);
+                return true;
+            }
+
+            var separatorIndex = normalized.LastIndexOf('_');
+            if (separatorIndex <= 0 || separatorIndex >= normalized.Length - 1)
+            {
+                return false;
+            }
+
+            pictureResourcePath = BuildPicturePath(
+                normalized.Substring(0, separatorIndex),
+                normalized.Substring(separatorIndex + 1));
+            return true;
+        }
+
         public static string ResolveClothingPrefabPath(string categoryFolder, string variantId)
         {
             if (string.IsNullOrWhiteSpace(categoryFolder) || string.IsNullOrWhiteSpace(variantId))

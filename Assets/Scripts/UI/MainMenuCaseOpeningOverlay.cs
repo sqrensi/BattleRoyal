@@ -386,7 +386,7 @@ namespace ShooterPrototype.UI
             resultIcon = iconObject.AddComponent<Image>();
             resultIcon.preserveAspect = true;
             resultIcon.raycastTarget = false;
-            resultIcon.sprite = InventoryIconCatalog.GetSkinIcon(winner.PictureResourcePath);
+            resultIcon.sprite = InventoryIconCatalog.GetSkinIcon(winner);
 
             var titleObject = new GameObject("ResultTitle");
             titleObject.transform.SetParent(resultObject.transform, false);
@@ -574,7 +574,7 @@ namespace ShooterPrototype.UI
             var icon = iconObject.AddComponent<Image>();
             icon.preserveAspect = true;
             icon.raycastTarget = false;
-            icon.sprite = InventoryIconCatalog.GetSkinIcon(definition.PictureResourcePath);
+            icon.sprite = InventoryIconCatalog.GetSkinIcon(definition);
 
             return rect;
         }

@@ -13,6 +13,31 @@ namespace ShooterPrototype.Matchmaking
             SelectedMode = mode;
         }
 
+        /// <summary>
+        /// Keeps gameplay rules aligned with the loaded match scene (duel vs BR).
+        /// Menu selection can be stale after scene transitions or hot reloads.
+        /// </summary>
+        public static void SyncFromScene(string sceneName, string battleRoyaleScene, string duelScene)
+        {
+            if (string.IsNullOrWhiteSpace(sceneName))
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(duelScene) &&
+                string.Equals(sceneName, duelScene, System.StringComparison.OrdinalIgnoreCase))
+            {
+                SetMode(MainMenuGameMode.Duel1v1);
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(battleRoyaleScene) &&
+                string.Equals(sceneName, battleRoyaleScene, System.StringComparison.OrdinalIgnoreCase))
+            {
+                SetMode(MainMenuGameMode.BattleRoyale);
+            }
+        }
+
         public static string ResolveGameSceneName(string battleRoyaleScene, string duelScene)
         {
             return IsDuel ? duelScene : battleRoyaleScene;

@@ -3,6 +3,7 @@ using ShooterPrototype.Network;
 using ShooterPrototype.UI;
 using System.Collections;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
@@ -17,6 +18,7 @@ namespace ShooterPrototype.Player
     public sealed class PlayerWeaponLoadoutController : MonoBehaviour
     {
         [SerializeField] private float dropForwardDistance = 1.2f;
+        [SerializeField] private float holsterTransitionTimeoutSeconds = 2f;
 
         private PlayerWeaponLoadout loadout;
         private PlayerWeaponMount weaponMount;
@@ -29,6 +31,7 @@ namespace ShooterPrototype.Player
         private MatchPresenceSync presenceSync;
         private Transform dropOrigin;
         private Coroutine slotSwitchRoutine;
+        private float slotSwitchRoutineStartedAt = -1f;
 
         public PlayerWeaponLoadout Loadout => loadout;
 
@@ -144,24 +147,43 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (slotSwitchRoutine != null ||
-                weaponHolster != null && weaponHolster.IsTransitioning)
+            if (IsSlotSwitchRoutineBlockingInput())
             {
                 return;
             }
 
-            var sameActiveSlot = loadout.ActiveSlotIndex == slotIndex &&
-                                 !loadout.IsBothHolstered &&
-                                 weaponHolster != null &&
-                                 !weaponHolster.IsHolstered;
-            if (sameActiveSlot)
+            if (IsSlotAlreadyPresented(slotIndex))
+            {
+                return;
+            }
+
+            if (IsActiveSlotKindMismatch())
+            {
+                loadout.SetActiveSlot(slotIndex);
+                loadout.SetBothHolstered(false);
+
+                if (weaponHolster != null &&
+                    weaponMount != null &&
+                    weaponMount.HasMountedWeapon &&
+                    !weaponHolster.IsHolstered &&
+                    !weaponHolster.IsTransitioning)
+                {
+                    BeginSlotSwitchRoutine(AnimateSlotSwitchRoutine(slotIndex));
+                    return;
+                }
+
+                BeginSlotSwitchRoutine(AnimateEquipAndDrawRoutine());
+                return;
+            }
+
+            if (weaponHolster != null && weaponHolster.IsTransitioning)
             {
                 return;
             }
 
             if (weaponHolster != null && weaponMount != null && weaponMount.HasMountedWeapon)
             {
-                slotSwitchRoutine = StartCoroutine(AnimateSlotSwitchRoutine(slotIndex));
+                BeginSlotSwitchRoutine(AnimateSlotSwitchRoutine(slotIndex));
                 return;
             }
 
@@ -175,27 +197,33 @@ namespace ShooterPrototype.Player
             weaponHolster.BeginHolsterAll();
             presenceSync?.FlushLocalPose();
 
-            while (weaponHolster != null && (weaponHolster.IsTransitioning || !weaponHolster.IsHolstered))
-            {
-                yield return null;
-            }
+            yield return WaitForHolsterSettledOrTimeout(holsterTransitionTimeoutSeconds);
 
             loadout.SetActiveSlot(slotIndex);
             loadout.SetBothHolstered(true);
-            EquipActiveSlotWeapon(false);
-            weaponHolster?.PrepareEquippedWeaponForDraw();
+            EquipActiveSlotWeapon(false, holdHolsteredPresentation: true);
             presenceSync?.FlushLocalPose();
 
             weaponHolster?.BeginDrawEquippedWeapon();
-            while (weaponHolster != null && weaponHolster.IsTransitioning)
-            {
-                yield return null;
-            }
+            yield return WaitForDrawSettledOrTimeout(holsterTransitionTimeoutSeconds);
 
-            loadout.SetBothHolstered(false);
-            presenceSync?.FlushLocalPose();
-            GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
+            FinalizeAnimatedSlotSwitch();
             slotSwitchRoutine = null;
+            slotSwitchRoutineStartedAt = -1f;
+        }
+
+        private IEnumerator AnimateEquipAndDrawRoutine()
+        {
+            loadout.SetBothHolstered(true);
+            EquipActiveSlotWeapon(false, holdHolsteredPresentation: true);
+            presenceSync?.FlushLocalPose();
+
+            weaponHolster?.BeginDrawEquippedWeapon();
+            yield return WaitForDrawSettledOrTimeout(holsterTransitionTimeoutSeconds);
+
+            FinalizeAnimatedSlotSwitch();
+            slotSwitchRoutine = null;
+            slotSwitchRoutineStartedAt = -1f;
         }
 
         public void PublishAmmoStateToServer()
@@ -345,8 +373,10 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            CancelSlotSwitchRoutine();
             ApplyServerLoadout(serverState);
             RefreshWeaponPresentationAfterServerChange();
+            ReconcileWeaponSlotPresentation();
         }
 
         public void ApplyServerInventoryDrop(
@@ -426,7 +456,11 @@ namespace ShooterPrototype.Player
             var kind = ResolveEquippedWeaponKind();
             if (weaponController.CurrentWeaponKind != kind)
             {
-                return;
+                EquipActiveSlotWeapon(false);
+                if (weaponController.CurrentWeaponKind != kind)
+                {
+                    return;
+                }
             }
 
             var slotIndex = ResolveEquippedSlotIndex();
@@ -516,25 +550,52 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (ShouldAnimateServerWeaponChange(serverState))
+            if (TryBeginAnimatedServerPickup(serverState))
             {
-                // Apply authoritative slot/ammo data immediately so a later ammo pickup
-                // cannot be overwritten when this holster/draw animation finishes.
-                ApplyServerLoadout(serverState);
-
-                if (slotSwitchRoutine != null)
-                {
-                    StopCoroutine(slotSwitchRoutine);
-                }
-
-                var shouldDrawAfterSwitch = !serverState.BothHolstered;
-                slotSwitchRoutine = StartCoroutine(AnimateServerLoadoutSwitchRoutine(shouldDrawAfterSwitch));
                 return;
             }
 
             ApplyServerLoadout(serverState);
             RefreshWeaponPresentationAfterServerChange();
-            EnsureActiveWeaponEquipped(!serverState.BothHolstered);
+        }
+
+        private bool TryBeginAnimatedServerPickup(in WeaponLoadoutServerState serverState)
+        {
+            if (!serverState.HasWeaponLoadout || serverState.BothHolstered)
+            {
+                return false;
+            }
+
+            EnsureRuntimeReferences();
+            CancelSlotSwitchRoutine();
+
+            if (weaponMount == null || !weaponMount.HasMountedWeapon)
+            {
+                ApplyServerLoadout(serverState);
+                BeginSlotSwitchRoutine(AnimateEquipAndDrawRoutine());
+                return true;
+            }
+
+            if (weaponHolster == null || weaponHolster.IsTransitioning)
+            {
+                return false;
+            }
+
+            if (weaponHolster.IsHolstered)
+            {
+                ApplyServerLoadout(serverState);
+                BeginSlotSwitchRoutine(AnimateEquipAndDrawRoutine());
+                return true;
+            }
+
+            if (!ShouldAnimateServerWeaponChange(serverState))
+            {
+                return false;
+            }
+
+            ApplyServerLoadout(serverState);
+            BeginSlotSwitchRoutine(AnimateServerLoadoutSwitchRoutine(true));
+            return true;
         }
 
         /// <summary>
@@ -629,13 +690,20 @@ namespace ShooterPrototype.Player
                 assignedSlot != previousActiveSlot)
             {
                 loadout.SetActiveSlot(previousActiveSlot);
-                slotSwitchRoutine = StartCoroutine(AnimateSlotSwitchRoutine(assignedSlot));
+                BeginSlotSwitchRoutine(AnimateSlotSwitchRoutine(assignedSlot));
+                GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
+                return true;
+            }
+
+            if (weaponMount == null || !weaponMount.HasMountedWeapon ||
+                (weaponHolster != null && weaponHolster.IsHolstered))
+            {
+                BeginSlotSwitchRoutine(AnimateEquipAndDrawRoutine());
                 GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
                 return true;
             }
 
             EquipActiveSlotWeapon(true);
-            EnsureActiveWeaponEquipped(true);
             GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
             return true;
         }
@@ -771,7 +839,6 @@ namespace ShooterPrototype.Player
         {
             if (!serverState.HasWeaponLoadout ||
                 serverState.BothHolstered ||
-                slotSwitchRoutine != null ||
                 weaponHolster == null ||
                 weaponMount == null ||
                 !weaponMount.HasMountedWeapon ||
@@ -812,38 +879,29 @@ namespace ShooterPrototype.Player
             weaponHolster.BeginHolsterAll();
             presenceSync?.FlushLocalPose();
 
-            while (weaponHolster != null && (weaponHolster.IsTransitioning || !weaponHolster.IsHolstered))
-            {
-                yield return null;
-            }
+            yield return WaitForHolsterSettledOrTimeout(holsterTransitionTimeoutSeconds);
 
             if (!loadout.HasAnyWeapon)
             {
                 RefreshWeaponPresentationAfterServerChange();
                 slotSwitchRoutine = null;
+                slotSwitchRoutineStartedAt = -1f;
                 yield break;
             }
 
             loadout.SetBothHolstered(true);
-            EquipActiveSlotWeapon(false);
-            weaponHolster?.PrepareEquippedWeaponForDraw();
+            EquipActiveSlotWeapon(false, holdHolsteredPresentation: true);
             presenceSync?.FlushLocalPose();
 
             if (shouldDrawAfterSwitch)
             {
                 weaponHolster?.BeginDrawEquippedWeapon();
-                while (weaponHolster != null && weaponHolster.IsTransitioning)
-                {
-                    yield return null;
-                }
-
-                loadout.SetBothHolstered(false);
-                presenceSync?.FlushLocalPose();
-                GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
+                yield return WaitForDrawSettledOrTimeout(holsterTransitionTimeoutSeconds);
             }
 
-            EnsureActiveWeaponEquipped(shouldDrawAfterSwitch);
+            FinalizeAnimatedSlotSwitch();
             slotSwitchRoutine = null;
+            slotSwitchRoutineStartedAt = -1f;
         }
 
         private void ApplyLocalDrop(int slotIndex, bool spawnWorldPickup = true)
@@ -955,7 +1013,7 @@ namespace ShooterPrototype.Player
                 out _);
         }
 
-        private void EquipActiveSlotWeapon(bool drawIfHolstered)
+        private void EquipActiveSlotWeapon(bool drawIfHolstered, bool holdHolsteredPresentation = false)
         {
             EnsureRuntimeReferences();
             if (loadout == null || weaponMount == null)
@@ -1005,6 +1063,14 @@ namespace ShooterPrototype.Player
                 loadout.SetSlotMagAmmo(equipSlotIndex, weaponController.CurrentAmmo);
             }
 
+            if (holdHolsteredPresentation)
+            {
+                weaponHolster?.PrepareEquippedWeaponForDraw();
+                GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
+                presenceSync?.FlushLocalPose();
+                return;
+            }
+
             if (drawIfHolstered && weaponHolster != null &&
                 (loadout.IsBothHolstered || weaponHolster.IsHolstered))
             {
@@ -1012,6 +1078,14 @@ namespace ShooterPrototype.Player
                 weaponHolster.ForceArmedState();
             }
 
+            GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
+            presenceSync?.FlushLocalPose();
+        }
+
+        private void FinalizeAnimatedSlotSwitch()
+        {
+            loadout.SetBothHolstered(false);
+            SyncControllerAmmoFromLoadout();
             GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
             presenceSync?.FlushLocalPose();
         }
@@ -1039,6 +1113,213 @@ namespace ShooterPrototype.Player
             }
 
             EquipActiveSlotWeapon(true);
+        }
+
+        private void ReconcileWeaponSlotPresentation()
+        {
+            if (loadout == null || !loadout.HasAnyWeapon)
+            {
+                return;
+            }
+
+            var activeSlot = loadout.ActiveSlotIndex;
+            if (activeSlot < 0 || activeSlot > 1 || !loadout.IsSlotOccupied(activeSlot))
+            {
+                activeSlot = loadout.IsSlotOccupied(0) ? 0 : 1;
+                loadout.SetActiveSlot(activeSlot);
+            }
+
+            if (loadout.IsBothHolstered)
+            {
+                EquipActiveSlotWeapon(false);
+                weaponHolster?.BeginHolsterAllImmediate();
+                GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
+                presenceSync?.FlushLocalPose();
+                return;
+            }
+
+            var expectedKind = loadout.GetSlot(activeSlot).Kind;
+            if (weaponMount == null ||
+                !weaponMount.HasMountedWeapon ||
+                ResolveMountedWeaponKind() != expectedKind)
+            {
+                EquipActiveSlotWeapon(false);
+            }
+
+            loadout.SetBothHolstered(false);
+            if (weaponHolster != null && weaponHolster.IsHolstered && !weaponHolster.IsTransitioning)
+            {
+                weaponHolster.BeginDrawEquippedWeapon();
+            }
+            else if (weaponHolster != null &&
+                     weaponHolster.IsTransitioning &&
+                     ResolveMountedWeaponKind() != expectedKind)
+            {
+                EquipActiveSlotWeapon(false, holdHolsteredPresentation: true);
+            }
+
+            SyncControllerAmmoFromLoadout();
+            GetComponent<PlayerPickupController>()?.RefreshWeaponAvailability();
+            presenceSync?.FlushLocalPose();
+        }
+
+        private void CancelSlotSwitchRoutine()
+        {
+            if (slotSwitchRoutine == null)
+            {
+                return;
+            }
+
+            StopCoroutine(slotSwitchRoutine);
+            slotSwitchRoutine = null;
+            slotSwitchRoutineStartedAt = -1f;
+        }
+
+        private void BeginSlotSwitchRoutine(IEnumerator routine)
+        {
+            CancelSlotSwitchRoutine();
+            slotSwitchRoutineStartedAt = Time.unscaledTime;
+            slotSwitchRoutine = StartCoroutine(routine);
+        }
+
+        private bool IsSlotSwitchRoutineBlockingInput()
+        {
+            if (slotSwitchRoutine == null)
+            {
+                return false;
+            }
+
+            if (IsSlotSwitchRoutineTimedOut())
+            {
+                CancelSlotSwitchRoutine();
+                return false;
+            }
+
+            return true;
+        }
+
+        private bool IsSlotSwitchRoutineTimedOut()
+        {
+            if (slotSwitchRoutine == null || slotSwitchRoutineStartedAt < 0f)
+            {
+                return false;
+            }
+
+            return Time.unscaledTime - slotSwitchRoutineStartedAt >
+                   holsterTransitionTimeoutSeconds * 2f;
+        }
+
+        private bool IsActiveSlotKindMismatch()
+        {
+            if (loadout == null || !loadout.HasAnyWeapon || weaponMount == null)
+            {
+                return false;
+            }
+
+            if (loadout.IsBothHolstered ||
+                (weaponHolster != null && weaponHolster.IsHolstered))
+            {
+                return false;
+            }
+
+            var activeSlot = loadout.ActiveSlotIndex;
+            if (activeSlot < 0 || activeSlot > 1 || !loadout.IsSlotOccupied(activeSlot))
+            {
+                return weaponMount.HasMountedWeapon;
+            }
+
+            if (!weaponMount.HasMountedWeapon)
+            {
+                return true;
+            }
+
+            return loadout.GetSlot(activeSlot).Kind != ResolveMountedWeaponKind();
+        }
+
+        private bool IsSlotAlreadyPresented(int slotIndex)
+        {
+            if (loadout == null || !loadout.IsSlotOccupied(slotIndex))
+            {
+                return false;
+            }
+
+            if (loadout.ActiveSlotIndex != slotIndex || loadout.IsBothHolstered)
+            {
+                return false;
+            }
+
+            if (weaponHolster == null ||
+                weaponHolster.IsHolstered ||
+                weaponHolster.IsTransitioning)
+            {
+                return false;
+            }
+
+            if (weaponMount == null || !weaponMount.HasMountedWeapon)
+            {
+                return false;
+            }
+
+            return loadout.GetSlot(slotIndex).Kind == ResolveMountedWeaponKind();
+        }
+
+        private WeaponKind ResolveMountedWeaponKind()
+        {
+            if (weaponController != null && weaponMount != null && weaponMount.HasMountedWeapon)
+            {
+                return weaponController.CurrentWeaponKind;
+            }
+
+            if (weaponMount != null && weaponMount.ActiveWeaponProfile != null)
+            {
+                return weaponMount.ActiveWeaponProfile.Kind;
+            }
+
+            var weaponRoot = weaponMount != null ? weaponMount.MountedWeaponRoot : null;
+            if (weaponRoot != null &&
+                WeaponCatalog.TryGetProfile(weaponRoot.gameObject, out var profile))
+            {
+                return profile.Kind;
+            }
+
+            return WeaponKind.AssaultRifle;
+        }
+
+        private IEnumerator WaitForHolsterSettledOrTimeout(float timeoutSeconds)
+        {
+            var elapsed = 0f;
+            while (weaponHolster != null &&
+                   (weaponHolster.IsTransitioning || !weaponHolster.IsHolstered) &&
+                   elapsed < timeoutSeconds)
+            {
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (weaponHolster != null &&
+                (weaponHolster.IsTransitioning || !weaponHolster.IsHolstered))
+            {
+                weaponHolster.BeginHolsterAllImmediate();
+            }
+        }
+
+        private IEnumerator WaitForDrawSettledOrTimeout(float timeoutSeconds)
+        {
+            var elapsed = 0f;
+            while (weaponHolster != null &&
+                   weaponHolster.IsTransitioning &&
+                   elapsed < timeoutSeconds)
+            {
+                elapsed += Time.deltaTime;
+                yield return null;
+            }
+
+            if (weaponHolster != null &&
+                (weaponHolster.IsHolstered || weaponHolster.IsTransitioning))
+            {
+                loadout.SetBothHolstered(false);
+                weaponHolster.ForceArmedState();
+            }
         }
 
         private void EnsureRuntimeReferences()
@@ -1225,11 +1506,20 @@ namespace ShooterPrototype.Player
             return loadout.IsSlotOccupied(0) ? 0 : 1;
         }
 
-        private static bool CanDropWeaponToWorld() => !ActiveMatchContext.IsDuel;
+        private static bool CanDropWeaponToWorld()
+        {
+            var scene = SceneManager.GetActiveScene();
+            if (DuelSpawnUtility.IsDuelScene(scene))
+            {
+                return false;
+            }
+
+            return !ActiveMatchContext.IsDuel;
+        }
 
         private bool CanAcceptWeaponSlotInput()
         {
-            if (slotSwitchRoutine != null)
+            if (IsSlotSwitchRoutineBlockingInput())
             {
                 return false;
             }
@@ -1255,7 +1545,7 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            if (slotSwitchRoutine != null)
+            if (IsSlotSwitchRoutineBlockingInput())
             {
                 return false;
             }

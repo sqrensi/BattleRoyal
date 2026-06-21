@@ -40,9 +40,10 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (PlayerSkinSelectionService.TryResolveWeaponKind(item, out _))
+            if (PlayerSkinSelectionService.TryResolveWeaponKind(item, out var weaponKind))
             {
-                pinnedLobbyWeaponKind = null;
+                PreviewWeaponSkin(weaponKind);
+                return;
             }
 
             if (!allowPreview)
@@ -112,7 +113,28 @@ namespace ShooterPrototype.Player
 
         public void ShowWeaponWithSkin(WeaponKind kind)
         {
-            RefreshSkins();
+            PreviewWeaponSkin(kind);
+        }
+
+        private void PreviewWeaponSkin(WeaponKind weaponKind)
+        {
+            pinnedLobbyWeaponKind = weaponKind;
+
+            if (!allowPreview)
+            {
+                SetAllowPreview(true);
+                return;
+            }
+
+            if (previewInstance == null)
+            {
+                RequestSpawnPreview();
+                return;
+            }
+
+            PlayerSkinSelectionService.ApplyToPlayer(previewInstance, forceReapply: true);
+            EnsurePreviewBodyVisible(previewInstance);
+            RequestEquipPinnedWeapon(forceReequip: true);
         }
 
         private void RequestSpawnPreview()
@@ -252,7 +274,14 @@ namespace ShooterPrototype.Player
                 FinalizeMenuPreviewPresentation(previewInstance);
                 EnsurePreviewBodyVisible(previewInstance);
                 ApplyIdlePose(previewInstance);
-                ClearMenuWeaponPresentation(previewInstance);
+                if (pinnedLobbyWeaponKind.HasValue)
+                {
+                    RequestEquipPinnedWeapon(forceReequip: true);
+                }
+                else
+                {
+                    ClearMenuWeaponPresentation(previewInstance);
+                }
             }
             finally
             {

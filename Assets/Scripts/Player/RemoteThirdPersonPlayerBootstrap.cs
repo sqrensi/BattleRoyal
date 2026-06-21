@@ -78,9 +78,10 @@ namespace ShooterPrototype.Player
 
             if (!hasInitializedRemoteWeapon)
             {
+                presentation.ClearEmbeddedPrefabWeapons();
                 if (DebugLogs)
                 {
-                    Debug.Log("[RemoteThirdPersonBootstrap] initial remote weapon disarm");
+                    Debug.Log("[RemoteThirdPersonBootstrap] cleared embedded prefab weapons");
                 }
 
                 presentation.SetWeaponEquipped(false);

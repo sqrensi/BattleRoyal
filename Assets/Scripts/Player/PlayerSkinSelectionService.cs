@@ -205,7 +205,7 @@ namespace ShooterPrototype.Player
 
         public static string GetSavedSkinId(PlayerSkinSlot slot)
         {
-            return NormalizeSavedSkinId(PlayerPrefs.GetString(BuildPrefKey(slot), string.Empty));
+            return NormalizeSavedSkinId(ReadRawEquippedId(slot));
         }
 
         /// <summary>
@@ -326,7 +326,7 @@ namespace ShooterPrototype.Player
                 return options[0];
             }
 
-            var currentId = NormalizeSavedSkinId(PlayerPrefs.GetString(BuildPrefKey(slot), string.Empty));
+            var currentId = NormalizeSavedSkinId(UserScopedPlayerPrefs.GetString(BuildPrefKey(slot), string.Empty));
             var currentIndex = -1;
             for (var i = 0; i < options.Count; i++)
             {
@@ -349,7 +349,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            PlayerPrefs.SetString(BuildPrefKey(slot), skinId.Trim());
+            UserScopedPlayerPrefs.SetString(BuildPrefKey(slot), skinId.Trim());
             PlayerPrefs.Save();
         }
 
@@ -750,7 +750,7 @@ namespace ShooterPrototype.Player
                 }
             }
 
-            return PlayerPrefs.GetString(BuildPrefKey(slot), string.Empty);
+            return UserScopedPlayerPrefs.GetString(BuildPrefKey(slot), string.Empty);
         }
 
         private static string ReadEquippedIdFromProfile(

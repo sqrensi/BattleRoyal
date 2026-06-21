@@ -349,6 +349,14 @@ namespace ShooterPrototype.Player
                 return registryResolved;
             }
 
+#if UNITY_EDITOR
+            var legacyPrefab = LoadAsset<GameObject>(GetPrefabPath(kind));
+            if (TryResolveEquipPrefab(kind, legacyPrefab, out var legacyResolved))
+            {
+                return legacyResolved;
+            }
+#endif
+
             return null;
         }
 

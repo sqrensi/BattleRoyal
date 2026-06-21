@@ -263,6 +263,7 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            InventoryIconCatalog.ClearCache();
             UpdateGridCellSize();
 
             for (var i = contentRect.childCount - 1; i >= 0; i--)
@@ -633,7 +634,7 @@ namespace ShooterPrototype.UI
             var iconImage = iconObject.AddComponent<Image>();
             iconImage.preserveAspect = true;
             iconImage.raycastTarget = false;
-            iconImage.sprite = InventoryIconCatalog.GetSkinIcon(item.PictureResourcePath);
+            iconImage.sprite = InventoryIconCatalog.GetSkinIcon(item);
 
             var priceBadgeObject = new GameObject("PriceBadge", typeof(RectTransform));
             priceBadgeObject.transform.SetParent(slotObject.transform, false);

@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 namespace ShooterPrototype.Player
@@ -40,10 +41,7 @@ namespace ShooterPrototype.Player
             if (skinState.TryGetWeaponSkinId(kind, out var skinId))
             {
                 ApplySkinById(weaponRoot, kind, skinId);
-                return;
             }
-
-            ApplyEquippedSkin(weaponRoot, kind);
         }
 
         public static void ApplySkinById(Transform weaponRoot, WeaponKind kind, string skinId)
@@ -89,18 +87,40 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (!TryApplyMainBodyMaterial(weaponRoot, material))
-            {
-                var profileTransform = ResolveWeaponProfileTransform(weaponRoot);
-                if (profileTransform != null && profileTransform != weaponRoot)
-                {
-                    TryApplyMainBodyMaterial(profileTransform, material);
-                }
-            }
+            ApplyMaterialToEligibleWeaponRenderers(weaponRoot, material, skipPart2: kind == WeaponKind.Pistol);
 
             if (kind == WeaponKind.Pistol)
             {
                 ApplyPistolSecondaryPart(weaponRoot, material);
+            }
+        }
+
+        private static void ApplyMaterialToEligibleWeaponRenderers(
+            Transform weaponRoot,
+            Material material,
+            bool skipPart2)
+        {
+            if (weaponRoot == null || material == null)
+            {
+                return;
+            }
+
+            var renderers = weaponRoot.GetComponentsInChildren<Renderer>(true);
+            for (var i = 0; i < renderers.Length; i++)
+            {
+                var renderer = renderers[i];
+                if (renderer == null || !ShouldReceiveWeaponSkin(renderer))
+                {
+                    continue;
+                }
+
+                if (skipPart2 &&
+                    string.Equals(renderer.gameObject.name, PistolSecondaryPartName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                ApplyMaterialToRenderer(renderer, material);
             }
         }
 
@@ -146,30 +166,72 @@ namespace ShooterPrototype.Player
             return null;
         }
 
-        private static Transform ResolveWeaponProfileTransform(Transform weaponRoot)
-        {
-            var profile = weaponRoot.GetComponent<WeaponProfile>() ??
-                          weaponRoot.GetComponentInChildren<WeaponProfile>(true);
-            return profile != null ? profile.transform : null;
-        }
-
-        private static bool TryApplyMainBodyMaterial(Transform bodyTransform, Material material)
-        {
-            var renderer = bodyTransform.GetComponent<Renderer>();
-            if (renderer == null || !ShouldReceiveWeaponSkin(renderer))
-            {
-                return false;
-            }
-
-            ApplyMaterialToRenderer(renderer, material);
-            return true;
-        }
-
         private static bool ShouldReceiveWeaponSkin(Renderer renderer)
         {
             return renderer != null &&
                    !IsExcludedRenderer(renderer) &&
                    !IsUnderExcludedAttachmentHierarchy(renderer.transform);
+        }
+
+        private static bool IsExcludedRenderer(Renderer renderer)
+        {
+            if (renderer == null)
+            {
+                return true;
+            }
+
+            return IsExcludedWeaponHelperName(renderer.gameObject.name);
+        }
+
+        private static bool IsUnderExcludedAttachmentHierarchy(Transform transform)
+        {
+            var current = transform != null ? transform.parent : null;
+            while (current != null)
+            {
+                if (IsExcludedWeaponHelperName(current.gameObject.name))
+                {
+                    return true;
+                }
+
+                current = current.parent;
+            }
+
+            return false;
+        }
+
+        private static bool IsExcludedWeaponHelperName(string objectName)
+        {
+            if (string.IsNullOrWhiteSpace(objectName))
+            {
+                return false;
+            }
+
+            if (string.Equals(objectName, "RemoteWeaponTarget", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(objectName, "BackWeaponTarget", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(objectName, "BackWeaponTarget2", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            if (string.Equals(objectName, "AimPoint", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(objectName, "Muzzle", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(objectName, "MagHandTarget", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(objectName, "SightTarget", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(objectName, PistolSecondaryPartName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (objectName.EndsWith("HandTarget", StringComparison.OrdinalIgnoreCase) ||
+                objectName.EndsWith("IkAnchor", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return objectName.IndexOf("Optic", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   objectName.IndexOf("Scope", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   objectName.IndexOf("Lens", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   objectName.IndexOf("Attachment", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static void ApplyMaterialToRenderer(Renderer renderer, Material material)
@@ -194,55 +256,6 @@ namespace ShooterPrototype.Player
             }
 
             renderer.materials = instanceMaterials;
-        }
-
-        private static bool IsExcludedRenderer(Renderer renderer)
-        {
-            if (renderer == null)
-            {
-                return true;
-            }
-
-            return ContainsExcludedNameToken(renderer.gameObject.name);
-        }
-
-        private static bool IsUnderExcludedAttachmentHierarchy(Transform transform)
-        {
-            var current = transform != null ? transform.parent : null;
-            while (current != null)
-            {
-                if (ContainsExcludedNameToken(current.gameObject.name))
-                {
-                    return true;
-                }
-
-                current = current.parent;
-            }
-
-            return false;
-        }
-
-        private static bool ContainsExcludedNameToken(string objectName)
-        {
-            if (string.IsNullOrWhiteSpace(objectName))
-            {
-                return false;
-            }
-
-            return objectName.IndexOf("Target", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   objectName.IndexOf("IkAnchor", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   objectName.IndexOf("AimPoint", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   objectName.IndexOf("Muzzle", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   objectName.IndexOf("Optic", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   objectName.IndexOf("Scope", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   objectName.IndexOf("Sight", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   objectName.IndexOf("Lens", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   objectName.IndexOf("Part2", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   objectName.IndexOf("Attachment", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   objectName.IndexOf("Trigger", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   objectName.IndexOf("Slide", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   objectName.IndexOf("Hammer", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                   objectName.IndexOf("Stock", System.StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 }
