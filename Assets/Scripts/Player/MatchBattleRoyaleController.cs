@@ -111,6 +111,8 @@ namespace ShooterPrototype.Player
         private PlayerAudioController localAudioController;
         private bool matchOutcomeScheduled;
         private int localPlacement;
+        private float deathPlacementWaitStartedAt = -1f;
+        private const float DeathPlacementWaitSeconds = 3f;
         private int displayKillCount;
         private int displayAliveCount;
         private int lastReportedKillCount;
@@ -128,7 +130,11 @@ namespace ShooterPrototype.Player
         public Transform PlaneTransform =>
             planeInstance != null ? planeInstance.transform : null;
         public bool ShouldSuppressPoseReconcile =>
-            IsLocalOnPlane || Time.unscaledTime < dropReconcileSuppressUntil;
+            currentPhase == "plane" ||
+            IsLocalOnPlane ||
+            Time.unscaledTime < dropReconcileSuppressUntil;
+        public bool ShouldSkipTransportReconnect =>
+            matchOutcomeScheduled || string.Equals(currentPhase, "ending", StringComparison.Ordinal);
 
         public void PrepareForNewMatch()
         {
@@ -172,6 +178,7 @@ namespace ShooterPrototype.Player
             lastState = null;
             matchOutcomeScheduled = false;
             localPlacement = 0;
+            deathPlacementWaitStartedAt = -1f;
             displayKillCount = 0;
             displayAliveCount = 0;
             lastReportedKillCount = 0;
@@ -282,12 +289,55 @@ namespace ShooterPrototype.Player
                 matchDeathRealtime = Time.realtimeSinceStartup;
             }
 
+            if (deathPlacementWaitStartedAt < 0f)
+            {
+                deathPlacementWaitStartedAt = Time.realtimeSinceStartup;
+            }
+
             if (localPlacement <= 0 && lastState != null)
             {
-                localPlacement = Mathf.Max(1, lastState.aliveCount + 1);
+                ApplyServerPlacementFromMessage(lastState);
+            }
+
+            if (localPlacement <= 0 &&
+                Time.realtimeSinceStartup - deathPlacementWaitStartedAt < DeathPlacementWaitSeconds)
+            {
+                return;
+            }
+
+            if (localPlacement <= 0)
+            {
+                localPlacement = EstimateEliminationPlacement(lastState);
             }
 
             ScheduleMatchOutcome(false);
+        }
+
+        private static int EstimateEliminationPlacement(RealtimeTransportClient.MatchStateMessage message)
+        {
+            if (message == null)
+            {
+                return 2;
+            }
+
+            var connected = Mathf.Max(2, message.connectedCount);
+            var alive = Mathf.Max(0, message.aliveCount);
+            if (alive >= connected)
+            {
+                return connected;
+            }
+
+            return Mathf.Clamp(alive + 1, 1, connected);
+        }
+
+        private void ApplyServerPlacementFromMessage(RealtimeTransportClient.MatchStateMessage message)
+        {
+            if (message == null || message.localPlacement <= 0)
+            {
+                return;
+            }
+
+            localPlacement = message.localPlacement;
         }
 
         private void ScheduleMatchOutcome(bool won)
@@ -313,7 +363,7 @@ namespace ShooterPrototype.Player
                 ? 1
                 : localPlacement > 0
                     ? localPlacement
-                    : Mathf.Max(1, (lastState?.aliveCount ?? displayAliveCount) + 1);
+                    : EstimateEliminationPlacement(lastState);
             var kills = lastState?.localKillCount ?? displayKillCount;
             var survivalSeconds = GetSurvivalSeconds();
             var summary = new MatchOutcomeSummary(kills, placement, survivalSeconds);
@@ -352,13 +402,11 @@ namespace ShooterPrototype.Player
                 matchPlayingStartRealtime = Time.realtimeSinceStartup;
             }
 
-            if (playerHealth != null && playerHealth.IsDead && localPlacement <= 0)
+            ApplyServerPlacementFromMessage(message);
+
+            if (playerHealth != null && playerHealth.IsDead && matchDeathRealtime < 0f)
             {
-                localPlacement = Mathf.Max(1, message.aliveCount + 1);
-                if (matchDeathRealtime < 0f)
-                {
-                    matchDeathRealtime = Time.realtimeSinceStartup;
-                }
+                matchDeathRealtime = Time.realtimeSinceStartup;
             }
         }
 
@@ -462,6 +510,7 @@ namespace ShooterPrototype.Player
 
             var previousPhase = currentPhase;
             lastState = message;
+            ApplyServerPlacementFromMessage(message);
             if (!string.IsNullOrWhiteSpace(message.phase))
             {
                 currentPhase = message.phase;
@@ -529,6 +578,11 @@ namespace ShooterPrototype.Player
 
             if (reason == "eliminated")
             {
+                if (message.localPlacement > 0)
+                {
+                    localPlacement = message.localPlacement;
+                }
+
                 if (!matchOutcomeScheduled)
                 {
                     ScheduleMatchOutcome(false);
@@ -616,6 +670,15 @@ namespace ShooterPrototype.Player
                            (playerIdentity != null &&
                             !string.IsNullOrWhiteSpace(message.winnerTicketId) &&
                             string.Equals(playerIdentity.TicketId, message.winnerTicketId, StringComparison.Ordinal));
+
+            if (message.localPlacement > 0)
+            {
+                localPlacement = message.localPlacement;
+            }
+            else if (isWinner)
+            {
+                localPlacement = 1;
+            }
 
             if (isWinner)
             {

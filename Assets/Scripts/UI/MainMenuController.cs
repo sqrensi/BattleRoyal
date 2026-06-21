@@ -246,8 +246,8 @@ namespace ShooterPrototype.UI
 
         private IEnumerator EnqueueAndPollRoutine()
         {
-            var realtimeClient = FindObjectOfType<RealtimeTransportClient>();
-            realtimeClient?.Disconnect();
+            var realtimeClient = RealtimeTransportClient.Active ?? FindObjectOfType<RealtimeTransportClient>();
+            realtimeClient?.EndMatchSession();
             networkLauncher?.DisconnectClient("Preparing queue search.");
 
             if (profileApiClient != null)

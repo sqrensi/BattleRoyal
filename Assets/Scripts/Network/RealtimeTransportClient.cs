@@ -2,17 +2,22 @@ using ShooterPrototype.Player;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Stopwatch = System.Diagnostics.Stopwatch;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using ShooterPrototype.Player;
 using UnityEngine;
 
 namespace ShooterPrototype.Network
 {
+    [DefaultExecutionOrder(-100)]
     public sealed class RealtimeTransportClient : MonoBehaviour
     {
+        private static readonly Stopwatch MonotonicClock = Stopwatch.StartNew();
+
+        public static float MonotonicNowSeconds => (float)MonotonicClock.Elapsed.TotalSeconds;
+
         [Serializable]
         public sealed class RealtimeStateSample
         {
@@ -453,6 +458,7 @@ namespace ShooterPrototype.Network
             public long endingStartedAtMs;
             public string winnerTicketId;
             public int aliveCount;
+            public int localPlacement;
             public int connectedCount;
             public bool hasJumped;
             public bool hasLanded;
@@ -496,6 +502,7 @@ namespace ShooterPrototype.Network
             public string type;
             public string ticketId;
             public string reason;
+            public int localPlacement;
         }
 
         [Serializable]
@@ -655,14 +662,14 @@ namespace ShooterPrototype.Network
         private sealed class PingMessage
         {
             public string type;
-            public long clientTimeMs;
+            public double clientTimeMs;
         }
 
         [Serializable]
         private sealed class PongMessage
         {
             public string type;
-            public long clientTimeMs;
+            public double clientTimeMs;
         }
 
         [SerializeField] private string websocketUrl = "ws://127.0.0.1:5051";
@@ -733,8 +740,30 @@ namespace ShooterPrototype.Network
         private int lastRoundTripMs = -1;
         private float lastSnapshotReceivedUnscaledTime;
         private Coroutine pingCoroutine;
+        private Coroutine connectCoroutine;
+        private int connectGeneration;
+        private string sessionTicketId = string.Empty;
+        private bool sessionActive;
+        private bool autoReconnectEnabled = true;
+        private int socketGeneration;
+        private float reconnectBackoffSeconds = 0.35f;
+        private const float MaxReconnectBackoffSeconds = 6f;
+        private const float StaleSnapshotReconnectSeconds = 18f;
+        private const float JoinStuckReconnectSeconds = 10f;
+        private const float ConnectStuckSeconds = 25f;
+        private const int MaxConnectAttemptsPerCycle = 3;
+        private float socketOpenedAtMonotonic = -1f;
+        private float connectAttemptStartedAtMonotonic = -1f;
+        private Coroutine connectionSupervisorCoroutine;
         private readonly object mainThreadActionsLock = new object();
+        private readonly Queue<Action> criticalMainThreadActions = new Queue<Action>();
         private readonly Queue<Action> mainThreadActions = new Queue<Action>();
+        private MatchStateMessage pendingMatchStateMessage;
+        private DamageZoneStateMessage pendingZoneStateMessage;
+        private PickupStateMessage pendingPickupStateMessage;
+        private bool matchStateFlushScheduled;
+        private bool zoneStateFlushScheduled;
+        private bool pickupStateFlushScheduled;
 
         public bool IsConnected => socket != null && socket.State == WebSocketState.Open;
         public bool IsConnecting => isConnecting;
@@ -792,7 +821,8 @@ namespace ShooterPrototype.Network
         {
             if (Active != null && Active != this)
             {
-                Debug.LogWarning("[RealtimeTransportClient] Duplicate instance detected; keeping the first Active reference.");
+                Debug.LogWarning("[RealtimeTransportClient] Duplicate instance detected; destroying duplicate.");
+                Destroy(this);
                 return;
             }
 
@@ -804,11 +834,22 @@ namespace ShooterPrototype.Network
             ProcessMainThreadActions();
         }
 
+        private void LateUpdate()
+        {
+            ProcessMainThreadActions();
+        }
+
         private void OnDestroy()
         {
             if (Active == this)
             {
                 Active = null;
+            }
+
+            if (connectCoroutine != null)
+            {
+                StopCoroutine(connectCoroutine);
+                connectCoroutine = null;
             }
 
             _ = DisconnectInternalAsync();
@@ -832,7 +873,7 @@ namespace ShooterPrototype.Network
             EnqueueMainThreadAction(() => MarkJoinAcknowledged(source));
         }
 
-        private void EnqueueMainThreadAction(Action action)
+        private void EnqueueMainThreadAction(Action action, bool critical = false)
         {
             if (action == null)
             {
@@ -841,26 +882,148 @@ namespace ShooterPrototype.Network
 
             lock (mainThreadActionsLock)
             {
-                mainThreadActions.Enqueue(action);
+                if (critical)
+                {
+                    criticalMainThreadActions.Enqueue(action);
+                }
+                else
+                {
+                    mainThreadActions.Enqueue(action);
+                }
             }
         }
 
-        private const int MaxMainThreadActionsPerFrame = 48;
+        private void EnqueueCoalescedMatchState(MatchStateMessage message)
+        {
+            if (message == null)
+            {
+                return;
+            }
+
+            lock (mainThreadActionsLock)
+            {
+                pendingMatchStateMessage = message;
+                if (matchStateFlushScheduled)
+                {
+                    return;
+                }
+
+                matchStateFlushScheduled = true;
+                mainThreadActions.Enqueue(FlushPendingMatchState);
+            }
+        }
+
+        private void EnqueueCoalescedZoneState(DamageZoneStateMessage message)
+        {
+            if (message == null)
+            {
+                return;
+            }
+
+            lock (mainThreadActionsLock)
+            {
+                pendingZoneStateMessage = message;
+                if (zoneStateFlushScheduled)
+                {
+                    return;
+                }
+
+                zoneStateFlushScheduled = true;
+                mainThreadActions.Enqueue(FlushPendingZoneState);
+            }
+        }
+
+        private void EnqueueCoalescedPickupState(PickupStateMessage message)
+        {
+            if (message == null)
+            {
+                return;
+            }
+
+            lock (mainThreadActionsLock)
+            {
+                pendingPickupStateMessage = message;
+                if (pickupStateFlushScheduled)
+                {
+                    return;
+                }
+
+                pickupStateFlushScheduled = true;
+                mainThreadActions.Enqueue(FlushPendingPickupState);
+            }
+        }
+
+        private void FlushPendingMatchState()
+        {
+            MatchStateMessage message;
+            lock (mainThreadActionsLock)
+            {
+                message = pendingMatchStateMessage;
+                pendingMatchStateMessage = null;
+                matchStateFlushScheduled = false;
+            }
+
+            if (message != null)
+            {
+                MatchStateReceived?.Invoke(message);
+            }
+        }
+
+        private void FlushPendingZoneState()
+        {
+            DamageZoneStateMessage message;
+            lock (mainThreadActionsLock)
+            {
+                message = pendingZoneStateMessage;
+                pendingZoneStateMessage = null;
+                zoneStateFlushScheduled = false;
+            }
+
+            if (message != null)
+            {
+                DamageZoneStateReceived?.Invoke(message);
+            }
+        }
+
+        private void FlushPendingPickupState()
+        {
+            PickupStateMessage message;
+            lock (mainThreadActionsLock)
+            {
+                message = pendingPickupStateMessage;
+                pendingPickupStateMessage = null;
+                pickupStateFlushScheduled = false;
+            }
+
+            if (message != null)
+            {
+                PickupStateReceived?.Invoke(message);
+            }
+        }
+
+        private const int MaxCriticalMainThreadActionsPerPass = 256;
+        private const int MaxMainThreadActionsPerPass = 512;
 
         private void ProcessMainThreadActions()
         {
+            ProcessMainThreadQueue(criticalMainThreadActions, MaxCriticalMainThreadActionsPerPass);
+            ProcessMainThreadQueue(mainThreadActions, MaxMainThreadActionsPerPass);
+        }
+
+        private void ProcessMainThreadQueue(Queue<Action> queue, int maxPerPass)
+        {
             var processed = 0;
-            while (processed < MaxMainThreadActionsPerFrame)
+            while (processed < maxPerPass)
             {
                 Action action;
                 lock (mainThreadActionsLock)
                 {
-                    if (mainThreadActions.Count == 0)
+                    if (queue.Count == 0)
                     {
                         return;
                     }
 
-                    action = mainThreadActions.Dequeue();
+                    action = queue.Dequeue();
                 }
 
                 try
@@ -884,6 +1047,86 @@ namespace ShooterPrototype.Network
             }
         }
 
+        public void BeginMatchSession(string ticketId)
+        {
+            if (string.IsNullOrWhiteSpace(ticketId))
+            {
+                return;
+            }
+
+            sessionTicketId = ticketId.Trim();
+            sessionActive = true;
+            autoReconnectEnabled = true;
+            EnsureConnected();
+        }
+
+        public void EndMatchSession()
+        {
+            sessionActive = false;
+            sessionTicketId = string.Empty;
+            autoReconnectEnabled = false;
+            connectGeneration++;
+            if (connectCoroutine != null)
+            {
+                StopCoroutine(connectCoroutine);
+                connectCoroutine = null;
+            }
+
+            isConnecting = false;
+            pendingConnectTicketId = string.Empty;
+            Disconnect();
+        }
+
+        public void SetAutoReconnectEnabled(bool enabled)
+        {
+            autoReconnectEnabled = enabled;
+        }
+
+        public void EnsureConnected()
+        {
+            if (!sessionActive || !autoReconnectEnabled || string.IsNullOrWhiteSpace(sessionTicketId))
+            {
+                return;
+            }
+
+            if (Time.unscaledTime < nextReconnectAllowedAt)
+            {
+                return;
+            }
+
+            if (IsReady && string.Equals(connectedTicketId, sessionTicketId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (isConnecting)
+            {
+                return;
+            }
+
+            Connect(sessionTicketId);
+        }
+
+        private void EnsureWebSocketUrlConfigured()
+        {
+            if (!string.IsNullOrWhiteSpace(websocketUrl))
+            {
+                return;
+            }
+
+            var launcher = FindFirstObjectByType<NetworkLauncher>();
+            var configUrl = launcher != null && launcher.Config != null
+                ? launcher.Config.RealtimeWsUrl
+                : null;
+            if (!string.IsNullOrWhiteSpace(configUrl))
+            {
+                Configure(configUrl);
+                return;
+            }
+
+            Configure("ws://127.0.0.1:5051");
+        }
+
         public void Connect(string ticketId)
         {
             if (string.IsNullOrWhiteSpace(ticketId))
@@ -892,6 +1135,12 @@ namespace ShooterPrototype.Network
             }
 
             ticketId = ticketId.Trim();
+            if (sessionActive && !string.Equals(ticketId, sessionTicketId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            EnsureWebSocketUrlConfigured();
             if (Time.unscaledTime < nextReconnectAllowedAt)
             {
                 return;
@@ -912,14 +1161,26 @@ namespace ShooterPrototype.Network
                 return;
             }
 
+            if (connectCoroutine != null)
+            {
+                connectGeneration++;
+                StopCoroutine(connectCoroutine);
+                connectCoroutine = null;
+                isConnecting = false;
+                pendingConnectTicketId = string.Empty;
+            }
+
             isConnecting = true;
             pendingConnectTicketId = ticketId;
-            _ = ConnectInternalAsync(ticketId);
+            connectAttemptStartedAtMonotonic = MonotonicNowSeconds;
+            connectGeneration++;
+            var generation = connectGeneration;
+            connectCoroutine = StartCoroutine(ConnectCoroutine(ticketId, generation));
         }
 
         public void Disconnect()
         {
-            _ = DisconnectInternalAsync();
+            _ = DisconnectInternalAsync(socket, socketGeneration);
         }
 
         public void ResetPoseSendCache()
@@ -1342,6 +1603,11 @@ namespace ShooterPrototype.Network
             {
                 pingCoroutine = StartCoroutine(PingLoop());
             }
+
+            if (connectionSupervisorCoroutine == null)
+            {
+                connectionSupervisorCoroutine = StartCoroutine(ConnectionSupervisorLoop());
+            }
         }
 
         private void OnDisable()
@@ -1351,6 +1617,92 @@ namespace ShooterPrototype.Network
                 StopCoroutine(pingCoroutine);
                 pingCoroutine = null;
             }
+
+            if (connectionSupervisorCoroutine != null)
+            {
+                StopCoroutine(connectionSupervisorCoroutine);
+                connectionSupervisorCoroutine = null;
+            }
+        }
+
+        private IEnumerator ConnectionSupervisorLoop()
+        {
+            var wait = new WaitForSecondsRealtime(0.5f);
+            while (true)
+            {
+                yield return wait;
+
+                if (!sessionActive || !autoReconnectEnabled)
+                {
+                    continue;
+                }
+
+                if (isConnecting)
+                {
+                    if (connectAttemptStartedAtMonotonic > 0f &&
+                        MonotonicNowSeconds - connectAttemptStartedAtMonotonic > ConnectStuckSeconds)
+                    {
+                        ForceReconnect("connect_stuck");
+                    }
+
+                    continue;
+                }
+
+                if (IsReady)
+                {
+                    reconnectBackoffSeconds = 0.35f;
+                    if (!Application.isFocused || lastSnapshotReceivedUnscaledTime <= 0f)
+                    {
+                        continue;
+                    }
+
+                    var snapshotAge = MonotonicNowSeconds - lastSnapshotReceivedUnscaledTime;
+                    if (snapshotAge > StaleSnapshotReconnectSeconds)
+                    {
+                        ForceReconnect($"snapshot_stale age={snapshotAge:F1}s");
+                    }
+
+                    continue;
+                }
+
+                if (IsConnected && !IsReady)
+                {
+                    if (socketOpenedAtMonotonic > 0f &&
+                        MonotonicNowSeconds - socketOpenedAtMonotonic > JoinStuckReconnectSeconds)
+                    {
+                        ForceReconnect("join_stuck");
+                    }
+
+                    continue;
+                }
+
+                EnsureConnected();
+            }
+        }
+
+        private void ForceReconnect(string reason)
+        {
+            if (!sessionActive || !autoReconnectEnabled)
+            {
+                return;
+            }
+
+            Debug.LogWarning($"[RealtimeTransportClient] Force reconnect: {reason}");
+            connectGeneration++;
+            if (connectCoroutine != null)
+            {
+                StopCoroutine(connectCoroutine);
+                connectCoroutine = null;
+            }
+
+            isConnecting = false;
+            pendingConnectTicketId = string.Empty;
+            connectAttemptStartedAtMonotonic = -1f;
+            socketOpenedAtMonotonic = -1f;
+            Disconnect();
+            reconnectBackoffSeconds = Mathf.Min(reconnectBackoffSeconds * 1.5f, MaxReconnectBackoffSeconds);
+            nextReconnectAllowedAt = Time.unscaledTime + reconnectBackoffSeconds;
+            EnsureConnected();
         }
 
         private IEnumerator PingLoop()
@@ -1381,7 +1733,7 @@ namespace ShooterPrototype.Network
                 var ping = new PingMessage
                 {
                     type = "ping",
-                    clientTimeMs = (long)(Time.realtimeSinceStartupAsDouble * 1000.0)
+                    clientTimeMs = MonotonicClock.Elapsed.TotalMilliseconds
                 };
                 var json = JsonUtility.ToJson(ping);
                 var bytes = Encoding.UTF8.GetBytes(json);
@@ -1734,47 +2086,258 @@ namespace ShooterPrototype.Network
             }, cts != null ? cts.Token : CancellationToken.None);
         }
 
-        private async Task ConnectInternalAsync(string ticketId)
+        private IEnumerator ConnectCoroutine(string ticketId, int generation)
         {
             try
             {
-                await DisconnectInternalAsync(preserveConnecting: true);
-                cts = new CancellationTokenSource();
-                sendSemaphore = new SemaphoreSlim(1, 1);
-                socket = new ClientWebSocket();
-                hasJoinAck = false;
-                ResetPoseSendCache();
-                if (string.IsNullOrWhiteSpace(websocketUrl))
+                Debug.Log($"[RealtimeTransportClient] WS connect starting url={websocketUrl} ticket={ticketId}");
+
+                yield return null;
+                yield return new WaitForEndOfFrame();
+
+                if (!IsConnectGenerationCurrent(generation))
                 {
-                    throw new InvalidOperationException("Realtime websocket URL is not configured.");
+                    yield break;
                 }
 
-                await socket.ConnectAsync(new Uri(websocketUrl), cts.Token);
-
-                connectedTicketId = ticketId;
-                await SendJsonAsync(new JoinMessage
-                {
-                    type = "join",
-                    ticketId = ticketId
-                }, cts.Token);
-
-                receiveTask = ReceiveLoopAsync(socket, cts.Token);
-                MovementNetworkDiagnostics.LogWsState("connected", ticketId, $"url={websocketUrl}");
-            }
-            catch (Exception ex)
+                var disconnectTask = DisconnectInternalAsync(preserveConnecting: true);
+            while (!disconnectTask.IsCompleted)
             {
-                Debug.LogWarning($"[RealtimeTransportClient] Connect failed: {ex.Message}");
-                nextReconnectAllowedAt = Time.unscaledTime + 0.35f;
-                await DisconnectInternalAsync(preserveConnecting: true);
+                yield return null;
+                if (!IsConnectGenerationCurrent(generation))
+                {
+                    yield break;
+                }
+            }
+
+            if (disconnectTask.IsFaulted)
+            {
+                yield return CleanupAfterFailedConnect(
+                    disconnectTask.Exception?.GetBaseException() ?? disconnectTask.Exception,
+                    generation);
+                yield break;
+            }
+
+            if (!IsConnectGenerationCurrent(generation))
+            {
+                yield break;
+            }
+
+                cts = new CancellationTokenSource();
+                sendSemaphore = new SemaphoreSlim(1, 1);
+                hasJoinAck = false;
+                ResetPoseSendCache();
+
+                if (string.IsNullOrWhiteSpace(websocketUrl))
+                {
+                    yield return CleanupAfterFailedConnect(
+                        new InvalidOperationException("Realtime websocket URL is not configured."),
+                        generation);
+                    yield break;
+                }
+
+                Exception lastConnectError = null;
+                var connected = false;
+                for (var attempt = 0; attempt < MaxConnectAttemptsPerCycle; attempt++)
+                {
+                    if (!IsConnectGenerationCurrent(generation))
+                    {
+                        yield break;
+                    }
+
+                    if (attempt > 0)
+                    {
+                        yield return new WaitForSecondsRealtime(0.2f + (0.15f * attempt));
+                        if (!IsConnectGenerationCurrent(generation))
+                        {
+                            yield break;
+                        }
+                    }
+
+                    if (socket != null)
+                    {
+                        try
+                        {
+                            socket.Dispose();
+                        }
+                        catch
+                        {
+                            // ignored
+                        }
+
+                        socket = null;
+                    }
+
+                    var attemptSocketGeneration = ++socketGeneration;
+                    socket = new ClientWebSocket();
+                    Task connectTask = null;
+                    Exception connectStartError = null;
+                    try
+                    {
+                        connectTask = socket.ConnectAsync(new Uri(websocketUrl), cts.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        connectStartError = ex;
+                    }
+
+                    if (connectStartError != null)
+                    {
+                        lastConnectError = connectStartError;
+                        continue;
+                    }
+
+                    while (connectTask != null && !connectTask.IsCompleted)
+                    {
+                        yield return null;
+                        if (!IsConnectGenerationCurrent(generation))
+                        {
+                            yield break;
+                        }
+                    }
+
+                    if (!IsConnectGenerationCurrent(generation))
+                    {
+                        yield break;
+                    }
+
+                    if (connectTask != null && !connectTask.IsFaulted && !connectTask.IsCanceled &&
+                        socket != null && socket.State == WebSocketState.Open &&
+                        attemptSocketGeneration == socketGeneration)
+                    {
+                        connected = true;
+                        break;
+                    }
+
+                    lastConnectError = connectTask?.Exception?.GetBaseException()
+                                       ?? new Exception("WebSocket connect task failed.");
+                }
+
+                if (!connected)
+                {
+                    yield return CleanupAfterFailedConnect(lastConnectError, generation);
+                    yield break;
+                }
+
+                socketOpenedAtMonotonic = MonotonicNowSeconds;
+                connectedTicketId = ticketId;
+                Task joinTask = null;
+                Exception joinStartError = null;
+                try
+                {
+                    joinTask = SendJsonAsync(new JoinMessage
+                    {
+                        type = "join",
+                        ticketId = ticketId
+                    }, cts.Token, required: true);
+                }
+                catch (Exception ex)
+                {
+                    joinStartError = ex;
+                }
+
+                if (joinStartError != null)
+                {
+                    yield return CleanupAfterFailedConnect(joinStartError, generation);
+                    yield break;
+                }
+
+                while (joinTask != null && !joinTask.IsCompleted)
+                {
+                    yield return null;
+                    if (!IsConnectGenerationCurrent(generation))
+                    {
+                        yield break;
+                    }
+                }
+
+                if (!IsConnectGenerationCurrent(generation))
+                {
+                    yield break;
+                }
+
+                if (joinTask == null || joinTask.IsFaulted || joinTask.IsCanceled ||
+                    socket == null || socket.State != WebSocketState.Open)
+                {
+                    var fault = joinTask?.Exception?.GetBaseException()
+                                ?? new Exception("WebSocket join send failed.");
+                    yield return CleanupAfterFailedConnect(fault, generation);
+                    yield break;
+                }
+
+                var activeSocketGeneration = socketGeneration;
+                receiveTask = ReceiveLoopAsync(socket, cts.Token, activeSocketGeneration);
+
+                var joinWaitUntil = Time.unscaledTime + 8f;
+                while (!hasJoinAck && Time.unscaledTime < joinWaitUntil)
+                {
+                    yield return null;
+                    if (!IsConnectGenerationCurrent(generation))
+                    {
+                        yield break;
+                    }
+                }
+
+                if (!hasJoinAck)
+                {
+                    yield return CleanupAfterFailedConnect(
+                        new TimeoutException("WebSocket join acknowledgement timed out."),
+                        generation);
+                    yield break;
+                }
+
+                reconnectBackoffSeconds = 0.35f;
+                connectAttemptStartedAtMonotonic = -1f;
+                Debug.Log($"[RealtimeTransportClient] WS connected url={websocketUrl} ticket={ticketId}");
             }
             finally
             {
-                isConnecting = false;
-                pendingConnectTicketId = string.Empty;
+                if (IsConnectGenerationCurrent(generation))
+                {
+                    FinishConnectAttempt(generation);
+                }
             }
         }
 
-        private async Task ReceiveLoopAsync(ClientWebSocket ownerSocket, CancellationToken token)
+        private bool IsConnectGenerationCurrent(int generation)
+        {
+            return generation == connectGeneration;
+        }
+
+        private void FinishConnectAttempt(int generation)
+        {
+            if (!IsConnectGenerationCurrent(generation))
+            {
+                return;
+            }
+
+            isConnecting = false;
+            pendingConnectTicketId = string.Empty;
+            connectCoroutine = null;
+        }
+
+        private IEnumerator CleanupAfterFailedConnect(Exception connectError, int generation)
+        {
+            if (connectError != null)
+            {
+                Debug.LogError(
+                    $"[RealtimeTransportClient] Connect failed url={websocketUrl}: {connectError.GetType().Name}: {connectError.Message}\n{connectError.StackTrace}");
+            }
+
+            if (IsConnectGenerationCurrent(generation))
+            {
+                reconnectBackoffSeconds = Mathf.Min(reconnectBackoffSeconds * 1.5f, MaxReconnectBackoffSeconds);
+                nextReconnectAllowedAt = Time.unscaledTime + reconnectBackoffSeconds;
+            }
+
+            var cleanupTask = DisconnectInternalAsync(preserveConnecting: true);
+            while (!cleanupTask.IsCompleted)
+            {
+                yield return null;
+            }
+        }
+
+        private async Task ReceiveLoopAsync(ClientWebSocket ownerSocket, CancellationToken token, int ownerSocketGeneration)
         {
             var buffer = new byte[16384];
             var segment = new ArraySegment<byte>(buffer);
@@ -1828,12 +2391,25 @@ namespace ShooterPrototype.Network
                 TryHandleIncomingJson(json);
             }
 
-            if (!token.IsCancellationRequested)
+            if (!token.IsCancellationRequested &&
+                ownerSocketGeneration == socketGeneration &&
+                sessionActive &&
+                autoReconnectEnabled)
             {
-                nextReconnectAllowedAt = Time.unscaledTime + 0.25f;
+                EnqueueMainThreadAction(() =>
+                {
+                    if (ownerSocketGeneration != socketGeneration)
+                    {
+                        return;
+                    }
+
+                    reconnectBackoffSeconds = Mathf.Min(reconnectBackoffSeconds * 1.5f, MaxReconnectBackoffSeconds);
+                    nextReconnectAllowedAt = Time.unscaledTime + reconnectBackoffSeconds;
+                    EnsureConnected();
+                });
             }
 
-            await DisconnectInternalAsync(ownerSocket);
+            await DisconnectInternalAsync(ownerSocket, ownerSocketGeneration);
         }
 
         private void TryHandleIncomingJson(string json)
@@ -1868,7 +2444,7 @@ namespace ShooterPrototype.Network
                 if (damageMessage != null && string.Equals(damageMessage.type, "damage", StringComparison.Ordinal))
                 {
                     var message = damageMessage;
-                    EnqueueMainThreadAction(() => DamageReceived?.Invoke(message));
+                    EnqueueMainThreadAction(() => DamageReceived?.Invoke(message), critical: true);
                     return;
                 }
 
@@ -1885,8 +2461,7 @@ namespace ShooterPrototype.Network
                 if (pickupStateMessage != null &&
                     string.Equals(pickupStateMessage.type, "pickup_state", StringComparison.Ordinal))
                 {
-                    var message = pickupStateMessage;
-                    EnqueueMainThreadAction(() => PickupStateReceived?.Invoke(message));
+                    EnqueueCoalescedPickupState(pickupStateMessage);
                     return;
                 }
 
@@ -1904,7 +2479,7 @@ namespace ShooterPrototype.Network
                     string.Equals(pickupEventMessage.type, "pickup_event", StringComparison.Ordinal))
                 {
                     var message = pickupEventMessage;
-                    EnqueueMainThreadAction(() => PickupEventReceived?.Invoke(message));
+                    EnqueueMainThreadAction(() => PickupEventReceived?.Invoke(message), critical: true);
                     return;
                 }
 
@@ -1922,7 +2497,7 @@ namespace ShooterPrototype.Network
                     string.Equals(pickupResultMessage.type, "pickup_result", StringComparison.Ordinal))
                 {
                     var message = pickupResultMessage;
-                    EnqueueMainThreadAction(() => PickupResultReceived?.Invoke(message));
+                    EnqueueMainThreadAction(() => PickupResultReceived?.Invoke(message), critical: true);
                     return;
                 }
 
@@ -1940,7 +2515,7 @@ namespace ShooterPrototype.Network
                     string.Equals(weaponDropResultMessage.type, "weapon_drop_result", StringComparison.Ordinal))
                 {
                     var message = weaponDropResultMessage;
-                    EnqueueMainThreadAction(() => WeaponDropResultReceived?.Invoke(message));
+                    EnqueueMainThreadAction(() => WeaponDropResultReceived?.Invoke(message), critical: true);
                     return;
                 }
 
@@ -1958,7 +2533,7 @@ namespace ShooterPrototype.Network
                     string.Equals(weaponSwapResultMessage.type, "weapon_swap_result", StringComparison.Ordinal))
                 {
                     var message = weaponSwapResultMessage;
-                    EnqueueMainThreadAction(() => WeaponSwapResultReceived?.Invoke(message));
+                    EnqueueMainThreadAction(() => WeaponSwapResultReceived?.Invoke(message), critical: true);
                     return;
                 }
 
@@ -1976,7 +2551,7 @@ namespace ShooterPrototype.Network
                     string.Equals(inventoryItemDropResultMessage.type, "inventory_item_drop_result", StringComparison.Ordinal))
                 {
                     var message = inventoryItemDropResultMessage;
-                    EnqueueMainThreadAction(() => InventoryItemDropResultReceived?.Invoke(message));
+                    EnqueueMainThreadAction(() => InventoryItemDropResultReceived?.Invoke(message), critical: true);
                     return;
                 }
 
@@ -1994,7 +2569,7 @@ namespace ShooterPrototype.Network
                     string.Equals(medkitResultMessage.type, "medkit_result", StringComparison.Ordinal))
                 {
                     var message = medkitResultMessage;
-                    EnqueueMainThreadAction(() => MedkitResultReceived?.Invoke(message));
+                    EnqueueMainThreadAction(() => MedkitResultReceived?.Invoke(message), critical: true);
                     return;
                 }
 
@@ -2011,7 +2586,7 @@ namespace ShooterPrototype.Network
                 if (healMessage != null && string.Equals(healMessage.type, "heal", StringComparison.Ordinal))
                 {
                     var message = healMessage;
-                    EnqueueMainThreadAction(() => HealReceived?.Invoke(message));
+                    EnqueueMainThreadAction(() => HealReceived?.Invoke(message), critical: true);
                     return;
                 }
 
@@ -2028,8 +2603,7 @@ namespace ShooterPrototype.Network
                 if (damageZoneStateMessage != null &&
                     string.Equals(damageZoneStateMessage.type, "zone_state", StringComparison.Ordinal))
                 {
-                    var message = damageZoneStateMessage;
-                    EnqueueMainThreadAction(() => DamageZoneStateReceived?.Invoke(message));
+                    EnqueueCoalescedZoneState(damageZoneStateMessage);
                     return;
                 }
 
@@ -2046,8 +2620,7 @@ namespace ShooterPrototype.Network
                 if (matchStateMessage != null &&
                     string.Equals(matchStateMessage.type, "match_state", StringComparison.Ordinal))
                 {
-                    var message = matchStateMessage;
-                    EnqueueMainThreadAction(() => MatchStateReceived?.Invoke(message));
+                    EnqueueCoalescedMatchState(matchStateMessage);
                     return;
                 }
 
@@ -2065,7 +2638,7 @@ namespace ShooterPrototype.Network
                     string.Equals(matchDisconnectMessage.type, "match_disconnect", StringComparison.Ordinal))
                 {
                     var message = matchDisconnectMessage;
-                    EnqueueMainThreadAction(() => MatchDisconnectReceived?.Invoke(message));
+                    EnqueueMainThreadAction(() => MatchDisconnectReceived?.Invoke(message), critical: true);
                     return;
                 }
 
@@ -2083,7 +2656,7 @@ namespace ShooterPrototype.Network
                     string.Equals(killFeedMessage.type, "kill_feed", StringComparison.Ordinal))
                 {
                     var message = killFeedMessage;
-                    EnqueueMainThreadAction(() => KillFeedReceived?.Invoke(message));
+                    EnqueueMainThreadAction(() => KillFeedReceived?.Invoke(message), critical: true);
                     return;
                 }
 
@@ -2117,23 +2690,7 @@ namespace ShooterPrototype.Network
 
                 if (pongMessage != null && string.Equals(pongMessage.type, "pong", StringComparison.Ordinal))
                 {
-                    var nowMs = (long)(Time.realtimeSinceStartupAsDouble * 1000.0);
-                    var rttMs = (int)Mathf.Max(1f, nowMs - pongMessage.clientTimeMs);
-                    if (ShouldRejectPingSample(rttMs))
-                    {
-                        return;
-                    }
-
-                    lastRoundTripMs = rttMs;
-                    if (smoothedRoundTripMs <= 0)
-                    {
-                        smoothedRoundTripMs = rttMs;
-                    }
-                    else
-                    {
-                        smoothedRoundTripMs = Mathf.RoundToInt(Mathf.Lerp(smoothedRoundTripMs, rttMs, 0.45f));
-                    }
-
+                    ApplyPongSample(pongMessage.clientTimeMs);
                     return;
                 }
 
@@ -2214,7 +2771,7 @@ namespace ShooterPrototype.Network
             {
                 latestSnapshot = snapshot;
                 hasLatestSnapshot = true;
-                lastSnapshotReceivedUnscaledTime = Time.unscaledTime;
+                lastSnapshotReceivedUnscaledTime = MonotonicNowSeconds;
                 snapshotsCounter++;
                 if (snapshot.serverTick > 0)
                 {
@@ -2225,6 +2782,26 @@ namespace ShooterPrototype.Network
                 {
                     LatestServerTickRate = snapshot.serverTickRate;
                 }
+            }
+        }
+
+        private void ApplyPongSample(double sentClientTimeMs)
+        {
+            var nowMs = MonotonicClock.Elapsed.TotalMilliseconds;
+            var rttMs = (int)Math.Max(1.0, nowMs - sentClientTimeMs);
+            if (ShouldRejectPingSample(rttMs))
+            {
+                return;
+            }
+
+            lastRoundTripMs = rttMs;
+            if (smoothedRoundTripMs <= 0)
+            {
+                smoothedRoundTripMs = rttMs;
+            }
+            else
+            {
+                smoothedRoundTripMs = Mathf.RoundToInt(Mathf.Lerp(smoothedRoundTripMs, rttMs, 0.45f));
             }
         }
 
@@ -2291,13 +2868,18 @@ namespace ShooterPrototype.Network
             }
         }
 
-        private async Task SendJsonAsync(object payload, CancellationToken token)
+        private async Task<bool> SendJsonAsync(object payload, CancellationToken token, bool required = false)
         {
             var targetSocket = socket;
             var semaphore = sendSemaphore;
             if (targetSocket == null || targetSocket.State != WebSocketState.Open || semaphore == null)
             {
-                return;
+                if (required)
+                {
+                    throw new InvalidOperationException("WebSocket is not ready to send JSON.");
+                }
+
+                return false;
             }
 
             var json = JsonUtility.ToJson(payload);
@@ -2310,7 +2892,12 @@ namespace ShooterPrototype.Network
             }
             catch
             {
-                return;
+                if (required)
+                {
+                    throw;
+                }
+
+                return false;
             }
 
             try
@@ -2318,15 +2905,30 @@ namespace ShooterPrototype.Network
                 if (targetSocket.State == WebSocketState.Open)
                 {
                     await targetSocket.SendAsync(segment, WebSocketMessageType.Text, true, token);
+                    return true;
                 }
+
+                if (required)
+                {
+                    throw new InvalidOperationException("WebSocket closed before JSON send completed.");
+                }
+
+                return false;
             }
-            catch
+            catch (Exception ex)
             {
                 if (Time.unscaledTime - lastSendErrorLogAt > 1f)
                 {
                     lastSendErrorLogAt = Time.unscaledTime;
-                    Debug.LogWarning($"[RealtimeTransportClient] Send failed payload={payload?.GetType().Name ?? "null"}");
+                    Debug.LogWarning($"[RealtimeTransportClient] Send failed payload={payload?.GetType().Name ?? "null"}: {ex.Message}");
                 }
+
+                if (required)
+                {
+                    throw;
+                }
+
+                return false;
             }
             finally
             {
@@ -2382,11 +2984,20 @@ namespace ShooterPrototype.Network
 
         private async Task DisconnectInternalAsync(
             ClientWebSocket ownerSocket = null,
+            int ownerSocketGeneration = -1,
             bool preserveConnecting = false)
         {
-            if (ownerSocket != null && socket != ownerSocket)
+            if (ownerSocket != null)
             {
-                return;
+                if (socket != ownerSocket)
+                {
+                    return;
+                }
+
+                if (ownerSocketGeneration >= 0 && ownerSocketGeneration != socketGeneration)
+                {
+                    return;
+                }
             }
 
             var localCts = cts;
@@ -2421,6 +3032,13 @@ namespace ShooterPrototype.Network
                 }
             }
 
+            var pendingReceive = receiveTask;
+            receiveTask = null;
+            if (pendingReceive != null)
+            {
+                _ = pendingReceive.ContinueWith(_ => { }, TaskScheduler.Default);
+            }
+
             if (sendSemaphore != null)
             {
                 sendSemaphore.Dispose();
@@ -2432,7 +3050,14 @@ namespace ShooterPrototype.Network
             {
                 isConnecting = false;
                 pendingConnectTicketId = string.Empty;
+                connectAttemptStartedAtMonotonic = -1f;
             }
+
+            if (!preserveConnecting)
+            {
+                socketOpenedAtMonotonic = -1f;
+            }
+
             hasJoinAck = false;
             ResetPoseSendCache();
             MovementNetworkDiagnostics.LogWsState("disconnected", string.Empty, "snapshots_cleared=1");
@@ -2448,11 +3073,6 @@ namespace ShooterPrototype.Network
                 latestSnapshot = null;
                 hasLatestSnapshot = false;
                 lastSnapshotReceivedUnscaledTime = 0f;
-            }
-
-            lock (mainThreadActionsLock)
-            {
-                mainThreadActions.Clear();
             }
 
             localCts?.Dispose();

@@ -975,6 +975,8 @@ namespace ShooterPrototype.UI
             HideGameOverPanel();
             SetPauseMenuOpen(false);
             SetVictoryBanner(false);
+            var realtimeClient = RealtimeTransportClient.Active ?? FindFirstObjectByType<RealtimeTransportClient>();
+            realtimeClient?.EndMatchSession();
             networkLauncher?.DisconnectClient(reason ?? "match ended");
             StartCoroutine(LeaveMatchAndReturnRoutine());
         }
@@ -993,8 +995,8 @@ namespace ShooterPrototype.UI
             SetVictoryBanner(false);
             ConnectionRecoveryState.MarkPending(reason ?? "Соединение с сервером потеряно");
 
-            var realtimeClient = FindFirstObjectByType<RealtimeTransportClient>();
-            realtimeClient?.Disconnect();
+            var realtimeClient = RealtimeTransportClient.Active ?? FindFirstObjectByType<RealtimeTransportClient>();
+            realtimeClient?.EndMatchSession();
             networkLauncher?.DisconnectClient(reason ?? "Lost connection to dedicated server.");
             StartCoroutine(LeaveMatchAndReturnRoutine());
         }
@@ -2198,7 +2200,8 @@ namespace ShooterPrototype.UI
                     var snapshotFresh = realtimeClient != null &&
                                           realtimeClient.IsReady &&
                                           realtimeClient.LastSnapshotReceivedUnscaledTime > 0f &&
-                                          (Time.unscaledTime - realtimeClient.LastSnapshotReceivedUnscaledTime) < 2f;
+                                          (RealtimeTransportClient.MonotonicNowSeconds -
+                                           realtimeClient.LastSnapshotReceivedUnscaledTime) < 2f;
                     var wsConnected = realtimeClient != null &&
                                       (realtimeClient.IsConnected || realtimeClient.IsConnecting);
                     if ((displayPingMs > 0 || snapshotFresh) && wsConnected)
@@ -2266,7 +2269,7 @@ namespace ShooterPrototype.UI
                 }
             }
 
-            realtimeClient?.Disconnect();
+            realtimeClient?.EndMatchSession();
             networkLauncher?.DisconnectClient("Client returned to MainMenu.");
             ResetMatchOverlay();
             ApplyMenuCursor();

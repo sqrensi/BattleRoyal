@@ -891,6 +891,8 @@ function createBattleRoyaleState() {
     deathFallPendingTickets: new Set(),
     deathFallPendingSinceByTicket: new Map(),
     pendingWinnerTicketId: "",
+    lastEliminatedTicketId: "",
+    placementByTicketId: new Map(),
     planePathAngle: 0,
     planePathInitialized: false,
     planeSpawnIndexByTicket: new Map(),
@@ -5448,6 +5450,8 @@ function onBattleRoyalePlayerDied(ticket) {
   }
   br.aliveTickets.delete(ticketId);
   br.eliminatedTickets.add(ticketId);
+  br.placementByTicketId.set(ticketId, br.aliveTickets.size + 1);
+  br.lastEliminatedTicketId = ticketId;
   br.deathFallPendingTickets.add(ticketId);
   br.deathFallPendingSinceByTicket.set(ticketId, Date.now());
   br.disconnectAtByTicket.set(
@@ -5496,9 +5500,12 @@ function checkBattleRoyaleWinner(session, nowMs) {
     return;
   }
 
-  const winnerTicketId = br.aliveTickets.size === 1
-    ? Array.from(br.aliveTickets)[0]
-    : "";
+  let winnerTicketId = "";
+  if (br.aliveTickets.size === 1) {
+    winnerTicketId = Array.from(br.aliveTickets)[0];
+  } else if (br.aliveTickets.size === 0 && br.lastEliminatedTicketId) {
+    winnerTicketId = br.lastEliminatedTicketId;
+  }
   br.pendingWinnerTicketId = winnerTicketId;
 
   if (br.deathFallPendingTickets.size > 0) {
@@ -5871,6 +5878,14 @@ function buildMatchStatePayload(session, ticketId) {
   const hasLanded = ticketId ? br.landedTickets.has(ticketId) : false;
   const inCombat = br.phase !== "ending" && hasLanded;
   const isLocalWinner = !!(ticketId && br.winnerTicketId && ticketId === br.winnerTicketId && br.phase === "ending");
+  let localPlacement = 0;
+  if (ticketId) {
+    if (br.placementByTicketId.has(ticketId)) {
+      localPlacement = br.placementByTicketId.get(ticketId);
+    } else if (br.aliveTickets.has(ticketId)) {
+      localPlacement = Math.max(1, br.aliveTickets.size);
+    }
+  }
   let winnerDisconnectSeconds = 0;
   if (isLocalWinner && br.disconnectAtByTicket.has(ticketId)) {
     winnerDisconnectSeconds = Math.max(
@@ -5890,6 +5905,7 @@ function buildMatchStatePayload(session, ticketId) {
     endingStartedAtMs: br.endingStartedAtMs,
     winnerTicketId: br.winnerTicketId || "",
     aliveCount: br.aliveTickets.size,
+    localPlacement,
     connectedCount: br.connectedTickets.size,
     hasJumped: ticketId ? br.jumpedTickets.has(ticketId) : false,
     hasLanded,
@@ -5962,19 +5978,25 @@ function broadcastMatchState(matchId) {
 
 function forceBattleRoyaleDisconnect(ticketId, reason) {
   const socket = wsClientsByTicketId.get(ticketId);
+  const ticket = ticketsById.get(ticketId);
+  const session = ticket && ticket.matchId ? matchesById.get(ticket.matchId) : null;
+  const br = ensureBattleRoyaleState(session);
+  const localPlacement = br && br.placementByTicketId.has(ticketId)
+    ? br.placementByTicketId.get(ticketId)
+    : 0;
   if (socket && socket.readyState === WebSocket.OPEN) {
     try {
       socket.send(JSON.stringify({
         type: "match_disconnect",
         ticketId,
-        reason: typeof reason === "string" ? reason : ""
+        reason: typeof reason === "string" ? reason : "",
+        localPlacement
       }));
     } catch {
       // ignored
     }
   }
 
-  const ticket = ticketsById.get(ticketId);
   if (ticket) {
     ticket.status = "Disconnected";
     removeTicketFromMatchIndex(ticket);

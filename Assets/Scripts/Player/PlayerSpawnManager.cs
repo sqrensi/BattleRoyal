@@ -286,12 +286,8 @@ namespace ShooterPrototype.Player
             }
 
             var remotePrefab = remotePlayerPrefab != null ? remotePlayerPrefab : playerPrefab;
-            if (!realtimeClient.IsReady && !realtimeClient.IsConnecting)
-            {
-                realtimeClient.Connect(launcher.CurrentTicketId);
-            }
-
             sync.Initialize(launcher, realtimeClient, launcher.CurrentTicketId, remotePrefab);
+
             var identity = localPlayer.GetComponent<PlayerNetworkIdentity>();
             identity?.Configure(launcher.CurrentTicketId, true);
         }

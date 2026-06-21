@@ -26,6 +26,8 @@ namespace ShooterPrototype.Player
         [SerializeField] private bool useFixedLowLatencyInterpolation = false;
         [SerializeField] private float adaptivePingOneWayScale = 0.45f;
         [SerializeField] private float adaptiveJitterMarginSeconds = 0.008f;
+        [SerializeField] private int maxAdaptivePingMs = 80;
+        [SerializeField] private float networkSmoothMaxDeltaSeconds = 1f / 30f;
         [SerializeField] private int lowLatencyPingThresholdMs = 25;
         [SerializeField] private float extrapolationLimitSeconds = 0.1f;
         [SerializeField] private bool useEntityInterpolation = true;
@@ -41,7 +43,7 @@ namespace ShooterPrototype.Player
         [SerializeField] private float teleportSnapDistance = 4f;
         [SerializeField] private float verticalSnapDistance = 1.2f;
         [SerializeField] private float remoteStaleSeconds = 8f;
-        [SerializeField] private float snapshotSilenceReconnectSeconds = 6f;
+        [SerializeField] private float snapshotSilenceReconnectSeconds = 12f;
         [SerializeField] private float wsReconnectIntervalSeconds = 2f;
         [SerializeField] private float wsJoinGraceSeconds = 8f;
         [SerializeField] private bool debugRealtimeLogs = false;
@@ -183,7 +185,7 @@ namespace ShooterPrototype.Player
             realtimeClient = transportClient;
             localTicketId = ticketId;
             remotePlayerPrefab = remotePrefab;
-            lastSnapshotReceivedAt = Time.unscaledTime;
+            lastSnapshotReceivedAt = MonotonicNowSeconds();
             lastAppliedServerTick = -1;
             lastAppliedSnapshotSignature = 0;
             lastReconciledSelfAuthSampleTick = -1;
@@ -207,10 +209,19 @@ namespace ShooterPrototype.Player
             }
 
             localCharacterModelName = CharacterSelectionService.GetSelectedModelName(charactersResourcesFolder);
-            wsJoinGraceUntilRealtime = Time.unscaledTime + wsJoinGraceSeconds;
             PlayerSkinSelectionService.ApplyToPlayer(gameObject, forceReapply: true);
             SyncLocalWeaponLoadoutFromMount();
             SubscribeTransportEvents();
+            if (syncCoroutine == null)
+            {
+                syncCoroutine = StartCoroutine(SyncRoutine());
+            }
+
+            if (realtimeClient != null)
+            {
+                realtimeClient.BeginMatchSession(ticketId);
+            }
+
             if (realtimeClient != null && realtimeClient.IsReady)
             {
                 SendLocalPose(forceImmediate: true);
@@ -270,10 +281,6 @@ namespace ShooterPrototype.Player
         private void OnEnable()
         {
             PlayerSkinOwnershipService.EquipmentChanged += HandleLocalEquipmentChanged;
-            if (syncCoroutine == null)
-            {
-                syncCoroutine = StartCoroutine(SyncRoutine());
-            }
         }
 
         private void OnDisable()
@@ -358,12 +365,25 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var rootTransform = avatar.Root.transform;
-            if (TryApplyRemotePlaneRidingTransform(avatar, rootTransform, targetPosition, targetYaw))
+            if (ShouldHideRemoteDuringPlanePhase(targetPosition))
             {
+                DetachRemoteFromPlane(avatar, avatar.Root.transform);
+                if (avatar.Root.activeSelf)
+                {
+                    avatar.Root.SetActive(false);
+                }
+
                 return;
             }
 
+            if (!avatar.Root.activeSelf)
+            {
+                avatar.Root.SetActive(true);
+            }
+
+            DetachRemoteFromPlane(avatar, avatar.Root.transform);
+
+            var rootTransform = avatar.Root.transform;
             var currentPosition = rootTransform.position;
             var distance = Vector3.Distance(currentPosition, targetPosition);
             if (distance >= teleportSnapDistance)
@@ -394,7 +414,7 @@ namespace ShooterPrototype.Player
                 ref avatar.HorizontalSmoothVelocity,
                 Mathf.Max(0.001f, remoteHorizontalSmoothTime),
                 remotePositionLerpSpeed * 2f,
-                Time.deltaTime);
+                GetNetworkSmoothDeltaTime());
             var horizontalNextX = horizontalNext.x;
             var horizontalNextZ = horizontalNext.y;
 
@@ -407,95 +427,47 @@ namespace ShooterPrototype.Player
                     ref avatar.VerticalSmoothVelocity,
                     Mathf.Max(0.001f, remoteVerticalSmoothTime),
                     remoteVerticalLerpSpeed * 2f,
-                    Time.deltaTime);
+                    GetNetworkSmoothDeltaTime());
 
             rootTransform.position = new Vector3(horizontalNextX, yNext, horizontalNextZ);
             var currentYaw = rootTransform.eulerAngles.y;
-            var nextYaw = Mathf.LerpAngle(currentYaw, targetYaw, Time.deltaTime * remoteRotationLerpSpeed);
+            var smoothDelta = GetNetworkSmoothDeltaTime();
+            var nextYaw = Mathf.LerpAngle(currentYaw, targetYaw, smoothDelta * remoteRotationLerpSpeed);
             rootTransform.rotation = Quaternion.Euler(0f, nextYaw, 0f);
         }
 
-        private bool TryApplyRemotePlaneRidingTransform(
-            RemoteAvatar avatar,
-            Transform rootTransform,
-            Vector3 targetPosition,
-            float targetYaw)
+        private bool ShouldHideRemoteDuringPlanePhase(Vector3 targetPosition)
         {
             if (battleRoyaleController == null)
             {
                 battleRoyaleController = FindFirstObjectByType<MatchBattleRoyaleController>();
             }
 
-            var planeTransform = battleRoyaleController != null
-                ? battleRoyaleController.PlaneTransform
-                : null;
-            var planePhaseActive = battleRoyaleController != null &&
-                                   battleRoyaleController.IsPlanePhaseActive;
-
-            if (!planePhaseActive || planeTransform == null)
+            if (battleRoyaleController == null || !battleRoyaleController.IsPlanePhaseActive)
             {
-                if (avatar.PlaneRiding)
-                {
-                    rootTransform.SetParent(null, true);
-                    avatar.PlaneRiding = false;
-                    avatar.HasSmoothedPlaneLocalPosition = false;
-                }
-
                 return false;
             }
 
-            if (avatar.Health != null && avatar.Health.IsDead)
+            var planeTransform = battleRoyaleController.PlaneTransform;
+            if (planeTransform == null)
             {
-                if (avatar.PlaneRiding)
-                {
-                    rootTransform.SetParent(null, true);
-                    avatar.PlaneRiding = false;
-                    avatar.HasSmoothedPlaneLocalPosition = false;
-                }
-
-                return false;
+                return true;
             }
 
-            var verticalOffset = targetPosition.y - planeTransform.position.y;
-            if (verticalOffset < -4f || verticalOffset > 14f)
-            {
-                if (avatar.PlaneRiding)
-                {
-                    rootTransform.SetParent(null, true);
-                    avatar.PlaneRiding = false;
-                    avatar.HasSmoothedPlaneLocalPosition = false;
-                }
+            var altitudeDelta = targetPosition.y - planeTransform.position.y;
+            return altitudeDelta > -10f && altitudeDelta < 24f;
+        }
 
-                return false;
+        private static void DetachRemoteFromPlane(RemoteAvatar avatar, Transform rootTransform)
+        {
+            if (avatar == null || rootTransform == null || !avatar.PlaneRiding)
+            {
+                return;
             }
 
-            if (!avatar.PlaneRiding)
-            {
-                rootTransform.SetParent(planeTransform, true);
-                avatar.PlaneRiding = true;
-                avatar.HasSmoothedPlaneLocalPosition = false;
-            }
-
-            var targetLocal = planeTransform.InverseTransformPoint(targetPosition);
-            if (!avatar.HasSmoothedPlaneLocalPosition)
-            {
-                avatar.SmoothedPlaneLocalPosition = targetLocal;
-                avatar.HasSmoothedPlaneLocalPosition = true;
-            }
-            else
-            {
-                var blend = Mathf.Clamp01(Time.deltaTime * Mathf.Max(4f, remotePlaneLocalLerpSpeed));
-                avatar.SmoothedPlaneLocalPosition = Vector3.Lerp(
-                    avatar.SmoothedPlaneLocalPosition,
-                    targetLocal,
-                    blend);
-            }
-
-            rootTransform.localPosition = avatar.SmoothedPlaneLocalPosition;
-            rootTransform.rotation = Quaternion.Euler(0f, targetYaw, 0f);
-            avatar.HorizontalSmoothVelocity = Vector2.zero;
-            avatar.VerticalSmoothVelocity = 0f;
-            return true;
+            rootTransform.SetParent(null, true);
+            avatar.PlaneRiding = false;
+            avatar.HasSmoothedPlaneLocalPosition = false;
         }
 
         private void DriveRemoteLocomotion(RemoteAvatar avatar, InterpolatedPose pose)
@@ -509,7 +481,7 @@ namespace ShooterPrototype.Player
             {
                 ResolveRemoteMoveInput(avatar, pose, out var moveInputX, out var moveInputZ);
 
-                var dt = Mathf.Max(0.0001f, Time.deltaTime);
+                var dt = Mathf.Max(0.0001f, GetNetworkSmoothDeltaTime());
                 var moveTargetMag = moveInputX * moveInputX + moveInputZ * moveInputZ;
                 var moveCurrentMag = avatar.SmoothedMoveInputX * avatar.SmoothedMoveInputX +
                                      avatar.SmoothedMoveInputZ * avatar.SmoothedMoveInputZ;
@@ -1088,39 +1060,8 @@ namespace ShooterPrototype.Player
                     networkLauncher.IsClientConnected &&
                     !string.IsNullOrWhiteSpace(localTicketId))
                 {
-                    var wrongTicketConnected = realtimeClient.IsConnected &&
-                        !string.Equals(realtimeClient.ConnectedTicketId, localTicketId, StringComparison.Ordinal);
-                    var pastJoinGrace = Time.unscaledTime >= wsJoinGraceUntilRealtime;
-                    var stuckWithoutJoinAck = pastJoinGrace &&
-                        realtimeClient.IsConnected &&
-                        !realtimeClient.IsReady &&
-                        string.Equals(realtimeClient.ConnectedTicketId, localTicketId, StringComparison.Ordinal);
-                    var snapshotSilentTooLong = pastJoinGrace &&
-                        Application.isFocused &&
-                        realtimeClient.IsReady &&
-                        (Time.unscaledTime - Mathf.Max(
-                            lastSnapshotReceivedAt,
-                            realtimeClient.LastSnapshotReceivedUnscaledTime)) >
-                        Mathf.Max(1f, snapshotSilenceReconnectSeconds);
-
-                    if (wrongTicketConnected || stuckWithoutJoinAck || snapshotSilentTooLong)
-                    {
-                        realtimeClient.Disconnect();
-                        wsJoinGraceUntilRealtime = Time.unscaledTime + wsJoinGraceSeconds;
-                    }
-
-                    var needsConnect = !realtimeClient.IsReady &&
-                        !realtimeClient.IsConnecting &&
-                        (stuckWithoutJoinAck ||
-                         !realtimeClient.IsConnected ||
-                         !string.Equals(realtimeClient.ConnectedTicketId, localTicketId, StringComparison.Ordinal));
-                    if (needsConnect &&
-                        (Time.unscaledTime - lastConnectRequestAt) > wsReconnectIntervalSeconds)
-                    {
-                        lastConnectRequestAt = Time.unscaledTime;
-                        wsJoinGraceUntilRealtime = Time.unscaledTime + wsJoinGraceSeconds;
-                        realtimeClient.Connect(localTicketId);
-                    }
+                    realtimeClient.SetAutoReconnectEnabled(!ShouldSkipTransportReconnect());
+                    realtimeClient.EnsureConnected();
 
                     if (localLocomotionRig == null)
                     {
@@ -1128,7 +1069,6 @@ namespace ShooterPrototype.Player
                     }
 
                     SendLocalPose();
-
                 }
 
                 yield return new WaitForSecondsRealtime(1f / Mathf.Clamp(syncTickRate, 10, 128));
@@ -1153,7 +1093,7 @@ namespace ShooterPrototype.Player
                 serverTick == lastAppliedServerTick &&
                 signature == lastAppliedSnapshotSignature)
             {
-                lastSnapshotReceivedAt = Time.unscaledTime;
+                lastSnapshotReceivedAt = MonotonicNowSeconds();
                 lastSnapshotBinaryVersion = snapshot.binaryVersion;
                 return;
             }
@@ -1403,7 +1343,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            lastSnapshotReceivedAt = Time.unscaledTime;
+            lastSnapshotReceivedAt = MonotonicNowSeconds();
 
             if (snapshot.serverTickRate > 0)
             {
@@ -1505,6 +1445,7 @@ namespace ShooterPrototype.Player
                     : (networkLauncher != null ? networkLauncher.LastMeasuredPingMs : -1);
                 if (pingMs > 0)
                 {
+                    pingMs = Mathf.Min(pingMs, maxAdaptivePingMs);
                     if (pingMs <= lowLatencyPingThresholdMs)
                     {
                         backSeconds = interpolationBackTimeMin;
@@ -1518,7 +1459,26 @@ namespace ShooterPrototype.Player
             }
 
             backSeconds = Mathf.Clamp(backSeconds, interpolationBackTimeMin, interpolationBackTimeMax);
-            return Mathf.Max(backSeconds, backByTicks);
+            backSeconds = Mathf.Max(backSeconds, backByTicks);
+
+            var fps = 1f / Mathf.Max(Time.unscaledDeltaTime, 0.001f);
+            if (fps < 50f)
+            {
+                backSeconds *= Mathf.Clamp(fps / 50f, 0.45f, 1f);
+            }
+
+            return backSeconds;
+        }
+
+        private static float MonotonicNowSeconds()
+        {
+            return RealtimeTransportClient.MonotonicNowSeconds;
+        }
+
+        private float GetNetworkSmoothDeltaTime()
+        {
+            var maxDelta = Mathf.Max(1f / 120f, networkSmoothMaxDeltaSeconds);
+            return Mathf.Min(Time.unscaledDeltaTime, maxDelta);
         }
 
         private bool ShouldSuppressLocalPoseReconcile()
@@ -1541,6 +1501,36 @@ namespace ShooterPrototype.Player
             return duelController != null && duelController.ShouldSuppressPoseReconcile;
         }
 
+        private bool ShouldSkipTransportReconnect()
+        {
+            if (battleRoyaleController == null)
+            {
+                battleRoyaleController = FindFirstObjectByType<MatchBattleRoyaleController>();
+            }
+
+            if (battleRoyaleController != null && battleRoyaleController.ShouldSkipTransportReconnect)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool ShouldSkipInputAuthorityReconcile()
+        {
+            if (localFpsController == null || localFpsController.IsMovementLocked)
+            {
+                return false;
+            }
+
+            if (localHealth != null && localHealth.IsDead)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
         private void ApplySelfAuthoritativePose(RealtimeTransportClient.SelfAuthoritativePose selfPose)
         {
             if (selfPose == null || selfPose.position == null || localFpsController == null)
@@ -1555,7 +1545,7 @@ namespace ShooterPrototype.Player
                         lastSnapshotBinaryVersion,
                         0,
                         realtimeClient != null
-                            ? Time.unscaledTime - realtimeClient.LastSnapshotReceivedUnscaledTime
+                            ? MonotonicNowSeconds() - realtimeClient.LastSnapshotReceivedUnscaledTime
                             : -1f);
                 }
 
@@ -1567,6 +1557,11 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            if (realtimeClient == null || !realtimeClient.IsReady)
+            {
+                return;
+            }
+
             if (!Application.isFocused)
             {
                 return;
@@ -1574,6 +1569,16 @@ namespace ShooterPrototype.Player
 
             if (ShouldSuppressLocalPoseReconcile())
             {
+                return;
+            }
+
+            if (ShouldSkipInputAuthorityReconcile())
+            {
+                if (selfPose.sampleTick > 0)
+                {
+                    lastReconciledSelfAuthSampleTick = selfPose.sampleTick;
+                }
+
                 return;
             }
 
@@ -1593,7 +1598,7 @@ namespace ShooterPrototype.Player
                     lastSnapshotBinaryVersion,
                     0,
                     realtimeClient != null
-                        ? Time.unscaledTime - realtimeClient.LastSnapshotReceivedUnscaledTime
+                        ? MonotonicNowSeconds() - realtimeClient.LastSnapshotReceivedUnscaledTime
                         : -1f);
             }
 
