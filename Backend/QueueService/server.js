@@ -365,6 +365,10 @@ const server = http.createServer(async (req, res) => {
   respondJson(res, 404, { error: "NotFound" });
 });
 
+server.on("checkContinue", (req, res) => {
+  res.writeContinue();
+});
+
 bootstrapDatabase().then(() => {
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`[QueueService] listening on http://127.0.0.1:${PORT}`);

@@ -43,7 +43,9 @@ function appendInsertOrIgnoreSuffix(sql, driver) {
     return sql;
   }
 
-  const normalized = String(sql || "").trim();
+  let normalized = String(sql || "").trim();
+  normalized = normalized.replace(/INSERT OR IGNORE INTO/gi, "INSERT INTO");
+
   if (!/^INSERT INTO/i.test(normalized)) {
     return normalized;
   }

@@ -650,13 +650,10 @@ namespace ShooterPrototype.UI
                 networkConfig = networkLauncher.Config;
             }
 
-            if (queueApiClient != null)
-            {
-                var baseUrl = networkConfig != null ? networkConfig.QueueApiBaseUrl : "http://127.0.0.1:5050";
-                var timeout = networkConfig != null ? networkConfig.QueueRequestTimeoutSeconds : 5f;
-                queueApiClient.Configure(baseUrl, timeout);
-                profileApiClient?.Configure(baseUrl, timeout);
-            }
+            var baseUrl = networkConfig != null ? networkConfig.QueueApiBaseUrl : "http://127.0.0.1:5050";
+            var timeout = networkConfig != null ? networkConfig.QueueRequestTimeoutSeconds : 5f;
+            queueApiClient?.Configure(baseUrl, timeout);
+            profileApiClient?.Configure(baseUrl, timeout);
         }
 
         private float GetQueuePollInterval()

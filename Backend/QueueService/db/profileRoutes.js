@@ -19,8 +19,17 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         return true;
       }
 
-      const profile = await playerRepository.ensurePlayer(playerId);
-      respondJson(res, 200, { ok: true, profile });
+      try {
+        const profile = await playerRepository.ensurePlayer(playerId);
+        respondJson(res, 200, { ok: true, profile });
+      } catch (error) {
+        console.error("[profile][ensure] failed:", error && error.message ? error.message : error);
+        respondJson(res, 500, {
+          ok: false,
+          error: "EnsureFailed",
+          message: error && error.message ? error.message : "Failed to ensure player profile.",
+        });
+      }
       return true;
     }
 
