@@ -3,7 +3,6 @@ using System.Collections;
 using System.Collections.Generic;
 using ShooterPrototype.Bootstrap;
 using ShooterPrototype.Matchmaking;
-using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
 using ShooterPrototype.Player;
 using UnityEngine;
@@ -29,7 +28,7 @@ namespace ShooterPrototype.UI
         private const int GameOverPanelLayoutVersion = 7;
         private const int GameplayHintLayoutVersion = 5;
         private const int MatchWaitStatusLayoutVersion = 5;
-        private const int DuelTopCenterHudLayoutVersion = 1;
+        private const int DuelTopCenterHudLayoutVersion = 2;
         private const int DuelRoundCountdownLayoutVersion = 1;
         private const int DuelWeaponPickLayoutVersion = 1;
         private const float GameplayHintOffsetX = 72f;
@@ -516,6 +515,7 @@ namespace ShooterPrototype.UI
                 : $"Раунд {Mathf.Max(1, roundNumber)} — {Mathf.Max(0, countdownSeconds)} сек.";
             duelTopCenterText.text = $"{scoreLine}\n{detailLine}";
             ApplyBoldHudText(duelTopCenterText);
+            ApplyDuelTopCenterPanelLayout(compact: false);
             var panel = duelTopCenterText.transform.parent;
             if (panel != null)
             {
@@ -579,6 +579,204 @@ namespace ShooterPrototype.UI
             ClearGameplayHints();
             ClearDuelMatchHud();
             gameOverFlowCoroutine = StartCoroutine(TrainingGameOverFlowRoutine(killCount));
+        }
+
+        public void SetChallengeTargetStats(int destroyed, int total)
+        {
+            EnsureHudExists();
+            EnsureMatchCornerStatsPanel(canvas != null ? canvas.transform : null);
+            SetMatchCornerStatsPanelVisible(true);
+            if (matchCornerStatsText != null)
+            {
+                matchCornerStatsText.text = $"Цели: {Mathf.Max(0, destroyed)}/{Mathf.Max(0, total)}";
+                ApplyBoldHudText(matchCornerStatsText);
+            }
+        }
+
+        public void SetChallengeElapsedSeconds(float elapsedSeconds)
+        {
+            EnsureHudExists();
+            EnsureDuelTopCenterHud(canvas != null ? canvas.transform : null);
+            if (duelTopCenterText == null)
+            {
+                return;
+            }
+
+            duelTopCenterText.text = FormatChallengeTime(elapsedSeconds);
+            ApplyBoldHudText(duelTopCenterText);
+            ApplyDuelTopCenterPanelLayout(compact: true);
+            var panel = duelTopCenterText.transform.parent;
+            if (panel != null)
+            {
+                panel.gameObject.SetActive(true);
+            }
+
+            duelTopCenterText.gameObject.SetActive(true);
+        }
+
+        public void SetChallengePrepCountdown(int secondsRemaining)
+        {
+            EnsureHudExists();
+            EnsureDuelRoundCountdownText(canvas != null ? canvas.transform : null);
+            if (duelRoundCountdownText == null)
+            {
+                return;
+            }
+
+            duelRoundCountdownText.text = Mathf.Max(0, secondsRemaining).ToString();
+            duelRoundCountdownText.gameObject.SetActive(true);
+        }
+
+        public void ClearChallengePrepCountdown()
+        {
+            ClearDuelRoundEndCountdown();
+        }
+
+        public void ShowChallengeStartedBanner()
+        {
+            SetDuelRoundBanner("Челлендж начался");
+        }
+
+        public void ScheduleChallengeGameOver(float elapsedSeconds)
+        {
+            if (gameOverFlowStarted)
+            {
+                return;
+            }
+
+            EnsureHudExists();
+            pendingMatchOutcome = MatchOutcomeSummary.CreateChallenge(elapsedSeconds);
+            gameOverFlowStarted = true;
+            SetPauseMenuOpen(false);
+            ClearGameplayHints();
+            ClearDuelMatchHud();
+            gameOverFlowCoroutine = StartCoroutine(ChallengeGameOverFlowRoutine(elapsedSeconds));
+        }
+
+        private static string FormatChallengeTime(float elapsedSeconds)
+        {
+            var clamped = Mathf.Max(0f, elapsedSeconds);
+            var minutes = Mathf.FloorToInt(clamped / 60f);
+            var seconds = Mathf.FloorToInt(clamped % 60f);
+            var tenths = Mathf.FloorToInt((clamped - Mathf.Floor(clamped)) * 10f);
+            return $"{minutes}:{seconds:00}.{tenths}";
+        }
+
+        private IEnumerator ChallengeGameOverFlowRoutine(float elapsedSeconds)
+        {
+            yield return new WaitForSecondsRealtime(MatchChallengeController.GameOverDelaySeconds);
+
+            SetVictoryBanner(false);
+            SetMatchStatusMessage(string.Empty);
+            ShowChallengeGameOverPanel(elapsedSeconds);
+
+            var remaining = GameOverAutoExitSeconds;
+            while (remaining > 0f)
+            {
+                if (returnToMenuRequested)
+                {
+                    yield break;
+                }
+
+                remaining -= Time.unscaledDeltaTime;
+                if (gameOverHintText != null)
+                {
+                    gameOverHintText.text = $"Автовыход через {Mathf.CeilToInt(Mathf.Max(0f, remaining))} сек.";
+                }
+
+                yield return null;
+            }
+
+            if (!returnToMenuRequested)
+            {
+                RequestReturnToMenu("challenge_game_over");
+            }
+        }
+
+        private void ShowChallengeGameOverPanel(float elapsedSeconds)
+        {
+            EnsureHudExists();
+            EnsureGameOverPanel(canvas != null ? canvas.transform : null);
+            if (gameOverPanel == null)
+            {
+                return;
+            }
+
+            matchRewardGranted = true;
+            matchStatsReported = false;
+            ApplyGameOverInputLock(true);
+
+            gameOverPanelVisible = true;
+            gameOverPanel.SetActive(true);
+            gameOverPanel.transform.SetAsLastSibling();
+            if (gameOverPanelGroup != null)
+            {
+                gameOverPanelGroup.alpha = 1f;
+                gameOverPanelGroup.interactable = true;
+                gameOverPanelGroup.blocksRaycasts = true;
+            }
+
+            if (gameOverPanelBackground != null)
+            {
+                UiTheme.ApplyPanel(gameOverPanelBackground, UiPanelStyle.Heavy);
+            }
+
+            if (gameOverAccentLine != null)
+            {
+                UiTheme.ApplyFlatFill(gameOverAccentLine, UiTheme.GameOverWin);
+            }
+
+            if (gameOverTitleText != null)
+            {
+                gameOverTitleText.text = "ЧЕЛЛЕНДЖ";
+                gameOverTitleText.color = UiTheme.GameOverWin;
+            }
+
+            if (gameOverPlacementText != null)
+            {
+                gameOverPlacementText.gameObject.SetActive(true);
+                gameOverPlacementText.text = $"Время: {FormatChallengeTime(elapsedSeconds)}";
+            }
+
+            if (gameOverKillsText != null)
+            {
+                gameOverKillsText.gameObject.SetActive(false);
+            }
+
+            if (gameOverRewardsText != null)
+            {
+                gameOverRewardsText.gameObject.SetActive(false);
+            }
+
+            if (gameOverHintText != null)
+            {
+                gameOverHintText.text = "Нажмите выход, чтобы вернуться в меню.";
+            }
+
+            if (gameOverExitButton != null)
+            {
+                gameOverExitButton.interactable = true;
+            }
+
+            StartCoroutine(RecordChallengeResultRoutine(elapsedSeconds));
+        }
+
+        private IEnumerator RecordChallengeResultRoutine(float elapsedSeconds)
+        {
+            if (matchStatsReported)
+            {
+                yield break;
+            }
+
+            yield return PlayerProfileService.RecordChallengeCompletion(this, elapsedSeconds, (ok, improved) =>
+            {
+                matchStatsReported = ok;
+                if (gameOverRewardsText != null && improved)
+                {
+                    gameOverRewardsText.gameObject.SetActive(true);
+                    gameOverRewardsText.text = "Новый лучший результат!";
+                }
+            });
         }
 
         private IEnumerator TrainingGameOverFlowRoutine(int killCount)
@@ -1542,6 +1740,32 @@ namespace ShooterPrototype.UI
             panelObject.SetActive(false);
         }
 
+        private void ApplyDuelTopCenterPanelLayout(bool compact)
+        {
+            if (duelTopCenterText == null)
+            {
+                return;
+            }
+
+            var panel = duelTopCenterText.transform.parent as RectTransform;
+            if (panel == null)
+            {
+                return;
+            }
+
+            if (compact)
+            {
+                panel.sizeDelta = new Vector2(168f, 40f);
+                duelTopCenterText.fontSize = 26f;
+                duelTopCenterText.lineSpacing = 0f;
+                return;
+            }
+
+            panel.sizeDelta = new Vector2(420f, 72f);
+            duelTopCenterText.fontSize = 22f;
+            duelTopCenterText.lineSpacing = -2f;
+        }
+
         private void EnsureDuelRoundCountdownText(Transform root)
         {
             if (root == null)
@@ -2360,12 +2584,38 @@ namespace ShooterPrototype.UI
                     continue;
                 }
 
-                if (ActiveMatchContext.IsTraining || PlayerProfileService.IsOfflineMode)
+                if (ActiveMatchContext.IsTraining)
                 {
                     consecutivePingFailures = 0;
                     if (pingText != null)
                     {
-                        pingText.text = ActiveMatchContext.IsTraining ? "Тренировка" : "Офлайн";
+                        pingText.text = "Тренировка";
+                    }
+
+                    RefreshFpsText();
+                    yield return new WaitForSecondsRealtime(1f);
+                    continue;
+                }
+
+                if (ActiveMatchContext.IsChallenge)
+                {
+                    consecutivePingFailures = 0;
+                    if (pingText != null)
+                    {
+                        pingText.text = PlayerProfileService.IsOfflineMode ? "Челлендж (офлайн)" : "Челлендж";
+                    }
+
+                    RefreshFpsText();
+                    yield return new WaitForSecondsRealtime(1f);
+                    continue;
+                }
+
+                if (PlayerProfileService.IsOfflineMode)
+                {
+                    consecutivePingFailures = 0;
+                    if (pingText != null)
+                    {
+                        pingText.text = "Офлайн";
                     }
 
                     RefreshFpsText();

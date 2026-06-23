@@ -1486,7 +1486,7 @@ namespace ShooterPrototype.Player
 
         private static bool CanDropWeaponToWorld()
         {
-            if (ActiveMatchContext.IsTraining)
+            if (ActiveMatchContext.IsTraining || ActiveMatchContext.IsChallenge)
             {
                 return true;
             }

@@ -32,7 +32,33 @@ class PostgresDriver {
       "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?) ON CONFLICT (name) DO NOTHING",
       ["001_initial_schema", Date.now()]
     );
+    await this.applyModeLeaderboardMigration();
     await this.syncAchievementDefinitions();
+  }
+
+  async applyModeLeaderboardMigration() {
+    const migrationName = "007_mode_leaderboards";
+    const applied = await this.get(
+      "SELECT 1 AS ok FROM schema_migrations WHERE name = ?",
+      [migrationName]
+    );
+    if (applied) {
+      return;
+    }
+
+    await this.pool.query(
+      "ALTER TABLE player_profiles ADD COLUMN IF NOT EXISTS duel_rating INTEGER NOT NULL DEFAULT 1000"
+    );
+    await this.pool.query(
+      "ALTER TABLE player_profiles ADD COLUMN IF NOT EXISTS challenge_best_time_ms INTEGER"
+    );
+    await this.pool.query(
+      "UPDATE player_profiles SET duel_rating = 1000 WHERE duel_rating IS NULL OR duel_rating < 0"
+    );
+    await this.run(
+      "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?) ON CONFLICT (name) DO NOTHING",
+      [migrationName, Date.now()]
+    );
   }
 
   async syncAchievementDefinitions() {

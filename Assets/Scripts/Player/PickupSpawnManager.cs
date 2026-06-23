@@ -405,14 +405,16 @@ namespace ShooterPrototype.Player
                 return true;
             }
 
-            if (ActiveMatchContext.IsTraining || ActiveMatchContext.IsOfflineTrainingSession)
+            if (ActiveMatchContext.IsTraining || ActiveMatchContext.IsOfflineTrainingSession ||
+                ActiveMatchContext.IsChallenge || ActiveMatchContext.IsOfflineChallengeSession)
             {
                 return true;
             }
 
             var scene = SceneManager.GetActiveScene();
             return scene.IsValid() &&
-                   string.Equals(scene.name, "training", System.StringComparison.OrdinalIgnoreCase);
+                   (string.Equals(scene.name, "training", System.StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(scene.name, "challenge", System.StringComparison.OrdinalIgnoreCase));
         }
 
         private bool ShouldDeferSpawnUntilServerSync()

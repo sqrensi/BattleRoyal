@@ -217,10 +217,10 @@ const server = http.createServer(async (req, res) => {
       console.log(`[http][enqueue] player=${playerId} ticket=${ticket.ticketId} mode=${ticket.matchMode}`);
     }
 
-    if (ticket.matchMode === "training") {
+    if (ticket.matchMode === "training" || ticket.matchMode === "challenge") {
       removeFromQueue(ticket.ticketId);
       const match = getOrCreateActiveMatch();
-      match.matchMode = "training";
+      match.matchMode = ticket.matchMode;
       matchTicketToSession(ticket, match, Date.now());
       synchronizeActiveMatchCounts();
     } else {
@@ -660,6 +660,9 @@ function normalizeMatchMode(value) {
   if (raw === "training") {
     return "training";
   }
+  if (raw === "challenge") {
+    return "challenge";
+  }
   if (raw === "duel" || raw === "1v1" || raw === "duel_1v1") {
     return "duel";
   }
@@ -693,7 +696,7 @@ function countActiveSessionsByMode(matchMode) {
 
 function getMatchModeConfig(matchMode) {
   const normalized = normalizeMatchMode(matchMode);
-  if (normalized === "training") {
+  if (normalized === "training" || normalized === "challenge") {
     return { minPlayers: 1, targetPlayers: 1 };
   }
   if (normalized === "duel") {

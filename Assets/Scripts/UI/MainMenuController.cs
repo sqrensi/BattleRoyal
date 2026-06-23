@@ -41,6 +41,7 @@ namespace ShooterPrototype.UI
         [SerializeField] private string gameSceneName = "Game";
         [SerializeField] private string duelSceneName = "1x1";
         [SerializeField] private string trainingSceneName = "training";
+        [SerializeField] private string challengeSceneName = "challenge";
 
         [Header("Reliability")]
         [SerializeField] private int enqueueRetryCount = 2;
@@ -94,9 +95,7 @@ namespace ShooterPrototype.UI
         {
             if (ConnectionRecoveryState.TryConsumePending(out var recoveryMessage))
             {
-                ApplyServerConnectionState(
-                    MainMenuServerConnectionState.Unavailable,
-                    recoveryMessage);
+                HandleServerUnavailable(recoveryMessage);
             }
 
             profileSyncCoroutine = StartCoroutine(SyncProfileRoutine());
@@ -168,21 +167,29 @@ namespace ShooterPrototype.UI
 
             if (PlayerProfileService.IsOfflineMode)
             {
-                if (MainMenuGameModeSelector.SelectedMode != MainMenuGameMode.Training)
+                var offlineMode = MainMenuGameModeSelector.SelectedMode;
+                if (!MainMenuGameModeUtility.IsOfflineSoloMode(offlineMode))
                 {
-                    SetStatus("В офлайне доступна только тренировка.");
+                    SetStatus("В офлайне доступны тренировка и челлендж.");
                     return;
                 }
 
                 uiSound?.PlayStart();
-                StartOfflineTraining();
+                if (offlineMode == MainMenuGameMode.Challenge)
+                {
+                    StartOfflineChallenge();
+                }
+                else
+                {
+                    StartOfflineTraining();
+                }
+
                 return;
             }
 
             if (!PlayerProfileService.IsServerSynced)
             {
-                SetStatus("Сервер недоступен");
-                ApplyServerConnectionState(MainMenuServerConnectionState.Unavailable, "Сервер недоступен");
+                HandleServerUnavailable("Сервер недоступен");
                 return;
             }
 
@@ -281,8 +288,7 @@ namespace ShooterPrototype.UI
 
             if (!PlayerProfileService.IsServerSynced)
             {
-                SetStatus("Сервер недоступен");
-                ApplyServerConnectionState(MainMenuServerConnectionState.Unavailable, "Сервер недоступен");
+                HandleServerUnavailable("Сервер недоступен");
                 SetStartButtonState(isQueueing: false, interactable: true);
                 yield break;
             }
@@ -504,7 +510,7 @@ namespace ShooterPrototype.UI
         {
             if (profileApiClient == null)
             {
-                ApplyServerConnectionState(MainMenuServerConnectionState.Unavailable, "Сервер недоступен");
+                HandleServerUnavailable("Сервер недоступен");
                 YandexGamesIntegrationService.NotifyMainMenuLoadingComplete();
                 yield break;
             }
@@ -529,10 +535,32 @@ namespace ShooterPrototype.UI
             }
 
             SetStatus("Сервер недоступен");
-            ApplyServerConnectionState(
-                MainMenuServerConnectionState.Unavailable,
-                ResolveServerUnavailableMessage());
+            HandleServerUnavailable(ResolveServerUnavailableMessage());
             RefreshPlayerPreview(false);
+        }
+
+        private void HandleServerUnavailable(string message)
+        {
+            var displayMessage = string.IsNullOrWhiteSpace(message)
+                ? "Сервер недоступен"
+                : message;
+            SetStatus(displayMessage);
+            ApplyServerConnectionState(MainMenuServerConnectionState.Unavailable, displayMessage);
+        }
+
+        private string ResolveServerUnavailableMessage()
+        {
+            if (networkConfig != null && networkConfig.IsQueueApiMixedContentBlocked())
+            {
+                return "Нужен HTTPS-адрес API в NetworkConfig (Queue Api Base Url Secure).";
+            }
+
+            if (!string.IsNullOrWhiteSpace(PlayerProfileService.LastSyncError))
+            {
+                return $"Сервер недоступен: {PlayerProfileService.LastSyncError}";
+            }
+
+            return "Сервер недоступен";
         }
 
         private IEnumerator SyncProfileWithRetry()
@@ -558,32 +586,6 @@ namespace ShooterPrototype.UI
             }
         }
 
-        private string ResolveServerUnavailableMessage()
-        {
-            if (networkConfig != null && networkConfig.IsQueueApiMixedContentBlocked())
-            {
-                return "Браузер блокирует HTTP-сервер на HTTPS-странице. " +
-                       "Для Яндекс Игр нужен домен с HTTPS (не IP:5050) и одобрение в «Правила для CSP».";
-            }
-
-            var apiUrl = networkConfig != null
-                ? networkConfig.ResolveQueueApiBaseUrl()
-                : string.Empty;
-            if (!string.IsNullOrWhiteSpace(apiUrl) &&
-                (apiUrl.Contains(":5050") || apiUrl.Contains("83.220.165.44")))
-            {
-                return "На Яндекс Играх нельзя обращаться к IP:5050 по HTTP. " +
-                       "Настрой домен + HTTPS + вкладку «Правила для CSP» в консоли разработчика.";
-            }
-
-            if (!string.IsNullOrWhiteSpace(PlayerProfileService.LastSyncError))
-            {
-                return $"Сервер недоступен: {PlayerProfileService.LastSyncError}";
-            }
-
-            return "Сервер недоступен";
-        }
-
         private void ApplyServerConnectionState(MainMenuServerConnectionState state, string message = null)
         {
             connectionGate?.SetState(state, message);
@@ -598,7 +600,7 @@ namespace ShooterPrototype.UI
             var leaderboard = GetComponent<MainMenuLeaderboardPanel>();
             if (leaderboard?.RootRect != null)
             {
-                leaderboard.RootRect.gameObject.SetActive(!offline);
+                leaderboard.RootRect.gameObject.SetActive(true);
             }
 
             var achievementsPanel = GetComponent<MainMenuAchievementsPanel>();
@@ -611,6 +613,26 @@ namespace ShooterPrototype.UI
             ActiveMatchContext.SetOfflineTrainingSession(true);
             LoadingScreenOverlay.Show("Загрузка тренировки...");
             StartCoroutine(LoadGameSceneRoutine());
+        }
+
+        private void StartOfflineChallenge()
+        {
+            ActiveMatchContext.SetMode(MainMenuGameMode.Challenge);
+            ActiveMatchContext.SetOfflineChallengeSession(true);
+            LoadingScreenOverlay.Show("Загрузка челленджа...");
+            StartCoroutine(LoadGameSceneRoutine());
+        }
+
+        public void RefreshLeaderboardForSelectedMode()
+        {
+            var leaderboard = GetComponent<MainMenuLeaderboardPanel>();
+            if (leaderboard != null)
+            {
+                leaderboard.SetLeaderboardMode(MainMenuGameModeSelector.SelectedMode);
+            }
+
+            var editor = GetComponent<MainMenuNicknameEditor>();
+            editor?.RefreshFromProfile();
         }
 
         public string LocalPlayerId => localPlayerId;
@@ -815,7 +837,8 @@ namespace ShooterPrototype.UI
             var targetScene = ActiveMatchContext.ResolveGameSceneName(
                 gameSceneName,
                 duelSceneName,
-                trainingSceneName);
+                trainingSceneName,
+                challengeSceneName);
             if (string.IsNullOrWhiteSpace(targetScene))
             {
                 LoadingScreenOverlay.Hide();

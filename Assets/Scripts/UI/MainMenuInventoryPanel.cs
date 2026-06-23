@@ -177,6 +177,7 @@ namespace ShooterPrototype.UI
 
         private void OnDisable()
         {
+            StopPulseRoutine();
             PlayerSkinOwnershipService.OwnershipChanged -= RebuildItems;
             PlayerSkinOwnershipService.EquipmentChanged -= OnEquipmentChanged;
             PlayerProfileService.ProfileSynced -= OnProfileSynced;
@@ -841,6 +842,7 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            StopPulseRoutine();
             InventoryIconCatalog.ClearCache();
             for (var i = contentRect.childCount - 1; i >= 0; i--)
             {
@@ -1291,28 +1293,46 @@ namespace ShooterPrototype.UI
 
         private void PulseItem(string itemId)
         {
-            if (pulseCoroutine != null)
+            StopPulseRoutine();
+            pulseCoroutine = StartCoroutine(PulseItemRoutine(itemId));
+        }
+
+        private void StopPulseRoutine()
+        {
+            if (pulseCoroutine == null)
             {
-                StopCoroutine(pulseCoroutine);
+                return;
             }
 
-            pulseCoroutine = StartCoroutine(PulseItemRoutine(itemId));
+            StopCoroutine(pulseCoroutine);
+            pulseCoroutine = null;
+        }
+
+        private bool TryGetItemSlot(string itemId, out ItemSlotVisual slot)
+        {
+            slot = null;
+            if (string.IsNullOrWhiteSpace(itemId))
+            {
+                return false;
+            }
+
+            for (var i = 0; i < itemSlots.Count; i++)
+            {
+                var candidate = itemSlots[i];
+                if (candidate.Definition.IsValid &&
+                    string.Equals(candidate.Definition.Id, itemId, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    slot = candidate;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private IEnumerator PulseItemRoutine(string itemId)
         {
-            ItemSlotVisual targetSlot = null;
-            for (var i = 0; i < itemSlots.Count; i++)
-            {
-                if (itemSlots[i].Definition.IsValid &&
-                    string.Equals(itemSlots[i].Definition.Id, itemId, System.StringComparison.OrdinalIgnoreCase))
-                {
-                    targetSlot = itemSlots[i];
-                    break;
-                }
-            }
-
-            if (targetSlot?.Background == null)
+            if (!TryGetItemSlot(itemId, out var targetSlot) || targetSlot.Background == null)
             {
                 pulseCoroutine = null;
                 yield break;
@@ -1323,14 +1343,22 @@ namespace ShooterPrototype.UI
             {
                 targetSlot.EquippedFrame.color = UiTheme.EquippedBorderPulse;
                 yield return new WaitForSecondsRealtime(0.1f);
-                targetSlot.EquippedFrame.color = Color.white;
+                if (TryGetItemSlot(itemId, out targetSlot) && targetSlot.EquippedFrame != null)
+                {
+                    targetSlot.EquippedFrame.color = Color.white;
+                }
+
                 pulseCoroutine = null;
                 yield break;
             }
 
             targetSlot.Background.color = UiTheme.ButtonHighlight;
             yield return new WaitForSecondsRealtime(0.1f);
-            targetSlot.Background.color = UiTheme.InventorySlotFill;
+            if (TryGetItemSlot(itemId, out targetSlot) && targetSlot.Background != null)
+            {
+                targetSlot.Background.color = UiTheme.InventorySlotFill;
+            }
+
             pulseCoroutine = null;
         }
 

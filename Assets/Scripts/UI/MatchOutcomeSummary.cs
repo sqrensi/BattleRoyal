@@ -30,6 +30,12 @@ namespace ShooterPrototype.UI
             return new MatchOutcomeSummary(Mathf.Max(0, kills), 1, 0, 0);
         }
 
+        public static MatchOutcomeSummary CreateChallenge(float elapsedSeconds)
+        {
+            var timeMs = Mathf.Max(0, Mathf.RoundToInt(elapsedSeconds * 1000f));
+            return new MatchOutcomeSummary(0, 1, timeMs, 0);
+        }
+
         public static MatchOutcomeSummary CreateDuel(bool won, int roundWins, int kills)
         {
             roundWins = Mathf.Max(0, roundWins);

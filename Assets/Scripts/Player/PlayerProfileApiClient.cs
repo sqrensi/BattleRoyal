@@ -80,6 +80,8 @@ namespace ShooterPrototype.Player
         public string selectedCharacterModel;
         public int currencyBalance;
         public int rating;
+        public int duelRating;
+        public int challengeBestTimeMs;
         public bool starterPackGranted;
         public string[] ownedSkins;
         public SkinQuantityEntry[] ownedSkinQuantities;
@@ -184,6 +186,7 @@ namespace ShooterPrototype.Player
         public bool won;
         public int damageDealt;
         public string matchMode;
+        public int completionTimeMs;
     }
 
     [Serializable]
@@ -208,6 +211,7 @@ namespace ShooterPrototype.Player
         public int rank;
         public string nickname;
         public int rating;
+        public int challengeTimeMs;
         public string playerId;
     }
 
@@ -251,15 +255,24 @@ namespace ShooterPrototype.Player
 
         public IEnumerator FetchLeaderboard(
             int limit,
+            string mode,
             Action<bool, LeaderboardEntryDto[], string> onCompleted)
         {
             var normalizedLimit = Mathf.Clamp(limit, 1, 25);
-            var path = $"/profile/leaderboard?limit={normalizedLimit}";
+            var normalizedMode = string.IsNullOrWhiteSpace(mode) ? "battle_royale" : mode.Trim();
+            var path = $"/profile/leaderboard?limit={normalizedLimit}&mode={UnityWebRequest.EscapeURL(normalizedMode)}";
             yield return SendRequest(
                 UnityWebRequest.kHttpVerbGET,
                 path,
                 null,
                 (ok, json, error) => ParseLeaderboardResponse(ok, json, error, onCompleted));
+        }
+
+        public IEnumerator FetchLeaderboard(
+            int limit,
+            Action<bool, LeaderboardEntryDto[], string> onCompleted)
+        {
+            yield return FetchLeaderboard(limit, "battle_royale", onCompleted);
         }
 
         public IEnumerator PurchaseSkin(

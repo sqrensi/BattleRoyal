@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Player;
 using TMPro;
 using UnityEngine;
@@ -22,10 +23,12 @@ namespace ShooterPrototype.UI
         [SerializeField] private int entryLimit = 25;
 
         private RectTransform contentRect;
+        private TMP_Text titleText;
         private MainMenuController menuController;
         private PlayerProfileApiClient profileApiClient;
         private Coroutine fetchCoroutine;
         private bool built;
+        private MainMenuGameMode leaderboardMode = MainMenuGameMode.BattleRoyale;
 
         public RectTransform RootRect { get; private set; }
 
@@ -33,6 +36,23 @@ namespace ShooterPrototype.UI
         {
             menuController = controller;
             profileApiClient = apiClient;
+        }
+
+        public void SetLeaderboardMode(MainMenuGameMode mode)
+        {
+            leaderboardMode = mode;
+            if (titleText != null)
+            {
+                titleText.text = ResolveTitle(mode);
+            }
+
+            if (mode == MainMenuGameMode.Training)
+            {
+                RenderTrainingPlaceholder();
+                return;
+            }
+
+            RequestRefresh();
         }
 
         public void Build(RectTransform stackParent)
@@ -72,8 +92,9 @@ namespace ShooterPrototype.UI
             titleObject.transform.SetParent(rootObject.transform, false);
             var titleLayout = titleObject.AddComponent<LayoutElement>();
             titleLayout.preferredHeight = 24f;
-            var titleText = titleObject.AddComponent<TextMeshProUGUI>();
-            titleText.text = "Топ 25";
+            var titleTextComponent = titleObject.AddComponent<TextMeshProUGUI>();
+            titleText = titleTextComponent;
+            titleText.text = ResolveTitle(leaderboardMode);
             titleText.fontSize = titleFontSize;
             titleText.alignment = TextAlignmentOptions.MidlineLeft;
             UiTheme.ApplyTmp(titleText, UiTextRole.Heading);
@@ -125,9 +146,22 @@ namespace ShooterPrototype.UI
                 profileApiClient = menuController != null ? menuController.ProfileApiClient : null;
             }
 
+            if (leaderboardMode == MainMenuGameMode.Training)
+            {
+                RenderTrainingPlaceholder();
+                yield break;
+            }
+
+            if (PlayerProfileService.IsOfflineMode)
+            {
+                RenderEntries(System.Array.Empty<LeaderboardEntryDto>());
+                yield break;
+            }
+
             if (profileApiClient == null)
             {
                 ShowMessage("Сервер недоступен.");
+                RenderEntries(System.Array.Empty<LeaderboardEntryDto>());
                 yield break;
             }
 
@@ -138,6 +172,7 @@ namespace ShooterPrototype.UI
 
             yield return profileApiClient.FetchLeaderboard(
                 entryLimit,
+                MainMenuGameModeUtility.GetLeaderboardModeKey(leaderboardMode),
                 (ok, responseEntries, responseError) =>
                 {
                     completed = true;
@@ -232,8 +267,11 @@ namespace ShooterPrototype.UI
             if (entries == null || entries.Count == 0)
             {
                 CreateMessageRow("Пока нет игроков.");
+                MaybeCreatePinnedSelfRow(null);
                 return;
             }
+
+            MaybeCreatePinnedSelfRow(entries[0]);
 
             var localPlayerId = PlayerIdentityService.GetOrCreatePlayerId();
             for (var i = 0; i < entries.Count; i++)
@@ -248,6 +286,172 @@ namespace ShooterPrototype.UI
                              string.Equals(entry.playerId, localPlayerId, System.StringComparison.Ordinal);
                 CreateEntryRow(entry, isSelf);
             }
+        }
+
+        private static string ResolveTitle(MainMenuGameMode mode)
+        {
+            return mode switch
+            {
+                MainMenuGameMode.Training => "Топ 25",
+                MainMenuGameMode.Duel1v1 => "Топ 25 (1v1)",
+                MainMenuGameMode.Challenge => "Топ 25 (челлендж)",
+                _ => "Топ 25 (BR)",
+            };
+        }
+
+        private bool IsTrainingMode => leaderboardMode == MainMenuGameMode.Training;
+
+        private void RenderTrainingPlaceholder()
+        {
+            ClearContent();
+            for (var rank = 1; rank <= 5; rank++)
+            {
+                CreateDashEntryRow(rank);
+            }
+        }
+
+        private void CreateDashEntryRow(int rank)
+        {
+            var rowObject = new GameObject("Entry_" + rank);
+            rowObject.transform.SetParent(contentRect, false);
+
+            var rowLayout = rowObject.AddComponent<LayoutElement>();
+            rowLayout.preferredHeight = rowHeight;
+            rowLayout.minHeight = rowHeight;
+
+            var background = rowObject.AddComponent<Image>();
+            UiTheme.ApplyFlatFill(background, UiTheme.SlotFill);
+            background.raycastTarget = false;
+
+            var horizontal = rowObject.AddComponent<HorizontalLayoutGroup>();
+            horizontal.padding = new RectOffset(8, 8, 0, 0);
+            horizontal.spacing = 6f;
+            horizontal.childAlignment = TextAnchor.MiddleLeft;
+            horizontal.childControlWidth = true;
+            horizontal.childControlHeight = true;
+            horizontal.childForceExpandWidth = false;
+            horizontal.childForceExpandHeight = false;
+
+            CreateDashCell(rowObject.transform, rank.ToString(), 28f, TextAlignmentOptions.MidlineRight, UiTextRole.Muted);
+            CreateDashCell(rowObject.transform, "—", 0f, TextAlignmentOptions.MidlineLeft, UiTextRole.Body, flexible: true);
+            CreateDashCell(rowObject.transform, "—", 52f, TextAlignmentOptions.MidlineRight, UiTextRole.Muted);
+        }
+
+        private void CreateDashCell(
+            Transform parent,
+            string text,
+            float width,
+            TextAlignmentOptions alignment,
+            UiTextRole role,
+            bool flexible = false)
+        {
+            var cellObject = new GameObject("Cell");
+            cellObject.transform.SetParent(parent, false);
+            var cellLayout = cellObject.AddComponent<LayoutElement>();
+            if (flexible)
+            {
+                cellLayout.flexibleWidth = 1f;
+            }
+            else
+            {
+                cellLayout.preferredWidth = width;
+                cellLayout.minWidth = width;
+            }
+
+            var cellText = cellObject.AddComponent<TextMeshProUGUI>();
+            cellText.text = text;
+            cellText.fontSize = rowFontSize;
+            cellText.alignment = alignment;
+            cellText.enableWordWrapping = false;
+            cellText.overflowMode = TextOverflowModes.Overflow;
+            UiTheme.ApplyTmp(cellText, role);
+        }
+
+        private bool IsChallengeMode => leaderboardMode == MainMenuGameMode.Challenge;
+
+        private void MaybeCreatePinnedSelfRow(LeaderboardEntryDto topEntry)
+        {
+            if (!ShouldPinSelfAboveTop(topEntry))
+            {
+                return;
+            }
+
+            var pinned = BuildPinnedSelfEntry();
+            if (pinned != null)
+            {
+                CreateEntryRow(pinned, true);
+            }
+        }
+
+        private bool ShouldPinSelfAboveTop(LeaderboardEntryDto topEntry)
+        {
+            if (IsTrainingMode)
+            {
+                return false;
+            }
+
+            var selfValue = ResolveSelfSortValue();
+            if (selfValue < 0)
+            {
+                return false;
+            }
+
+            if (topEntry == null)
+            {
+                return true;
+            }
+
+            if (IsChallengeMode)
+            {
+                var topTime = topEntry.challengeTimeMs > 0 ? topEntry.challengeTimeMs : topEntry.rating;
+                return topTime <= 0 || selfValue < topTime;
+            }
+
+            return selfValue > topEntry.rating;
+        }
+
+        private int ResolveSelfSortValue()
+        {
+            return leaderboardMode switch
+            {
+                MainMenuGameMode.Duel1v1 => PlayerProfileService.DuelRating,
+                MainMenuGameMode.Challenge => PlayerProfileService.ChallengeBestTimeMs,
+                _ => PlayerProfileService.Rating,
+            };
+        }
+
+        private LeaderboardEntryDto BuildPinnedSelfEntry()
+        {
+            var selfValue = ResolveSelfSortValue();
+            if (selfValue < 0)
+            {
+                return null;
+            }
+
+            return new LeaderboardEntryDto
+            {
+                rank = 0,
+                nickname = string.IsNullOrWhiteSpace(PlayerProfileService.Nickname)
+                    ? "Вы"
+                    : PlayerProfileService.Nickname.Trim(),
+                playerId = PlayerIdentityService.GetOrCreatePlayerId(),
+                rating = IsChallengeMode ? 0 : selfValue,
+                challengeTimeMs = IsChallengeMode ? selfValue : -1,
+            };
+        }
+
+        private static string FormatChallengeTime(int timeMs)
+        {
+            if (timeMs < 0)
+            {
+                return "—";
+            }
+
+            var totalSeconds = timeMs / 1000f;
+            var minutes = Mathf.FloorToInt(totalSeconds / 60f);
+            var seconds = Mathf.FloorToInt(totalSeconds % 60f);
+            var tenths = Mathf.FloorToInt((totalSeconds - Mathf.Floor(totalSeconds)) * 10f);
+            return $"{minutes}:{seconds:00}.{tenths}";
         }
 
         private void ClearContent()
@@ -309,7 +513,7 @@ namespace ShooterPrototype.UI
             rankLayout.preferredWidth = 28f;
             rankLayout.minWidth = 28f;
             var rankText = rankObject.AddComponent<TextMeshProUGUI>();
-            rankText.text = entry.rank.ToString();
+            rankText.text = entry.rank > 0 ? entry.rank.ToString() : "—";
             rankText.fontSize = rowFontSize;
             rankText.alignment = TextAlignmentOptions.MidlineRight;
             UiTheme.ApplyTmp(rankText, UiTextRole.Muted);
@@ -329,12 +533,16 @@ namespace ShooterPrototype.UI
             var ratingObject = new GameObject("Rating");
             ratingObject.transform.SetParent(rowObject.transform, false);
             var ratingLayout = ratingObject.AddComponent<LayoutElement>();
-            ratingLayout.preferredWidth = 52f;
-            ratingLayout.minWidth = 52f;
+            ratingLayout.preferredWidth = IsChallengeMode ? 72f : 52f;
+            ratingLayout.minWidth = IsChallengeMode ? 72f : 52f;
             var ratingText = ratingObject.AddComponent<TextMeshProUGUI>();
-            ratingText.text = entry.rating.ToString("N0");
+            ratingText.text = IsChallengeMode
+                ? FormatChallengeTime(entry.challengeTimeMs > 0 ? entry.challengeTimeMs : entry.rating)
+                : entry.rating.ToString("N0");
             ratingText.fontSize = rowFontSize;
             ratingText.alignment = TextAlignmentOptions.MidlineRight;
+            ratingText.enableWordWrapping = false;
+            ratingText.overflowMode = TextOverflowModes.Overflow;
             UiTheme.ApplyTmp(ratingText, UiTextRole.Accent);
         }
 

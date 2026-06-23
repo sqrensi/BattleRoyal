@@ -26,6 +26,7 @@ namespace ShooterPrototype.Bootstrap
         [SerializeField] private string gameSceneName = "Game";
         [SerializeField] private string duelSceneName = "1x1";
         [SerializeField] private string trainingSceneName = "training";
+        [SerializeField] private string challengeSceneName = "challenge";
         [SerializeField] private GameObject battleRoyalePlanePrefab;
 
         private bool initialized;
@@ -156,7 +157,8 @@ namespace ShooterPrototype.Bootstrap
                     activeScene.name,
                     gameSceneName,
                     duelSceneName,
-                    trainingSceneName);
+                    trainingSceneName,
+                    challengeSceneName);
                 playerSpawnManager.Configure(ResolveActiveGameSceneName());
                 playerSpawnManager.HandleSceneLoaded(activeScene);
             }
@@ -165,7 +167,11 @@ namespace ShooterPrototype.Bootstrap
 
         private string ResolveActiveGameSceneName()
         {
-            return ActiveMatchContext.ResolveGameSceneName(gameSceneName, duelSceneName, trainingSceneName);
+            return ActiveMatchContext.ResolveGameSceneName(
+                gameSceneName,
+                duelSceneName,
+                trainingSceneName,
+                challengeSceneName);
         }
 
         private void OnEnable()
@@ -198,11 +204,17 @@ namespace ShooterPrototype.Bootstrap
 
         private void HandleSceneLoaded(Scene scene, LoadSceneMode _)
         {
-            ActiveMatchContext.SyncFromScene(scene.name, gameSceneName, duelSceneName, trainingSceneName);
+            ActiveMatchContext.SyncFromScene(
+                scene.name,
+                gameSceneName,
+                duelSceneName,
+                trainingSceneName,
+                challengeSceneName);
 
             var isMatchScene = scene.name == gameSceneName ||
                                scene.name == duelSceneName ||
-                               scene.name == trainingSceneName;
+                               scene.name == trainingSceneName ||
+                               scene.name == challengeSceneName;
             if (gameHudController != null)
             {
                 gameHudController.SetActiveForScene(isMatchScene);
@@ -222,6 +234,10 @@ namespace ShooterPrototype.Bootstrap
             {
                 EnsureTrainingController();
             }
+            else if (scene.name == challengeSceneName && !Application.isBatchMode)
+            {
+                EnsureChallengeController();
+            }
             else if (scene.name == duelSceneName && !Application.isBatchMode)
             {
                 EnsureDuelController();
@@ -230,6 +246,7 @@ namespace ShooterPrototype.Bootstrap
             if (scene.name == mainMenuSceneName && !Application.isBatchMode)
             {
                 ActiveMatchContext.SetOfflineTrainingSession(false);
+                ActiveMatchContext.SetOfflineChallengeSession(false);
                 LoadingScreenOverlay.Hide();
             }
 
@@ -274,12 +291,30 @@ namespace ShooterPrototype.Bootstrap
             {
                 yield return OfflineTrainingBootstrap.StartWhenPlayerReady(this);
             }
+            else if (ActiveMatchContext.IsChallenge)
+            {
+                LoadingScreenOverlay.Hide();
+                yield return OfflineChallengeBootstrap.StartWhenPlayerReady(this);
+            }
 
             Canvas.ForceUpdateCanvases();
             yield return null;
 
             LoadingScreenOverlay.Hide();
             matchWarmupCoroutine = null;
+        }
+
+        private void EnsureChallengeController()
+        {
+            var existing = FindFirstObjectByType<MatchChallengeController>();
+            if (existing != null)
+            {
+                existing.PrepareForNewMatch();
+                return;
+            }
+
+            var controllerObject = new GameObject("MatchChallenge");
+            controllerObject.AddComponent<MatchChallengeController>();
         }
 
         private void EnsureTrainingController()

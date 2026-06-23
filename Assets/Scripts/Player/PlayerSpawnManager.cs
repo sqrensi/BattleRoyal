@@ -134,7 +134,7 @@ namespace ShooterPrototype.Player
                     AttachPresenceSync(existingLocalPlayer.gameObject);
                 }
 
-                if (ActiveMatchContext.IsTraining)
+                if (ActiveMatchContext.IsSoloPracticeScene)
                 {
                     MatchTrainingController.Active?.OnLocalPlayerSpawned(existingLocalPlayer);
                 }
@@ -236,7 +236,7 @@ namespace ShooterPrototype.Player
             ResetPlayerLoadoutForSpawn(instance);
             ResetMovementStateForMatch(instance);
 
-            if (ActiveMatchContext.IsTraining)
+            if (ActiveMatchContext.IsSoloPracticeScene)
             {
                 MatchTrainingController.Active?.OnLocalPlayerSpawned(instance.GetComponent<LocalPlayerMarker>());
             }
@@ -245,8 +245,8 @@ namespace ShooterPrototype.Player
         private bool ShouldAttachPresenceSync()
         {
             return enableMatchPresenceSync &&
-                   !ActiveMatchContext.IsTraining &&
-                   !ActiveMatchContext.IsOfflineTrainingSession &&
+                   !ActiveMatchContext.IsSoloPracticeScene &&
+                   !ActiveMatchContext.IsOfflineSoloSession &&
                    !PlayerProfileService.IsOfflineMode;
         }
 

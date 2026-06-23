@@ -152,13 +152,20 @@ namespace ShooterPrototype.Platform
             YG2.GameReadyAPI();
         }
 
-        private static bool ShouldUseYandexIntegration()
+        public static bool IsYandexGamesRuntime()
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
-            return true;
+            var pageUrl = Application.absoluteURL;
+            return !string.IsNullOrWhiteSpace(pageUrl) &&
+                   pageUrl.IndexOf("yandex", StringComparison.OrdinalIgnoreCase) >= 0;
 #else
             return false;
 #endif
+        }
+
+        private static bool ShouldUseYandexIntegration()
+        {
+            return IsYandexGamesRuntime();
         }
     }
 }

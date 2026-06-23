@@ -47,6 +47,11 @@ namespace ShooterPrototype.Player
                 return true;
             }
 
+            if (collider.GetComponentInParent<ChallengeTarget>(true) != null)
+            {
+                return false;
+            }
+
             if (collider.GetComponentInParent<PickupSpawnZone>(true) != null)
             {
                 return true;

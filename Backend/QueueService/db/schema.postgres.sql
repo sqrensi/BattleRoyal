@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS player_profiles (
   currency_balance INTEGER NOT NULL DEFAULT 0 CHECK (currency_balance >= 0),
   starter_pack_granted BOOLEAN NOT NULL DEFAULT FALSE,
   rating INTEGER NOT NULL DEFAULT 1000 CHECK (rating >= 0),
+  duel_rating INTEGER NOT NULL DEFAULT 1000 CHECK (duel_rating >= 0),
+  challenge_best_time_ms INTEGER,
   updated_at BIGINT NOT NULL
 );
 

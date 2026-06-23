@@ -5,6 +5,7 @@ namespace ShooterPrototype.Matchmaking
         BattleRoyale = 0,
         Training = 1,
         Duel1v1 = 2,
+        Challenge = 3,
     }
 
     public static class MainMenuGameModeUtility
@@ -15,6 +16,7 @@ namespace ShooterPrototype.Matchmaking
             {
                 MainMenuGameMode.Training => "training",
                 MainMenuGameMode.Duel1v1 => "duel",
+                MainMenuGameMode.Challenge => "challenge",
                 _ => "battle_royale",
             };
         }
@@ -25,8 +27,19 @@ namespace ShooterPrototype.Matchmaking
             {
                 MainMenuGameMode.Training => "Тренировка",
                 MainMenuGameMode.Duel1v1 => "1 на 1",
+                MainMenuGameMode.Challenge => "Челлендж",
                 _ => "Королевская битва",
             };
+        }
+
+        public static string GetLeaderboardModeKey(MainMenuGameMode mode)
+        {
+            return ToApiValue(mode);
+        }
+
+        public static bool IsOfflineSoloMode(MainMenuGameMode mode)
+        {
+            return mode is MainMenuGameMode.Training or MainMenuGameMode.Challenge;
         }
     }
 }

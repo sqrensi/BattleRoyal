@@ -24,6 +24,11 @@ namespace ShooterPrototype.Player
         public static string LastSyncError { get; private set; } = string.Empty;
         public static string Nickname { get; private set; } = string.Empty;
         public static int Rating => CurrentProfile?.rating ?? MatchRatingUtility.DefaultRating;
+
+        public static int DuelRating => CurrentProfile?.duelRating ?? MatchRatingUtility.DefaultRating;
+
+        public static int ChallengeBestTimeMs => ResolveChallengeBestTimeMs();
+
         public static PlayerProfileDto CurrentProfile { get; private set; }
 
         public static int GetSpendableBalance()
@@ -1083,6 +1088,83 @@ namespace ShooterPrototype.Player
                     slotKey = string.Empty;
                     return false;
             }
+        }
+
+        private const string OfflineChallengeBestTimeKey = "offline_challenge_best_time_ms";
+
+        public static int ResolveChallengeBestTimeMs()
+        {
+            if (CurrentProfile != null && CurrentProfile.challengeBestTimeMs > 0)
+            {
+                return CurrentProfile.challengeBestTimeMs;
+            }
+
+            return PlayerPrefs.GetInt(OfflineChallengeBestTimeKey, -1);
+        }
+
+        public static IEnumerator RecordChallengeCompletion(
+            MonoBehaviour runner,
+            float elapsedSeconds,
+            Action<bool, bool> onCompleted)
+        {
+            var timeMs = Mathf.Max(0, Mathf.RoundToInt(elapsedSeconds * 1000f));
+            var improved = false;
+            var previousBest = ResolveChallengeBestTimeMs();
+            if (previousBest < 0 || timeMs < previousBest)
+            {
+                improved = true;
+                PlayerPrefs.SetInt(OfflineChallengeBestTimeKey, timeMs);
+            }
+
+            if (UsesLocalProgressOnly || runner == null || !TryResolveApiClient(out var apiClient))
+            {
+                onCompleted?.Invoke(true, improved);
+                yield break;
+            }
+
+            var playerId = PlayerIdentityService.GetOrCreatePlayerId();
+            var sourceId = $"challenge_{playerId}_{DateTime.UtcNow.Ticks}";
+            var completed = false;
+            var success = false;
+            var error = string.Empty;
+            PlayerProfileDto profile = null;
+
+            var request = new PlayerProfileMatchStatsRequest
+            {
+                sourceId = sourceId,
+                kills = 0,
+                deaths = 0,
+                placement = 1,
+                won = true,
+                damageDealt = 0,
+                matchMode = "challenge",
+                completionTimeMs = timeMs
+            };
+
+            yield return apiClient.RecordMatchStats(playerId, request, (ok, _, responseProfile, responseError) =>
+            {
+                completed = true;
+                success = ok;
+                profile = responseProfile;
+                error = responseError;
+            });
+
+            if (!completed)
+            {
+                onCompleted?.Invoke(false, improved);
+                yield break;
+            }
+
+            if (success && profile != null)
+            {
+                ApplyProfile(profile);
+                var serverBest = profile.challengeBestTimeMs;
+                improved = serverBest > 0 && (previousBest < 0 || serverBest < previousBest || timeMs <= serverBest);
+                onCompleted?.Invoke(true, improved);
+                yield break;
+            }
+
+            onCompleted?.Invoke(false, improved);
         }
     }
 }

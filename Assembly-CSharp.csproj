@@ -171,6 +171,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerBoneHitboxRig.cs" />
     <Compile Include="Assets\Scripts\Player\CaseCatalogService.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\ShaderPropAnimator.cs" />
+    <Compile Include="Assets\Scripts\Player\MatchChallengeController.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerInventory.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerSkinResourcePaths.cs" />
     <Compile Include="Assets\Scripts\Network\PlayerSkinNetworkCodec.cs" />
@@ -235,6 +236,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TextMeshSpawner.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteLookPitchPosture.cs" />
     <Compile Include="Assets\Scripts\Bootstrap\PerformancePresetController.cs" />
+    <Compile Include="Assets\Scripts\Bootstrap\OfflineChallengeBootstrap.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\EditorScr\PrefsList.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\InfoYG\InfoYGReferences.cs" />
     <Compile Include="Assets\PluginYourGames\Example\Scripts\CanvasScaleForMobile.cs" />
@@ -302,6 +304,7 @@
     <Compile Include="Assets\Scripts\UI\MainMenuUiLayout.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo_New.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerIdentityService.cs" />
+    <Compile Include="Assets\Scripts\Player\ChallengeTarget.cs" />
     <Compile Include="Assets\PluginYourGames\Example\Scripts\DemoTextTranslateRU.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Platform\ProjectSettings.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_Demo_Translate.cs" />

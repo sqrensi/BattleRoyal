@@ -14,7 +14,14 @@ namespace ShooterPrototype.UI
         {
             MainMenuGameMode.BattleRoyale,
             MainMenuGameMode.Training,
+            MainMenuGameMode.Challenge,
             MainMenuGameMode.Duel1v1,
+        };
+
+        private static readonly MainMenuGameMode[] OfflineModes =
+        {
+            MainMenuGameMode.Training,
+            MainMenuGameMode.Challenge,
         };
 
         private static MainMenuGameMode selectedMode = MainMenuGameMode.BattleRoyale;
@@ -118,7 +125,7 @@ namespace ShooterPrototype.UI
         public void SetOfflineRestricted(bool restricted)
         {
             offlineRestricted = restricted;
-            if (restricted)
+            if (restricted && !MainMenuGameModeUtility.IsOfflineSoloMode(selectedMode))
             {
                 selectedMode = MainMenuGameMode.Training;
             }
@@ -135,10 +142,6 @@ namespace ShooterPrototype.UI
         private void ApplyInteractionState(bool? interactableOverride = null)
         {
             var interactable = interactableOverride ?? true;
-            if (offlineRestricted)
-            {
-                interactable = false;
-            }
 
             if (CanvasGroup != null)
             {
@@ -148,12 +151,12 @@ namespace ShooterPrototype.UI
 
             if (previousButton != null)
             {
-                previousButton.interactable = interactable && !offlineRestricted;
+                previousButton.interactable = interactable;
             }
 
             if (nextButton != null)
             {
-                nextButton.interactable = interactable && !offlineRestricted;
+                nextButton.interactable = interactable;
             }
         }
 
@@ -226,24 +229,29 @@ namespace ShooterPrototype.UI
         {
             if (offlineRestricted)
             {
-                selectedMode = MainMenuGameMode.Training;
+                selectedMode = CycleMode(selectedMode, OfflineModes, delta);
                 RefreshLabel();
                 return;
             }
 
+            selectedMode = CycleMode(selectedMode, Modes, delta);
+            RefreshLabel();
+        }
+
+        private static MainMenuGameMode CycleMode(MainMenuGameMode current, MainMenuGameMode[] modes, int delta)
+        {
             var currentIndex = 0;
-            for (var i = 0; i < Modes.Length; i++)
+            for (var i = 0; i < modes.Length; i++)
             {
-                if (Modes[i] == selectedMode)
+                if (modes[i] == current)
                 {
                     currentIndex = i;
                     break;
                 }
             }
 
-            var nextIndex = (currentIndex + delta + Modes.Length) % Modes.Length;
-            selectedMode = Modes[nextIndex];
-            RefreshLabel();
+            var nextIndex = (currentIndex + delta + modes.Length) % modes.Length;
+            return modes[nextIndex];
         }
 
         private void RefreshLabel()
@@ -252,6 +260,9 @@ namespace ShooterPrototype.UI
             {
                 modeLabel.text = MainMenuGameModeUtility.GetDisplayName(selectedMode).ToUpperInvariant();
             }
+
+            var menu = FindFirstObjectByType<MainMenuController>();
+            menu?.RefreshLeaderboardForSelectedMode();
         }
     }
 }

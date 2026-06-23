@@ -129,7 +129,8 @@ async function getPlayerByExternalId(externalPlayerId) {
   return get(
     `SELECT p.id, p.external_player_id, p.created_at, p.updated_at,
             pp.nickname, pp.selected_character_model, pp.currency_balance,
-            pp.starter_pack_granted, pp.rating, pp.updated_at AS profile_updated_at
+            pp.starter_pack_granted, pp.rating, pp.duel_rating, pp.challenge_best_time_ms,
+            pp.updated_at AS profile_updated_at
      FROM players p
      LEFT JOIN player_profiles pp ON pp.player_id = p.id
      WHERE p.external_player_id = ?`,
@@ -391,6 +392,10 @@ async function buildProfileResponse(playerRow) {
       ? playerRow.currency_balance
       : 0,
     rating: Number.isFinite(playerRow.rating) ? Math.max(0, playerRow.rating) : 1000,
+    duelRating: Number.isFinite(playerRow.duel_rating) ? Math.max(0, playerRow.duel_rating) : 1000,
+    challengeBestTimeMs: Number.isFinite(playerRow.challenge_best_time_ms)
+      ? Math.max(0, playerRow.challenge_best_time_ms)
+      : -1,
     starterPackGranted: !!playerRow.starter_pack_granted,
     ownedSkins: ownedSkins,
     ownedSkinQuantities: await getOwnedSkinQuantities(playerRow.id),
@@ -469,6 +474,71 @@ async function recordMatchStats(externalPlayerId, payload) {
     return { ok: false, error: "MissingSourceId", message: "Match source id is required." };
   }
 
+  const matchMode = String(payload && payload.matchMode ? payload.matchMode : "")
+    .trim()
+    .toLowerCase();
+  const completionTimeMs = Math.max(0, Math.floor(Number(payload && payload.completionTimeMs)));
+
+  if (matchMode === "challenge") {
+    if (!Number.isFinite(completionTimeMs) || completionTimeMs <= 0) {
+      return { ok: false, error: "InvalidStats", message: "Challenge completion time is required." };
+    }
+
+    const playerRow = await getPlayerByExternalId(externalPlayerId);
+    if (!playerRow) {
+      return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
+    }
+
+    const timestamp = nowMs();
+    try {
+      const alreadyReported = await transaction(async (tx) => {
+        const existing = await tx.get(
+          `SELECT id
+           FROM player_match_stat_reports
+           WHERE player_id = ? AND source_id = ?`,
+          [playerRow.id, normalizedSourceId]
+        );
+        if (existing) {
+          return true;
+        }
+
+        await tx.run(
+          `UPDATE player_profiles
+           SET challenge_best_time_ms = CASE
+                 WHEN challenge_best_time_ms IS NULL OR challenge_best_time_ms <= 0 THEN ?
+                 WHEN ? < challenge_best_time_ms THEN ?
+                 ELSE challenge_best_time_ms
+               END,
+               updated_at = ?
+           WHERE player_id = ?`,
+          [completionTimeMs, completionTimeMs, completionTimeMs, timestamp, playerRow.id]
+        );
+
+        await tx.run(
+          `INSERT INTO player_match_stat_reports
+           (player_id, source_id, reported_at, rating_delta)
+           VALUES (?, ?, ?, 0)`,
+          [playerRow.id, normalizedSourceId, timestamp]
+        );
+
+        return false;
+      });
+
+      return {
+        ok: true,
+        alreadyReported,
+        ratingDelta: 0,
+        profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: "RecordFailed",
+        message: error && error.message ? error.message : "Failed to record challenge time.",
+      };
+    }
+  }
+
   const kills = Math.max(0, Math.floor(Number(payload && payload.kills)));
   const deaths = Math.max(0, Math.floor(Number(payload && payload.deaths)));
   const placement = Math.max(1, Math.floor(Number(payload && payload.placement)));
@@ -504,6 +574,8 @@ async function recordMatchStats(externalPlayerId, payload) {
 
       ratingDelta = calculateRatingDelta(placement, kills, payload && payload.matchMode);
 
+      const ratingColumn = matchMode === "duel" || matchMode === "1v1" ? "duel_rating" : "rating";
+
       await tx.run(
         `UPDATE player_match_stats
          SET match_count = match_count + 1,
@@ -519,7 +591,7 @@ async function recordMatchStats(externalPlayerId, payload) {
 
       await tx.run(
         `UPDATE player_profiles
-         SET rating = MAX(0, rating + ?),
+         SET ${ratingColumn} = MAX(0, ${ratingColumn} + ?),
              updated_at = ?
          WHERE player_id = ?`,
         [ratingDelta, timestamp, playerRow.id]
@@ -1261,15 +1333,40 @@ async function grantMatchCurrency(externalPlayerId, amount, sourceId) {
   }
 }
 
-async function getLeaderboard(limit = 25) {
+async function getLeaderboard(limit = 25, mode = "battle_royale") {
   const normalizedLimit = Math.max(1, Math.min(25, Math.floor(Number(limit) || 25)));
+  const normalizedMode = String(mode || "battle_royale").trim().toLowerCase();
+
+  if (normalizedMode === "challenge") {
+    const rows = await all(
+      `SELECT COALESCE(NULLIF(TRIM(pp.nickname), ''), 'Игрок') AS nickname,
+              pp.challenge_best_time_ms AS challenge_time_ms,
+              p.external_player_id AS player_id
+       FROM player_profiles pp
+       INNER JOIN players p ON p.id = pp.player_id
+       WHERE pp.challenge_best_time_ms IS NOT NULL AND pp.challenge_best_time_ms > 0
+       ORDER BY pp.challenge_best_time_ms ASC, pp.updated_at ASC
+       LIMIT ?`,
+      [normalizedLimit]
+    );
+
+    return rows.map((row, index) => ({
+      rank: index + 1,
+      nickname: row.nickname || "Игрок",
+      rating: 0,
+      challengeTimeMs: Number.isFinite(row.challenge_time_ms) ? row.challenge_time_ms : -1,
+      playerId: row.player_id || "",
+    }));
+  }
+
+  const ratingColumn = normalizedMode === "duel" || normalizedMode === "1v1" ? "duel_rating" : "rating";
   const rows = await all(
     `SELECT COALESCE(NULLIF(TRIM(pp.nickname), ''), 'Игрок') AS nickname,
-            pp.rating,
+            pp.${ratingColumn} AS rating,
             p.external_player_id AS player_id
      FROM player_profiles pp
      INNER JOIN players p ON p.id = pp.player_id
-     ORDER BY pp.rating DESC, pp.updated_at ASC
+     ORDER BY pp.${ratingColumn} DESC, pp.updated_at ASC
      LIMIT ?`,
     [normalizedLimit]
   );
@@ -1278,6 +1375,7 @@ async function getLeaderboard(limit = 25) {
     rank: index + 1,
     nickname: row.nickname || "Игрок",
     rating: Number.isFinite(row.rating) ? Math.max(0, row.rating) : 1000,
+    challengeTimeMs: -1,
     playerId: row.player_id || "",
   }));
 }

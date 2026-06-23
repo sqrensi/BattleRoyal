@@ -8,13 +8,34 @@ namespace ShooterPrototype.Matchmaking
 
         public static bool IsOfflineTrainingSession { get; private set; }
 
+        public static bool IsOfflineChallengeSession { get; private set; }
+
         public static bool IsDuel => SelectedMode == MainMenuGameMode.Duel1v1;
 
         public static bool IsTraining => SelectedMode == MainMenuGameMode.Training;
 
+        public static bool IsChallenge => SelectedMode == MainMenuGameMode.Challenge;
+
+        public static bool IsSoloPracticeScene => IsTraining || IsChallenge;
+
+        public static bool IsOfflineSoloSession => IsOfflineTrainingSession || IsOfflineChallengeSession;
+
         public static void SetOfflineTrainingSession(bool active)
         {
             IsOfflineTrainingSession = active;
+            if (active)
+            {
+                IsOfflineChallengeSession = false;
+            }
+        }
+
+        public static void SetOfflineChallengeSession(bool active)
+        {
+            IsOfflineChallengeSession = active;
+            if (active)
+            {
+                IsOfflineTrainingSession = false;
+            }
         }
 
         public static void SetMode(MainMenuGameMode mode)
@@ -22,18 +43,22 @@ namespace ShooterPrototype.Matchmaking
             SelectedMode = mode;
         }
 
-        /// <summary>
-        /// Keeps gameplay rules aligned with the loaded match scene (duel vs BR).
-        /// Menu selection can be stale after scene transitions or hot reloads.
-        /// </summary>
         public static void SyncFromScene(
             string sceneName,
             string battleRoyaleScene,
             string duelScene,
-            string trainingScene = null)
+            string trainingScene = null,
+            string challengeScene = null)
         {
             if (string.IsNullOrWhiteSpace(sceneName))
             {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(challengeScene) &&
+                string.Equals(sceneName, challengeScene, System.StringComparison.OrdinalIgnoreCase))
+            {
+                SetMode(MainMenuGameMode.Challenge);
                 return;
             }
 
@@ -61,8 +86,14 @@ namespace ShooterPrototype.Matchmaking
         public static string ResolveGameSceneName(
             string battleRoyaleScene,
             string duelScene,
-            string trainingScene = null)
+            string trainingScene = null,
+            string challengeScene = null)
         {
+            if (IsChallenge && !string.IsNullOrWhiteSpace(challengeScene))
+            {
+                return challengeScene;
+            }
+
             if (IsTraining && !string.IsNullOrWhiteSpace(trainingScene))
             {
                 return trainingScene;

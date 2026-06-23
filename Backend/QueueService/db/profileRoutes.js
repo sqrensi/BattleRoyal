@@ -36,7 +36,8 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
     if (method === "GET" && path === "/profile/leaderboard") {
       const requestUrl = getRequestUrl ? getRequestUrl(req) : null;
       const limitRaw = requestUrl ? requestUrl.searchParams.get("limit") : "25";
-      const entries = await playerRepository.getLeaderboard(limitRaw);
+      const mode = requestUrl ? requestUrl.searchParams.get("mode") : "battle_royale";
+      const entries = await playerRepository.getLeaderboard(limitRaw, mode);
       respondJson(res, 200, { ok: true, entries });
       return true;
     }

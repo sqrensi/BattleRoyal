@@ -25,6 +25,9 @@ namespace ShooterPrototype.UI
         private const float KillBannerFadeOutSeconds = 0.45f;
         private const float KillBannerBottomOffset = 58f;
         private const int KillBannerLayoutVersion = 2;
+        private const float AmmoHudBottomOffset = 22f;
+        private const float AmmoHudRightOffset = 18f;
+        private const int AmmoHudLayoutVersion = 1;
 
         private Canvas canvas;
         private RectTransform hpFillRect;
@@ -37,6 +40,15 @@ namespace ShooterPrototype.UI
         private RectTransform killBannerRoot;
         private CanvasGroup killBannerGroup;
         private TMP_Text killBannerText;
+        private RectTransform ammoHudRoot;
+        private TMP_Text ammoHudText;
+        private LocalPlayerMarker cachedLocalPlayer;
+        private PlayerWeaponController cachedWeapon;
+        private PlayerWeaponLoadout cachedLoadout;
+        private PlayerWeaponLoadoutController cachedLoadoutController;
+        private int lastDisplayedMag = int.MinValue;
+        private int lastDisplayedReserve = int.MinValue;
+        private bool lastDisplayedHasWeapon;
         private RealtimeTransportClient transportClient;
         private float killBannerAlpha;
         private float killBannerTargetAlpha;
@@ -75,6 +87,7 @@ namespace ShooterPrototype.UI
 
             EnsureDamageOverlay(hostCanvas.transform);
             EnsureKillBanner(hostCanvas.transform);
+            EnsureAmmoHud(hostCanvas.transform);
             damageOverlayAlpha = 0f;
             damageOverlayTarget = 0f;
         }
@@ -102,6 +115,13 @@ namespace ShooterPrototype.UI
                 {
                     killBannerRoot.gameObject.SetActive(false);
                 }
+
+                if (ammoHudRoot != null)
+                {
+                    ammoHudRoot.gameObject.SetActive(false);
+                }
+
+                InvalidateAmmoCache();
             }
             else
             {
@@ -118,6 +138,7 @@ namespace ShooterPrototype.UI
 
             EnsureHealthBinding();
             RefreshHealthBar();
+            RefreshAmmoHud();
             TickDamageOverlay();
             TickKillBanner();
         }
@@ -502,6 +523,189 @@ namespace ShooterPrototype.UI
             color.a = alpha;
             arc.color = color;
             arc.enabled = alpha > 0.005f;
+        }
+
+        private void EnsureAmmoHud(Transform root)
+        {
+            var existing = root.Find("AmmoHudRoot");
+            if (existing != null)
+            {
+                var versionMarker = existing.GetComponent<AmmoHudLayoutMarker>();
+                if (versionMarker != null && versionMarker.Version >= AmmoHudLayoutVersion && ammoHudText != null)
+                {
+                    ammoHudRoot = existing.GetComponent<RectTransform>();
+                    return;
+                }
+
+                if (existing == ammoHudRoot)
+                {
+                    ammoHudRoot = null;
+                    ammoHudText = null;
+                }
+
+                Destroy(existing.gameObject);
+            }
+
+            BuildAmmoHud(root);
+        }
+
+        private void BuildAmmoHud(Transform root)
+        {
+            if (ammoHudText != null)
+            {
+                return;
+            }
+
+            var hudObject = CreateRect("AmmoHudRoot", root);
+            hudObject.AddComponent<AmmoHudLayoutMarker>().Version = AmmoHudLayoutVersion;
+            ammoHudRoot = hudObject.GetComponent<RectTransform>();
+            ammoHudRoot.anchorMin = new Vector2(1f, 0f);
+            ammoHudRoot.anchorMax = new Vector2(1f, 0f);
+            ammoHudRoot.pivot = new Vector2(1f, 0f);
+            ammoHudRoot.anchoredPosition = new Vector2(-AmmoHudRightOffset, AmmoHudBottomOffset);
+            ammoHudRoot.sizeDelta = new Vector2(220f, 56f);
+
+            var labelObject = CreateRect("AmmoHudText", hudObject.transform);
+            var labelRect = labelObject.GetComponent<RectTransform>();
+            StretchFull(labelRect);
+
+            ammoHudText = labelObject.AddComponent<TextMeshProUGUI>();
+            UiTheme.ApplyMilitaryHeader(ammoHudText, UiTextRole.Accent);
+            ammoHudText.fontSize = 34f;
+            ammoHudText.alignment = TextAlignmentOptions.BottomRight;
+            ammoHudText.enableWordWrapping = false;
+            ammoHudText.overflowMode = TextOverflowModes.Overflow;
+            ammoHudText.raycastTarget = false;
+            ammoHudText.outlineWidth = 0.24f;
+            ammoHudText.outlineColor = new Color(0.02f, 0.02f, 0.02f, 0.92f);
+            ammoHudText.text = "-- / --";
+
+            hudObject.SetActive(false);
+        }
+
+        private void RefreshAmmoHud()
+        {
+            if (ammoHudRoot == null || ammoHudText == null)
+            {
+                return;
+            }
+
+            EnsureAmmoBinding();
+            if (cachedLoadout == null || !cachedLoadout.HasAnyWeapon)
+            {
+                SetAmmoHudVisible(false);
+                return;
+            }
+
+            var hasActiveWeapon = cachedWeapon != null && cachedWeapon.enabled;
+            var magAmmo = hasActiveWeapon ? cachedWeapon.CurrentAmmo : ResolveHolsteredMagAmmo();
+            var reserveAmmo = ResolveReserveAmmo(hasActiveWeapon);
+
+            if (lastDisplayedHasWeapon &&
+                lastDisplayedMag == magAmmo &&
+                lastDisplayedReserve == reserveAmmo)
+            {
+                SetAmmoHudVisible(true);
+                return;
+            }
+
+            lastDisplayedHasWeapon = true;
+            lastDisplayedMag = magAmmo;
+            lastDisplayedReserve = reserveAmmo;
+
+            ammoHudText.text = $"{magAmmo} / {reserveAmmo}";
+            SetAmmoHudVisible(true);
+        }
+
+        private int ResolveHolsteredMagAmmo()
+        {
+            if (cachedLoadout == null)
+            {
+                return 0;
+            }
+
+            var slotIndex = cachedLoadout.ActiveSlotIndex;
+            if (slotIndex < 0 || slotIndex > 1)
+            {
+                return 0;
+            }
+
+            var slotMag = cachedLoadout.GetSlotMagAmmo(slotIndex);
+            return slotMag >= 0 ? slotMag : 0;
+        }
+
+        private int ResolveReserveAmmo(bool hasActiveWeapon)
+        {
+            if (hasActiveWeapon && cachedWeapon != null)
+            {
+                return cachedWeapon.ReserveAmmo;
+            }
+
+            if (cachedLoadout == null)
+            {
+                return 0;
+            }
+
+            var kind = cachedLoadoutController != null
+                ? cachedLoadoutController.ResolveEquippedWeaponKind()
+                : cachedLoadout.GetActiveWeaponKind();
+            return cachedLoadout.GetSpareAmmo(kind);
+        }
+
+        private void EnsureAmmoBinding()
+        {
+            var local = FindFirstObjectByType<LocalPlayerMarker>();
+            if (local == null)
+            {
+                if (cachedLocalPlayer != null)
+                {
+                    InvalidateAmmoCache();
+                }
+
+                return;
+            }
+
+            if (cachedLocalPlayer == local)
+            {
+                return;
+            }
+
+            cachedLocalPlayer = local;
+            cachedWeapon = local.GetComponent<PlayerWeaponController>();
+            cachedLoadout = local.GetComponent<PlayerWeaponLoadout>();
+            cachedLoadoutController = local.GetComponent<PlayerWeaponLoadoutController>();
+            lastDisplayedMag = int.MinValue;
+            lastDisplayedReserve = int.MinValue;
+            lastDisplayedHasWeapon = false;
+        }
+
+        private void InvalidateAmmoCache()
+        {
+            cachedLocalPlayer = null;
+            cachedWeapon = null;
+            cachedLoadout = null;
+            cachedLoadoutController = null;
+            lastDisplayedMag = int.MinValue;
+            lastDisplayedReserve = int.MinValue;
+            lastDisplayedHasWeapon = false;
+        }
+
+        private void SetAmmoHudVisible(bool visible)
+        {
+            if (ammoHudRoot == null)
+            {
+                return;
+            }
+
+            if (ammoHudRoot.gameObject.activeSelf != visible)
+            {
+                ammoHudRoot.gameObject.SetActive(visible);
+            }
+        }
+
+        private sealed class AmmoHudLayoutMarker : MonoBehaviour
+        {
+            public int Version;
         }
 
         private void BuildHealthBar(Transform root)

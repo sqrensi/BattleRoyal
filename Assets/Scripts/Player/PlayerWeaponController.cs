@@ -871,6 +871,15 @@ namespace ShooterPrototype.Player
 
         private void ProcessGameplayHit(RaycastHit hit, Vector3 shotDirection, bool notifyNetworkHit)
         {
+            var challengeTarget = hit.collider.GetComponentInParent<ChallengeTarget>();
+            if (challengeTarget != null &&
+                MatchChallengeController.Active != null &&
+                MatchChallengeController.Active.IsRunActive)
+            {
+                challengeTarget.RegisterHit(hit.point);
+                return;
+            }
+
             var hitZone = ResolveHitZone(hit.collider);
             var playerHit = IsPlayerHit(hit.collider);
             if (!playerHit)

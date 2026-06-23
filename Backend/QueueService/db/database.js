@@ -38,6 +38,36 @@ function applySqliteMigrations(db) {
   applyPlayerMatchStatsMigration(db, insertMigration);
   applyPlayerAchievementClaimedAtMigration(db, insertMigration);
   applyPlayerRatingMigration(db, insertMigration);
+  applyModeLeaderboardMigration(db, insertMigration);
+}
+
+function applyModeLeaderboardMigration(db, insertMigration) {
+  const migrationName = "007_mode_leaderboards";
+  const applied = db
+    .prepare("SELECT 1 AS ok FROM schema_migrations WHERE name = ?")
+    .get(migrationName);
+  if (applied) {
+    return;
+  }
+
+  const profileColumns = db.prepare("PRAGMA table_info(player_profiles)").all();
+  const hasDuelRating = profileColumns.some((column) => column.name === "duel_rating");
+  if (!hasDuelRating) {
+    db.exec(
+      "ALTER TABLE player_profiles ADD COLUMN duel_rating INTEGER NOT NULL DEFAULT 1000;"
+    );
+  }
+
+  const hasChallengeBestTime = profileColumns.some(
+    (column) => column.name === "challenge_best_time_ms"
+  );
+  if (!hasChallengeBestTime) {
+    db.exec("ALTER TABLE player_profiles ADD COLUMN challenge_best_time_ms INTEGER;");
+  }
+
+  db.exec("UPDATE player_profiles SET duel_rating = 1000 WHERE duel_rating IS NULL OR duel_rating < 0;");
+
+  insertMigration.run(migrationName, nowMs());
 }
 
 function applyPlayerRatingMigration(db, insertMigration) {

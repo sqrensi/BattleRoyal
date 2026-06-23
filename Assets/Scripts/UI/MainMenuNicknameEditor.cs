@@ -1,4 +1,5 @@
 using System.Collections;
+using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Player;
 using TMPro;
 using UnityEngine;
@@ -20,6 +21,7 @@ namespace ShooterPrototype.UI
         [SerializeField] private float actionButtonWidth = 104f;
 
         private CanvasGroup canvasGroup;
+        private TMP_Text ratingLabelText;
         private TMP_Text ratingText;
         private TMP_InputField nicknameInput;
         private TMP_Text statusText;
@@ -100,7 +102,8 @@ namespace ShooterPrototype.UI
             ratingLabelObject.transform.SetParent(rootObject.transform, false);
             var ratingLabelLayout = ratingLabelObject.AddComponent<LayoutElement>();
             ratingLabelLayout.preferredHeight = 20f;
-            var ratingLabelText = ratingLabelObject.AddComponent<TextMeshProUGUI>();
+            var ratingLabelTextComponent = ratingLabelObject.AddComponent<TextMeshProUGUI>();
+            ratingLabelText = ratingLabelTextComponent;
             ratingLabelText.text = "Рейтинг";
             ratingLabelText.fontSize = labelFontSize;
             ratingLabelText.alignment = TextAlignmentOptions.MidlineLeft;
@@ -168,7 +171,7 @@ namespace ShooterPrototype.UI
             PlayerProfileService.ProfileSynced -= RefreshFromProfile;
         }
 
-        private void RefreshFromProfile()
+        public void RefreshFromProfile()
         {
             if (nicknameInput == null)
             {
@@ -195,7 +198,44 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            ratingText.text = PlayerProfileService.Rating.ToString("N0");
+            var mode = MainMenuGameModeSelector.SelectedMode;
+            if (ratingLabelText != null)
+            {
+                ratingLabelText.text = mode switch
+                {
+                    MainMenuGameMode.Training => "Рейтинг",
+                    MainMenuGameMode.Duel1v1 => "Рейтинг 1v1",
+                    MainMenuGameMode.Challenge => "Лучшее время",
+                    _ => "Рейтинг BR",
+                };
+            }
+
+            if (mode == MainMenuGameMode.Training)
+            {
+                ratingText.text = "—";
+                return;
+            }
+
+            ratingText.text = mode switch
+            {
+                MainMenuGameMode.Duel1v1 => PlayerProfileService.DuelRating.ToString("N0"),
+                MainMenuGameMode.Challenge => FormatChallengeBestTime(PlayerProfileService.ChallengeBestTimeMs),
+                _ => PlayerProfileService.Rating.ToString("N0"),
+            };
+        }
+
+        private static string FormatChallengeBestTime(int timeMs)
+        {
+            if (timeMs < 0)
+            {
+                return "—";
+            }
+
+            var totalSeconds = timeMs / 1000f;
+            var minutes = Mathf.FloorToInt(totalSeconds / 60f);
+            var seconds = Mathf.FloorToInt(totalSeconds % 60f);
+            var tenths = Mathf.FloorToInt((totalSeconds - Mathf.Floor(totalSeconds)) * 10f);
+            return $"{minutes}:{seconds:00}.{tenths}";
         }
 
         private void RefreshNicknameFromProfile()
@@ -242,6 +282,13 @@ namespace ShooterPrototype.UI
                 ClearStatus();
                 nicknameInput?.Select();
                 nicknameInput?.ActivateInputField();
+                if (nicknameInput != null)
+                {
+                    nicknameInput.caretColor = Color.white;
+                    nicknameInput.customCaretColor = true;
+                    nicknameInput.MoveTextEnd(false);
+                }
+
                 return;
             }
 
@@ -415,6 +462,11 @@ namespace ShooterPrototype.UI
             inputField.textComponent = text;
             inputField.placeholder = placeholder;
             inputField.lineType = TMP_InputField.LineType.SingleLine;
+            inputField.customCaretColor = true;
+            inputField.caretColor = Color.white;
+            inputField.caretBlinkRate = 0.85f;
+            inputField.caretWidth = 2;
+            inputField.selectionColor = new Color(1f, 1f, 1f, 0.22f);
 
             return inputField;
         }
