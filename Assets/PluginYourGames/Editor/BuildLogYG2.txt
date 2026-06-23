@@ -1,3 +1,3 @@
-﻿Build path: C:/me/unity/ShooterPrototype/Build/WEB
-Build number: 0
+﻿Build path: C:/me/unity/ShooterPrototype/Build/Server/My project (12).exe
+Build number: 11
 PluginYG version: 2.0092

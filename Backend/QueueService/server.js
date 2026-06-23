@@ -1,4 +1,6 @@
 const http = require("http");
+const fs = require("fs");
+const path = require("path");
 const { URL } = require("url");
 const crypto = require("crypto");
 const WebSocket = require("ws");
@@ -25,6 +27,8 @@ const MATCH_CONNECT_GRACE_SECONDS = Math.max(5, toInt(process.env.MATCH_CONNECT_
 const QUEUED_TICKET_TTL_SECONDS = toInt(process.env.QUEUED_TICKET_TTL_SECONDS, 0);
 const SERVER_TICK_RATE = Math.max(10, toInt(process.env.SERVER_TICK_RATE, 64));
 const REALTIME_WS_PORT = toInt(process.env.REALTIME_WS_PORT, 5051);
+const ADDRESSABLES_ROOT = process.env.ADDRESSABLES_ROOT ||
+  path.join(__dirname, "addressables");
 const DEBUG_REALTIME = (process.env.DEBUG_REALTIME || "0") !== "0";
 const DEBUG_MOVEMENT = (process.env.DEBUG_MOVEMENT || "0") !== "0";
 const USE_BINARY_POSES = (process.env.USE_BINARY_POSES || "1") !== "0";
@@ -169,6 +173,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (await handleProfileRoutes(req, res, path, req.method)) {
+    return;
+  }
+
+  if (req.method === "GET" && path.startsWith("/addressables/")) {
+    serveAddressablesFile(req, res, path);
     return;
   }
 
@@ -4911,8 +4920,56 @@ function normalizeInt64(value, fallback) {
 
 function enableCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+}
+
+function serveAddressablesFile(req, res, requestPath) {
+  const relativePath = decodeURIComponent(requestPath.replace(/^\/addressables\/?/, ""));
+  if (!relativePath || relativePath.includes("..")) {
+    respondPlain(res, 400, "Invalid addressables path");
+    return;
+  }
+
+  const filePath = path.join(ADDRESSABLES_ROOT, relativePath);
+  const normalizedRoot = path.resolve(ADDRESSABLES_ROOT);
+  const normalizedFile = path.resolve(filePath);
+  if (!normalizedFile.startsWith(normalizedRoot)) {
+    respondPlain(res, 403, "Forbidden");
+    return;
+  }
+
+  fs.readFile(normalizedFile, (error, data) => {
+    if (error) {
+      respondPlain(res, error.code === "ENOENT" ? 404 : 500, error.code === "ENOENT" ? "Not found" : "Read failed");
+      return;
+    }
+
+    res.writeHead(200, {
+      "Content-Type": guessAddressablesContentType(normalizedFile),
+      "Cache-Control": "public, max-age=31536000, immutable"
+    });
+    res.end(data);
+  });
+}
+
+function guessAddressablesContentType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".json":
+      return "application/json; charset=utf-8";
+    case ".hash":
+      return "text/plain; charset=utf-8";
+    case ".bundle":
+      return "application/octet-stream";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function respondPlain(res, statusCode, message) {
+  res.writeHead(statusCode, { "Content-Type": "text/plain; charset=utf-8" });
+  res.end(message || "");
 }
 
 function respondJson(res, statusCode, payload) {

@@ -52,7 +52,19 @@ namespace ShooterPrototype.Player
         {
             if (kind == PickupKind.Weapon)
             {
-                return visualPrefab != null ? visualPrefab : ResolveEquipPrefab();
+                var weaponKind = WeaponCatalog.ResolveKindFromItemId(ResolvedItemId);
+                if (WeaponCatalog.IsAlive(visualPrefab) && WeaponCatalog.IsFullWeaponPrefab(visualPrefab))
+                {
+                    return visualPrefab;
+                }
+
+                var catalogPrefab = WeaponCatalog.GetWeaponPrefab(weaponKind);
+                if (catalogPrefab != null)
+                {
+                    return catalogPrefab;
+                }
+
+                return ResolveEquipPrefab();
             }
 
             return visualPrefab;
@@ -127,7 +139,7 @@ namespace ShooterPrototype.Player
                 : WeaponCatalog.ResolveKindFromPrefab(sourcePrefab, itemId);
             WeaponCatalog.EnsureWeaponPrefabRegistered(kind);
 
-            if (sourcePrefab == null || !WeaponCatalog.IsFullWeaponPrefab(sourcePrefab))
+            if (sourcePrefab == null || !WeaponCatalog.IsAlive(sourcePrefab) || !WeaponCatalog.IsFullWeaponPrefab(sourcePrefab))
             {
                 return;
             }

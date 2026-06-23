@@ -20,6 +20,8 @@ namespace ShooterPrototype.Player
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         public static bool IsServerSynced { get; private set; }
+        public static bool IsOfflineMode { get; private set; }
+        public static string LastSyncError { get; private set; } = string.Empty;
         public static string Nickname { get; private set; } = string.Empty;
         public static int Rating => CurrentProfile?.rating ?? MatchRatingUtility.DefaultRating;
         public static PlayerProfileDto CurrentProfile { get; private set; }
@@ -71,7 +73,7 @@ namespace ShooterPrototype.Player
             var config = UnityEngine.Object.FindFirstObjectByType<NetworkLauncher>()?.Config;
             if (config != null)
             {
-                apiClient.Configure(config.QueueApiBaseUrl, config.QueueRequestTimeoutSeconds);
+                apiClient.Configure(config.ResolveQueueApiBaseUrl(), config.QueueRequestTimeoutSeconds);
             }
             else
             {
@@ -95,6 +97,19 @@ namespace ShooterPrototype.Player
             PlayerSkinOwnershipService.EnsureInitialized();
         }
 
+        public static void EnterOfflineMode()
+        {
+            IsOfflineMode = true;
+            ApplyLocalFallback();
+        }
+
+        public static void ExitOfflineMode()
+        {
+            IsOfflineMode = false;
+        }
+
+        public static bool UsesLocalProgressOnly => IsOfflineMode || !IsServerSynced;
+
         public static void ApplyProfile(PlayerProfileDto profile, bool markSynced = true)
         {
             if (profile == null)
@@ -108,6 +123,10 @@ namespace ShooterPrototype.Player
 
             CurrentProfile = profile;
             IsServerSynced = markSynced;
+            if (markSynced)
+            {
+                ExitOfflineMode();
+            }
             Nickname = profile.nickname ?? string.Empty;
             if (!string.IsNullOrWhiteSpace(Nickname))
             {
@@ -202,12 +221,83 @@ namespace ShooterPrototype.Player
 
         public static IReadOnlyList<PlayerAchievementEntry> GetActiveAchievements()
         {
-            if (!IsServerSynced || CurrentProfile?.achievements == null)
+            if (IsServerSynced && CurrentProfile?.achievements != null)
             {
-                return Array.Empty<PlayerAchievementEntry>();
+                return CurrentProfile.achievements;
             }
 
-            return CurrentProfile.achievements;
+            if (IsOfflineMode)
+            {
+                return LoadOfflineAchievementsFromCatalog();
+            }
+
+            return Array.Empty<PlayerAchievementEntry>();
+        }
+
+        [Serializable]
+        private sealed class OfflineAchievementCatalogFile
+        {
+            public OfflineAchievementCatalogEntry[] achievements;
+        }
+
+        [Serializable]
+        private sealed class OfflineAchievementCatalogEntry
+        {
+            public string achievementId;
+            public string code;
+            public string title;
+            public string description;
+            public int target;
+            public int sortOrder;
+        }
+
+        private static PlayerAchievementEntry[] offlineAchievementCache;
+
+        private static IReadOnlyList<PlayerAchievementEntry> LoadOfflineAchievementsFromCatalog()
+        {
+            if (offlineAchievementCache != null)
+            {
+                return offlineAchievementCache;
+            }
+
+            var asset = Resources.Load<TextAsset>("Shop/achievement-catalog");
+            if (asset == null || string.IsNullOrWhiteSpace(asset.text))
+            {
+                offlineAchievementCache = Array.Empty<PlayerAchievementEntry>();
+                return offlineAchievementCache;
+            }
+
+            var catalog = JsonUtility.FromJson<OfflineAchievementCatalogFile>(asset.text);
+            if (catalog?.achievements == null || catalog.achievements.Length == 0)
+            {
+                offlineAchievementCache = Array.Empty<PlayerAchievementEntry>();
+                return offlineAchievementCache;
+            }
+
+            offlineAchievementCache = new PlayerAchievementEntry[catalog.achievements.Length];
+            for (var i = 0; i < catalog.achievements.Length; i++)
+            {
+                var source = catalog.achievements[i];
+                var target = Mathf.Max(1, source.target);
+                var progressKey = $"offline_achievement_progress_{source.achievementId}";
+                var progress = Mathf.Clamp(UserScopedPlayerPrefs.GetInt(progressKey, 0), 0, target);
+                offlineAchievementCache[i] = new PlayerAchievementEntry
+                {
+                    achievementId = source.achievementId,
+                    code = source.code,
+                    title = source.title,
+                    description = source.description,
+                    progress = progress,
+                    target = target,
+                    completed = progress >= target,
+                    completedAt = 0,
+                    rewardType = string.Empty,
+                    rewardAmount = 0,
+                    rewardCaseId = string.Empty
+                };
+            }
+
+            return offlineAchievementCache;
         }
 
         public static PlayerMatchStatsDto GetMatchStats()
@@ -424,24 +514,33 @@ namespace ShooterPrototype.Player
             var completed = false;
             var success = false;
             PlayerProfileDto profile = null;
+            var syncError = string.Empty;
 
-            yield return apiClient.EnsureProfile(playerId, (ok, responseProfile, _) =>
+            yield return apiClient.EnsureProfile(playerId, (ok, responseProfile, error) =>
             {
                 completed = true;
                 success = ok;
                 profile = responseProfile;
+                syncError = error;
             });
 
             if (!completed)
             {
+                LastSyncError = "Profile request did not complete.";
                 yield break;
             }
 
             if (success && profile != null)
             {
+                LastSyncError = string.Empty;
                 ApplyProfile(profile);
                 yield break;
             }
+
+            LastSyncError = string.IsNullOrWhiteSpace(syncError)
+                ? "Profile sync failed."
+                : syncError;
+            Debug.LogWarning($"[PlayerProfileService] SyncProfile failed: {LastSyncError}");
 
             if (fallbackToLocalOnFailure)
             {

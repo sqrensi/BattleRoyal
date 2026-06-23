@@ -33,9 +33,15 @@ namespace ShooterPrototype.Player
         private BoxCollider zoneCollider;
         private readonly List<Transform> anchors = new List<Transform>();
 
-        public int MaxWeaponSlots => Mathf.Clamp(maxWeaponSlots, 0, 2);
+        public int MaxWeaponSlots => Mathf.Clamp(maxWeaponSlots, 0, 8);
 
-        public int MaxStandaloneAmmoSlots => Mathf.Clamp(maxStandaloneAmmoSlots, 0, 2);
+        public int MaxStandaloneAmmoSlots => Mathf.Clamp(maxStandaloneAmmoSlots, 0, 8);
+
+        public void ConfigureTrainingSlots(int weaponSlots, int standaloneAmmoSlots)
+        {
+            maxWeaponSlots = Mathf.Clamp(weaponSlots, 0, 8);
+            maxStandaloneAmmoSlots = Mathf.Clamp(standaloneAmmoSlots, 0, 8);
+        }
 
         [System.Obsolete("Use MaxWeaponSlots.")]
         public int PickupCount => MaxWeaponSlots;
@@ -134,6 +140,99 @@ namespace ShooterPrototype.Player
                 bounds.center.z);
             rotation = Quaternion.Euler(eulerOffset);
             return true;
+        }
+
+        /// <summary>
+        /// Fixed placement for training zones: child transforms first, otherwise a deterministic grid on the zone floor.
+        /// </summary>
+        public bool TryResolveMarkedSpawnPose(
+            int slotIndex,
+            int totalWeaponSlots,
+            float yOffset,
+            Vector3 eulerOffset,
+            out Vector3 position,
+            out Quaternion rotation)
+        {
+            position = Vector3.zero;
+            rotation = Quaternion.Euler(eulerOffset);
+            EnsureCollider();
+
+            var bounds = GetSpawnBounds();
+            if (bounds.size.sqrMagnitude <= 0.001f)
+            {
+                return false;
+            }
+
+            var childSpawnPoint = ResolveWeaponSpawnChild(slotIndex);
+            if (childSpawnPoint != null)
+            {
+                position = ResolveGroundedWorldPosition(childSpawnPoint.position, yOffset);
+                rotation = childSpawnPoint.rotation * Quaternion.Euler(eulerOffset);
+                return true;
+            }
+
+            var xzPoint = SampleDeterministicPointInBounds(bounds, slotIndex, totalWeaponSlots);
+            position = new Vector3(
+                xzPoint.x,
+                ResolveSpawnSurfaceY(xzPoint, bounds, yOffset),
+                xzPoint.z);
+            rotation = Quaternion.Euler(eulerOffset);
+            return true;
+        }
+
+        private Transform ResolveWeaponSpawnChild(int slotIndex)
+        {
+            if (slotIndex < 0 || transform.childCount == 0)
+            {
+                return null;
+            }
+
+            var childIndex = 0;
+            for (var i = 0; i < transform.childCount; i++)
+            {
+                var child = transform.GetChild(i);
+                if (child == null || !child.gameObject.activeInHierarchy)
+                {
+                    continue;
+                }
+
+                if (childIndex == slotIndex)
+                {
+                    return child;
+                }
+
+                childIndex++;
+            }
+
+            return null;
+        }
+
+        private Vector3 SampleDeterministicPointInBounds(Bounds bounds, int slotIndex, int totalSlots)
+        {
+            var min = bounds.min;
+            var max = bounds.max;
+            var safePadding = Mathf.Min(
+                edgePadding,
+                Mathf.Max(0f, (max.x - min.x) * 0.5f - 0.01f),
+                Mathf.Max(0f, (max.z - min.z) * 0.5f - 0.01f));
+
+            var clampedSlots = Mathf.Max(1, totalSlots);
+            var clampedIndex = Mathf.Clamp(slotIndex, 0, clampedSlots - 1);
+
+            if (clampedSlots == 1)
+            {
+                return new Vector3(bounds.center.x, bounds.max.y, bounds.center.z);
+            }
+
+            var columns = clampedSlots <= 2 ? clampedSlots : 2;
+            var rows = (clampedSlots + columns - 1) / columns;
+            var column = clampedIndex % columns;
+            var row = clampedIndex / columns;
+            var columnT = columns <= 1 ? 0.5f : column / (float)(columns - 1);
+            var rowT = rows <= 1 ? 0.5f : row / (float)(rows - 1);
+            var x = Mathf.Lerp(min.x + safePadding, max.x - safePadding, columnT);
+            var z = Mathf.Lerp(min.z + safePadding, max.z - safePadding, rowT);
+            return new Vector3(x, bounds.max.y, z);
         }
 
         public Vector3 ResolveGroundedWorldPosition(Vector3 approximateWorldPosition, float yOffset)
@@ -275,6 +374,12 @@ namespace ShooterPrototype.Player
             if (zoneCollider != null)
             {
                 zoneCollider.isTrigger = true;
+            }
+
+            var ignoreRaycastLayer = LayerMask.NameToLayer("Ignore Raycast");
+            if (ignoreRaycastLayer >= 0)
+            {
+                gameObject.layer = ignoreRaycastLayer;
             }
         }
 

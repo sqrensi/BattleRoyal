@@ -216,6 +216,34 @@ namespace ShooterPrototype.EditorTools
             Debug.Log("[SyntyAnimationSetup] Synty animated player setup complete.");
         }
 
+        [MenuItem("Shooter Prototype/Build Optimization/Rebuild Controllers Blink-Only And Remove Opsive")]
+        public static void RebuildBlinkOnlyAndRemoveOpsive()
+        {
+            PrepareHumanoidRetargetingFromPlayerPrefab();
+
+            var clips = FindLocomotionClips();
+            if (clips.Idle == null)
+            {
+                Debug.LogError("[SyntyAnimationSetup] No Blink/legacy locomotion clips found.");
+                return;
+            }
+
+            CreateOrUpdateAnimatorController(clips);
+            CreateOrUpdateRemoteAnimatorController(clips);
+            CreateOrUpdateHolsteredAnimatorController(clips);
+            ConfigurePlayerPrefabIfExists(PlayerPrefabPath);
+            ConfigurePlayerPrefabIfExists(PlayerRemotePrefabPath);
+            TryAssignSpawnPrefab();
+
+            if (AssetDatabase.IsValidFolder(OpsiveAnimationsRoot))
+            {
+                AssetDatabase.DeleteAsset(OpsiveAnimationsRoot);
+            }
+
+            AssetDatabase.SaveAssets();
+            Debug.Log("[SyntyAnimationSetup] Remote/holstered/local controllers rebuilt from Blink. Opsive removed.");
+        }
+
         [MenuItem("Shooter Prototype/Setup/Rebuild Animation Controller (Blink local + Opsive remote)")]
         public static void RebuildAnimationControllerOnly()
         {

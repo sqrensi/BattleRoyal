@@ -18,6 +18,17 @@ namespace ShooterPrototype.Player
                 return null;
             }
 
+            if (kind == PickupKind.Weapon &&
+                (!WeaponCatalog.IsAlive(sourcePrefab) || !WeaponCatalog.IsFullWeaponPrefab(sourcePrefab)))
+            {
+                var weaponKind = WeaponCatalog.ResolveKindFromPrefab(sourcePrefab);
+                var catalogPrefab = WeaponCatalog.GetWeaponPrefab(weaponKind);
+                if (catalogPrefab != null)
+                {
+                    sourcePrefab = catalogPrefab;
+                }
+            }
+
             var instance = Object.Instantiate(sourcePrefab, parent);
             instance.SetActive(true);
 

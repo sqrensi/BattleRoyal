@@ -10,7 +10,10 @@ namespace ShooterPrototype.EditorTools
         public const string SourcePrefabPath = "Assets/Prefabs/Player/PlayerLocal.prefab";
         public const string TargetPrefabPath = "Assets/Prefabs/Player/PlayerClean.prefab";
         public const string DefaultCharacterFbxPath = "Assets/Characters/Ch18_nonPBR.fbx";
-        public const string DefaultResourcesCharacterFolder = "Assets/Resources/Characters";
+        private static readonly string[] CharacterModelSearchFolders =
+        {
+            "Assets/Resources/Characters"
+        };
 
         private static readonly string[] ProceduralLineObjectNames =
         {
@@ -164,23 +167,29 @@ namespace ShooterPrototype.EditorTools
                 return DefaultCharacterFbxPath;
             }
 
-            if (!AssetDatabase.IsValidFolder(DefaultResourcesCharacterFolder))
+            for (var folderIndex = 0; folderIndex < CharacterModelSearchFolders.Length; folderIndex++)
             {
-                return string.Empty;
+                var folder = CharacterModelSearchFolders[folderIndex];
+                if (!AssetDatabase.IsValidFolder(folder))
+                {
+                    continue;
+                }
+
+                var guids = AssetDatabase.FindAssets("t:Model", new[] { folder });
+                if (guids == null || guids.Length == 0)
+                {
+                    continue;
+                }
+
+                System.Array.Sort(guids, (a, b) =>
+                    string.Compare(
+                        AssetDatabase.GUIDToAssetPath(a),
+                        AssetDatabase.GUIDToAssetPath(b),
+                        System.StringComparison.OrdinalIgnoreCase));
+                return AssetDatabase.GUIDToAssetPath(guids[0]);
             }
 
-            var guids = AssetDatabase.FindAssets("t:Model", new[] { DefaultResourcesCharacterFolder });
-            if (guids == null || guids.Length == 0)
-            {
-                return string.Empty;
-            }
-
-            System.Array.Sort(guids, (a, b) =>
-                string.Compare(
-                    AssetDatabase.GUIDToAssetPath(a),
-                    AssetDatabase.GUIDToAssetPath(b),
-                    System.StringComparison.OrdinalIgnoreCase));
-            return AssetDatabase.GUIDToAssetPath(guids[0]);
+            return string.Empty;
         }
 
         [MenuItem("Shooter Prototype/Create/Clean Player Prefab (from PlayerLocal)")]

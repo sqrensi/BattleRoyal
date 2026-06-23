@@ -542,6 +542,145 @@ namespace ShooterPrototype.UI
             }
         }
 
+        public void SetTrainingTimerSeconds(int secondsRemaining)
+        {
+            EnsureHudExists();
+            EnsureDuelTopCenterHud(canvas != null ? canvas.transform : null);
+            if (duelTopCenterText == null)
+            {
+                return;
+            }
+
+            var clamped = Mathf.Max(0, secondsRemaining);
+            var minutes = clamped / 60;
+            var seconds = clamped % 60;
+            duelTopCenterText.text = $"{minutes:00}:{seconds:00}";
+            ApplyBoldHudText(duelTopCenterText);
+            var panel = duelTopCenterText.transform.parent;
+            if (panel != null)
+            {
+                panel.gameObject.SetActive(true);
+            }
+
+            duelTopCenterText.gameObject.SetActive(true);
+        }
+
+        public void ScheduleTrainingGameOver(int killCount)
+        {
+            if (gameOverFlowStarted)
+            {
+                return;
+            }
+
+            EnsureHudExists();
+            pendingMatchOutcome = MatchOutcomeSummary.CreateTraining(killCount);
+            gameOverFlowStarted = true;
+            SetPauseMenuOpen(false);
+            ClearGameplayHints();
+            ClearDuelMatchHud();
+            gameOverFlowCoroutine = StartCoroutine(TrainingGameOverFlowRoutine(killCount));
+        }
+
+        private IEnumerator TrainingGameOverFlowRoutine(int killCount)
+        {
+            yield return new WaitForSecondsRealtime(1f);
+
+            SetVictoryBanner(false);
+            SetMatchStatusMessage(string.Empty);
+            ShowTrainingGameOverPanel(killCount);
+
+            var remaining = GameOverAutoExitSeconds;
+            while (remaining > 0f)
+            {
+                if (returnToMenuRequested)
+                {
+                    yield break;
+                }
+
+                remaining -= Time.unscaledDeltaTime;
+                if (gameOverHintText != null)
+                {
+                    gameOverHintText.text = $"Автовыход через {Mathf.CeilToInt(Mathf.Max(0f, remaining))} сек.";
+                }
+
+                yield return null;
+            }
+
+            if (!returnToMenuRequested)
+            {
+                RequestReturnToMenu("training_game_over");
+            }
+        }
+
+        private void ShowTrainingGameOverPanel(int killCount)
+        {
+            EnsureHudExists();
+            EnsureGameOverPanel(canvas != null ? canvas.transform : null);
+            if (gameOverPanel == null)
+            {
+                return;
+            }
+
+            matchRewardGranted = true;
+            matchStatsReported = true;
+            ApplyGameOverInputLock(true);
+
+            gameOverPanelVisible = true;
+            gameOverPanel.SetActive(true);
+            gameOverPanel.transform.SetAsLastSibling();
+            if (gameOverPanelGroup != null)
+            {
+                gameOverPanelGroup.alpha = 1f;
+                gameOverPanelGroup.interactable = true;
+                gameOverPanelGroup.blocksRaycasts = true;
+            }
+
+            if (gameOverPanelBackground != null)
+            {
+                UiTheme.ApplyPanel(gameOverPanelBackground, UiPanelStyle.Heavy);
+            }
+
+            if (gameOverAccentLine != null)
+            {
+                UiTheme.ApplyFlatFill(gameOverAccentLine, UiTheme.GameOverLoss);
+            }
+
+            if (gameOverTitleText != null)
+            {
+                gameOverTitleText.text = "GAME OVER";
+                gameOverTitleText.color = UiTheme.GameOverLoss;
+            }
+
+            if (gameOverPlacementText != null)
+            {
+                gameOverPlacementText.text = string.Empty;
+                gameOverPlacementText.gameObject.SetActive(false);
+            }
+
+            if (gameOverKillsText != null)
+            {
+                gameOverKillsText.gameObject.SetActive(true);
+                gameOverKillsText.text = $"{Mathf.Max(0, killCount)} убийств";
+            }
+
+            if (gameOverRewardsText != null)
+            {
+                gameOverRewardsText.text = string.Empty;
+                gameOverRewardsText.gameObject.SetActive(false);
+            }
+
+            if (gameOverHintText != null)
+            {
+                gameOverHintText.text =
+                    $"Автовыход через {Mathf.CeilToInt(GameOverAutoExitSeconds)} сек";
+            }
+
+            if (gameOverExitButton != null)
+            {
+                gameOverExitButton.interactable = true;
+            }
+        }
+
         public void SetDuelRoundEndCountdown(int secondsRemaining)
         {
             EnsureHudExists();
@@ -2216,6 +2355,19 @@ namespace ShooterPrototype.UI
                     displayPingMs = -1;
                     displayPingLabel = string.Empty;
                     consecutivePingFailures = 0;
+                    RefreshFpsText();
+                    yield return new WaitForSecondsRealtime(1f);
+                    continue;
+                }
+
+                if (ActiveMatchContext.IsTraining || PlayerProfileService.IsOfflineMode)
+                {
+                    consecutivePingFailures = 0;
+                    if (pingText != null)
+                    {
+                        pingText.text = ActiveMatchContext.IsTraining ? "Тренировка" : "Офлайн";
+                    }
+
                     RefreshFpsText();
                     yield return new WaitForSecondsRealtime(1f);
                     continue;

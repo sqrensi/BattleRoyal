@@ -25,6 +25,7 @@ namespace ShooterPrototype.Bootstrap
         [SerializeField] private string mainMenuSceneName = "MainMenu";
         [SerializeField] private string gameSceneName = "Game";
         [SerializeField] private string duelSceneName = "1x1";
+        [SerializeField] private string trainingSceneName = "training";
         [SerializeField] private GameObject battleRoyalePlanePrefab;
 
         private bool initialized;
@@ -150,15 +151,21 @@ namespace ShooterPrototype.Bootstrap
                     playerSpawnManager = gameObject.AddComponent<PlayerSpawnManager>();
                 }
 
+                var activeScene = SceneManager.GetActiveScene();
+                ActiveMatchContext.SyncFromScene(
+                    activeScene.name,
+                    gameSceneName,
+                    duelSceneName,
+                    trainingSceneName);
                 playerSpawnManager.Configure(ResolveActiveGameSceneName());
-                playerSpawnManager.HandleSceneLoaded(SceneManager.GetActiveScene());
+                playerSpawnManager.HandleSceneLoaded(activeScene);
             }
 
         }
 
         private string ResolveActiveGameSceneName()
         {
-            return ActiveMatchContext.ResolveGameSceneName(gameSceneName, duelSceneName);
+            return ActiveMatchContext.ResolveGameSceneName(gameSceneName, duelSceneName, trainingSceneName);
         }
 
         private void OnEnable()
@@ -191,9 +198,11 @@ namespace ShooterPrototype.Bootstrap
 
         private void HandleSceneLoaded(Scene scene, LoadSceneMode _)
         {
-            ActiveMatchContext.SyncFromScene(scene.name, gameSceneName, duelSceneName);
+            ActiveMatchContext.SyncFromScene(scene.name, gameSceneName, duelSceneName, trainingSceneName);
 
-            var isMatchScene = scene.name == gameSceneName || scene.name == duelSceneName;
+            var isMatchScene = scene.name == gameSceneName ||
+                               scene.name == duelSceneName ||
+                               scene.name == trainingSceneName;
             if (gameHudController != null)
             {
                 gameHudController.SetActiveForScene(isMatchScene);
@@ -201,6 +210,7 @@ namespace ShooterPrototype.Bootstrap
 
             if (playerSpawnManager != null)
             {
+                playerSpawnManager.Configure(ResolveActiveGameSceneName());
                 playerSpawnManager.HandleSceneLoaded(scene);
             }
 
@@ -208,9 +218,19 @@ namespace ShooterPrototype.Bootstrap
             {
                 EnsureBattleRoyaleController();
             }
+            else if (scene.name == trainingSceneName && !Application.isBatchMode)
+            {
+                EnsureTrainingController();
+            }
             else if (scene.name == duelSceneName && !Application.isBatchMode)
             {
                 EnsureDuelController();
+            }
+
+            if (scene.name == mainMenuSceneName && !Application.isBatchMode)
+            {
+                ActiveMatchContext.SetOfflineTrainingSession(false);
+                LoadingScreenOverlay.Hide();
             }
 
             if (isMatchScene && !Application.isBatchMode)
@@ -250,11 +270,29 @@ namespace ShooterPrototype.Bootstrap
                 yield return null;
             }
 
+            if (ActiveMatchContext.IsTraining)
+            {
+                yield return OfflineTrainingBootstrap.StartWhenPlayerReady(this);
+            }
+
             Canvas.ForceUpdateCanvases();
             yield return null;
 
             LoadingScreenOverlay.Hide();
             matchWarmupCoroutine = null;
+        }
+
+        private void EnsureTrainingController()
+        {
+            var existing = FindFirstObjectByType<MatchTrainingController>();
+            if (existing != null)
+            {
+                existing.PrepareForNewMatch();
+                return;
+            }
+
+            var controllerObject = new GameObject("MatchTraining");
+            controllerObject.AddComponent<MatchTrainingController>();
         }
 
         private void EnsureDuelController()

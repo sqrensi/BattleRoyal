@@ -765,6 +765,35 @@ namespace ShooterPrototype.Player
             }
         }
 
+        public void StartOfflineTrainingSession()
+        {
+            EnsureLocalPlayer();
+            if (localPlayer == null)
+            {
+                Debug.LogWarning("[MatchBattleRoyaleController] Offline training: local player not found.");
+                return;
+            }
+
+            isOnPlane = false;
+            hasJumpedLocally = true;
+            hasLandedLocally = true;
+            parachuteDeployed = true;
+            localDropState = LocalDropState.InCombat;
+
+            if (characterController != null)
+            {
+                characterController.enabled = true;
+            }
+
+            fpsController?.SetMovementLocked(false);
+            fpsController?.SetServerReconciliationSuspended(false);
+            viewPresentation?.SetForceThirdPersonBody(false);
+            SetCombatEnabled(true);
+            SetZoneVisualActive(true);
+            gameHud?.SetKillCount(0);
+            Debug.Log("[MatchBattleRoyaleController] Offline training session started.");
+        }
+
         private void EnableLocalCombat(RealtimeTransportClient.MatchStateMessage message)
         {
             localDropState = LocalDropState.InCombat;

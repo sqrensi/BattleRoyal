@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using ShooterPrototype.Player;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -30,6 +31,11 @@ namespace ShooterPrototype.UI
         private MainMenuAchievementsPanel achievementsPanel;
         private MainMenuStatsPanel statsPanel;
         private MainMenuSettingsPanel settingsPanel;
+        private Button inventoryButton;
+        private Button shopButton;
+        private Button achievementsButton;
+        private Button statsButton;
+        private Button settingsButton;
         private MainMenuPanelMode activePanel = MainMenuPanelMode.None;
         private Coroutine transitionCoroutine;
 
@@ -70,6 +76,11 @@ namespace ShooterPrototype.UI
             achievementsPanel = achievements;
             statsPanel = stats;
             settingsPanel = settings;
+            this.inventoryButton = inventoryButton;
+            this.shopButton = shopButton;
+            this.achievementsButton = achievementsButton;
+            this.statsButton = statsButton;
+            this.settingsButton = settingsButton;
 
             mainMenuGroups.Clear();
             if (topNavGroup != null)
@@ -143,6 +154,11 @@ namespace ShooterPrototype.UI
 
         public void EnterShop()
         {
+            if (PlayerProfileService.IsOfflineMode)
+            {
+                return;
+            }
+
             OpenPanel(MainMenuPanelMode.Shop);
         }
 
@@ -154,6 +170,19 @@ namespace ShooterPrototype.UI
         public void EnterStats()
         {
             OpenPanel(MainMenuPanelMode.Stats);
+        }
+
+        public void SetOfflineRestrictions(bool offline)
+        {
+            if (shopButton != null)
+            {
+                shopButton.interactable = !offline;
+            }
+
+            if (statsButton != null)
+            {
+                statsButton.interactable = !offline;
+            }
         }
 
         public void EnterSettings()

@@ -1116,7 +1116,7 @@ namespace ShooterPrototype.Network
 
             var launcher = FindFirstObjectByType<NetworkLauncher>();
             var configUrl = launcher != null && launcher.Config != null
-                ? launcher.Config.RealtimeWsUrl
+                ? launcher.Config.ResolveRealtimeWsUrl()
                 : null;
             if (!string.IsNullOrWhiteSpace(configUrl))
             {

@@ -224,6 +224,11 @@ namespace ShooterPrototype.UI
             ActivateBanner(KillBannerFadeInSeconds + KillBannerHoldSeconds);
         }
 
+        public void ShowTrainingKillBanner(string victimLabel)
+        {
+            ShowKillBanner(victimLabel);
+        }
+
         public void ShowDuelRoundBanner(string message)
         {
             if (killBannerRoot == null || killBannerText == null || killBannerGroup == null)

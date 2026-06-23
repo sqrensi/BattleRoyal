@@ -2022,11 +2022,24 @@ namespace ShooterPrototype.Player
                 }
             }
 
+            StartCoroutine(ApplyRemoteSkinsWhenReady(avatar, player, skinState));
+        }
+
+        private IEnumerator ApplyRemoteSkinsWhenReady(
+            RemoteAvatar avatar,
+            RealtimeTransportClient.RealtimePlayerState player,
+            PlayerSkinNetworkState skinState)
+        {
+            if (avatar?.Root == null || player == null)
+            {
+                yield break;
+            }
+
             PlayerSkinSelectionService.ApplyNetworkStateToPlayer(avatar.Root, skinState, forceReapply: true);
             avatar.RemoteWeapon?.SetNetworkWeaponSkins(skinState);
             avatar.AppliedSkinState = skinState;
             avatar.HasAppliedSkinState = true;
-            LogRemoteSkinApply(avatar, player, skinState, "apply");
+            LogRemoteSkinApply(avatar, player, skinState, "apply-async");
         }
 
         private static bool HasRemoteClothingVisual(GameObject avatarRoot)

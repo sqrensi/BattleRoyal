@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -38,13 +39,28 @@ namespace ShooterPrototype.Player
 
         public void HandleSceneLoaded(Scene scene)
         {
-            if (scene.name != gameSceneName && !DuelSpawnUtility.IsDuelScene(scene))
+            if (!IsManagedMatchScene(scene))
             {
                 return;
             }
 
             EnsureSpawnPoints(scene);
             SpawnLocalPlayerIfNeeded();
+        }
+
+        private bool IsManagedMatchScene(Scene scene)
+        {
+            if (!scene.IsValid())
+            {
+                return false;
+            }
+
+            if (DuelSpawnUtility.IsDuelScene(scene))
+            {
+                return true;
+            }
+
+            return string.Equals(scene.name, gameSceneName, System.StringComparison.OrdinalIgnoreCase);
         }
 
         [ContextMenu("Rebuild Spawn Points From Root")]
@@ -102,6 +118,7 @@ namespace ShooterPrototype.Player
 
         private void SpawnLocalPlayerIfNeeded()
         {
+            EnsurePlayerPrefabs();
             if (playerPrefab == null)
             {
                 Debug.LogWarning("[PlayerSpawnManager] Player prefab is not assigned.");
@@ -112,9 +129,14 @@ namespace ShooterPrototype.Player
             if (existingLocalPlayer != null)
             {
                 ResetMovementStateForMatch(existingLocalPlayer.gameObject);
-                if (enableMatchPresenceSync)
+                if (ShouldAttachPresenceSync())
                 {
                     AttachPresenceSync(existingLocalPlayer.gameObject);
+                }
+
+                if (ActiveMatchContext.IsTraining)
+                {
+                    MatchTrainingController.Active?.OnLocalPlayerSpawned(existingLocalPlayer);
                 }
 
                 return;
@@ -206,13 +228,43 @@ namespace ShooterPrototype.Player
 
             ApplySelectedSkinsToPlayer(instance);
 
-            if (enableMatchPresenceSync)
+            if (ShouldAttachPresenceSync())
             {
                 AttachPresenceSync(instance);
             }
 
             ResetPlayerLoadoutForSpawn(instance);
             ResetMovementStateForMatch(instance);
+
+            if (ActiveMatchContext.IsTraining)
+            {
+                MatchTrainingController.Active?.OnLocalPlayerSpawned(instance.GetComponent<LocalPlayerMarker>());
+            }
+        }
+
+        private bool ShouldAttachPresenceSync()
+        {
+            return enableMatchPresenceSync &&
+                   !ActiveMatchContext.IsTraining &&
+                   !ActiveMatchContext.IsOfflineTrainingSession &&
+                   !PlayerProfileService.IsOfflineMode;
+        }
+
+        private void EnsurePlayerPrefabs()
+        {
+#if UNITY_EDITOR
+            if (playerPrefab == null)
+            {
+                playerPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                    "Assets/Prefabs/Player/PlayerClean.prefab");
+            }
+
+            if (remotePlayerPrefab == null)
+            {
+                remotePlayerPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                    "Assets/Prefabs/Player/PlayerCleanRemote.prefab");
+            }
+#endif
         }
 
         private static void ResetMovementStateForMatch(GameObject player)

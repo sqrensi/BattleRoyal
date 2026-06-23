@@ -16,7 +16,9 @@ MonoBehaviour:
   serverPort: 7777
   connectTimeoutSeconds: 5
   queueApiBaseUrl: http://83.220.165.44:5050
+  queueApiBaseUrlSecure: 
   realtimeWsUrl: ws://83.220.165.44:5051
+  realtimeWsUrlSecure: 
   queueRequestTimeoutSeconds: 5
   queuePollIntervalSeconds: 0.5
   autoStartMockServerInBatchMode: 1

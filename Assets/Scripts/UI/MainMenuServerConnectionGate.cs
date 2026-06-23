@@ -9,7 +9,8 @@ namespace ShooterPrototype.UI
     {
         Loading = 0,
         Connected = 1,
-        Unavailable = 2
+        Unavailable = 2,
+        Offline = 3
     }
 
     [DisallowMultipleComponent]
@@ -21,6 +22,7 @@ namespace ShooterPrototype.UI
         private CanvasGroup overlayGroup;
         private TMP_Text messageText;
         private Button retryButton;
+        private Button offlineButton;
         private TMP_Text statusText;
         private bool built;
         private MainMenuServerConnectionState currentState = MainMenuServerConnectionState.Loading;
@@ -41,7 +43,8 @@ namespace ShooterPrototype.UI
             }
 
             menuGroups.Add(group);
-            if (currentState != MainMenuServerConnectionState.Connected)
+            if (currentState != MainMenuServerConnectionState.Connected &&
+                currentState != MainMenuServerConnectionState.Offline)
             {
                 SetGroupVisible(group, false);
             }
@@ -72,7 +75,7 @@ namespace ShooterPrototype.UI
             panelRect.anchorMin = new Vector2(0.5f, 0.5f);
             panelRect.anchorMax = new Vector2(0.5f, 0.5f);
             panelRect.pivot = new Vector2(0.5f, 0.5f);
-            panelRect.sizeDelta = new Vector2(520f, 220f);
+            panelRect.sizeDelta = new Vector2(520f, 250f);
 
             var panelBackground = panelObject.AddComponent<Image>();
             UiTheme.ApplyPanel(panelBackground, UiPanelStyle.Overlay);
@@ -91,11 +94,18 @@ namespace ShooterPrototype.UI
             messageText.enableWordWrapping = true;
             UiTheme.ApplyTmp(messageText, UiTextRole.Heading);
 
-            retryButton = CreateButton(panelObject.transform, "Перезагрузить", new Vector2(0f, -148f), 220f, 52f);
+            retryButton = CreateButton(panelObject.transform, "Перезагрузить", new Vector2(110f, -158f), 200f, 52f, UiButtonStyle.Primary);
             retryButton.onClick.AddListener(HandleRetryPressed);
             if (uiSound != null)
             {
                 retryButton.onClick.AddListener(uiSound.PlayButton);
+            }
+
+            offlineButton = CreateButton(panelObject.transform, "Офлайн режим", new Vector2(-110f, -158f), 200f, 52f, UiButtonStyle.Ghost);
+            offlineButton.onClick.AddListener(HandleOfflinePressed);
+            if (uiSound != null)
+            {
+                offlineButton.onClick.AddListener(uiSound.PlayButton);
             }
 
             built = true;
@@ -122,22 +132,25 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            var connected = state == MainMenuServerConnectionState.Connected;
+            var menuVisible = state == MainMenuServerConnectionState.Connected ||
+                              state == MainMenuServerConnectionState.Offline;
             for (var i = 0; i < menuGroups.Count; i++)
             {
-                SetGroupVisible(menuGroups[i], connected);
+                SetGroupVisible(menuGroups[i], menuVisible);
             }
 
             if (statusText != null)
             {
-                statusText.gameObject.SetActive(connected);
+                statusText.gameObject.SetActive(menuVisible);
             }
 
             if (overlayGroup != null)
             {
-                overlayGroup.alpha = connected ? 0f : 1f;
-                overlayGroup.interactable = !connected;
-                overlayGroup.blocksRaycasts = !connected;
+                var overlayVisible = state == MainMenuServerConnectionState.Loading ||
+                                     state == MainMenuServerConnectionState.Unavailable;
+                overlayGroup.alpha = overlayVisible ? 1f : 0f;
+                overlayGroup.interactable = overlayVisible;
+                overlayGroup.blocksRaycasts = overlayVisible;
             }
 
             if (messageText != null)
@@ -152,6 +165,16 @@ namespace ShooterPrototype.UI
             {
                 retryButton.gameObject.SetActive(state == MainMenuServerConnectionState.Unavailable);
             }
+
+            if (offlineButton != null)
+            {
+                offlineButton.gameObject.SetActive(state == MainMenuServerConnectionState.Unavailable);
+            }
+        }
+
+        private void HandleOfflinePressed()
+        {
+            controller?.EnterOfflineMode();
         }
 
         private void HandleRetryPressed()
@@ -172,6 +195,8 @@ namespace ShooterPrototype.UI
                     return "Подключение к серверу...";
                 case MainMenuServerConnectionState.Unavailable:
                     return "Сервер недоступен";
+                case MainMenuServerConnectionState.Offline:
+                    return "Офлайн режим";
                 default:
                     return string.Empty;
             }
@@ -189,9 +214,15 @@ namespace ShooterPrototype.UI
             group.blocksRaycasts = visible;
         }
 
-        private Button CreateButton(Transform parent, string label, Vector2 anchoredPosition, float width, float height)
+        private Button CreateButton(
+            Transform parent,
+            string label,
+            Vector2 anchoredPosition,
+            float width,
+            float height,
+            UiButtonStyle style)
         {
-            var buttonObject = new GameObject("RetryButton");
+            var buttonObject = new GameObject(label.Replace(" ", string.Empty) + "Button");
             buttonObject.transform.SetParent(parent, false);
 
             var rect = buttonObject.AddComponent<RectTransform>();
@@ -204,7 +235,7 @@ namespace ShooterPrototype.UI
             buttonObject.AddComponent<Image>();
 
             var button = buttonObject.AddComponent<Button>();
-            UiTheme.StyleButton(button, UiButtonStyle.Primary);
+            UiTheme.StyleButton(button, style);
 
             var labelObject = new GameObject("Label");
             labelObject.transform.SetParent(buttonObject.transform, false);

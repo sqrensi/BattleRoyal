@@ -219,6 +219,16 @@ namespace ShooterPrototype.UI
             return $"{r:X2}{g:X2}{b:X2}";
         }
 
+        public void PushLocalPlayerKill(string killerNickname, string victimNickname)
+        {
+            var killer = string.IsNullOrWhiteSpace(killerNickname) ? "Игрок" : killerNickname.Trim();
+            var victim = string.IsNullOrWhiteSpace(victimNickname) ? "Игрок" : victimNickname.Trim();
+            PushEntry(
+                $"<color=#{ColorToHex(UiTheme.KillFeedKiller)}>{killer}</color> " +
+                $"<color=#{ColorToHex(UiTheme.KillFeedWeapon)}>убил</color> " +
+                $"<color=#{ColorToHex(UiTheme.KillFeedVictim)}>{victim}</color>");
+        }
+
         private void PushEntry(string richText)
         {
             while (activeEntries.Count >= MaxEntries)

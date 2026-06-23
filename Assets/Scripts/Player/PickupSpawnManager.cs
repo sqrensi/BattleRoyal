@@ -4,9 +4,13 @@ using System.Collections;
 
 using System.Collections.Generic;
 
+using ShooterPrototype.Matchmaking;
+
 using ShooterPrototype.Network;
 
 using UnityEngine;
+
+using UnityEngine.SceneManagement;
 
 using UnityEngine.Serialization;
 
@@ -334,6 +338,8 @@ namespace ShooterPrototype.Player
 
         [SerializeField] private bool waitForServerPickupSync = true;
 
+        private bool forceTrainingFullLoadout;
+
 
 
         private void Awake()
@@ -372,6 +378,16 @@ namespace ShooterPrototype.Player
 
             RebuildSlotLookup();
 
+            if (ShouldSkipSpawnOnStart())
+
+            {
+
+                return;
+
+            }
+
+
+
             if (spawnOnStart && !ShouldDeferSpawnUntilServerSync())
 
             {
@@ -380,6 +396,23 @@ namespace ShooterPrototype.Player
 
             }
 
+        }
+
+        private bool ShouldSkipSpawnOnStart()
+        {
+            if (!spawnOnStart || ShouldDeferSpawnUntilServerSync())
+            {
+                return true;
+            }
+
+            if (ActiveMatchContext.IsTraining || ActiveMatchContext.IsOfflineTrainingSession)
+            {
+                return true;
+            }
+
+            var scene = SceneManager.GetActiveScene();
+            return scene.IsValid() &&
+                   string.Equals(scene.name, "training", System.StringComparison.OrdinalIgnoreCase);
         }
 
         private bool ShouldDeferSpawnUntilServerSync()
@@ -391,6 +424,219 @@ namespace ShooterPrototype.Player
 
             return GetComponent<MatchPickupSync>() != null ||
                    FindFirstObjectByType<RealtimeTransportClient>() != null;
+        }
+
+        public void BootstrapTrainingPickupZone(
+            Vector3 center,
+            Vector3 forward,
+            Vector3 zoneSize)
+        {
+            waitForServerPickupSync = false;
+            forceTrainingFullLoadout = true;
+            maxWeaponsPerZone = 4;
+            standaloneAmmoZoneChance = 0f;
+            respawnDelaySeconds = 1.5f;
+            spawnCollectionMode = SpawnCollectionMode.ZonesOnly;
+
+            var zoneObject = ResolveTrainingPickupZone(center, forward, zoneSize);
+            if (zoneObject == null)
+            {
+                Debug.LogWarning("[PickupSpawnManager] Training pickup zone could not be resolved.");
+                return;
+            }
+
+            if (zoneObject.GetComponent<TrainingPickupZoneMarker>() == null)
+            {
+                zoneObject.AddComponent<TrainingPickupZoneMarker>();
+            }
+
+            ConfigureTrainingZoneCollider(zoneObject);
+            DisableNonTrainingPickupZones();
+
+            ClearActivePickups();
+            EnsureTrainingZoneCapacity();
+            RebuildSpawnSlotsFromScene();
+            ApplyTrainingSpawnConfigurationIfNeeded();
+            SpawnAll();
+        }
+
+        private static GameObject ResolveTrainingPickupZone(
+            Vector3 fallbackCenter,
+            Vector3 fallbackForward,
+            Vector3 fallbackZoneSize)
+        {
+            var pickupPoint = GameObject.Find("pickupPoint");
+            if (pickupPoint != null)
+            {
+                var legacyRuntimeZone = GameObject.Find("TrainingPickupZone");
+                if (legacyRuntimeZone != null && legacyRuntimeZone != pickupPoint)
+                {
+                    Destroy(legacyRuntimeZone);
+                }
+
+                pickupPoint.SetActive(true);
+                var zone = pickupPoint.GetComponent<PickupSpawnZone>();
+                if (zone == null)
+                {
+                    zone = pickupPoint.AddComponent<PickupSpawnZone>();
+                }
+
+                zone.ConfigureTrainingSlots(4, 0);
+                return pickupPoint;
+            }
+
+            var zoneObject = GameObject.Find("TrainingPickupZone");
+            if (zoneObject == null)
+            {
+                zoneObject = new GameObject("TrainingPickupZone");
+                zoneObject.transform.SetPositionAndRotation(
+                    fallbackCenter,
+                    fallbackForward.sqrMagnitude > 0.0001f
+                        ? Quaternion.LookRotation(fallbackForward.normalized, Vector3.up)
+                        : Quaternion.identity);
+                var box = zoneObject.AddComponent<BoxCollider>();
+                box.size = fallbackZoneSize;
+                box.center = new Vector3(0f, fallbackZoneSize.y * 0.5f, 0f);
+                box.isTrigger = true;
+                var zone = zoneObject.AddComponent<PickupSpawnZone>();
+                zone.ConfigureTrainingSlots(4, 0);
+                zoneObject.AddComponent<TrainingPickupZoneMarker>();
+            }
+
+            return zoneObject;
+        }
+
+        private static void DisableNonTrainingPickupZones()
+        {
+            var zones = FindObjectsByType<PickupSpawnZone>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            for (var i = 0; i < zones.Length; i++)
+            {
+                var zone = zones[i];
+                if (zone == null || zone.GetComponent<TrainingPickupZoneMarker>() != null)
+                {
+                    continue;
+                }
+
+                zone.gameObject.SetActive(false);
+            }
+        }
+
+        private static void ConfigureTrainingZoneCollider(GameObject zoneObject)
+        {
+            if (zoneObject == null)
+            {
+                return;
+            }
+
+            var box = zoneObject.GetComponent<BoxCollider>();
+            if (box != null)
+            {
+                box.isTrigger = true;
+            }
+
+            var ignoreRaycastLayer = LayerMask.NameToLayer("Ignore Raycast");
+            if (ignoreRaycastLayer >= 0)
+            {
+                zoneObject.layer = ignoreRaycastLayer;
+            }
+        }
+
+        private void AssignTrainingWeaponSlots()
+        {
+            var kinds = new[]
+            {
+                WeaponKind.AssaultRifle,
+                WeaponKind.SniperRifle,
+                WeaponKind.Pistol,
+                WeaponKind.Mp7
+            };
+
+            for (var i = 0; i < spawnSlots.Count; i++)
+            {
+                var slot = spawnSlots[i];
+                if (slot == null || PickupSpawnZone.IsStandaloneAmmoSpawnId(slot.spawnId))
+                {
+                    continue;
+                }
+
+                if (!slot.IsZoneSlot || slot.Zone == null ||
+                    slot.Zone.GetComponent<TrainingPickupZoneMarker>() == null)
+                {
+                    continue;
+                }
+
+                if (slot.ZoneSlotIndex < 0 || slot.ZoneSlotIndex >= kinds.Length)
+                {
+                    continue;
+                }
+
+                slot.Zone.ConfigureTrainingSlots(kinds.Length, 0);
+
+                var kind = kinds[slot.ZoneSlotIndex];
+                WeaponCatalog.EnsureWeaponPrefabRegistered(kind);
+                var prefab = WeaponCatalog.GetWeaponPrefab(kind);
+                var itemId = WeaponCatalog.GetDefaultItemId(kind);
+                if (prefab == null || string.IsNullOrWhiteSpace(itemId))
+                {
+                    Debug.LogWarning(
+                        $"[PickupSpawnManager] Training weapon slot {slot.ZoneSlotIndex} ({kind}) has no prefab.");
+                    continue;
+                }
+
+                slot.ConfigureWeaponDrop(prefab, itemId, 0);
+                if (!string.IsNullOrWhiteSpace(slot.spawnId))
+                {
+                    spawnedDefinitionsBySpawnId[slot.spawnId] =
+                        PickupItemDefinition.Create(PickupKind.Weapon, prefab, itemId, 1).WithMagAmmo(0);
+                }
+            }
+        }
+
+        private void ApplyTrainingSpawnConfigurationIfNeeded()
+        {
+            if (!forceTrainingFullLoadout)
+            {
+                return;
+            }
+
+            AssignTrainingWeaponSlots();
+        }
+
+        private void EnsureTrainingZoneCapacity()
+        {
+            if (!forceTrainingFullLoadout)
+            {
+                return;
+            }
+
+            var weaponSlots = Mathf.Clamp(maxWeaponsPerZone, 1, 8);
+            var zones = FindObjectsByType<PickupSpawnZone>(
+                FindObjectsInactive.Include,
+                FindObjectsSortMode.None);
+            for (var i = 0; i < zones.Length; i++)
+            {
+                var zone = zones[i];
+                if (zone != null && zone.GetComponent<TrainingPickupZoneMarker>() != null)
+                {
+                    zone.ConfigureTrainingSlots(weaponSlots, 0);
+                }
+            }
+        }
+
+        private void ClearActivePickups()
+        {
+            foreach (var pickup in activePickupsBySpawnId.Values)
+            {
+                if (pickup != null)
+                {
+                    Destroy(pickup.gameObject);
+                }
+            }
+
+            activePickupsBySpawnId.Clear();
+            activePickupsBySpawnPoint.Clear();
         }
 
         [ContextMenu("Rebuild Spawn Zones From Root")]
@@ -729,8 +975,33 @@ namespace ShooterPrototype.Player
 
             Array.Sort(result, CompareSpawnZones);
 
+            if (forceTrainingFullLoadout)
+            {
+                result = FilterTrainingOnlyZones(result);
+            }
+
             return result;
 
+        }
+
+        private static PickupSpawnZone[] FilterTrainingOnlyZones(PickupSpawnZone[] zones)
+        {
+            if (zones == null || zones.Length == 0)
+            {
+                return Array.Empty<PickupSpawnZone>();
+            }
+
+            var filtered = new List<PickupSpawnZone>(zones.Length);
+            for (var i = 0; i < zones.Length; i++)
+            {
+                var zone = zones[i];
+                if (zone != null && zone.GetComponent<TrainingPickupZoneMarker>() != null)
+                {
+                    filtered.Add(zone);
+                }
+            }
+
+            return filtered.Count > 0 ? filtered.ToArray() : zones;
         }
 
 
@@ -888,11 +1159,15 @@ namespace ShooterPrototype.Player
 
         {
 
+            EnsureTrainingZoneCapacity();
+
             RebuildSpawnSlotsFromScene();
 
             EnsureSlotZoneBindings();
 
             RebuildSlotLookup();
+
+            ApplyTrainingSpawnConfigurationIfNeeded();
 
             if (spawnSlots == null || spawnSlots.Count == 0)
 
@@ -1401,7 +1676,6 @@ namespace ShooterPrototype.Player
         public void NotifyPickupCollected(Transform spawnPoint, in PickupItemDefinition definition, string collectedSpawnId = null)
 
         {
-
             if (!string.IsNullOrWhiteSpace(collectedSpawnId))
             {
                 activePickupsBySpawnId.Remove(collectedSpawnId);
@@ -1415,6 +1689,22 @@ namespace ShooterPrototype.Player
 
             }
 
+            if (!string.IsNullOrWhiteSpace(collectedSpawnId) &&
+                AmmoCatalog.TryParsePairedAmmoSpawnId(collectedSpawnId, out var weaponSpawnId, out var boxIndex))
+            {
+                if (respawnDelaySeconds > 0.01f)
+                {
+                    StartCoroutine(RespawnPairedAmmoAfterDelay(weaponSpawnId, boxIndex, respawnDelaySeconds));
+                }
+
+                return;
+            }
+
+            if (forceTrainingFullLoadout)
+            {
+                return;
+            }
+
 
 
             if (respawnDelaySeconds <= 0.01f)
@@ -1423,13 +1713,6 @@ namespace ShooterPrototype.Player
 
                 return;
 
-            }
-
-            if (!string.IsNullOrWhiteSpace(collectedSpawnId) &&
-                AmmoCatalog.TryParsePairedAmmoSpawnId(collectedSpawnId, out var weaponSpawnId, out var boxIndex))
-            {
-                StartCoroutine(RespawnPairedAmmoAfterDelay(weaponSpawnId, boxIndex, respawnDelaySeconds));
-                return;
             }
 
 
@@ -1557,12 +1840,10 @@ namespace ShooterPrototype.Player
 
 
 
-            if (!string.IsNullOrWhiteSpace(slot.spawnId))
-
+            if (!forceTrainingFullLoadout &&
+                !string.IsNullOrWhiteSpace(slot.spawnId))
             {
-
                 spawnedDefinitionsBySpawnId.Remove(slot.spawnId);
-
             }
 
 
@@ -1825,24 +2106,35 @@ namespace ShooterPrototype.Player
 
         public GameObject ResolveWeaponSourcePrefab(WeaponKind kind)
         {
+            var configured = ResolveConfiguredWeaponOverride(kind);
+            if (configured != null && WeaponCatalog.IsFullWeaponPrefab(configured))
+            {
+                return configured;
+            }
+
+            return WeaponCatalog.GetWeaponPrefab(kind);
+        }
+
+        private GameObject ResolveConfiguredWeaponOverride(WeaponKind kind)
+        {
             switch (kind)
             {
                 case WeaponKind.SniperRifle:
-                    return defaultSniperWeaponPrefab != null
+                    return WeaponCatalog.IsAlive(defaultSniperWeaponPrefab)
                         ? defaultSniperWeaponPrefab
-                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.SniperRifle);
+                        : null;
                 case WeaponKind.Pistol:
-                    return defaultPistolWeaponPrefab != null
+                    return WeaponCatalog.IsAlive(defaultPistolWeaponPrefab)
                         ? defaultPistolWeaponPrefab
-                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.Pistol);
+                        : null;
                 case WeaponKind.Mp7:
-                    return defaultMp7WeaponPrefab != null
+                    return WeaponCatalog.IsAlive(defaultMp7WeaponPrefab)
                         ? defaultMp7WeaponPrefab
-                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.Mp7);
+                        : null;
                 default:
-                    return defaultVisualPrefab != null
+                    return WeaponCatalog.IsAlive(defaultVisualPrefab)
                         ? defaultVisualPrefab
-                        : WeaponCatalog.GetWeaponPrefab(WeaponKind.AssaultRifle);
+                        : null;
             }
         }
 
@@ -1864,7 +2156,7 @@ namespace ShooterPrototype.Player
 
             var equipPrefab = WeaponCatalog.GetWeaponPrefab(kind);
             if (equipPrefab == null &&
-                definition.VisualPrefab != null &&
+                WeaponCatalog.IsAlive(definition.VisualPrefab) &&
                 WeaponCatalog.IsFullWeaponPrefab(definition.VisualPrefab))
             {
                 var visualKind = WeaponCatalog.ResolveKindFromPrefab(
@@ -1882,9 +2174,13 @@ namespace ShooterPrototype.Player
                 return definition;
             }
 
-            var updated = definition.VisualPrefab != null
+            var worldSource = WeaponCatalog.IsAlive(definition.VisualPrefab) &&
+                              WeaponCatalog.IsFullWeaponPrefab(definition.VisualPrefab)
+                ? definition.VisualPrefab
+                : equipPrefab;
+            var updated = definition.VisualPrefab == worldSource
                 ? definition
-                : definition.WithWorldVisual(equipPrefab);
+                : definition.WithWorldVisual(worldSource);
             updated.RegisterWeaponSourcePrefab(equipPrefab, definition.ResolvedItemId);
             return updated;
         }
@@ -1996,6 +2292,26 @@ namespace ShooterPrototype.Player
                     : default;
             }
 
+            if (forceTrainingFullLoadout &&
+                slot.IsZoneSlot &&
+                slot.Zone != null &&
+                slot.Zone.GetComponent<TrainingPickupZoneMarker>() != null)
+            {
+                if (!string.IsNullOrWhiteSpace(slot.spawnId) &&
+                    spawnedDefinitionsBySpawnId.TryGetValue(slot.spawnId, out var trainingDefinition) &&
+                    trainingDefinition.IsValid)
+                {
+                    return trainingDefinition;
+                }
+
+                if (slot.HasExplicitOverride)
+                {
+                    return ResolvePickupDefinition(slot);
+                }
+
+                return default;
+            }
+
             if (slot.IsZoneSlot && slot.Zone != null && slot.ZoneSlotIndex < maxWeaponsPerZone)
             {
                 var plan = GetZoneSpawnPlan(slot.Zone);
@@ -2070,6 +2386,22 @@ namespace ShooterPrototype.Player
                     spawnAnchor = slot.Zone.GetOrCreateAnchor(slot.ZoneSlotIndex);
                     spawnAnchor.SetPositionAndRotation(spawnPosition, spawnRotation);
                     slot.spawnPoint = spawnAnchor;
+                    return true;
+                }
+
+                if (slot.Zone.GetComponent<TrainingPickupZoneMarker>() != null &&
+                    slot.Zone.TryResolveMarkedSpawnPose(
+                        slot.ZoneSlotIndex,
+                        maxWeaponsPerZone,
+                        pickupYOffset,
+                        worldPickupEulerOffset,
+                        out spawnPosition,
+                        out spawnRotation))
+                {
+                    spawnAnchor = slot.Zone.GetOrCreateAnchor(slot.ZoneSlotIndex);
+                    spawnAnchor.SetPositionAndRotation(spawnPosition, spawnRotation);
+                    slot.spawnPoint = spawnAnchor;
+                    CacheResolvedSpawnPosition(slot.spawnId, spawnPosition);
                     return true;
                 }
 
@@ -2536,8 +2868,13 @@ namespace ShooterPrototype.Player
                     spawnId.StartsWith("local_drop_", StringComparison.Ordinal));
         }
 
-        private static bool ShouldSpawnPairedAmmoForWeaponSpawn(string spawnId)
+        private bool ShouldSpawnPairedAmmoForWeaponSpawn(string spawnId)
         {
+            if (forceTrainingFullLoadout)
+            {
+                return false;
+            }
+
             return !IsWeaponDropSpawnId(spawnId);
         }
 
@@ -2778,6 +3115,17 @@ namespace ShooterPrototype.Player
             UnityEngine.Random.InitState(PickupSpawnRandomPool.ComputeStableSeed($"{seedBase}_zone_plan"));
             try
             {
+                if (forceTrainingFullLoadout)
+                {
+                    var trainingWeapons = Mathf.Clamp(maxWeaponsPerZone, 0, zone.MaxWeaponSlots);
+                    return new ZoneSpawnPlan
+                    {
+                        activeWeaponCount = trainingWeapons,
+                        spawnStandaloneAmmo = false,
+                        standaloneAmmoKind = WeaponKind.AssaultRifle
+                    };
+                }
+
                 var maxWeapons = Mathf.Clamp(maxWeaponsPerZone, 0, zone.MaxWeaponSlots);
                 return new ZoneSpawnPlan
                 {

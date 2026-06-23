@@ -93,7 +93,7 @@ namespace ShooterPrototype.Player
         public static bool TryGetProfile(GameObject prefab, out WeaponProfile profile)
         {
             profile = null;
-            if (prefab == null)
+            if (!IsAlive(prefab))
             {
                 return false;
             }
@@ -104,6 +104,24 @@ namespace ShooterPrototype.Player
         }
 
         public static bool IsFullWeaponPrefab(GameObject prefab) => TryGetProfile(prefab, out _);
+
+        public static bool IsAlive(UnityEngine.Object unityObject)
+        {
+            if (ReferenceEquals(unityObject, null))
+            {
+                return false;
+            }
+
+            try
+            {
+                _ = unityObject.name;
+                return true;
+            }
+            catch (MissingReferenceException)
+            {
+                return false;
+            }
+        }
 
         public static WeaponKind ResolveKindFromPrefab(GameObject prefab, string itemId = null)
         {

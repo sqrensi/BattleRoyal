@@ -911,6 +911,11 @@ namespace ShooterPrototype.Player
                 return true;
             }
 
+            if (targetCollider.GetComponentInParent<TrainingBotController>() != null)
+            {
+                return true;
+            }
+
             var targetKey = ResolveTargetRegistrationKey(targetCollider);
             if (string.IsNullOrEmpty(targetKey))
             {
@@ -1083,7 +1088,32 @@ namespace ShooterPrototype.Player
             }
 
             var identity = targetCollider.GetComponentInParent<PlayerNetworkIdentity>();
-            if (identity == null || identity.IsLocalPlayer || string.IsNullOrWhiteSpace(identity.TicketId))
+            if (identity == null || identity.IsLocalPlayer)
+            {
+                return;
+            }
+
+            var trainingBot = targetCollider.GetComponentInParent<TrainingBotController>();
+            var damage = ResolveDamage(hitZone);
+            if (trainingBot != null &&
+                MatchTrainingController.Active != null &&
+                MatchTrainingController.Active.IsSessionActive)
+            {
+                if (hitZone == HitZone.Head)
+                {
+                    var botHealth = trainingBot.GetComponent<PlayerHealth>();
+                    if (botHealth != null && !botHealth.IsDead)
+                    {
+                        damage = botHealth.CurrentHealth;
+                    }
+                }
+
+                MatchStatsTracker.AddDamageDealt(damage);
+                trainingBot.ApplyHit(damage, shotDirection);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(identity.TicketId))
             {
                 return;
             }
@@ -1094,7 +1124,6 @@ namespace ShooterPrototype.Player
             }
 
             var shotTick = realtimeClient != null ? realtimeClient.LatestServerTick : 0;
-            var damage = ResolveDamage(hitZone);
             MatchStatsTracker.AddDamageDealt(damage);
             realtimeClient?.SendHit(
                 identity.TicketId,

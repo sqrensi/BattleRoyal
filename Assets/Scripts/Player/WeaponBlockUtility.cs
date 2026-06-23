@@ -158,6 +158,12 @@ namespace ShooterPrototype.Player
                 return true;
             }
 
+            if (target.GetComponentInParent<PickupSpawnZone>(true) != null ||
+                target.GetComponent<TrainingPickupZoneMarker>() != null)
+            {
+                return true;
+            }
+
             var root = target.transform.root;
             if (root != null)
             {

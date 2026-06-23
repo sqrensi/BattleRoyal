@@ -227,7 +227,7 @@ namespace ShooterPrototype.UI
 
             transform.SetPositionAndRotation(
                 basePosition + inventoryOffset + currentPositionOffset + mouseParallaxOffset,
-                baseRotation * Quaternion.Euler(currentEulerOffset + mouseEulerOffset));
+                baseRotation * Quaternion.Euler(SanitizeEuler(currentEulerOffset + mouseEulerOffset)));
 
             cameraComponent.fieldOfView = Mathf.Lerp(defaultFov, inventoryFov, currentViewBlend);
         }
@@ -269,6 +269,16 @@ namespace ShooterPrototype.UI
             {
                 Object.Destroy(misplaced);
             }
+        }
+
+        private static Vector3 SanitizeEuler(Vector3 euler)
+        {
+            if (!float.IsFinite(euler.x) || !float.IsFinite(euler.y) || !float.IsFinite(euler.z))
+            {
+                return Vector3.zero;
+            }
+
+            return euler;
         }
 
         private static Camera ResolveMainCamera()

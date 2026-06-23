@@ -25,6 +25,11 @@ namespace ShooterPrototype.UI
             CoinReward = Mathf.Max(0, coinReward);
         }
 
+        public static MatchOutcomeSummary CreateTraining(int kills)
+        {
+            return new MatchOutcomeSummary(Mathf.Max(0, kills), 1, 0, 0);
+        }
+
         public static MatchOutcomeSummary CreateDuel(bool won, int roundWins, int kills)
         {
             roundWins = Mathf.Max(0, roundWins);

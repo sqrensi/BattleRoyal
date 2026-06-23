@@ -32,6 +32,9 @@ namespace ShooterPrototype.Player
         private Transform dropOrigin;
         private Coroutine slotSwitchRoutine;
         private float slotSwitchRoutineStartedAt = -1f;
+        private bool trainingInfiniteReserveAmmo;
+
+        public const int TrainingInfiniteReserveAmmo = 999;
 
         public PlayerWeaponLoadout Loadout => loadout;
 
@@ -457,6 +460,34 @@ namespace ShooterPrototype.Player
             }
         }
 
+        public void ConfigureTrainingInfiniteReserveAmmo(bool enabled)
+        {
+            trainingInfiniteReserveAmmo = enabled;
+            if (enabled)
+            {
+                EnsureTrainingReserveAmmo();
+            }
+        }
+
+        public void EnsureTrainingReserveAmmo()
+        {
+            if (!trainingInfiniteReserveAmmo || loadout == null)
+            {
+                return;
+            }
+
+            loadout.ApplyServerSpareAmmo(
+                TrainingInfiniteReserveAmmo,
+                TrainingInfiniteReserveAmmo,
+                TrainingInfiniteReserveAmmo,
+                TrainingInfiniteReserveAmmo);
+
+            if (weaponController != null && weaponMount != null && weaponMount.HasMountedWeapon)
+            {
+                weaponController.SetReserveAmmo(TrainingInfiniteReserveAmmo);
+            }
+        }
+
         public void SyncLoadoutSpareAmmoFromController()
         {
             if (loadout == null || weaponController == null)
@@ -465,6 +496,7 @@ namespace ShooterPrototype.Player
             }
 
             loadout.SetSpareAmmo(ResolveEquippedWeaponKind(), weaponController.ReserveAmmo);
+            EnsureTrainingReserveAmmo();
         }
 
         public void SyncControllerAmmoFromLoadout()
@@ -493,7 +525,11 @@ namespace ShooterPrototype.Player
             }
 
             weaponController.SetCurrentAmmo(magAmmo);
-            weaponController.SetReserveAmmo(loadout.GetSpareAmmo(kind));
+            var reserveAmmo = trainingInfiniteReserveAmmo
+                ? TrainingInfiniteReserveAmmo
+                : loadout.GetSpareAmmo(kind);
+            weaponController.SetReserveAmmo(reserveAmmo);
+            EnsureTrainingReserveAmmo();
         }
 
         public WeaponKind ResolveEquippedWeaponKind()
@@ -888,7 +924,11 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var sourcePrefab = spawnManager.ResolveWeaponSourcePrefab(removed.Kind);
+            var sourcePrefab = WeaponCatalog.GetWeaponPrefab(removed.Kind);
+            if (sourcePrefab == null)
+            {
+                sourcePrefab = spawnManager.ResolveWeaponSourcePrefab(removed.Kind);
+            }
             if (sourcePrefab == null)
             {
                 Debug.LogWarning(
@@ -1446,6 +1486,11 @@ namespace ShooterPrototype.Player
 
         private static bool CanDropWeaponToWorld()
         {
+            if (ActiveMatchContext.IsTraining)
+            {
+                return true;
+            }
+
             var scene = SceneManager.GetActiveScene();
             if (DuelSpawnUtility.IsDuelScene(scene))
             {

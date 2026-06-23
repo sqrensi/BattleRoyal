@@ -197,6 +197,11 @@ namespace ShooterPrototype.UI
             RebuildList();
         }
 
+        public void RefreshFromProfile()
+        {
+            RebuildList();
+        }
+
         private void RebuildList()
         {
             if (contentRect == null)
@@ -348,7 +353,7 @@ namespace ShooterPrototype.UI
             rewardBadgeObject.name = "RewardBadge";
 
             Button claimButton = null;
-            if (entry.completed)
+            if (entry.completed && !PlayerProfileService.IsOfflineMode)
             {
                 var claimButtonObject = new GameObject("ClaimButton", typeof(RectTransform));
                 claimButtonObject.transform.SetParent(bottomRowObject.transform, false);
@@ -450,7 +455,7 @@ namespace ShooterPrototype.UI
 
         private void OnClaimClicked(PlayerAchievementEntry entry)
         {
-            if (entry == null || claimInProgress || !entry.completed)
+            if (PlayerProfileService.IsOfflineMode || entry == null || claimInProgress || !entry.completed)
             {
                 return;
             }

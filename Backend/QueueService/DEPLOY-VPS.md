@@ -77,7 +77,7 @@ DATABASE_URL=postgres://shooter:ПАРОЛЬ@127.0.0.1:5432/shooter
 MATCH_SERVER_ADDRESS=83.220.165.44
 MATCH_SERVER_PORT=5050
 PORT=5050
-REALTIME_WS_PORT=5051
+ADDRESSABLES_ROOT=/opt/shooter/QueueService/addressables
 ```
 
 ---
@@ -188,10 +188,24 @@ ufw enable
 
 `Assets/Network/NetworkConfig`:
 
-- **Queue Api Base Url** → `http://ТВОЙ_IP:5050`
+- **Queue Api Base Url** → `http://ТВОЙ_IP:5050` (локальный тест через `http://localhost:8080`)
+- **Queue Api Base Url Secure** → `https://api.ТВОЙ_ДОМЕН` (для Яндекс Игр, без `:5050`)
 - **Realtime Ws Url** → `ws://ТВОЙ_IP:5051`
+- **Realtime Ws Url Secure** → `wss://api.ТВОЙ_ДОМЕН/ws`
+### Яндекс Игры (HTTPS + CSP)
 
-Пересобери билд.
+Подробная пошаговая инструкция: **[YANDEX-GAMES-HTTPS-CSP.md](./YANDEX-GAMES-HTTPS-CSP.md)**
+
+Кратко: домен → nginx + Let's Encrypt → заявка в «Правила для CSP» → Secure-поля в NetworkConfig → WebGL build.
+
+### Контент (локальный билд)
+
+Скины, звуки, персонажи, кейсы и т.д. лежат в **`Assets/Resources/`** и попадают в WebGL-билд через `Resources.Load`.  
+Remote Addressables **отключены** — заливать `ServerData/WebGL` на VPS не нужно.
+
+Опционально для уменьшения билда: **Shooter Prototype → Build Optimization → Rebuild Controllers Blink-Only And Remove Opsive**.
+
+Пересобери WebGL-билд после изменений в Resources.
 
 ---
 

@@ -28,6 +28,7 @@ namespace ShooterPrototype.UI
         private Button previousButton;
         private Button nextButton;
         private int builtLayoutVersion;
+        private bool offlineRestricted;
 
         public static MainMenuGameMode SelectedMode => selectedMode;
 
@@ -114,8 +115,31 @@ namespace ShooterPrototype.UI
             rootRect.sizeDelta = new Vector2(width, selectorHeight);
         }
 
+        public void SetOfflineRestricted(bool restricted)
+        {
+            offlineRestricted = restricted;
+            if (restricted)
+            {
+                selectedMode = MainMenuGameMode.Training;
+            }
+
+            RefreshLabel();
+            ApplyInteractionState();
+        }
+
         public void SetInteractable(bool interactable)
         {
+            ApplyInteractionState(interactable);
+        }
+
+        private void ApplyInteractionState(bool? interactableOverride = null)
+        {
+            var interactable = interactableOverride ?? true;
+            if (offlineRestricted)
+            {
+                interactable = false;
+            }
+
             if (CanvasGroup != null)
             {
                 CanvasGroup.interactable = interactable;
@@ -124,12 +148,12 @@ namespace ShooterPrototype.UI
 
             if (previousButton != null)
             {
-                previousButton.interactable = interactable;
+                previousButton.interactable = interactable && !offlineRestricted;
             }
 
             if (nextButton != null)
             {
-                nextButton.interactable = interactable;
+                nextButton.interactable = interactable && !offlineRestricted;
             }
         }
 
@@ -200,6 +224,13 @@ namespace ShooterPrototype.UI
 
         private void Cycle(int delta)
         {
+            if (offlineRestricted)
+            {
+                selectedMode = MainMenuGameMode.Training;
+                RefreshLabel();
+                return;
+            }
+
             var currentIndex = 0;
             for (var i = 0; i < Modes.Length; i++)
             {

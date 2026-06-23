@@ -49,6 +49,7 @@ namespace ShooterPrototype.Player
         private Rigidbody deathRigidbody;
         private CapsuleCollider deathCapsule;
         private bool networkMode;
+        private bool trainingBotMode;
         private bool eliminationMode;
         private int deathSequence;
         private int lastNetworkDeathSeq = -1;
@@ -62,6 +63,8 @@ namespace ShooterPrototype.Player
         public float MaxHealth => Mathf.Max(1f, maxHealth);
         public float CurrentHealth => Mathf.Clamp(currentHealth, 0f, MaxHealth);
         public bool IsDead => isDead;
+
+        public event System.Action TrainingBotDied;
         public event System.Action<float> LocalDamageTaken;
         public event System.Action LocalHealthReplenished;
         public int DeathSequence => deathSequence;
@@ -260,6 +263,11 @@ namespace ShooterPrototype.Player
             }
 
             deathSequence++;
+            if (trainingBotMode)
+            {
+                TrainingBotDied?.Invoke();
+            }
+
             EnterDeathState(startRespawn: !eliminationMode);
         }
 
@@ -274,6 +282,29 @@ namespace ShooterPrototype.Player
             presenceSync?.FlushLocalPose();
 
             respawnRoutine = null;
+        }
+
+        public void SetTrainingBotMode(bool enabled)
+        {
+            trainingBotMode = enabled;
+            if (!enabled)
+            {
+                return;
+            }
+
+            SetNetworkMode(true);
+            SetEliminationMode(true);
+            enableDeathFall = false;
+        }
+
+        public void ApplyLocalShooterDamage(float amount, Vector3 hitDirection)
+        {
+            if (!trainingBotMode || isDead || amount <= 0f)
+            {
+                return;
+            }
+
+            ApplyDamage(amount, string.Empty, hitDirection);
         }
 
         public void SetNetworkMode(bool enabled)
