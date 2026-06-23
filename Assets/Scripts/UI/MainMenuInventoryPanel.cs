@@ -63,9 +63,8 @@ namespace ShooterPrototype.UI
         private MainMenuCameraMotion cameraMotion;
         private bool overlayHidden;
         private bool isVisible;
+        private bool notificationPulseActive;
         private Coroutine transitionCoroutine;
-        private Coroutine notificationPulseCoroutine;
-        private Coroutine pulseCoroutine;
         private string pendingPulseItemId;
 
         private sealed class ItemSlotVisual
@@ -177,11 +176,20 @@ namespace ShooterPrototype.UI
 
         private void OnDisable()
         {
-            StopPulseRoutine();
+            StopNotificationPulse();
             PlayerSkinOwnershipService.OwnershipChanged -= RebuildItems;
             PlayerSkinOwnershipService.EquipmentChanged -= OnEquipmentChanged;
             PlayerProfileService.ProfileSynced -= OnProfileSynced;
             MainMenuNotificationState.Changed -= OnNotificationStateChanged;
+        }
+
+        private void Update()
+        {
+            if (notificationPulseActive)
+            {
+                var scale = 1f + Mathf.Sin(Time.unscaledTime * 5f) * 0.12f;
+                ApplyNotificationDotScale(scale);
+            }
         }
 
         private void OnNotificationStateChanged()
@@ -219,7 +227,7 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            RefreshEquippedVisuals(pendingPulseItemId);
+            RefreshEquippedVisuals();
             pendingPulseItemId = null;
         }
 
@@ -842,8 +850,7 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            StopPulseRoutine();
-            InventoryIconCatalog.ClearCache();
+            StopNotificationPulse();
             for (var i = contentRect.childCount - 1; i >= 0; i--)
             {
                 var child = contentRect.GetChild(i);
@@ -883,36 +890,17 @@ namespace ShooterPrototype.UI
 
         private void StartNotificationPulse()
         {
-            if (notificationPulseCoroutine != null)
+            notificationPulseActive = isVisible && !overlayHidden;
+            if (!notificationPulseActive)
             {
-                StopCoroutine(notificationPulseCoroutine);
+                ApplyNotificationDotScale(1f);
             }
-
-            notificationPulseCoroutine = StartCoroutine(NotificationPulseRoutine());
         }
 
         private void StopNotificationPulse()
         {
-            if (notificationPulseCoroutine != null)
-            {
-                StopCoroutine(notificationPulseCoroutine);
-                notificationPulseCoroutine = null;
-            }
-
+            notificationPulseActive = false;
             ApplyNotificationDotScale(1f);
-        }
-
-        private IEnumerator NotificationPulseRoutine()
-        {
-            while (isVisible && !overlayHidden)
-            {
-                var scale = 1f + Mathf.Sin(Time.unscaledTime * 5f) * 0.12f;
-                ApplyNotificationDotScale(scale);
-                yield return null;
-            }
-
-            ApplyNotificationDotScale(1f);
-            notificationPulseCoroutine = null;
         }
 
         private void ApplyNotificationDotScale(float scale)
@@ -1203,6 +1191,7 @@ namespace ShooterPrototype.UI
                 if (menu != null && menu.ProfileApiClient != null)
                 {
                     pendingPulseItemId = item.Id;
+                    uiSound?.PlayButton();
                     StartCoroutine(EquipFromServerRoutine(menu, item, slot));
                     return;
                 }
@@ -1215,7 +1204,7 @@ namespace ShooterPrototype.UI
 
             pendingPulseItemId = item.Id;
             PreviewInventoryItem(item);
-            RefreshEquippedVisuals(pendingPulseItemId);
+            RefreshEquippedVisuals();
             pendingPulseItemId = null;
             uiSound?.PlayButton();
         }
@@ -1228,32 +1217,34 @@ namespace ShooterPrototype.UI
             var wasEquipped = PlayerSkinSelectionService.IsEquipped(item);
             if (wasEquipped && !PlayerSkinSelectionService.SupportsUnequip(slot))
             {
+                pendingPulseItemId = null;
                 yield break;
             }
 
-            var skinId = wasEquipped ? "__none__" : item.Id;
+            var targetSkinId = wasEquipped ? "__none__" : item.Id;
+            var previousSkinId = PlayerSkinSelectionService.ResolveEquippedSkinId(slot);
+            PlayerProfileService.TryApplyEquippedOptimistic(slot, targetSkinId);
+
             var success = false;
             yield return PlayerProfileService.EquipSkin(
                 this,
                 menu.ProfileApiClient,
                 menu.LocalPlayerId,
                 slot,
-                skinId,
+                targetSkinId,
                 (ok, _) => success = ok);
 
             if (!success)
             {
+                PlayerProfileService.TryApplyEquippedOptimistic(slot, previousSkinId);
                 pendingPulseItemId = null;
                 yield break;
             }
 
-            RefreshEquippedVisuals(pendingPulseItemId);
-            PreviewInventoryItem(item);
-            uiSound?.PlayButton();
             pendingPulseItemId = null;
         }
 
-        private void RefreshEquippedVisuals(string pulseItemId = null)
+        private void RefreshEquippedVisuals()
         {
             for (var i = 0; i < itemSlots.Count; i++)
             {
@@ -1284,82 +1275,6 @@ namespace ShooterPrototype.UI
 
                 RefreshQuantityBadge(slot);
             }
-
-            if (!string.IsNullOrWhiteSpace(pulseItemId))
-            {
-                PulseItem(pulseItemId);
-            }
-        }
-
-        private void PulseItem(string itemId)
-        {
-            StopPulseRoutine();
-            pulseCoroutine = StartCoroutine(PulseItemRoutine(itemId));
-        }
-
-        private void StopPulseRoutine()
-        {
-            if (pulseCoroutine == null)
-            {
-                return;
-            }
-
-            StopCoroutine(pulseCoroutine);
-            pulseCoroutine = null;
-        }
-
-        private bool TryGetItemSlot(string itemId, out ItemSlotVisual slot)
-        {
-            slot = null;
-            if (string.IsNullOrWhiteSpace(itemId))
-            {
-                return false;
-            }
-
-            for (var i = 0; i < itemSlots.Count; i++)
-            {
-                var candidate = itemSlots[i];
-                if (candidate.Definition.IsValid &&
-                    string.Equals(candidate.Definition.Id, itemId, System.StringComparison.OrdinalIgnoreCase))
-                {
-                    slot = candidate;
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private IEnumerator PulseItemRoutine(string itemId)
-        {
-            if (!TryGetItemSlot(itemId, out var targetSlot) || targetSlot.Background == null)
-            {
-                pulseCoroutine = null;
-                yield break;
-            }
-
-            var equipped = PlayerSkinSelectionService.IsEquipped(targetSlot.Definition);
-            if (equipped && targetSlot.EquippedFrame != null)
-            {
-                targetSlot.EquippedFrame.color = UiTheme.EquippedBorderPulse;
-                yield return new WaitForSecondsRealtime(0.1f);
-                if (TryGetItemSlot(itemId, out targetSlot) && targetSlot.EquippedFrame != null)
-                {
-                    targetSlot.EquippedFrame.color = Color.white;
-                }
-
-                pulseCoroutine = null;
-                yield break;
-            }
-
-            targetSlot.Background.color = UiTheme.ButtonHighlight;
-            yield return new WaitForSecondsRealtime(0.1f);
-            if (TryGetItemSlot(itemId, out targetSlot) && targetSlot.Background != null)
-            {
-                targetSlot.Background.color = UiTheme.InventorySlotFill;
-            }
-
-            pulseCoroutine = null;
         }
 
         private void StartTransition(bool show)

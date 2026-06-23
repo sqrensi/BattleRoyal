@@ -538,7 +538,7 @@ namespace ShooterPrototype.Player
                 ResetPlaneTiming();
             }
 
-            if (currentPhase == "plane" && isOnPlane)
+            if (currentPhase == "plane" && planeInstance != null)
             {
                 InitializePlaneTiming(message);
                 SoftResyncPlaneTiming(message);
@@ -1632,11 +1632,15 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var serverNowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var serverElapsedSec = Mathf.Max(
-                0f,
-                (serverNowMs - message.planeStartedAtMs) / 1000f);
-            planeLocalStartRealtime = Time.realtimeSinceStartup - serverElapsedSec;
+            if (TryComputeServerPlaneProgress(message, out var serverProgress))
+            {
+                planeLocalStartRealtime = Time.realtimeSinceStartup - (serverProgress * planePathDurationSeconds);
+            }
+            else
+            {
+                planeLocalStartRealtime = Time.realtimeSinceStartup;
+            }
+
             planeTimingInitialized = true;
         }
 
@@ -1647,18 +1651,42 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var serverNowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var serverElapsedSec = Mathf.Max(
-                0f,
-                (serverNowMs - message.planeStartedAtMs) / 1000f);
-            var serverProgress = Mathf.Clamp01(serverElapsedSec / planePathDurationSeconds);
+            if (!TryComputeServerPlaneProgress(message, out var serverProgress))
+            {
+                return;
+            }
+
             var localProgress = Mathf.Clamp01(
                 (Time.realtimeSinceStartup - planeLocalStartRealtime) / planePathDurationSeconds);
             var progressError = serverProgress - localProgress;
-            if (Mathf.Abs(progressError) > 0.02f)
+            if (Mathf.Abs(progressError) > 0.01f)
             {
-                planeLocalStartRealtime += progressError * planePathDurationSeconds * 0.35f;
+                planeLocalStartRealtime += progressError * planePathDurationSeconds * 0.5f;
             }
+        }
+
+        private bool TryComputeServerPlaneProgress(
+            RealtimeTransportClient.MatchStateMessage message,
+            out float progress)
+        {
+            progress = 0f;
+            if (message == null)
+            {
+                return false;
+            }
+
+            var start = new Vector2(message.planeStartX, message.planeStartZ);
+            var end = new Vector2(message.planeEndX, message.planeEndZ);
+            var segment = end - start;
+            var lengthSq = segment.sqrMagnitude;
+            if (lengthSq < 0.001f)
+            {
+                return false;
+            }
+
+            var serverPos = new Vector2(message.planePosX, message.planePosZ);
+            progress = Mathf.Clamp01(Vector2.Dot(serverPos - start, segment) / lengthSq);
+            return true;
         }
 
         private void SnapPlaneToRouteEnd()

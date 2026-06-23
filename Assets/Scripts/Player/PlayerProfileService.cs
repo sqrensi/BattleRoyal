@@ -711,6 +711,25 @@ namespace ShooterPrototype.Player
             onCompleted?.Invoke(false, string.IsNullOrWhiteSpace(error) ? "Equip failed." : error);
         }
 
+        public static bool TryApplyEquippedOptimistic(PlayerSkinSlot slot, string skinId)
+        {
+            if (!IsServerSynced || CurrentProfile == null)
+            {
+                return false;
+            }
+
+            if (CurrentProfile.equipped == null)
+            {
+                CurrentProfile.equipped = new PlayerProfileEquippedDto();
+            }
+
+            var normalizedSkinId = skinId ?? string.Empty;
+            WriteEquippedDtoField(CurrentProfile.equipped, slot, normalizedSkinId);
+            ApplyEquippedSlot(slot, normalizedSkinId);
+            PlayerSkinOwnershipService.NotifyEquipmentChanged();
+            return true;
+        }
+
         public static IEnumerator GrantMatchReward(
             MonoBehaviour runner,
             PlayerProfileApiClient apiClient,
@@ -1006,6 +1025,51 @@ namespace ShooterPrototype.Player
             ApplyEquippedSlot(PlayerSkinSlot.WeaponSniperRifle, equipped.weaponSniper);
             ApplyEquippedSlot(PlayerSkinSlot.WeaponPistol, equipped.weaponPistol);
             ApplyEquippedSlot(PlayerSkinSlot.WeaponMp7, equipped.weaponMp7);
+        }
+
+        private static void WriteEquippedDtoField(
+            PlayerProfileEquippedDto equipped,
+            PlayerSkinSlot slot,
+            string skinId)
+        {
+            if (equipped == null)
+            {
+                return;
+            }
+
+            switch (slot)
+            {
+                case PlayerSkinSlot.Shirt:
+                    equipped.shirt = skinId;
+                    return;
+                case PlayerSkinSlot.Pants:
+                    equipped.pants = skinId;
+                    return;
+                case PlayerSkinSlot.Boots:
+                    equipped.boots = skinId;
+                    return;
+                case PlayerSkinSlot.Gloves:
+                    equipped.gloves = skinId;
+                    return;
+                case PlayerSkinSlot.Face:
+                    equipped.face = skinId;
+                    return;
+                case PlayerSkinSlot.Hair:
+                    equipped.hair = skinId;
+                    return;
+                case PlayerSkinSlot.WeaponAssaultRifle:
+                    equipped.weaponAssault = skinId;
+                    return;
+                case PlayerSkinSlot.WeaponSniperRifle:
+                    equipped.weaponSniper = skinId;
+                    return;
+                case PlayerSkinSlot.WeaponPistol:
+                    equipped.weaponPistol = skinId;
+                    return;
+                case PlayerSkinSlot.WeaponMp7:
+                    equipped.weaponMp7 = skinId;
+                    return;
+            }
         }
 
         private static void ApplyEquippedSlot(PlayerSkinSlot slot, string skinId)

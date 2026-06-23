@@ -10,6 +10,10 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuNicknameEditor : MonoBehaviour
     {
+        private const float TextAreaLeftPadding = 12f;
+        private const float CaretVisibleSeconds = 0.55f;
+        private const float CaretHiddenSeconds = 0.45f;
+
         [SerializeField] private float edgeMargin = 28f;
         [SerializeField] private float bottomOffset = 28f;
         [SerializeField] private float panelWidth = 340f;
@@ -31,8 +35,14 @@ namespace ShooterPrototype.UI
         private PlayerProfileApiClient profileApiClient;
         private MainMenuUiSoundController uiSound;
         private Coroutine saveCoroutine;
+        private RectTransform customCaretRect;
+        private Image customCaretImage;
+        private TMP_Text nicknameInputText;
         private bool built;
         private bool isEditing;
+        private bool caretVisible = true;
+        private float caretBlinkPhaseStart;
+        private int lastCaretStringPosition = -1;
 
         public CanvasGroup CanvasGroup => canvasGroup;
         public RectTransform RootRect { get; private set; }
@@ -169,6 +179,43 @@ namespace ShooterPrototype.UI
         private void OnDisable()
         {
             PlayerProfileService.ProfileSynced -= RefreshFromProfile;
+            HideCaret();
+        }
+
+        private void Update()
+        {
+            if (!isEditing || customCaretImage == null || !customCaretImage.enabled)
+            {
+                return;
+            }
+
+            var cycleSeconds = CaretVisibleSeconds + CaretHiddenSeconds;
+            var phase = (Time.unscaledTime - caretBlinkPhaseStart) % cycleSeconds;
+            caretVisible = phase < CaretVisibleSeconds;
+            var alpha = caretVisible ? 1f : 0f;
+            if (!Mathf.Approximately(customCaretImage.color.a, alpha))
+            {
+                customCaretImage.color = new Color(1f, 1f, 1f, alpha);
+            }
+        }
+
+        private void LateUpdate()
+        {
+            if (!isEditing || nicknameInput == null || customCaretImage == null || !customCaretImage.enabled)
+            {
+                return;
+            }
+
+            var stringPosition = nicknameInput.stringPosition;
+            if (stringPosition != lastCaretStringPosition)
+            {
+                lastCaretStringPosition = stringPosition;
+                caretBlinkPhaseStart = Time.unscaledTime;
+                caretVisible = true;
+                customCaretImage.color = Color.white;
+            }
+
+            UpdateCustomCaretPosition();
         }
 
         public void RefreshFromProfile()
@@ -280,18 +327,19 @@ namespace ShooterPrototype.UI
             if (editing)
             {
                 ClearStatus();
+                lastCaretStringPosition = -1;
                 nicknameInput?.Select();
                 nicknameInput?.ActivateInputField();
                 if (nicknameInput != null)
                 {
-                    nicknameInput.caretColor = Color.white;
-                    nicknameInput.customCaretColor = true;
                     nicknameInput.MoveTextEnd(false);
                 }
 
+                ShowCaret();
                 return;
             }
 
+            HideCaret();
             RefreshNicknameFromProfile();
         }
 
@@ -428,12 +476,13 @@ namespace ShooterPrototype.UI
             var inputField = inputObject.AddComponent<TMP_InputField>();
             inputField.characterLimit = 16;
             inputField.interactable = false;
+            inputField.resetOnDeActivation = false;
 
             var textAreaObject = new GameObject("Text Area");
             textAreaObject.transform.SetParent(inputObject.transform, false);
             var textAreaRect = textAreaObject.AddComponent<RectTransform>();
             StretchFull(textAreaRect);
-            textAreaRect.offsetMin = new Vector2(12f, 7f);
+            textAreaRect.offsetMin = new Vector2(TextAreaLeftPadding, 7f);
             textAreaRect.offsetMax = new Vector2(-rightPadding, -7f);
             textAreaObject.AddComponent<RectMask2D>();
 
@@ -463,12 +512,107 @@ namespace ShooterPrototype.UI
             inputField.placeholder = placeholder;
             inputField.lineType = TMP_InputField.LineType.SingleLine;
             inputField.customCaretColor = true;
-            inputField.caretColor = Color.white;
-            inputField.caretBlinkRate = 0.85f;
-            inputField.caretWidth = 2;
+            inputField.caretColor = new Color(1f, 1f, 1f, 0f);
+            inputField.caretBlinkRate = 0f;
+            inputField.caretWidth = 1;
             inputField.selectionColor = new Color(1f, 1f, 1f, 0.22f);
 
+            nicknameInputText = text;
+            CreateCustomCaret(inputObject.transform);
+
             return inputField;
+        }
+
+        private void CreateCustomCaret(Transform inputRoot)
+        {
+            var caretObject = new GameObject("CustomCaret");
+            caretObject.transform.SetParent(inputRoot, false);
+            caretObject.transform.SetAsLastSibling();
+
+            customCaretRect = caretObject.AddComponent<RectTransform>();
+            customCaretRect.anchorMin = new Vector2(0f, 0.5f);
+            customCaretRect.anchorMax = new Vector2(0f, 0.5f);
+            customCaretRect.pivot = new Vector2(0f, 0.5f);
+            customCaretRect.anchoredPosition = new Vector2(TextAreaLeftPadding, 0f);
+            customCaretRect.sizeDelta = new Vector2(3f, Mathf.Max(22f, inputFontSize + 4f));
+
+            customCaretImage = caretObject.AddComponent<Image>();
+            customCaretImage.sprite = UiTheme.WhiteSprite;
+            customCaretImage.type = Image.Type.Simple;
+            customCaretImage.color = Color.white;
+            customCaretImage.raycastTarget = false;
+            customCaretImage.maskable = false;
+            customCaretImage.enabled = false;
+        }
+
+        private void ShowCaret()
+        {
+            if (customCaretImage == null)
+            {
+                return;
+            }
+
+            customCaretImage.enabled = true;
+            customCaretImage.color = Color.white;
+            customCaretImage.transform.SetAsLastSibling();
+            caretVisible = true;
+            caretBlinkPhaseStart = Time.unscaledTime;
+            UpdateCustomCaretPosition();
+        }
+
+        private void HideCaret()
+        {
+            if (customCaretImage != null)
+            {
+                customCaretImage.enabled = false;
+            }
+        }
+
+        private void UpdateCustomCaretPosition()
+        {
+            if (!isEditing || nicknameInput == null || customCaretRect == null || nicknameInputText == null)
+            {
+                return;
+            }
+
+            var caretIndex = Mathf.Clamp(nicknameInput.stringPosition, 0, nicknameInput.text.Length);
+            var textBeforeCaret = nicknameInput.text.Substring(0, caretIndex);
+            nicknameInputText.ForceMeshUpdate();
+            var textOffset = ResolveCaretOffsetX(nicknameInputText, textBeforeCaret, caretIndex);
+            customCaretRect.anchoredPosition = new Vector2(TextAreaLeftPadding + textOffset, 0f);
+        }
+
+        private static float ResolveCaretOffsetX(TMP_Text text, string textBeforeCaret, int caretIndex)
+        {
+            if (text == null)
+            {
+                return 0f;
+            }
+
+            if (string.IsNullOrEmpty(textBeforeCaret))
+            {
+                return 0f;
+            }
+
+            var preferred = text.GetPreferredValues(textBeforeCaret);
+            if (preferred.x > 0.01f)
+            {
+                return preferred.x;
+            }
+
+            var textInfo = text.textInfo;
+            if (textInfo == null || textInfo.characterCount == 0)
+            {
+                return 0f;
+            }
+
+            if (caretIndex >= textInfo.characterCount)
+            {
+                var last = textInfo.characterInfo[textInfo.characterCount - 1];
+                return last.origin + last.xAdvance;
+            }
+
+            return textInfo.characterInfo[Mathf.Clamp(caretIndex, 0, textInfo.characterCount - 1)].origin;
         }
 
         private Button CreateActionButton(Transform parent)
