@@ -29,7 +29,7 @@ function normalizeMatchMode(value) {
     return "duel";
   }
 
-  return raw || "battle_royale";
+  return raw || "duel";
 }
 
 function createDuelState() {

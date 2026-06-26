@@ -115,6 +115,25 @@ namespace ShooterPrototype.Player
 
         public static bool UsesLocalProgressOnly => IsOfflineMode || !IsServerSynced;
 
+        public static void ApplyLiveRatings(int duelRating, int rating)
+        {
+            if (CurrentProfile == null)
+            {
+                CurrentProfile = new PlayerProfileDto
+                {
+                    duelRating = Mathf.Max(0, duelRating),
+                    rating = Mathf.Max(0, rating),
+                };
+            }
+            else
+            {
+                CurrentProfile.duelRating = Mathf.Max(0, duelRating);
+                CurrentProfile.rating = Mathf.Max(0, rating);
+            }
+
+            ProfileSynced?.Invoke();
+        }
+
         public static void ApplyProfile(PlayerProfileDto profile, bool markSynced = true)
         {
             if (profile == null)

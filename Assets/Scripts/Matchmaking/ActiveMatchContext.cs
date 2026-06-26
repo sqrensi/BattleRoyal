@@ -4,7 +4,7 @@ namespace ShooterPrototype.Matchmaking
 {
     public static class ActiveMatchContext
     {
-        public static MainMenuGameMode SelectedMode { get; private set; } = MainMenuGameMode.BattleRoyale;
+        public static MainMenuGameMode SelectedMode { get; private set; } = MainMenuGameMode.Duel1v1;
 
         public static bool IsOfflineTrainingSession { get; private set; }
 

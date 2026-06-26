@@ -28,7 +28,7 @@ namespace ShooterPrototype.UI
         private PlayerProfileApiClient profileApiClient;
         private Coroutine fetchCoroutine;
         private bool built;
-        private MainMenuGameMode leaderboardMode = MainMenuGameMode.BattleRoyale;
+        private MainMenuGameMode leaderboardMode = MainMenuGameMode.Duel1v1;
 
         public RectTransform RootRect { get; private set; }
 

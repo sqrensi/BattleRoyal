@@ -164,7 +164,10 @@ namespace ShooterPrototype.Network
 
             var timeout = Mathf.Max(1, Mathf.RoundToInt(config.ConnectTimeoutSeconds * 1000f));
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var connected = await TryConnectServerReachableAsync(address, port, timeout);
+            var queueHealthUrl = BuildQueueHealthUrl(config);
+            var connected = !string.IsNullOrWhiteSpace(queueHealthUrl)
+                ? await TryConnectQueueHealthUrlAsync(queueHealthUrl, timeout)
+                : await TryConnectServerReachableAsync(address, port, timeout);
             stopwatch.Stop();
 
             isConnecting = false;
@@ -318,16 +321,25 @@ namespace ShooterPrototype.Network
 #endif
         }
 
-        private static async Task<bool> TryConnectHttpHealthAsync(string address, int port, int timeoutMilliseconds)
+        private static string BuildQueueHealthUrl(NetworkConfig networkConfig)
         {
-            if (string.IsNullOrWhiteSpace(address) || port <= 0)
+            if (networkConfig == null)
+            {
+                return string.Empty;
+            }
+
+            var baseUrl = networkConfig.ResolveQueueApiBaseUrl();
+            return string.IsNullOrWhiteSpace(baseUrl) ? string.Empty : $"{baseUrl.TrimEnd('/')}/health";
+        }
+
+        private static async Task<bool> TryConnectQueueHealthUrlAsync(string healthUrl, int timeoutMilliseconds)
+        {
+            if (string.IsNullOrWhiteSpace(healthUrl))
             {
                 return false;
             }
 
-            var scheme = port == 443 || port == 8443 ? "https" : "http";
-            var url = $"{scheme}://{address.Trim()}:{port}/health";
-            using (var request = UnityWebRequest.Get(url))
+            using (var request = UnityWebRequest.Get(healthUrl))
             {
                 request.timeout = Mathf.Max(1, Mathf.CeilToInt(timeoutMilliseconds / 1000f));
                 var operation = request.SendWebRequest();
@@ -340,6 +352,18 @@ namespace ShooterPrototype.Network
                        request.responseCode >= 200 &&
                        request.responseCode < 300;
             }
+        }
+
+        private static async Task<bool> TryConnectHttpHealthAsync(string address, int port, int timeoutMilliseconds)
+        {
+            if (string.IsNullOrWhiteSpace(address) || port <= 0)
+            {
+                return false;
+            }
+
+            var scheme = port == 443 || port == 8443 ? "https" : "http";
+            var url = $"{scheme}://{address.Trim()}:{port}/health";
+            return await TryConnectQueueHealthUrlAsync(url, timeoutMilliseconds);
         }
 
         private async Task<bool> TryConnectTcpAsync(string address, int port, int timeoutMilliseconds)

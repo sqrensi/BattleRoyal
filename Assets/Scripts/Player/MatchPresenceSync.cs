@@ -669,6 +669,29 @@ namespace ShooterPrototype.Player
             }
         }
 
+        public void SnapAllRemoteAvatarsToDuelSpawn(int teamIndex, int slotIndex)
+        {
+            if (!DuelSpawnUtility.TryResolveSpawnPose(teamIndex, slotIndex, out var position, out var rotation))
+            {
+                return;
+            }
+
+            var yaw = rotation.eulerAngles.y;
+            foreach (var kv in remoteAvatars)
+            {
+                var avatar = kv.Value;
+                if (avatar?.Root == null)
+                {
+                    continue;
+                }
+
+                SnapRemoteAvatarToPose(avatar, position, yaw);
+                avatar.LastKnownPosition = position;
+                avatar.LastKnownYaw = yaw;
+                avatar.HasKnownPose = true;
+            }
+        }
+
         private static void SnapRemoteAvatarToPose(RemoteAvatar avatar, Vector3 position, float yaw)
         {
             if (avatar?.Root == null)

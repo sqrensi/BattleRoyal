@@ -12,12 +12,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8a5d7797741528f4dad61943a2a547c2, type: 3}
   m_Name: NetworkConfig
   m_EditorClassIdentifier: Assembly-CSharp::ShooterPrototype.Network.NetworkConfig
-  serverAddress: 83.220.165.44
-  serverPort: 7777
+  serverAddress: api.game35.ru
+  serverPort: 5050
   connectTimeoutSeconds: 5
-  queueApiBaseUrl: http://83.220.165.44:5050
+  queueApiBaseUrl: http://api.game35.ru:5050
   queueApiBaseUrlSecure: 
-  realtimeWsUrl: ws://83.220.165.44:5051
+  realtimeWsUrl: ws://api.game35.ru:5051
   realtimeWsUrlSecure: 
   queueRequestTimeoutSeconds: 5
   queuePollIntervalSeconds: 0.5

@@ -14,10 +14,19 @@ const {
   getAllAchievements,
 } = require("../data/achievement-catalog");
 const crypto = require("crypto");
-const { get, all, run, transaction, nowMs, newId } = require("./database");
+const { get, all, run, transaction, nowMs, newId, getDriverName } = require("./database");
 
 function useDb(tx) {
   return tx || { get, all, run };
+}
+
+function buildRatingUpdateClause(ratingColumn) {
+  const column = ratingColumn === "duel_rating" ? "duel_rating" : "rating";
+  if (getDriverName() === "postgres") {
+    return `SET ${column} = GREATEST(0, ${column} + ?)`;
+  }
+
+  return `SET ${column} = MAX(0, ${column} + ?)`;
 }
 
 const STARTER_CURRENCY = 100000;
@@ -454,9 +463,15 @@ async function getPlayerMatchStats(playerId) {
   };
 }
 
-function calculateRatingDelta(placement, kills, matchMode) {
+function calculateRatingDelta(placement, kills, matchMode, won) {
   const normalizedMode = String(matchMode || "").trim().toLowerCase();
   if (normalizedMode === "duel" || normalizedMode === "1v1") {
+    if (won === true) {
+      return 15;
+    }
+    if (won === false) {
+      return -15;
+    }
     return placement <= 1 ? 15 : -15;
   }
 
@@ -572,7 +587,7 @@ async function recordMatchStats(externalPlayerId, payload) {
         return true;
       }
 
-      ratingDelta = calculateRatingDelta(placement, kills, payload && payload.matchMode);
+      ratingDelta = calculateRatingDelta(placement, kills, payload && payload.matchMode, won);
 
       const ratingColumn = matchMode === "duel" || matchMode === "1v1" ? "duel_rating" : "rating";
 
@@ -591,7 +606,7 @@ async function recordMatchStats(externalPlayerId, payload) {
 
       await tx.run(
         `UPDATE player_profiles
-         SET ${ratingColumn} = MAX(0, ${ratingColumn} + ?),
+         ${buildRatingUpdateClause(ratingColumn)},
              updated_at = ?
          WHERE player_id = ?`,
         [ratingDelta, timestamp, playerRow.id]
@@ -1333,9 +1348,9 @@ async function grantMatchCurrency(externalPlayerId, amount, sourceId) {
   }
 }
 
-async function getLeaderboard(limit = 25, mode = "battle_royale") {
+async function getLeaderboard(limit = 25, mode = "duel") {
   const normalizedLimit = Math.max(1, Math.min(25, Math.floor(Number(limit) || 25)));
-  const normalizedMode = String(mode || "battle_royale").trim().toLowerCase();
+  const normalizedMode = String(mode || "duel").trim().toLowerCase();
 
   if (normalizedMode === "challenge") {
     const rows = await all(

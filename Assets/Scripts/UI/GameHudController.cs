@@ -90,6 +90,8 @@ namespace ShooterPrototype.UI
         private bool matchRewardGranted;
         private Coroutine matchRewardCoroutine;
         private bool matchStatsReported;
+        private bool serverMatchStatsReceived;
+        private int pendingServerRatingDelta;
         private Coroutine matchStatsCoroutine;
         private bool gameOverInputLocked;
         private GameObject pauseMenuPanel;
@@ -989,7 +991,19 @@ namespace ShooterPrototype.UI
             pendingMatchOutcome = default;
             matchRewardGranted = false;
             matchStatsReported = false;
+            serverMatchStatsReceived = false;
+            pendingServerRatingDelta = 0;
             ApplyGameOverInputLock(false);
+        }
+
+        public void NotifyServerMatchStatsApplied(int ratingDelta)
+        {
+            serverMatchStatsReceived = true;
+            pendingServerRatingDelta = ratingDelta;
+            if (gameOverPanelVisible)
+            {
+                UpdateGameOverRatingText(pendingMatchOutcome, ratingDelta);
+            }
         }
 
         public void ScheduleGameOver(bool won, MatchOutcomeSummary summary)
@@ -1058,7 +1072,7 @@ namespace ShooterPrototype.UI
                 matchRewardCoroutine = StartCoroutine(GrantMatchRewardRoutine(summary.CoinReward));
             }
 
-            if (!matchStatsReported)
+            if (!matchStatsReported && !ActiveMatchContext.IsDuel)
             {
                 matchStatsReported = true;
                 if (matchStatsCoroutine != null)
@@ -1102,11 +1116,8 @@ namespace ShooterPrototype.UI
                 gameOverTitleText.color = accentColor;
             }
 
-            ApplyGameOverSummary(
-                summary,
-                ActiveMatchContext.IsDuel
-                    ? MatchRatingUtility.CalculateDuelDelta(won)
-                    : MatchRatingUtility.CalculateDelta(summary.Placement, summary.KillCount));
+            var ratingDelta = ResolveGameOverRatingDelta(won, summary);
+            ApplyGameOverSummary(summary, ratingDelta);
 
             if (gameOverHintText != null)
             {
@@ -1150,15 +1161,25 @@ namespace ShooterPrototype.UI
             matchRewardCoroutine = null;
         }
 
+        private int ResolveGameOverRatingDelta(bool won, MatchOutcomeSummary summary)
+        {
+            if (serverMatchStatsReceived)
+            {
+                return pendingServerRatingDelta;
+            }
+
+            return ActiveMatchContext.IsDuel
+                ? MatchRatingUtility.CalculateDuelDelta(won)
+                : MatchRatingUtility.CalculateDelta(summary.Placement, summary.KillCount);
+        }
+
         private IEnumerator RecordMatchStatsRoutine(bool won, MatchOutcomeSummary summary)
         {
             var playerId = PlayerIdentityService.GetOrCreatePlayerId();
             var sourceId = ResolveMatchRewardSourceId();
             var deaths = won ? 0 : 1;
             var damageDealt = MatchStatsTracker.DamageDealtThisMatch;
-            var fallbackDelta = ActiveMatchContext.IsDuel
-                ? MatchRatingUtility.CalculateDuelDelta(won)
-                : MatchRatingUtility.CalculateDelta(summary.Placement, summary.KillCount);
+            var fallbackDelta = ResolveGameOverRatingDelta(won, summary);
 
             if (!PlayerProfileService.TryResolveApiClient(out var apiClient) ||
                 string.IsNullOrWhiteSpace(playerId))
@@ -1232,6 +1253,7 @@ namespace ShooterPrototype.UI
 
             if (gameOverRewardsText != null)
             {
+                gameOverRewardsText.gameObject.SetActive(true);
                 gameOverRewardsText.text =
                     $"+{summary.CoinReward:N0} монет  ·  {MatchRatingUtility.FormatDelta(ratingDelta)} рейтинг";
             }
@@ -1239,9 +1261,17 @@ namespace ShooterPrototype.UI
 
         private string ResolveMatchRewardSourceId()
         {
-            if (networkLauncher != null && !string.IsNullOrWhiteSpace(networkLauncher.CurrentTicketId))
+            if (networkLauncher != null)
             {
-                return networkLauncher.CurrentTicketId.Trim();
+                if (!string.IsNullOrWhiteSpace(networkLauncher.CurrentMatchId))
+                {
+                    return $"duel:{networkLauncher.CurrentMatchId.Trim()}";
+                }
+
+                if (!string.IsNullOrWhiteSpace(networkLauncher.CurrentTicketId))
+                {
+                    return networkLauncher.CurrentTicketId.Trim();
+                }
             }
 
             return $"local-match-{System.Guid.NewGuid():N}";
@@ -2016,9 +2046,9 @@ namespace ShooterPrototype.UI
             {
                 var versionMarker = existingPanel.GetComponent<GameOverPanelLayoutMarker>();
                 if (versionMarker != null &&
-                    versionMarker.Version >= GameOverPanelLayoutVersion &&
-                    gameOverPanel != null)
+                    versionMarker.Version >= GameOverPanelLayoutVersion)
                 {
+                    BindGameOverPanelReferences(existingPanel);
                     return;
                 }
 
@@ -2036,6 +2066,27 @@ namespace ShooterPrototype.UI
             }
 
             BuildGameOverPanel(root);
+        }
+
+        private void BindGameOverPanelReferences(Transform existingPanel)
+        {
+            gameOverPanel = existingPanel.gameObject;
+            gameOverPanelGroup = existingPanel.GetComponent<CanvasGroup>();
+
+            var panel = existingPanel.Find("Panel");
+            if (panel == null)
+            {
+                return;
+            }
+
+            gameOverPanelBackground = panel.GetComponent<Image>();
+            gameOverAccentLine = panel.Find("AccentLine")?.GetComponent<Image>();
+            gameOverTitleText = panel.Find("Title")?.GetComponent<TMP_Text>();
+            gameOverPlacementText = panel.Find("Placement")?.GetComponent<TMP_Text>();
+            gameOverKillsText = panel.Find("Kills")?.GetComponent<TMP_Text>();
+            gameOverRewardsText = panel.Find("Rewards")?.GetComponent<TMP_Text>();
+            gameOverHintText = panel.Find("Hint")?.GetComponent<TMP_Text>();
+            gameOverExitButton = panel.Find("ExitButton")?.GetComponent<Button>();
         }
 
         private void BuildGameOverPanel(Transform root)

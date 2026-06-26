@@ -12,10 +12,9 @@ namespace ShooterPrototype.UI
 
         private static readonly MainMenuGameMode[] Modes =
         {
-            MainMenuGameMode.BattleRoyale,
+            MainMenuGameMode.Duel1v1,
             MainMenuGameMode.Training,
             MainMenuGameMode.Challenge,
-            MainMenuGameMode.Duel1v1,
         };
 
         private static readonly MainMenuGameMode[] OfflineModes =
@@ -24,7 +23,7 @@ namespace ShooterPrototype.UI
             MainMenuGameMode.Challenge,
         };
 
-        private static MainMenuGameMode selectedMode = MainMenuGameMode.BattleRoyale;
+        private static MainMenuGameMode selectedMode = MainMenuGameMode.Duel1v1;
 
         [SerializeField] private float selectorHeight = 54f;
         [SerializeField] private float arrowButtonSize = 28f;

@@ -70,6 +70,7 @@ namespace ShooterPrototype.Player
             if (transportClient != null)
             {
                 transportClient.MatchStateReceived += HandleMatchState;
+                transportClient.MatchStatsReceived += HandleMatchStats;
             }
         }
 
@@ -78,6 +79,7 @@ namespace ShooterPrototype.Player
             if (transportClient != null)
             {
                 transportClient.MatchStateReceived -= HandleMatchState;
+                transportClient.MatchStatsReceived -= HandleMatchStats;
             }
 
             fpsController?.SetWeaponPickUiMode(false);
@@ -186,6 +188,17 @@ namespace ShooterPrototype.Player
             }
         }
 
+        private void HandleMatchStats(RealtimeTransportClient.MatchStatsMessage message)
+        {
+            if (message?.profile == null)
+            {
+                return;
+            }
+
+            PlayerProfileService.ApplyLiveRatings(message.profile.duelRating, message.profile.rating);
+            gameHud?.NotifyServerMatchStatsApplied(message.ratingDelta);
+        }
+
         private void HandleMatchState(RealtimeTransportClient.MatchStateMessage state)
         {
             if (state == null || !string.Equals(state.matchMode, "duel", StringComparison.OrdinalIgnoreCase))
@@ -269,7 +282,6 @@ namespace ShooterPrototype.Player
                     SetCombatEnabled(IsLocalPlayerAlive());
                     fpsController?.SetWeaponPickUiMode(false);
                     gameHud?.HideDuelWeaponPickPanel();
-                    UpdateRoundEndBanner(state);
                     break;
                 case "ending":
                     ApplyLockedPhase(state);
@@ -291,14 +303,14 @@ namespace ShooterPrototype.Player
         {
             if (phaseEntered && currentPhase == "round_pick")
             {
-                presenceSync?.SnapAllRemoteAvatarsToLastKnownPose();
+                SnapRemotesToOpponentSpawn(state);
                 presenceSync?.SetRemoteAvatarsVisible(true);
                 gameHud?.ClearDuelRoundBanner();
             }
 
             if (phaseEntered && currentPhase == "round")
             {
-                presenceSync?.SnapAllRemoteAvatarsToLastKnownPose();
+                SnapRemotesToOpponentSpawn(state);
                 presenceSync?.SetRemoteAvatarsVisible(true);
                 gameHud?.ClearDuelRoundBanner();
             }
@@ -311,12 +323,18 @@ namespace ShooterPrototype.Player
             }
         }
 
-        private void UpdateRoundEndBanner(RealtimeTransportClient.MatchStateMessage state)
+        private void SnapRemotesToOpponentSpawn(RealtimeTransportClient.MatchStateMessage state)
         {
-            if (string.IsNullOrWhiteSpace(state.winnerTicketId))
+            if (state == null ||
+                state.duelOpponentTeamIndex < 0 ||
+                state.duelOpponentSpawnSlotIndex < 0)
             {
-                gameHud?.SetDuelRoundBanner("Ничья");
+                return;
             }
+
+            presenceSync?.SnapAllRemoteAvatarsToDuelSpawn(
+                state.duelOpponentTeamIndex,
+                state.duelOpponentSpawnSlotIndex);
         }
 
         private bool IsLocalPlayerAlive()
@@ -326,7 +344,12 @@ namespace ShooterPrototype.Player
 
         private void TryApplySpawnTeleport(RealtimeTransportClient.MatchStateMessage state, bool phaseEntered)
         {
-            if (currentPhase != "round_pick" || !phaseEntered)
+            if (!phaseEntered)
+            {
+                return;
+            }
+
+            if (currentPhase != "round_pick" && currentPhase != "prep")
             {
                 return;
             }
@@ -404,6 +427,7 @@ namespace ShooterPrototype.Player
             }
 
             localWeaponPickedThisRoundPick = true;
+            ApplyLocalWeaponKind(kind);
             transportClient?.SendDuelWeaponPick((int)kind);
             fpsController?.SetWeaponPickUiMode(false);
             gameHud?.HideDuelWeaponPickPanel();

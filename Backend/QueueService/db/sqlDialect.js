@@ -31,6 +31,10 @@ function adaptSqlForDriver(sql, driver) {
     "UPDATE player_profiles SET rating = GREATEST(0, rating + ?)"
   );
   adapted = adapted.replace(
+    /SET (\w+) = MAX\(0, \1 \+ \?\)/gi,
+    "SET $1 = GREATEST(0, $1 + ?)"
+  );
+  adapted = adapted.replace(
     /completed_at = COALESCE\(completed_at, \?\)/gi,
     "completed_at = COALESCE(completed_at, ?)"
   );

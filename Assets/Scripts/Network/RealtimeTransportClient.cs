@@ -494,6 +494,8 @@ namespace ShooterPrototype.Network
             public int duelPickedWeaponKind = -1;
             public int duelTeamIndex = -1;
             public int duelSpawnSlotIndex = -1;
+            public int duelOpponentTeamIndex = -1;
+            public int duelOpponentSpawnSlotIndex = -1;
         }
 
         [Serializable]
@@ -516,6 +518,24 @@ namespace ShooterPrototype.Network
             public string victimNickname;
             public int weaponKind;
             public string cause;
+        }
+
+        [Serializable]
+        public sealed class MatchStatsMessage
+        {
+            public string type;
+            public string sourceId;
+            public bool won;
+            public int ratingDelta;
+            public bool alreadyReported;
+            public MatchStatsProfileDto profile;
+        }
+
+        [Serializable]
+        public sealed class MatchStatsProfileDto
+        {
+            public int duelRating;
+            public int rating;
         }
 
         [Serializable]
@@ -815,6 +835,7 @@ namespace ShooterPrototype.Network
         public event Action<MatchStateMessage> MatchStateReceived;
         public event Action<MatchDisconnectMessage> MatchDisconnectReceived;
         public event Action<KillFeedMessage> KillFeedReceived;
+        public event Action<MatchStatsMessage> MatchStatsReceived;
         public event Action<PlayerLandMessage> PlayerLandReceived;
 
         private void Awake()
@@ -1868,6 +1889,7 @@ namespace ShooterPrototype.Network
         private sealed class DuelWeaponPickMessage
         {
             public string type;
+            public string ticketId;
             public int weaponKind;
         }
 
@@ -1881,6 +1903,7 @@ namespace ShooterPrototype.Network
             _ = SendJsonAsync(new DuelWeaponPickMessage
             {
                 type = "duel_weapon_pick",
+                ticketId = connectedTicketId,
                 weaponKind = Mathf.Clamp(weaponKind, 0, (int)WeaponKind.Mp7)
             }, cts != null ? cts.Token : CancellationToken.None);
         }
@@ -2657,6 +2680,24 @@ namespace ShooterPrototype.Network
                 {
                     var message = killFeedMessage;
                     EnqueueMainThreadAction(() => KillFeedReceived?.Invoke(message), critical: true);
+                    return;
+                }
+
+                MatchStatsMessage matchStatsMessage = null;
+                try
+                {
+                    matchStatsMessage = JsonUtility.FromJson<MatchStatsMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (matchStatsMessage != null &&
+                    string.Equals(matchStatsMessage.type, "match_stats", StringComparison.Ordinal))
+                {
+                    var message = matchStatsMessage;
+                    EnqueueMainThreadAction(() => MatchStatsReceived?.Invoke(message), critical: true);
                     return;
                 }
 

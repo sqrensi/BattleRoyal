@@ -193,6 +193,22 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            var selectedMode = MainMenuGameModeSelector.SelectedMode;
+            if (MainMenuGameModeUtility.IsOfflineSoloMode(selectedMode))
+            {
+                uiSound?.PlayStart();
+                if (selectedMode == MainMenuGameMode.Challenge)
+                {
+                    StartOfflineChallenge();
+                }
+                else
+                {
+                    StartOfflineTraining();
+                }
+
+                return;
+            }
+
             if (networkLauncher == null)
             {
                 SetStatus("Ошибка: NetworkLauncher не привязан.");

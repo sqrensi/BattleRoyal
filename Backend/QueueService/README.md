@@ -19,7 +19,7 @@ Optional PostgreSQL pool tuning:
 
 When `DATABASE_URL` is set, PostgreSQL is used automatically. For local PostgreSQL testing without `DATABASE_URL`, set `DB_DRIVER=postgres` and provide `DATABASE_URL`.
 
-**Production deploy on a single VPS:** see [DEPLOY-VPS.md](./DEPLOY-VPS.md).
+**Production deploy:** [DEPLOY.md](./DEPLOY.md) (Windows local + VPS). Short VPS checklist: [DEPLOY-VPS.md](./DEPLOY-VPS.md).
 
 ## Endpoints
 
