@@ -76,6 +76,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerMedkitController.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Basic\CallAction.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\EditorScr\Attributes\LabelYGAttribute.cs" />
+    <Compile Include="Assets\Scripts\Player\MatchOfflineDuelController.cs" />
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_WaterBob.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteThirdPersonPlayerBootstrap.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_Demo_RotateCamera.cs" />
@@ -103,6 +104,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerHeadMaskSelector.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponLoadout.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Basic\OptionalPlatform.cs" />
+    <Compile Include="Assets\Scripts\Player\DuelNavBotController.cs" />
     <Compile Include="Assets\Scripts\Matchmaking\QueueServiceMock.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerCurrencyService.cs" />
     <Compile Include="Assets\Scripts\Player\TrainingBotLocomotionPresenter.cs" />
@@ -281,6 +283,7 @@
     <Compile Include="Assets\PluginYourGames\Modules\AutoTranslateLangs\Scripts\AutoLang_info.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\InfoYG\BasicSettings.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\EditorScr\Attributes\ColorYGAttribute.cs" />
+    <Compile Include="Assets\Scripts\Player\RemotePlayerLocomotionUtility.cs" />
     <Compile Include="Assets\Scripts\Player\PickupKind.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyCharacterVisualBinder.cs" />
     <Compile Include="Assets\PluginYourGames\Example\Scripts\Scenes\AllDemoScenes.cs" />
@@ -304,6 +307,7 @@
     <Compile Include="Assets\Scripts\UI\MainMenuUiLayout.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo_New.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerIdentityService.cs" />
+    <Compile Include="Assets\Scripts\Bootstrap\OfflineDuelBootstrap.cs" />
     <Compile Include="Assets\Scripts\Player\ChallengeTarget.cs" />
     <Compile Include="Assets\PluginYourGames\Example\Scripts\DemoTextTranslateRU.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Platform\ProjectSettings.cs" />
@@ -338,6 +342,7 @@
     <Compile Include="Assets\PluginYourGames\Scripts\Basic\YG2.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyHandAttachedWeaponMount.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Spawn System\CFX_SpawnSystem.cs" />
+    <Compile Include="Assets\Scripts\Player\DuelBotLineOfSight.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponRaycastFilters.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteWeaponPresentation.cs" />

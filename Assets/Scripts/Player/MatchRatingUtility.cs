@@ -30,5 +30,17 @@ namespace ShooterPrototype.Player
         {
             return delta >= 0 ? $"+{delta}" : delta.ToString();
         }
+
+        public static int RollNearbyDuelRating(int playerRating)
+        {
+            var baseRating = Mathf.Max(0, playerRating);
+            var offset = Random.Range(18, 91);
+            if (Random.value < 0.5f)
+            {
+                offset = -offset;
+            }
+
+            return Mathf.Max(0, baseRating + offset);
+        }
     }
 }

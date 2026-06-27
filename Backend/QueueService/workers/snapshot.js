@@ -1,6 +1,6 @@
 "use strict";
 
-const { encodeSnapshotBinary } = require("../network/packets");
+const { encodeSnapshotRts1 } = require("../network/snapshotBinary");
 
 function buildSnapshotFrame(matchId, tick, players, phase, round) {
   return {
@@ -29,7 +29,11 @@ function maybeEncodeBinary(frame, useBinary) {
   if (!useBinary) {
     return { encoding: "json", payload: frame };
   }
-  return { encoding: "binary", payload: encodeSnapshotBinary(frame) };
+
+  return {
+    encoding: "binary",
+    payload: encodeSnapshotRts1(frame),
+  };
 }
 
 module.exports = {

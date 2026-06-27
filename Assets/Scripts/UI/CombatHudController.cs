@@ -242,7 +242,7 @@ namespace ShooterPrototype.UI
 
             var victim = string.IsNullOrWhiteSpace(victimNickname) ? "Игрок" : victimNickname.Trim();
             killBannerText.text = ActiveMatchContext.IsDuel
-                ? "Вы убили"
+                ? $"Вы убили \"{victim}\""
                 : $"Вы убили игрока \"{victim}\"";
             killBannerText.color = UiTheme.TextAccent;
             ActivateBanner(KillBannerFadeInSeconds + KillBannerHoldSeconds);
@@ -251,6 +251,16 @@ namespace ShooterPrototype.UI
         public void ShowTrainingKillBanner(string victimLabel)
         {
             ShowKillBanner(victimLabel);
+        }
+
+        public void ShowDuelKillBanner(string victimNickname)
+        {
+            ShowKillBanner(victimNickname);
+        }
+
+        public void ShowDuelDeathBanner(string killerNickname)
+        {
+            ShowDeathBanner(killerNickname);
         }
 
         public void ShowDuelRoundBanner(string message)
@@ -293,7 +303,7 @@ namespace ShooterPrototype.UI
             {
                 var killer = string.IsNullOrWhiteSpace(killerNickname) ? "Игрок" : killerNickname.Trim();
                 killBannerText.text = ActiveMatchContext.IsDuel
-                    ? "Вас убили"
+                    ? $"Вас убил \"{killer}\""
                     : $"Вас убил игрок \"{killer}\"";
             }
 

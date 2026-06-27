@@ -297,6 +297,19 @@ namespace ShooterPrototype.Player
             enableDeathFall = false;
         }
 
+        public void SetDuelBotEliminationMode(bool enabled)
+        {
+            if (!enabled)
+            {
+                return;
+            }
+
+            trainingBotMode = true;
+            SetNetworkMode(true);
+            SetEliminationMode(true);
+            enableDeathFall = true;
+        }
+
         public void ApplyLocalShooterDamage(float amount, Vector3 hitDirection)
         {
             if (!trainingBotMode || isDead || amount <= 0f)
@@ -427,6 +440,21 @@ namespace ShooterPrototype.Player
                 weaponController.enabled = false;
             }
 
+            var navMeshAgent = GetComponent<UnityEngine.AI.NavMeshAgent>();
+            if (navMeshAgent != null)
+            {
+                navMeshAgent.isStopped = true;
+                navMeshAgent.ResetPath();
+                navMeshAgent.updatePosition = false;
+                navMeshAgent.updateRotation = false;
+                navMeshAgent.enabled = false;
+            }
+
+            if (trainingBotMode)
+            {
+                RemotePlayerLocomotionUtility.StopLocomotionOnDeath(gameObject);
+            }
+
             if (enableDeathFall)
             {
                 StartDeathFallPhysics();
@@ -474,6 +502,12 @@ namespace ShooterPrototype.Player
             {
                 weaponController.RestoreAfterRespawn();
                 weaponController.enabled = true;
+            }
+
+            if (trainingBotMode && GetComponent<DuelNavBotController>() is DuelNavBotController duelBot)
+            {
+                duelBot.RestoreAfterDeathRevival();
+                RemotePlayerLocomotionUtility.FinalizeDuelBotPresentation(gameObject);
             }
 
         }
@@ -628,6 +662,12 @@ namespace ShooterPrototype.Player
                 deathCapsule.height = Mathf.Max(characterController.height, deathCapsule.radius * 2f);
                 deathCapsule.center = characterController.center;
             }
+            else
+            {
+                deathCapsule.radius = 0.32f;
+                deathCapsule.height = 1.8f;
+                deathCapsule.center = new Vector3(0f, 0.9f, 0f);
+            }
 
             deathCapsule.enabled = true;
 
@@ -651,20 +691,21 @@ namespace ShooterPrototype.Player
                 fallDir = transform.forward;
             }
             fallDir.Normalize();
-            var backwardImpulse = networkMode
+            var useRemoteFallProfile = networkMode && !trainingBotMode;
+            var backwardImpulse = useRemoteFallProfile
                 ? Mathf.Max(0f, remoteDeathFallBackwardImpulse)
                 : Mathf.Max(0f, deathFallBackwardImpulse);
-            var upImpulse = networkMode
+            var upImpulse = useRemoteFallProfile
                 ? Mathf.Max(0f, remoteDeathFallUpImpulse)
                 : Mathf.Max(0f, deathFallUpImpulse);
-            var downImpulse = networkMode
+            var downImpulse = useRemoteFallProfile
                 ? Mathf.Max(0f, remoteDeathFallDownImpulse)
                 : Mathf.Max(0f, deathFallDownImpulse);
-            var angularImpulse = networkMode
+            var angularImpulse = useRemoteFallProfile
                 ? Mathf.Max(0f, remoteDeathFallAngularImpulse)
                 : Mathf.Max(0f, deathFallAngularImpulse);
 
-            if (networkMode)
+            if (useRemoteFallProfile)
             {
                 // Remote death: fast but stable drop without spin.
                 deathRigidbody.linearDamping = Mathf.Max(0f, remoteDeathLinearDamping);

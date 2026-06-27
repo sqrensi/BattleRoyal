@@ -363,6 +363,21 @@ namespace ShooterPrototype.Player
             return BuildResolvedNetworkState();
         }
 
+        public static PlayerSkinNetworkState RollRandomBotNetworkState()
+        {
+            return new PlayerSkinNetworkState(
+                RollRandomCatalogSkinId(PlayerSkinSlot.Shirt),
+                RollRandomCatalogSkinId(PlayerSkinSlot.Pants),
+                RollRandomCatalogSkinId(PlayerSkinSlot.Boots),
+                RollRandomCatalogSkinId(PlayerSkinSlot.Gloves),
+                RollRandomCatalogSkinId(PlayerSkinSlot.Face),
+                RollRandomCatalogSkinId(PlayerSkinSlot.Hair),
+                RollRandomCatalogSkinId(PlayerSkinSlot.WeaponAssaultRifle),
+                RollRandomCatalogSkinId(PlayerSkinSlot.WeaponSniperRifle),
+                RollRandomCatalogSkinId(PlayerSkinSlot.WeaponPistol),
+                RollRandomCatalogSkinId(PlayerSkinSlot.WeaponMp7));
+        }
+
         public static PlayerSkinNetworkState CaptureFromEquipped(PlayerProfileEquippedDto equipped)
         {
             if (equipped == null)
@@ -917,6 +932,61 @@ namespace ShooterPrototype.Player
         private static string BuildPrefKey(PlayerSkinSlot slot)
         {
             return PrefKeyPrefix + slot.ToString().ToLowerInvariant();
+        }
+
+        private static string RollRandomCatalogSkinId(PlayerSkinSlot slot)
+        {
+            var options = GetCatalogOptions(slot);
+            if (options == null || options.Count == 0)
+            {
+                return ResolveFallbackCatalogSkinId(slot, Array.Empty<PlayerSkinDefinition>());
+            }
+
+            var validCount = 0;
+            for (var i = 0; i < options.Count; i++)
+            {
+                if (options[i].IsValid && !string.IsNullOrWhiteSpace(options[i].Id))
+                {
+                    validCount++;
+                }
+            }
+
+            if (validCount <= 0)
+            {
+                return ResolveFallbackCatalogSkinId(slot, options);
+            }
+
+            var pick = UnityEngine.Random.Range(0, validCount);
+            for (var i = 0; i < options.Count; i++)
+            {
+                if (!options[i].IsValid || string.IsNullOrWhiteSpace(options[i].Id))
+                {
+                    continue;
+                }
+
+                if (pick == 0)
+                {
+                    return options[i].Id;
+                }
+
+                pick--;
+            }
+
+            return ResolveFallbackCatalogSkinId(slot, options);
+        }
+
+        private static string ResolveFallbackCatalogSkinId(
+            PlayerSkinSlot slot,
+            IReadOnlyList<PlayerSkinDefinition> options)
+        {
+            if (TryResolveDefaultAppliedSkin(slot, options, out var definition) &&
+                definition.IsValid &&
+                !string.IsNullOrWhiteSpace(definition.Id))
+            {
+                return definition.Id;
+            }
+
+            return string.Empty;
         }
     }
 }

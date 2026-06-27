@@ -18,7 +18,20 @@ namespace ShooterPrototype.Matchmaking
 
         public static bool IsSoloPracticeScene => IsTraining || IsChallenge;
 
-        public static bool IsOfflineSoloSession => IsOfflineTrainingSession || IsOfflineChallengeSession;
+        public static bool IsOfflineSoloSession =>
+            IsOfflineTrainingSession || IsOfflineChallengeSession || IsOfflineDuelSession;
+
+        public static bool IsOfflineDuelSession { get; private set; }
+
+        public static void SetOfflineDuelSession(bool active)
+        {
+            IsOfflineDuelSession = active;
+            if (active)
+            {
+                IsOfflineTrainingSession = false;
+                IsOfflineChallengeSession = false;
+            }
+        }
 
         public static void SetOfflineTrainingSession(bool active)
         {
@@ -26,6 +39,7 @@ namespace ShooterPrototype.Matchmaking
             if (active)
             {
                 IsOfflineChallengeSession = false;
+                IsOfflineDuelSession = false;
             }
         }
 
@@ -35,6 +49,7 @@ namespace ShooterPrototype.Matchmaking
             if (active)
             {
                 IsOfflineTrainingSession = false;
+                IsOfflineDuelSession = false;
             }
         }
 

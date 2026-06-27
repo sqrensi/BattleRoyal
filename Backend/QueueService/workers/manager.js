@@ -58,6 +58,8 @@ class WorkerManager {
       workerId,
       tickRateHz: config.tickRateHz,
       snapshotRateHz: config.snapshotRateHz,
+      poseSampleRateHz: config.maxPoseMessagesPerSecond,
+      snapshotHistorySamples: config.snapshotHistorySamples,
       useBinarySnapshots: config.useBinarySnapshots,
       roundsToWin: config.roundsToWin,
       weaponPickTimeoutMs: config.weaponPickTimeoutMs,

@@ -2,8 +2,11 @@
 
 const crypto = require("crypto");
 const config = require("../config");
-const playerRepository = require("../db/playerRepository");
 const { DuelBot } = require("./duelBot");
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 class BotManager {
   constructor() {
@@ -11,6 +14,7 @@ class BotManager {
     this.httpBase = `http://${config.botHttpHost}:${config.botHttpPort}`;
     this.wsUrl = `ws://${config.botWsHost}:${config.botWsPort}`;
     this.autoFillTimer = null;
+    this.spawnInProgress = false;
   }
 
   stats() {
@@ -30,36 +34,61 @@ class BotManager {
       httpBase: this.httpBase,
       wsUrl: this.wsUrl,
       autoFillTarget: config.botAutoFillTarget,
+      spawnInProgress: this.spawnInProgress,
       bots: items,
     };
   }
 
+  startBot(job) {
+    const { id, playerId } = job;
+    const bot = new DuelBot({
+      id,
+      playerId,
+      httpBase: this.httpBase,
+      wsUrl: this.wsUrl,
+      onLog: (line) => {
+        if (config.debugRealtime) {
+          console.log(`[bot] ${line}`);
+        }
+      },
+    });
+
+    this.bots.set(id, bot);
+    void bot.start().finally(() => {
+      this.bots.delete(id);
+    });
+    return id;
+  }
+
   async spawn(count) {
-    const total = Math.max(0, Math.min(500, Math.floor(Number(count) || 0)));
+    const total = Math.max(0, Math.min(config.botSpawnMax || 500, Math.floor(Number(count) || 0)));
+    if (total <= 0) {
+      return { spawned: 0, botIds: [] };
+    }
+
+    if (this.spawnInProgress) {
+      return { spawned: 0, botIds: [], skipped: "spawn_in_progress" };
+    }
+
+    this.spawnInProgress = true;
     const created = [];
+    const chunkSize = Math.max(5, config.botSpawnChunkSize || 25);
 
-    for (let i = 0; i < total; i++) {
-      const id = `bot-${crypto.randomUUID().slice(0, 8)}`;
-      const playerId = `bot-player-${id}`;
-      await playerRepository.ensurePlayer(playerId);
+    try {
+      for (let offset = 0; offset < total; offset += chunkSize) {
+        const batchCount = Math.min(chunkSize, total - offset);
+        for (let i = 0; i < batchCount; i++) {
+          const id = `bot-${crypto.randomUUID().slice(0, 8)}`;
+          const playerId = `bot-player-${id}`;
+          created.push(this.startBot({ id, playerId }));
+        }
 
-      const bot = new DuelBot({
-        id,
-        playerId,
-        httpBase: this.httpBase,
-        wsUrl: this.wsUrl,
-        onLog: (line) => {
-          if (config.debugRealtime) {
-            console.log(`[bot] ${line}`);
-          }
-        },
-      });
-
-      this.bots.set(id, bot);
-      created.push(id);
-      void bot.start().finally(() => {
-        this.bots.delete(id);
-      });
+        if (offset + batchCount < total) {
+          await sleep(400);
+        }
+      }
+    } finally {
+      this.spawnInProgress = false;
     }
 
     return { spawned: created.length, botIds: created };
@@ -70,6 +99,7 @@ class BotManager {
       bot.stop();
     }
     this.bots.clear();
+    this.spawnInProgress = false;
     if (this.autoFillTimer) {
       clearInterval(this.autoFillTimer);
       this.autoFillTimer = null;
@@ -82,12 +112,16 @@ class BotManager {
       return;
     }
 
-    this.autoFillTimer = setInterval(() => {
+    const tick = () => {
       const deficit = config.botAutoFillTarget - this.bots.size;
-      if (deficit > 0) {
-        void this.spawn(deficit);
+      if (deficit > 0 && !this.spawnInProgress) {
+        const chunk = Math.min(deficit, Math.max(5, config.botSpawnChunkSize || 25));
+        void this.spawn(chunk);
       }
-    }, 5000);
+    };
+
+    tick();
+    this.autoFillTimer = setInterval(tick, 5000);
   }
 }
 

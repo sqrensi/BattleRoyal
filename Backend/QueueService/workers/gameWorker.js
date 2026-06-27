@@ -1,6 +1,8 @@
 "use strict";
 
 const { parentPort, workerData } = require("worker_threads");
+const config = require("../config");
+const log = require("../lib/logger");
 const Duel = require("./duel");
 const { MasterToWorker, WorkerToMaster, PlayerEventType } = require("./protocol");
 const { maybeEncodeBinary } = require("./snapshot");
@@ -8,6 +10,8 @@ const { maybeEncodeBinary } = require("./snapshot");
 const limits = {
   tickRateHz: workerData.tickRateHz,
   snapshotRateHz: workerData.snapshotRateHz,
+  poseSampleRateHz: workerData.poseSampleRateHz,
+  snapshotHistorySamples: workerData.snapshotHistorySamples,
   useBinarySnapshots: workerData.useBinarySnapshots,
   roundsToWin: workerData.roundsToWin,
   weaponPickTimeoutMs: workerData.weaponPickTimeoutMs,
@@ -22,6 +26,7 @@ const limits = {
 };
 
 const matches = new Map();
+const pendingPlayerEvents = new Map();
 const tickIntervalMs = Math.max(1, Math.floor(1000 / limits.tickRateHz));
 const snapshotIntervalMs = Math.max(1, Math.floor(1000 / limits.snapshotRateHz));
 
@@ -41,45 +46,85 @@ function sendToPlayers(match, fn) {
 
 function deliverOutbox(match) {
   for (const item of match.flushOutbox()) {
+    const message = item.message;
     post(WorkerToMaster.PLAYER_MESSAGE, {
       matchId: match.id,
       ticketId: item.ticketId,
-      message: item.message,
+      preSerialized: typeof message === "object" && message !== null,
+      message: typeof message === "object" && message !== null ? JSON.stringify(message) : message,
     });
   }
 }
 
-function broadcastSnapshot(match, nowMs) {
-  if (!match.shouldSendSnapshot(nowMs, snapshotIntervalMs)) {
+function broadcastSnapshot(match, nowMs, force) {
+  if (!force && !match.shouldSendSnapshot(nowMs, snapshotIntervalMs)) {
     return;
   }
 
   match.lastSnapshotMs = nowMs;
-  match.dirty = false;
+  match.snapshotDirty = false;
 
   for (const player of match.players) {
     const frame = match.buildSnapshotForViewer(player.ticketId);
     const encoded = maybeEncodeBinary(frame, limits.useBinarySnapshots);
+    if (encoded.encoding === "json") {
+      post(WorkerToMaster.SNAPSHOT, {
+        matchId: match.id,
+        ticketId: player.ticketId,
+        encoding: "json",
+        preSerialized: true,
+        payload: JSON.stringify(encoded.payload),
+      });
+      continue;
+    }
+
+    const binaryPayload = encoded.payload;
+    const binaryValid = Buffer.isBuffer(binaryPayload) &&
+      binaryPayload.length >= 4 &&
+      binaryPayload.toString("ascii", 0, 4) === "RTS1";
+    if (!binaryValid) {
+      log.warn("snapshot", `invalid RTS1 payload for ${String(player.ticketId).slice(0, 8)}, sending JSON`);
+      post(WorkerToMaster.SNAPSHOT, {
+        matchId: match.id,
+        ticketId: player.ticketId,
+        encoding: "json",
+        preSerialized: true,
+        payload: JSON.stringify(frame),
+      });
+      continue;
+    }
 
     post(WorkerToMaster.SNAPSHOT, {
       matchId: match.id,
       ticketId: player.ticketId,
       encoding: encoded.encoding,
-      payload: encoded.payload,
+      payload: binaryPayload,
     });
   }
-
-  broadcastMatchState(match);
 }
 
 function broadcastMatchState(match) {
   for (const player of match.players) {
+    const state = match.buildStateForTicket(player.ticketId);
     post(WorkerToMaster.MATCH_STATE, {
       matchId: match.id,
       ticketId: player.ticketId,
-      state: match.buildStateForTicket(player.ticketId),
+      preSerialized: true,
+      state: JSON.stringify(state),
     });
   }
+  match.stateDirty = false;
+  match.lastStateBroadcastMs = Date.now();
+}
+
+function maybeBroadcastMatchState(match, nowMs) {
+  const timerActive = match.timerEndsAtMs > nowMs;
+  const timerTickDue = timerActive && nowMs - match.lastStateBroadcastMs >= 1000;
+  if (!match.stateDirty && !timerTickDue) {
+    return;
+  }
+
+  broadcastMatchState(match);
 }
 
 function removeMatch(matchId) {
@@ -103,6 +148,85 @@ process.on("unhandledRejection", (reason) => {
   reportWorkerError("unhandledRejection", reason instanceof Error ? reason : new Error(String(reason)));
 });
 
+function flushPendingPlayerEvents(matchId) {
+  const pending = pendingPlayerEvents.get(matchId);
+  if (!pending || pending.length === 0) {
+    return;
+  }
+  pendingPlayerEvents.delete(matchId);
+  for (const msg of pending) {
+    handlePlayerEvent(msg);
+  }
+}
+
+function handlePlayerEvent(msg) {
+  const match = matches.get(msg.matchId);
+  if (!match || match.finished) {
+    return false;
+  }
+
+  const nowMs = Date.now();
+  const { ticketId, eventType, payload } = msg;
+
+  switch (eventType) {
+    case PlayerEventType.JOIN:
+      match.onJoin(ticketId);
+      post(WorkerToMaster.PLAYER_MESSAGE, {
+        matchId: match.id,
+        ticketId,
+        preSerialized: true,
+        message: JSON.stringify({ type: "joined", ticketId, matchId: match.id }),
+      });
+      broadcastMatchState(match);
+      broadcastSnapshot(match, nowMs, true);
+      {
+        const joined = match.getPlayer(ticketId);
+        const connectedCount = match.players.filter((p) => p.connected).length;
+        const frame = match.buildSnapshotForViewer(ticketId);
+        const remoteCount = Array.isArray(frame.players) ? frame.players.length : 0;
+        log.info(
+          "ws",
+          `join worker ticket=${String(ticketId).slice(0, 8)} connected=${joined && joined.connected ? 1 : 0} ` +
+          `matchConnected=${connectedCount}/${match.players.length} snapshotRemotes=${remoteCount} phase=${match.phase}`
+        );
+      }
+      break;
+    case PlayerEventType.POSE:
+      match.onPose(ticketId, payload || {}, nowMs);
+      break;
+    case PlayerEventType.WEAPON_PICK:
+      match.onWeaponPick(ticketId, payload || {}, nowMs);
+      broadcastMatchState(match);
+      break;
+    case PlayerEventType.SHOT:
+      match.onShot(ticketId, payload || {}, nowMs);
+      break;
+    case PlayerEventType.HIT:
+      match.onHit(ticketId, payload || {}, nowMs);
+      deliverOutbox(match);
+      broadcastMatchState(match);
+      break;
+    default:
+      break;
+  }
+
+  if (match.finished) {
+    broadcastMatchState(match);
+    post(WorkerToMaster.MATCH_FINISHED, {
+      matchId: match.id,
+      winnerTicketId: match.winnerTicketId,
+      roundWins: match.roundWins,
+    });
+    removeMatch(match.id);
+    return true;
+  }
+
+  if (match.stateDirty) {
+    maybeBroadcastMatchState(match, nowMs);
+  }
+  return true;
+}
+
 parentPort.on("message", (msg) => {
   if (!msg || !msg.type) {
     return;
@@ -112,6 +236,8 @@ parentPort.on("message", (msg) => {
     const duel = new Duel(msg.match, limits);
     matches.set(msg.match.id, duel);
     post(WorkerToMaster.MATCH_CREATED, { matchId: msg.match.id, playerTicketIds: duel.players.map((p) => p.ticketId) });
+    // Apply WS joins that arrived before the worker finished creating the match.
+    flushPendingPlayerEvents(msg.match.id);
     broadcastMatchState(duel);
     return;
   }
@@ -119,6 +245,7 @@ parentPort.on("message", (msg) => {
   if (msg.type === MasterToWorker.SHUTDOWN) {
     running = false;
     matches.clear();
+    pendingPlayerEvents.clear();
     return;
   }
 
@@ -142,62 +269,16 @@ parentPort.on("message", (msg) => {
   }
 
   if (msg.type === MasterToWorker.PLAYER_EVENT) {
-    const match = matches.get(msg.matchId);
-    if (!match || match.finished) {
+    if (!matches.get(msg.matchId)) {
+      if (!pendingPlayerEvents.has(msg.matchId)) {
+        pendingPlayerEvents.set(msg.matchId, []);
+      }
+      pendingPlayerEvents.get(msg.matchId).push(msg);
       return;
     }
 
-    const nowMs = Date.now();
-    const { ticketId, eventType, payload } = msg;
-
-    switch (eventType) {
-      case PlayerEventType.JOIN:
-        match.onJoin(ticketId);
-        post(WorkerToMaster.PLAYER_MESSAGE, {
-          matchId: match.id,
-          ticketId,
-          message: { type: "joined", ticketId, matchId: match.id },
-        });
-        broadcastMatchState(match);
-        break;
-      case PlayerEventType.POSE:
-        match.onPose(ticketId, payload || {}, nowMs);
-        break;
-      case PlayerEventType.WEAPON_PICK:
-        match.onWeaponPick(ticketId, payload || {}, nowMs);
-        broadcastMatchState(match);
-        break;
-      case PlayerEventType.SHOT:
-        match.onShot(ticketId, payload || {}, nowMs);
-        break;
-      case PlayerEventType.HIT:
-        match.onHit(ticketId, payload || {}, nowMs);
-        deliverOutbox(match);
-        broadcastMatchState(match);
-        break;
-      case PlayerEventType.PING:
-        post(WorkerToMaster.PLAYER_MESSAGE, {
-          matchId: match.id,
-          ticketId,
-          message: { type: "pong", clientTimeMs: payload && payload.clientTimeMs },
-        });
-        break;
-      default:
-        break;
-    }
-
-    if (match.finished) {
-      broadcastMatchState(match);
-      post(WorkerToMaster.MATCH_FINISHED, {
-        matchId: match.id,
-        winnerTicketId: match.winnerTicketId,
-        roundWins: match.roundWins,
-      });
-      removeMatch(match.id);
-      return;
-    }
-
-    broadcastSnapshot(match, nowMs);
+    handlePlayerEvent(msg);
+    return;
   }
 });
 
@@ -217,6 +298,7 @@ const loop = setInterval(() => {
     try {
       match.tick(nowMs);
       deliverOutbox(match);
+      maybeBroadcastMatchState(match, nowMs);
       broadcastSnapshot(match, nowMs);
 
       if (match.finished) {

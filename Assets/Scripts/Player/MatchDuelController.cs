@@ -10,6 +10,7 @@ namespace ShooterPrototype.Player
     public sealed class MatchDuelController : MonoBehaviour
     {
         private RealtimeTransportClient transportClient;
+        private NetworkLauncher networkLauncher;
         private GameHudController gameHud;
         private Transform localPlayer;
         private FpsCharacterController fpsController;
@@ -31,6 +32,8 @@ namespace ShooterPrototype.Player
         private int lastTeleportTeamIndex = -1;
         private int lastTeleportSlotIndex = -1;
         private bool localWeaponPickedThisRoundPick;
+        private string cachedOpponentNickname = string.Empty;
+        private int cachedOpponentDuelRating;
 
         public bool ShouldSuppressPoseReconcile =>
             string.Equals(currentPhase, "ending", StringComparison.Ordinal);
@@ -49,11 +52,12 @@ namespace ShooterPrototype.Player
             lastTeleportSlotIndex = -1;
             localWeaponPickedThisRoundPick = false;
             remotesRevealed = false;
+            cachedOpponentNickname = string.Empty;
+            cachedOpponentDuelRating = 0;
             currentPhase = "lobby";
             lastState = null;
             DuelSpawnUtility.ClearCachedRoots();
             WeaponCatalog.PrewarmAllWeaponPrefabs();
-            presenceSync?.SetRemoteAvatarsVisible(false);
             fpsController?.SetWeaponPickUiMode(false);
             gameHud?.HideDuelWeaponPickPanel();
             weaponController?.SetDuelFireBlocked(true);
@@ -90,6 +94,19 @@ namespace ShooterPrototype.Player
 
         private void Update()
         {
+            if (presenceSync == null)
+            {
+                EnsureLocalPlayerBound();
+            }
+
+            if (!remotesRevealed &&
+                presenceSync != null &&
+                presenceSync.RemoteAvatarCount > 0)
+            {
+                remotesRevealed = true;
+                presenceSync.SetRemoteAvatarsVisible(true);
+            }
+
             if (lastState == null)
             {
                 return;
@@ -146,7 +163,13 @@ namespace ShooterPrototype.Player
         {
             if (transportClient == null)
             {
-                transportClient = FindFirstObjectByType<RealtimeTransportClient>();
+                transportClient = RealtimeTransportClient.Active ??
+                                  FindFirstObjectByType<RealtimeTransportClient>();
+            }
+
+            if (networkLauncher == null)
+            {
+                networkLauncher = FindFirstObjectByType<NetworkLauncher>();
             }
 
             if (gameHud == null)
@@ -201,7 +224,9 @@ namespace ShooterPrototype.Player
 
         private void HandleMatchState(RealtimeTransportClient.MatchStateMessage state)
         {
-            if (state == null || !string.Equals(state.matchMode, "duel", StringComparison.OrdinalIgnoreCase))
+            if (state == null ||
+                ActiveMatchContext.IsOfflineDuelSession ||
+                !string.Equals(state.matchMode, "duel", StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
@@ -218,25 +243,29 @@ namespace ShooterPrototype.Player
                 }
             }
 
-            if (!remotesRevealed)
-            {
-                presenceSync?.SetRemoteAvatarsVisible(false);
-            }
-
             lastState = state;
-            RevealRemotesIfNeeded();
+            RevealRemotesIfNeeded(state);
             ApplyPhase(state);
         }
 
-        private void RevealRemotesIfNeeded()
+        private void RevealRemotesIfNeeded(RealtimeTransportClient.MatchStateMessage state = null)
         {
-            if (remotesRevealed || lastState == null)
+            var snapshot = state ?? lastState;
+            if (remotesRevealed || snapshot == null)
             {
                 return;
             }
 
-            var phase = lastState.phase ?? "lobby";
-            if (string.Equals(phase, "lobby", StringComparison.OrdinalIgnoreCase))
+            if (presenceSync != null && presenceSync.RemoteAvatarCount > 0)
+            {
+                remotesRevealed = true;
+                presenceSync.SetRemoteAvatarsVisible(true);
+                return;
+            }
+
+            var phase = snapshot.phase ?? "lobby";
+            var connected = Mathf.Max(0, snapshot.connectedCount);
+            if (string.Equals(phase, "lobby", StringComparison.OrdinalIgnoreCase) && connected < 2)
             {
                 return;
             }
@@ -276,6 +305,11 @@ namespace ShooterPrototype.Player
                     SetCombatEnabled(false);
                     fpsController?.SetWeaponPickUiMode(false);
                     gameHud?.HideDuelWeaponPickPanel();
+                    if (phaseEntered)
+                    {
+                        remotesRevealed = true;
+                        presenceSync?.SetRemoteAvatarsVisible(true);
+                    }
                     break;
                 case "round_end":
                     SetMovementLocked(false);
@@ -561,7 +595,67 @@ namespace ShooterPrototype.Player
                 state.duelRoundsToWin,
                 state.countdownRemainingSeconds,
                 BuildDuelPhaseLabel(state));
+            RefreshDuelPlayersPanel(state);
             RefreshMatchWaitStatus(state);
+        }
+
+        private void RefreshDuelPlayersPanel(RealtimeTransportClient.MatchStateMessage state)
+        {
+            if (gameHud == null || state == null)
+            {
+                return;
+            }
+
+            var localTicketId = !string.IsNullOrWhiteSpace(state.localTicketId)
+                ? state.localTicketId.Trim()
+                : networkLauncher != null && !string.IsNullOrWhiteSpace(networkLauncher.CurrentTicketId)
+                    ? networkLauncher.CurrentTicketId.Trim()
+                    : string.Empty;
+            var localNick = PlayerProfileService.Nickname;
+            var localRating = ResolveDuelPanelRating(
+                state.duelLocalDuelRating,
+                PlayerProfileService.DuelRating);
+
+            if (!string.IsNullOrWhiteSpace(state.duelOpponentNickname))
+            {
+                cachedOpponentNickname = state.duelOpponentNickname.Trim();
+            }
+
+            if (state.duelOpponentDuelRating > 0)
+            {
+                cachedOpponentDuelRating = state.duelOpponentDuelRating;
+            }
+
+            if (presenceSync != null &&
+                presenceSync.TryGetDuelOpponentDisplay(
+                    localTicketId,
+                    out var snapshotNickname,
+                    out var snapshotRating))
+            {
+                if (!string.IsNullOrWhiteSpace(snapshotNickname))
+                {
+                    cachedOpponentNickname = snapshotNickname;
+                }
+
+                if (snapshotRating > 0)
+                {
+                    cachedOpponentDuelRating = snapshotRating;
+                }
+            }
+
+            var opponentNick = cachedOpponentNickname;
+            var opponentRating = ResolveDuelPanelRating(
+                cachedOpponentDuelRating,
+                MatchRatingUtility.DefaultRating);
+
+            gameHud.SetDuelPlayersPanel(localNick, localRating, opponentNick, opponentRating);
+        }
+
+        private static int ResolveDuelPanelRating(int primaryRating, int fallbackRating)
+        {
+            return primaryRating > 0
+                ? primaryRating
+                : Mathf.Max(0, fallbackRating);
         }
 
         private void RefreshMatchWaitStatus(RealtimeTransportClient.MatchStateMessage message)
@@ -577,7 +671,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            switch (message.phase)
+            switch (currentPhase)
             {
                 case "lobby":
                     gameHud.SetMatchStatusMessage(
@@ -598,6 +692,10 @@ namespace ShooterPrototype.Player
             var countdown = Mathf.Max(0, state.countdownRemainingSeconds);
             switch (currentPhase)
             {
+                case "lobby":
+                    return $"Ожидание игроков ({state.connectedCount}/2)";
+                case "countdown":
+                    return $"Старт через {countdown} сек.";
                 case "prep":
                     return $"Подготовка — {countdown} сек.";
                 case "round_pick":

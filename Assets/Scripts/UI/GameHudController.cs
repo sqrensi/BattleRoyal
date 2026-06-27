@@ -29,6 +29,7 @@ namespace ShooterPrototype.UI
         private const int GameplayHintLayoutVersion = 5;
         private const int MatchWaitStatusLayoutVersion = 5;
         private const int DuelTopCenterHudLayoutVersion = 2;
+        private const int DuelPlayersPanelLayoutVersion = 3;
         private const int DuelRoundCountdownLayoutVersion = 1;
         private const int DuelWeaponPickLayoutVersion = 1;
         private const float GameplayHintOffsetX = 72f;
@@ -62,6 +63,7 @@ namespace ShooterPrototype.UI
         private GameObject legacyInventoryPanel;
         private TMP_Text matchStatusText;
         private TMP_Text duelTopCenterText;
+        private TMP_Text duelPlayersPanelText;
         private TMP_Text duelRoundCountdownText;
         private RectTransform duelWeaponPickPanel;
         private readonly Dictionary<WeaponKind, Image> duelWeaponPickIcons = new Dictionary<WeaponKind, Image>(4);
@@ -512,10 +514,15 @@ namespace ShooterPrototype.UI
             }
 
             var scoreLine = $"{Mathf.Max(0, localWins)} : {Mathf.Max(0, opponentWins)}";
-            var detailLine = !string.IsNullOrWhiteSpace(phaseLabel)
-                ? phaseLabel
-                : $"Раунд {Mathf.Max(1, roundNumber)} — {Mathf.Max(0, countdownSeconds)} сек.";
-            duelTopCenterText.text = $"{scoreLine}\n{detailLine}";
+            var detailLine = phaseLabel ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(detailLine) && roundNumber > 0)
+            {
+                detailLine = $"Раунд {Mathf.Max(1, roundNumber)} — {Mathf.Max(0, countdownSeconds)} сек.";
+            }
+
+            duelTopCenterText.text = string.IsNullOrWhiteSpace(detailLine)
+                ? scoreLine
+                : $"{scoreLine}\n{detailLine}";
             ApplyBoldHudText(duelTopCenterText);
             ApplyDuelTopCenterPanelLayout(compact: false);
             var panel = duelTopCenterText.transform.parent;
@@ -530,6 +537,7 @@ namespace ShooterPrototype.UI
         public void ClearDuelMatchHud()
         {
             ClearDuelRoundEndCountdown();
+            ClearDuelPlayersPanel();
             if (duelTopCenterText == null)
             {
                 return;
@@ -542,6 +550,65 @@ namespace ShooterPrototype.UI
             {
                 panel.gameObject.SetActive(false);
             }
+        }
+
+        public void SetDuelPlayersPanel(
+            string localNickname,
+            int localRating,
+            string opponentNickname,
+            int opponentRating)
+        {
+            EnsureHudExists();
+            EnsureDuelPlayersPanel(canvas != null ? canvas.transform : null);
+            if (duelPlayersPanelText == null)
+            {
+                return;
+            }
+
+            var localName = FormatDuelHudName(localNickname, "Вы");
+            var opponentName = FormatDuelHudName(opponentNickname, "Соперник");
+            duelPlayersPanelText.text =
+                $"{FormatDuelPlayerLine(localName, localRating)}\n{FormatDuelPlayerLine(opponentName, opponentRating)}";
+            ApplyBoldHudText(duelPlayersPanelText);
+
+            var panel = duelPlayersPanelText.transform.parent;
+            if (panel != null)
+            {
+                panel.gameObject.SetActive(true);
+            }
+
+            duelPlayersPanelText.gameObject.SetActive(true);
+        }
+
+        public void ClearDuelPlayersPanel()
+        {
+            if (duelPlayersPanelText == null)
+            {
+                return;
+            }
+
+            duelPlayersPanelText.text = string.Empty;
+            duelPlayersPanelText.gameObject.SetActive(false);
+            var panel = duelPlayersPanelText.transform.parent;
+            if (panel != null)
+            {
+                panel.gameObject.SetActive(false);
+            }
+        }
+
+        private static string FormatDuelHudName(string nickname, string fallback)
+        {
+            return string.IsNullOrWhiteSpace(nickname) ? fallback : nickname.Trim();
+        }
+
+        private static string FormatDuelRating(int rating)
+        {
+            return Mathf.Max(0, rating).ToString("N0");
+        }
+
+        private static string FormatDuelPlayerLine(string nickname, int rating)
+        {
+            return $"{nickname}  {FormatDuelRating(rating)}";
         }
 
         public void SetTrainingTimerSeconds(int secondsRemaining)
@@ -1072,7 +1139,7 @@ namespace ShooterPrototype.UI
                 matchRewardCoroutine = StartCoroutine(GrantMatchRewardRoutine(summary.CoinReward));
             }
 
-            if (!matchStatsReported && !ActiveMatchContext.IsDuel)
+            if (!matchStatsReported && ShouldReportMatchStatsViaProfileApi())
             {
                 matchStatsReported = true;
                 if (matchStatsCoroutine != null)
@@ -1159,6 +1226,17 @@ namespace ShooterPrototype.UI
             }
 
             matchRewardCoroutine = null;
+        }
+
+        private static bool ShouldReportMatchStatsViaProfileApi()
+        {
+            if (!ActiveMatchContext.IsDuel)
+            {
+                return true;
+            }
+
+            return ActiveMatchContext.IsOfflineDuelSession &&
+                   PlayerProfileService.CanReportMatchStatsToServer;
         }
 
         private int ResolveGameOverRatingDelta(bool won, MatchOutcomeSummary summary)
@@ -1261,6 +1339,11 @@ namespace ShooterPrototype.UI
 
         private string ResolveMatchRewardSourceId()
         {
+            if (ActiveMatchContext.IsOfflineDuelSession)
+            {
+                return $"offline-duel:{System.Guid.NewGuid():N}";
+            }
+
             if (networkLauncher != null)
             {
                 if (!string.IsNullOrWhiteSpace(networkLauncher.CurrentMatchId))
@@ -1450,6 +1533,7 @@ namespace ShooterPrototype.UI
                 EnsureCornerStatsPanel(canvas.transform);
                 EnsureMatchCornerStatsPanel(canvas.transform);
                 EnsureDuelTopCenterHud(canvas.transform);
+                EnsureDuelPlayersPanel(canvas.transform);
                 EnsureMatchOverlayElements(canvas.transform);
                 EnsureGameplayHintPanel(canvas.transform);
                 EnsurePauseMenuPanel(canvas.transform);
@@ -1469,6 +1553,9 @@ namespace ShooterPrototype.UI
             var root = canvas.transform;
             EnsureCornerStatsPanel(root);
             EnsureMatchCornerStatsPanel(root);
+            EnsureDuelPlayersPanel(root);
+            EnsureDuelTopCenterHud(root);
+            EnsureDuelWeaponPickPanel(root);
             EnsureMatchOverlayElements(root);
             EnsureGameplayHintPanel(root);
             EnsurePauseMenuPanel(root);
@@ -1629,6 +1716,7 @@ namespace ShooterPrototype.UI
         {
             EnsureMatchWaitStatusText(root);
             EnsureDuelTopCenterHud(root);
+            EnsureDuelPlayersPanel(root);
             EnsureDuelRoundCountdownText(root);
             EnsureDuelWeaponPickPanel(root);
 
@@ -1794,6 +1882,59 @@ namespace ShooterPrototype.UI
             panel.sizeDelta = new Vector2(420f, 72f);
             duelTopCenterText.fontSize = 22f;
             duelTopCenterText.lineSpacing = -2f;
+        }
+
+        private void EnsureDuelPlayersPanel(Transform root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var existingPanel = root.Find("DuelPlayersPanel");
+            if (existingPanel != null)
+            {
+                var versionMarker = existingPanel.GetComponent<CornerStatsLayoutMarker>();
+                if (versionMarker != null &&
+                    versionMarker.Version >= DuelPlayersPanelLayoutVersion &&
+                    duelPlayersPanelText != null)
+                {
+                    ApplyBoldHudText(duelPlayersPanelText);
+                    return;
+                }
+
+                duelPlayersPanelText = null;
+                Destroy(existingPanel.gameObject);
+            }
+
+            var panelObject = new GameObject("DuelPlayersPanel");
+            panelObject.transform.SetParent(root, false);
+            panelObject.AddComponent<CornerStatsLayoutMarker>().Version = DuelPlayersPanelLayoutVersion;
+
+            var panelRect = panelObject.AddComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0f, 1f);
+            panelRect.anchorMax = new Vector2(0f, 1f);
+            panelRect.pivot = new Vector2(0f, 1f);
+            panelRect.sizeDelta = new Vector2(188f, 52f);
+            panelRect.anchoredPosition = new Vector2(8f, -8f);
+
+            var labelObject = new GameObject("DuelPlayersText");
+            labelObject.transform.SetParent(panelObject.transform, false);
+            var labelRect = labelObject.AddComponent<RectTransform>();
+            labelRect.anchorMin = Vector2.zero;
+            labelRect.anchorMax = Vector2.one;
+            labelRect.offsetMin = new Vector2(2f, 2f);
+            labelRect.offsetMax = new Vector2(-2f, -2f);
+
+            duelPlayersPanelText = labelObject.AddComponent<TextMeshProUGUI>();
+            ApplyBoldHudText(duelPlayersPanelText);
+            duelPlayersPanelText.fontSize = 14f;
+            duelPlayersPanelText.alignment = TextAlignmentOptions.TopLeft;
+            duelPlayersPanelText.enableWordWrapping = false;
+            duelPlayersPanelText.overflowMode = TextOverflowModes.Overflow;
+            duelPlayersPanelText.lineSpacing = -8f;
+            duelPlayersPanelText.text = string.Empty;
+            panelObject.SetActive(false);
         }
 
         private void EnsureDuelRoundCountdownText(Transform root)
@@ -2654,6 +2795,19 @@ namespace ShooterPrototype.UI
                     if (pingText != null)
                     {
                         pingText.text = PlayerProfileService.IsOfflineMode ? "Челлендж (офлайн)" : "Челлендж";
+                    }
+
+                    RefreshFpsText();
+                    yield return new WaitForSecondsRealtime(1f);
+                    continue;
+                }
+
+                if (ActiveMatchContext.IsOfflineDuelSession)
+                {
+                    consecutivePingFailures = 0;
+                    if (pingText != null)
+                    {
+                        pingText.text = "Дуэль с ботом";
                     }
 
                     RefreshFpsText();

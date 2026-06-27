@@ -88,6 +88,7 @@ function applyPresencePose(player, message, nowMs) {
   player.lookPitch = Number.isFinite(pose.lookPitch) ? pose.lookPitch : player.lookPitch;
   player.hasPose = true;
   player.lastPoseMs = nowMs;
+  player.recordStateSample();
   return { ok: true };
 }
 
@@ -133,6 +134,7 @@ function applyPose(player, message, limits, nowMs) {
   player.velZ = pose.velZ;
   player.isGrounded = pose.isGrounded;
   player.lastPoseMs = nowMs;
+  player.recordStateSample();
 
   return { ok: true };
 }

@@ -7,6 +7,7 @@ namespace ShooterPrototype.Player
     public static class WeaponBlockUtility
     {
         private static readonly HashSet<int> ProcessedSceneHandles = new HashSet<int>();
+        private static readonly HashSet<int> ProcessedBotOccluderSceneHandles = new HashSet<int>();
 
         public static int EnsureSceneWeaponBlocks(Scene scene)
         {
@@ -70,6 +71,126 @@ namespace ShooterPrototype.Player
             }
 
             return 0;
+        }
+
+        public static int EnsureSceneBotOccluderProxies(Scene scene)
+        {
+            if (!scene.IsValid() || !scene.isLoaded)
+            {
+                return 0;
+            }
+
+            if (!ProcessedBotOccluderSceneHandles.Add(scene.handle))
+            {
+                return 0;
+            }
+
+            var created = 0;
+            var roots = scene.GetRootGameObjects();
+            for (var i = 0; i < roots.Length; i++)
+            {
+                created += EnsureHierarchyBotOccluderProxies(roots[i].transform);
+            }
+
+            if (created > 0)
+            {
+                Debug.Log($"[WeaponBlockUtility] Created {created} bot occluder proxy collider(s) in scene '{scene.name}'.");
+            }
+
+            return created;
+        }
+
+        public static int EnsureHierarchyBotOccluderProxies(Transform root)
+        {
+            if (root == null)
+            {
+                return 0;
+            }
+
+            var created = 0;
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            for (var i = 0; i < renderers.Length; i++)
+            {
+                created += EnsureRendererBotOccluderProxy(renderers[i]);
+            }
+
+            return created;
+        }
+
+        private static int EnsureRendererBotOccluderProxy(Renderer renderer)
+        {
+            if (renderer == null || !renderer.enabled || !renderer.gameObject.activeInHierarchy)
+            {
+                return 0;
+            }
+
+            if (!IsEnvironmentOccluder(renderer))
+            {
+                return 0;
+            }
+
+            if (ShouldSkipWeaponBlockSetup(renderer.gameObject))
+            {
+                return 0;
+            }
+
+            if (renderer.transform.Find("BotOccluderProxy") != null)
+            {
+                return 0;
+            }
+
+            var proxyObject = new GameObject("BotOccluderProxy");
+            proxyObject.transform.SetParent(renderer.transform, false);
+            proxyObject.transform.localPosition = Vector3.zero;
+            proxyObject.transform.localRotation = Quaternion.identity;
+            proxyObject.transform.localScale = Vector3.one;
+
+            var bounds = renderer.localBounds;
+            var box = proxyObject.AddComponent<BoxCollider>();
+            box.center = bounds.center;
+            box.size = bounds.size;
+            box.isTrigger = false;
+
+            if (WeaponBlockLayers.IsConfigured)
+            {
+                proxyObject.layer = WeaponBlockLayers.LayerIndex;
+            }
+
+            return 1;
+        }
+
+        private static bool IsEnvironmentOccluder(Renderer renderer)
+        {
+            if (renderer == null)
+            {
+                return false;
+            }
+
+            if (LooksLikeEnvironmentWall(renderer))
+            {
+                return true;
+            }
+
+            var current = renderer.transform;
+            while (current != null)
+            {
+                if (string.Equals(current.name, "env", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                current = current.parent;
+            }
+
+            return false;
+        }
+
+        private static bool LooksLikeEnvironmentWall(Renderer renderer)
+        {
+            var name = renderer.name;
+            return name.IndexOf("Wall", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("Pillar", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("Column", System.StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         public static int RemoveAllWeaponBlockProxiesFromScene(Scene scene)
@@ -181,6 +302,7 @@ namespace ShooterPrototype.Player
         public static void ResetProcessedScenesForTests()
         {
             ProcessedSceneHandles.Clear();
+            ProcessedBotOccluderSceneHandles.Clear();
         }
     }
 }

@@ -115,6 +115,8 @@ namespace ShooterPrototype.Player
 
         public static bool UsesLocalProgressOnly => IsOfflineMode || !IsServerSynced;
 
+        public static bool CanReportMatchStatsToServer => IsServerSynced && !IsOfflineMode;
+
         public static void ApplyLiveRatings(int duelRating, int rating)
         {
             if (CurrentProfile == null)

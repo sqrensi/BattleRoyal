@@ -1103,7 +1103,26 @@ namespace ShooterPrototype.Player
             }
 
             var trainingBot = targetCollider.GetComponentInParent<TrainingBotController>();
+            var duelBot = targetCollider.GetComponentInParent<DuelNavBotController>();
             var damage = ResolveDamage(hitZone);
+            if (duelBot != null &&
+                MatchOfflineDuelController.Active != null &&
+                MatchOfflineDuelController.Active.IsSessionActive)
+            {
+                if (hitZone == HitZone.Head)
+                {
+                    var botHealth = duelBot.GetComponent<PlayerHealth>();
+                    if (botHealth != null && !botHealth.IsDead)
+                    {
+                        damage = botHealth.CurrentHealth;
+                    }
+                }
+
+                MatchStatsTracker.AddDamageDealt(damage);
+                duelBot.ApplyHit(damage, shotDirection);
+                return;
+            }
+
             if (trainingBot != null &&
                 MatchTrainingController.Active != null &&
                 MatchTrainingController.Active.IsSessionActive)

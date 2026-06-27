@@ -15,11 +15,154 @@ const { initDatabase } = require("./db/database");
 const { registerProfileRoutes } = require("./db/profileRoutes");
 const playerRepository = require("./db/playerRepository");
 
+function verifySnapshotBinaryCodec() {
+  try {
+    const { encodeSnapshotRts1, VERSION } = require("./network/snapshotBinary");
+    const sample = encodeSnapshotRts1({
+      serverTick: 1,
+      serverTickRate: 30,
+      movementSampleRateHz: 64,
+      players: [{
+        ticketId: "verify-ticket",
+        characterModel: "Ch18",
+        position: { x: 39.05, y: 0.606, z: 288.21 },
+        yaw: 0,
+        hasWeapon: false,
+        weaponKind: 0,
+        weaponSlot0Kind: 255,
+        weaponSlot1Kind: 255,
+        activeWeaponSlot: 255,
+      }],
+    });
+    if (!Buffer.isBuffer(sample) || sample.length < 16 || sample.toString("ascii", 0, 4) !== "RTS1") {
+      throw new Error("encodeSnapshotRts1 produced invalid buffer");
+    }
+    if (sample[4] !== VERSION) {
+      throw new Error(`snapshot version byte ${sample[4]} != ${VERSION}`);
+    }
+    log.info("snapshot", `binary codec OK version=${VERSION} sampleBytes=${sample.length}`);
+  } catch (error) {
+    log.error("snapshot", `binary codec verify failed: ${error.message || error}`);
+    process.exit(1);
+  }
+}
+
+verifySnapshotBinaryCodec();
+
+function asSnapshotBuffer(payload) {
+  if (Buffer.isBuffer(payload)) {
+    return payload;
+  }
+  if (payload instanceof Uint8Array) {
+    return Buffer.from(payload);
+  }
+  if (payload && payload.type === "Buffer" && Array.isArray(payload.data)) {
+    return Buffer.from(payload.data);
+  }
+  return null;
+}
+
+const pendingSnapshotsByTicket = new Map();
+
+function queueSnapshotForTicket(ticketId, msg) {
+  if (!ticketId || !msg) {
+    return;
+  }
+  if (!pendingSnapshotsByTicket.has(ticketId)) {
+    pendingSnapshotsByTicket.set(ticketId, []);
+  }
+  const queue = pendingSnapshotsByTicket.get(ticketId);
+  queue.push(msg);
+  while (queue.length > 48) {
+    queue.shift();
+  }
+}
+
+function flushPendingSnapshotForTicket(ticketId) {
+  const queue = pendingSnapshotsByTicket.get(ticketId);
+  if (!queue || queue.length === 0) {
+    return;
+  }
+
+  while (queue.length > 0) {
+    const pending = queue[0];
+    if (!sendSnapshotToTicket(ticketId, pending, { fromQueue: true })) {
+      break;
+    }
+    queue.shift();
+  }
+
+  if (queue.length === 0) {
+    pendingSnapshotsByTicket.delete(ticketId);
+  }
+}
+
+function sendSnapshotToTicket(ticketId, msg, options) {
+  const fromQueue = !!(options && options.fromQueue);
+  if (msg.encoding === "binary") {
+    const buffer = asSnapshotBuffer(msg.payload);
+    if (buffer && buffer.length >= 4 && buffer.toString("ascii", 0, 4) === "RTS1") {
+      if (wsApi.sendBinary(ticketId, buffer)) {
+        if (!fromQueue) {
+          pendingSnapshotsByTicket.delete(ticketId);
+        }
+        return true;
+      }
+      if (!fromQueue) {
+        queueSnapshotForTicket(ticketId, { encoding: "binary", payload: buffer });
+      }
+      return false;
+    }
+    log.warn(
+      "snapshot",
+      `invalid binary snapshot payload ticket=${String(ticketId).slice(0, 8)} ` +
+      `isBuffer=${Buffer.isBuffer(msg.payload)} len=${buffer ? buffer.length : 0}`
+    );
+    return false;
+  }
+
+  if (msg.preSerialized && typeof msg.payload === "string") {
+    if (wsApi.sendRaw(ticketId, msg.payload, undefined, "snapshot")) {
+      if (!fromQueue) {
+        pendingSnapshotsByTicket.delete(ticketId);
+      }
+      return true;
+    }
+    if (!fromQueue) {
+      queueSnapshotForTicket(ticketId, msg);
+    }
+    return false;
+  }
+
+  if (typeof msg.payload === "string") {
+    if (wsApi.sendRaw(ticketId, msg.payload, undefined, "snapshot")) {
+      if (!fromQueue) {
+        pendingSnapshotsByTicket.delete(ticketId);
+      }
+      return true;
+    }
+    if (!fromQueue) {
+      queueSnapshotForTicket(ticketId, msg);
+    }
+    return false;
+  }
+
+  if (wsApi.sendJson(ticketId, msg.payload)) {
+    if (!fromQueue) {
+      pendingSnapshotsByTicket.delete(ticketId);
+    }
+    return true;
+  }
+  if (!fromQueue) {
+    queueSnapshotForTicket(ticketId, msg);
+  }
+  return false;
+}
+
 const metrics = new Metrics();
 let databaseDriver = "sqlite";
 let shuttingDown = false;
 let botManager = null;
-let aiBotManager = null;
 
 if (config.botsEnabled) {
   const BotManager = require("./bots/botManager");
@@ -51,12 +194,13 @@ function normalizeMatchMode(value) {
   return "duel";
 }
 
-function createTicket(playerId, matchMode, nickname) {
+function createTicket(playerId, matchMode, nickname, duelRating) {
   const ticketId = crypto.randomUUID();
   const ticket = {
     ticketId,
     playerId,
     nickname: nickname || "",
+    duelRating: Number.isFinite(duelRating) ? Math.max(0, duelRating) : 1000,
     matchMode: normalizeMatchMode(matchMode),
     status: "Queued",
     matchId: "",
@@ -67,6 +211,29 @@ function createTicket(playerId, matchMode, nickname) {
   };
   ticketsById.set(ticketId, ticket);
   return ticket;
+}
+
+function cancelQueuedTicketsForPlayer(playerId) {
+  for (let i = queue.length - 1; i >= 0; i--) {
+    const ticket = queue[i];
+    if (ticket && ticket.playerId === playerId && ticket.status === "Queued") {
+      ticket.status = "Cancelled";
+      queue.splice(i, 1);
+    }
+  }
+}
+
+function findActiveMatchedTicket(playerId) {
+  for (const ticket of ticketsById.values()) {
+    if (!ticket || ticket.playerId !== playerId || ticket.status !== "Matched" || !ticket.matchId) {
+      continue;
+    }
+    const match = matchesById.get(ticket.matchId);
+    if (match && match.state !== "ended") {
+      return ticket;
+    }
+  }
+  return null;
 }
 
 function countActiveMatches() {
@@ -88,6 +255,12 @@ async function makeMatch(playerA, playerB) {
     await playerRepository.resolvePlayerNickname(playerA.playerId, playerA.ticketId);
   const nickB = playerB.nickname ||
     await playerRepository.resolvePlayerNickname(playerB.playerId, playerB.ticketId);
+  const duelRatingA = Number.isFinite(playerA.duelRating)
+    ? Math.max(0, playerA.duelRating)
+    : 1000;
+  const duelRatingB = Number.isFinite(playerB.duelRating)
+    ? Math.max(0, playerB.duelRating)
+    : 1000;
   playerA.nickname = nickA;
   playerB.nickname = nickB;
 
@@ -110,15 +283,13 @@ async function makeMatch(playerA, playerB) {
         ticketId: playerA.ticketId,
         playerId: playerA.playerId,
         nickname: nickA,
-        isAiBot: isAiBotTicket(playerA),
-        aiProfile: playerA.aiProfile || null,
+        duelRating: duelRatingA,
       },
       {
         ticketId: playerB.ticketId,
         playerId: playerB.playerId,
         nickname: nickB,
-        isAiBot: isAiBotTicket(playerB),
-        aiProfile: playerB.aiProfile || null,
+        duelRating: duelRatingB,
       },
     ],
   });
@@ -160,19 +331,18 @@ async function tryMatchQueue() {
     let indexA = -1;
     let indexB = -1;
 
-    for (let i = 0; i < queue.length; i++) {
-      if (indexA < 0) {
-        indexA = i;
-        continue;
-      }
-
-      if (queuePairCompatible(queue[indexA], queue[i])) {
-        indexB = i;
-        break;
+    outer:
+    for (let i = 0; i < queue.length - 1; i++) {
+      for (let j = i + 1; j < queue.length; j++) {
+        if (queuePairCompatible(queue[i], queue[j])) {
+          indexA = i;
+          indexB = j;
+          break outer;
+        }
       }
     }
 
-    if (indexB < 0) {
+    if (indexA < 0 || indexB < 0) {
       break;
     }
 
@@ -192,11 +362,10 @@ async function tryMatchQueue() {
       );
       break;
     }
-    const aiCount = [a, b].filter((ticket) => isAiBotTicket(ticket)).length;
     const wsBotCount = [a, b].filter((ticket) => isWsBotTicket(ticket)).length;
     log.info(
       "match",
-      `created ${match.id} tickets=${a.ticketId.slice(0, 8)},${b.ticketId.slice(0, 8)} ai=${aiCount} wsBots=${wsBotCount} active=${countActiveMatches()} queue=${queue.length}`
+      `created ${match.id} players=${a.playerId},${b.playerId} tickets=${a.ticketId.slice(0, 8)},${b.ticketId.slice(0, 8)} wsBots=${wsBotCount} active=${countActiveMatches()} queue=${queue.length}`
     );
   }
   metrics.setQueueSize(queue.length);
@@ -216,7 +385,7 @@ async function finalizeDuelMatchStats(match, winnerTicketId, roundWins) {
 
   for (const ticketId of match.ticketIds) {
     const ticket = ticketsById.get(ticketId);
-    if (!ticket || !ticket.playerId || isAiBotTicket(ticket) || isWsBotTicket(ticket)) {
+    if (!ticket || !ticket.playerId || isWsBotTicket(ticket)) {
       continue;
     }
 
@@ -333,13 +502,8 @@ function isWsBotTicket(ticket) {
   return String(ticket && ticket.playerId ? ticket.playerId : "").startsWith("bot-player-");
 }
 
-function isAiBotTicket(ticket) {
-  return String(ticket && ticket.playerId ? ticket.playerId : "").startsWith("ai-bot-player-") ||
-    !!(ticket && ticket.isAiBot);
-}
-
 function isBotTicket(ticket) {
-  return isWsBotTicket(ticket) || isAiBotTicket(ticket);
+  return isWsBotTicket(ticket);
 }
 
 function isHumanTicket(ticket) {
@@ -355,15 +519,6 @@ function queuePairCompatible(a, b) {
   const wsB = isWsBotTicket(b);
   if (wsA || wsB) {
     return wsA && wsB;
-  }
-
-  const aiA = isAiBotTicket(a);
-  const aiB = isAiBotTicket(b);
-  if (aiA && aiB) {
-    return true;
-  }
-  if (aiA !== aiB) {
-    return true;
   }
 
   return isHumanTicket(a) && isHumanTicket(b);
@@ -401,7 +556,7 @@ function releaseMatchTickets(match, options = {}) {
 const wsApi = createRealtimeServer({
   bindSocket(ticketId, socket) {
     const ticket = ticketsById.get(ticketId);
-    if (!ticket || !ticket.matchId || isAiBotTicket(ticket)) {
+    if (!ticket || !ticket.matchId) {
       return false;
     }
 
@@ -413,8 +568,10 @@ const wsApi = createRealtimeServer({
 
     ticket.status = "Matched";
     ticket.socket = socket;
-    metrics.setPlayersOnline(Array.from(ticketsById.values()).filter((t) => t.socket).length);
+    metrics.adjustPlayersOnline(1);
     flushPendingMatchStats(ticketId);
+    log.info("ws", `join ticket=${ticketId.slice(0, 8)} match=${(ticket.matchId || "").slice(0, 8)} player=${ticket.playerId}`);
+    flushPendingSnapshotForTicket(ticketId);
     return true;
   },
 
@@ -433,7 +590,7 @@ const wsApi = createRealtimeServer({
     }
     ticket.socket = null;
     workers.sendDisconnect(ticket.matchId, ticketId);
-    metrics.setPlayersOnline(Array.from(ticketsById.values()).filter((t) => t.socket).length);
+    metrics.adjustPlayersOnline(-1);
   },
 });
 
@@ -503,19 +660,11 @@ workers.onMessage((workerId, msg) => {
     }
     const ticketId = msg.ticketId;
     if (ticketId) {
-      if (msg.encoding === "binary") {
-        wsApi.sendBinary(ticketId, msg.payload);
-      } else {
-        wsApi.sendJson(ticketId, msg.payload);
-      }
+      sendSnapshotToTicket(ticketId, msg);
       return;
     }
     for (const id of match.ticketIds) {
-      if (msg.encoding === "binary") {
-        wsApi.sendBinary(id, msg.payload);
-      } else {
-        wsApi.sendJson(id, msg.payload);
-      }
+      sendSnapshotToTicket(id, msg);
     }
     return;
   }
@@ -526,20 +675,30 @@ workers.onMessage((workerId, msg) => {
       return;
     }
     if (msg.ticketId) {
-      wsApi.sendJson(msg.ticketId, msg.state);
+      if (msg.preSerialized && typeof msg.state === "string") {
+        wsApi.sendRaw(msg.ticketId, msg.state, undefined, "match_state");
+      } else {
+        wsApi.sendJson(msg.ticketId, msg.state);
+      }
       return;
     }
     for (const ticketId of match.ticketIds) {
-      wsApi.sendJson(ticketId, msg.state);
+      if (msg.preSerialized && typeof msg.state === "string") {
+        wsApi.sendRaw(ticketId, msg.state, undefined, "match_state");
+      } else {
+        wsApi.sendJson(ticketId, msg.state);
+      }
     }
     return;
   }
 
   if (msg.type === WorkerToMaster.PLAYER_MESSAGE) {
-    if (msg.encoding === "binary") {
-      wsApi.sendBinary(msg.ticketId, msg.payload);
+    if (msg.preSerialized && typeof msg.message === "string") {
+      wsApi.sendRaw(msg.ticketId, msg.message, 2);
+    } else if (msg.encoding === "binary") {
+      wsApi.sendBinary(msg.ticketId, msg.payload, 2);
     } else {
-      wsApi.sendJson(msg.ticketId, msg.message);
+      wsApi.sendJson(msg.ticketId, msg.message, 2);
     }
   }
 });
@@ -561,8 +720,8 @@ const server = http.createServer(async (req, res) => {
       ...metrics.snapshot(),
       workers: workers.stats(),
       database: databaseDriver,
+      ws: typeof wsApi.stats === "function" ? wsApi.stats() : null,
       bots: botManager ? botManager.stats() : null,
-      aiBots: aiBotManager ? aiBotManager.stats() : null,
     });
     return;
   }
@@ -585,30 +744,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (aiBotManager && req.method === "POST" && path === "/admin/ai-bots/spawn") {
-    const body = await readJsonBody(req);
-    const result = await aiBotManager.spawn(body && body.count);
-    respondJson(res, 200, { ok: true, ...result });
-    return;
-  }
-
-  if (aiBotManager && req.method === "POST" && path === "/admin/ai-bots/stop") {
-    const result = aiBotManager.stop();
-    respondJson(res, 200, { ok: true, ...result });
-    return;
-  }
-
-  if (aiBotManager && req.method === "GET" && path === "/admin/ai-bots/status") {
-    respondJson(res, 200, { ok: true, ...aiBotManager.stats() });
-    return;
-  }
-
-  if (aiBotManager && req.method === "POST" && path === "/admin/ai-bots/fill-solo") {
-    const result = await aiBotManager.fillSoloHumans();
-    respondJson(res, 200, { ok: true, ...result });
-    return;
-  }
-
   if (await handleProfileRoutes(req, res, path, req.method)) {
     return;
   }
@@ -622,9 +757,22 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    await playerRepository.ensurePlayer(playerId);
-    const nickname = await playerRepository.resolvePlayerNickname(playerId, "");
-    const ticket = createTicket(playerId, matchMode, nickname);
+    const queueProfile = await playerRepository.ensurePlayerForQueue(playerId);
+
+    const activeTicket = findActiveMatchedTicket(playerId);
+    if (activeTicket) {
+      respondJson(res, 200, buildTicketResponse(activeTicket));
+      return;
+    }
+
+    cancelQueuedTicketsForPlayer(playerId);
+
+    const ticket = createTicket(
+      playerId,
+      matchMode,
+      queueProfile.nickname,
+      queueProfile.duelRating
+    );
     queue.push(ticket);
     metrics.setQueueSize(queue.length);
     void tryMatchQueue();
@@ -667,28 +815,6 @@ const server = http.createServer(async (req, res) => {
   respondJson(res, 404, { error: "NotFound" });
 });
 
-function initAiBotManager() {
-  if (!config.aiBotsEnabled || aiBotManager) {
-    return;
-  }
-
-  const AiBotManager = require("./bots/aiBotManager");
-  aiBotManager = new AiBotManager({
-    createTicket,
-    enqueueTicket(ticket) {
-      queue.push(ticket);
-      metrics.setQueueSize(queue.length);
-    },
-    getQueue: () => queue,
-    isHumanTicket,
-    isAiBotTicket,
-    tryMatchQueue,
-    ensurePlayer: (playerId) => playerRepository.ensurePlayer(playerId),
-    soloWaitMs: config.aiBotSoloWaitMs,
-    autoFillSolo: config.aiBotAutoFillSolo,
-  });
-}
-
 async function bootstrap() {
   try {
     const info = await initDatabase();
@@ -701,11 +827,6 @@ async function bootstrap() {
 
   server.listen(config.port, () => {
     log.info("master", `http://0.0.0.0:${config.port} workers=${config.workerCount}`);
-    initAiBotManager();
-    if (aiBotManager) {
-      aiBotManager.startAutoFill();
-      log.info("ai-bots", `enabled soloWaitMs=${config.aiBotSoloWaitMs} thinkHz=${config.aiThinkHz}`);
-    }
     if (botManager) {
       botManager.startAutoFill();
       log.info("bots", `ws enabled autoFill=${config.botAutoFillTarget}`);
@@ -724,9 +845,6 @@ function gracefulShutdown(signal) {
     wsApi.closeAll();
     if (botManager) {
       botManager.stopAll();
-    }
-    if (aiBotManager) {
-      aiBotManager.stop();
     }
     workers.shutdown();
     process.exit(0);

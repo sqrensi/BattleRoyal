@@ -1,12 +1,15 @@
 "use strict";
 
 const WEAPON_SLOT_EMPTY = 255;
+const STATE_HISTORY_BROADCAST_MAX = 16;
+const STATE_HISTORY_STORE_MAX = STATE_HISTORY_BROADCAST_MAX * 3;
 
 class Player {
   constructor(data) {
     this.ticketId = data.ticketId;
     this.playerId = data.playerId || data.ticketId;
     this.nickname = data.nickname || "Player";
+    this.duelRating = Number.isFinite(data.duelRating) ? Math.max(0, data.duelRating) : 1000;
 
     this.hp = 100;
     this.maxHp = 100;
@@ -64,6 +67,8 @@ class Player {
 
     this.connected = false;
     this.hasPose = false;
+    this.poseSampleSeq = 0;
+    this.stateHistory = [];
     this.lastPoseMs = 0;
     this.lastSeq = -1;
     this.cheatFlags = 0;
@@ -290,6 +295,62 @@ class Player {
     }));
   }
 
+  recordStateSample() {
+    if (!this.hasPose) {
+      return;
+    }
+
+    this.poseSampleSeq += 1;
+    const entry = {
+      sampleTick: this.poseSampleSeq,
+      x: this.x,
+      y: this.y,
+      z: this.z,
+      yaw: this.yaw || 0,
+      velX: this.velX || 0,
+      velY: this.velY || 0,
+      velZ: this.velZ || 0,
+    };
+
+    const last = this.stateHistory.length > 0
+      ? this.stateHistory[this.stateHistory.length - 1]
+      : null;
+    if (last &&
+        last.x === entry.x &&
+        last.y === entry.y &&
+        last.z === entry.z &&
+        Math.abs(last.yaw - entry.yaw) < 0.01 &&
+        last.velX === entry.velX &&
+        last.velY === entry.velY &&
+        last.velZ === entry.velZ) {
+      this.poseSampleSeq -= 1;
+      return;
+    }
+
+    this.stateHistory.push(entry);
+    while (this.stateHistory.length > STATE_HISTORY_STORE_MAX) {
+      this.stateHistory.shift();
+    }
+  }
+
+  getBroadcastStateHistory(maxSamples = STATE_HISTORY_BROADCAST_MAX) {
+    if (!Array.isArray(this.stateHistory) || this.stateHistory.length === 0) {
+      return [];
+    }
+
+    const limit = Math.max(1, Math.min(STATE_HISTORY_BROADCAST_MAX, maxSamples));
+    return this.stateHistory.slice(-limit).map((entry) => ({
+      sampleTick: entry.sampleTick,
+      x: entry.x,
+      y: entry.y,
+      z: entry.z,
+      yaw: entry.yaw,
+      velX: entry.velX,
+      velY: entry.velY,
+      velZ: entry.velZ,
+    }));
+  }
+
   resetRound(spawn) {
     this.hp = this.maxHp;
     this.alive = true;
@@ -306,11 +367,15 @@ class Player {
     this.velX = 0;
     this.velY = 0;
     this.velZ = 0;
+    this.poseSampleSeq = 0;
+    this.stateHistory = [];
     if (spawn) {
       this.x = spawn.x;
       this.y = spawn.y;
       this.z = spawn.z;
       this.yaw = spawn.yaw || 0;
+      this.hasPose = true;
+      this.recordStateSample();
     }
   }
 

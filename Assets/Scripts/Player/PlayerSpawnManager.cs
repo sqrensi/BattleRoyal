@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
@@ -137,6 +138,7 @@ namespace ShooterPrototype.Player
                 if (ActiveMatchContext.IsSoloPracticeScene)
                 {
                     MatchTrainingController.Active?.OnLocalPlayerSpawned(existingLocalPlayer);
+                    MatchOfflineDuelController.Active?.OnLocalPlayerSpawned(existingLocalPlayer);
                 }
 
                 return;
@@ -240,6 +242,11 @@ namespace ShooterPrototype.Player
             {
                 MatchTrainingController.Active?.OnLocalPlayerSpawned(instance.GetComponent<LocalPlayerMarker>());
             }
+
+            if (ActiveMatchContext.IsOfflineDuelSession)
+            {
+                MatchOfflineDuelController.Active?.OnLocalPlayerSpawned(instance.GetComponent<LocalPlayerMarker>());
+            }
         }
 
         private bool ShouldAttachPresenceSync()
@@ -313,12 +320,48 @@ namespace ShooterPrototype.Player
         private void AttachPresenceSync(GameObject localPlayer)
         {
             var launcher = FindObjectOfType<NetworkLauncher>();
-            if (launcher == null || string.IsNullOrWhiteSpace(launcher.CurrentTicketId))
+            if (launcher == null)
             {
+                StartCoroutine(RetryAttachPresenceSyncRoutine(localPlayer));
                 return;
             }
 
-            var realtimeClient = FindObjectOfType<RealtimeTransportClient>();
+            if (string.IsNullOrWhiteSpace(launcher.CurrentTicketId))
+            {
+                StartCoroutine(RetryAttachPresenceSyncRoutine(localPlayer));
+                return;
+            }
+
+            AttachPresenceSyncInternal(localPlayer, launcher);
+        }
+
+        private IEnumerator RetryAttachPresenceSyncRoutine(GameObject localPlayer)
+        {
+            const float timeoutSeconds = 8f;
+            var deadline = Time.unscaledTime + timeoutSeconds;
+            while (Time.unscaledTime < deadline)
+            {
+                if (localPlayer == null)
+                {
+                    yield break;
+                }
+
+                var launcher = FindObjectOfType<NetworkLauncher>();
+                if (launcher != null && !string.IsNullOrWhiteSpace(launcher.CurrentTicketId))
+                {
+                    AttachPresenceSyncInternal(localPlayer, launcher);
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            Debug.LogWarning("[PlayerSpawnManager] MatchPresenceSync attach timed out (missing ticket id).");
+        }
+
+        private void AttachPresenceSyncInternal(GameObject localPlayer, NetworkLauncher launcher)
+        {
+            var realtimeClient = RealtimeTransportClient.Active ?? FindObjectOfType<RealtimeTransportClient>();
             if (realtimeClient == null)
             {
                 realtimeClient = launcher.GetComponent<RealtimeTransportClient>();
@@ -327,7 +370,9 @@ namespace ShooterPrototype.Player
                     realtimeClient = launcher.gameObject.AddComponent<RealtimeTransportClient>();
                 }
 
-                var wsUrl = launcher.Config != null ? launcher.Config.RealtimeWsUrl : "ws://127.0.0.1:5051";
+                var wsUrl = launcher.Config != null
+                    ? launcher.Config.ResolveRealtimeWsUrl()
+                    : "ws://127.0.0.1:5051";
                 realtimeClient.Configure(wsUrl);
             }
 

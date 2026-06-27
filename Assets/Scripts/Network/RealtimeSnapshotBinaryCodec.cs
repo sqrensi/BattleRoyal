@@ -28,13 +28,14 @@ namespace ShooterPrototype.Network
 
             var offset = 4;
             var version = ReadU8(data, ref offset);
-            if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12)
+            if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != 13)
             {
                 return false;
             }
 
             var serverTick = ReadU32(data, ref offset);
             var serverTickRate = ReadU16(data, ref offset);
+            var movementSampleRateHz = version >= 13 ? ReadU16(data, ref offset) : 0;
             var flags = ReadU8(data, ref offset);
 
             RealtimeTransportClient.SelfAuthoritativePose selfAuth = null;
@@ -388,10 +389,53 @@ namespace ShooterPrototype.Network
                 type = "snapshot",
                 serverTick = (int)serverTick,
                 serverTickRate = serverTickRate,
+                movementSampleRateHz = movementSampleRateHz,
                 binaryVersion = version,
                 players = players.ToArray(),
                 selfAuthoritative = selfAuth
             };
+            return true;
+        }
+
+        public static bool TryDecodeJsonSnapshot(byte[] data, out RealtimeTransportClient.RealtimeSnapshot snapshot)
+        {
+            snapshot = null;
+            if (data == null || data.Length == 0)
+            {
+                return false;
+            }
+
+            string json;
+            try
+            {
+                json = Encoding.UTF8.GetString(data);
+            }
+            catch
+            {
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return false;
+            }
+
+            RealtimeTransportClient.RealtimeSnapshot parsed;
+            try
+            {
+                parsed = JsonUtility.FromJson<RealtimeTransportClient.RealtimeSnapshot>(json);
+            }
+            catch
+            {
+                return false;
+            }
+
+            if (parsed == null || !string.Equals(parsed.type, "snapshot", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            snapshot = parsed;
             return true;
         }
 

@@ -82,6 +82,39 @@ namespace ShooterPrototype.Player
             }
         }
 
+        private static void ConfigureDuelBotAnimators(GameObject root)
+        {
+            var animators = root.GetComponentsInChildren<Animator>(true);
+            for (var i = 0; i < animators.Length; i++)
+            {
+                var animator = animators[i];
+                if (animator == null)
+                {
+                    continue;
+                }
+
+                animator.enabled = true;
+                animator.applyRootMotion = false;
+                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            }
+        }
+
+        private static void ConfigureDuelBotLocomotionDriver(GameObject root)
+        {
+            RemotePlayerLocomotionUtility.EnsureSyntyLocomotionDriver(root);
+        }
+
+        private static void ConfigureDuelBotRemoteAudio(GameObject root)
+        {
+            RemotePlayerLocomotionUtility.EnsureRemoteAudio(root);
+        }
+
+        public static void RefreshDuelBotPresentation(GameObject root)
+        {
+            RemotePlayerLocomotionUtility.FinalizeDuelBotPresentation(root);
+            EnableDuelBotPresentation(root);
+        }
+
         private static void EnsureCh36Appearance(GameObject root)
         {
             if (CharacterModelApplier.HasCharacterBody(root))
@@ -112,21 +145,10 @@ namespace ShooterPrototype.Player
             var locomotionRig = root.GetComponentInChildren<ProceduralLocomotionRig>(true);
             if (locomotionRig != null)
             {
-                locomotionRig.SetNetworkMode(true);
-                locomotionRig.SetProceduralVisualsEnabled(false);
+                RemotePlayerLocomotionUtility.ConfigureLocomotionRig(root);
             }
 
-            var locomotionDriver = root.GetComponent<SyntyLocomotionDriver>();
-            if (locomotionDriver == null)
-            {
-                locomotionDriver = root.GetComponentInChildren<SyntyLocomotionDriver>(true);
-            }
-
-            if (locomotionDriver != null)
-            {
-                locomotionDriver.SetNetworkMode(true);
-                locomotionDriver.enabled = true;
-            }
+            RemotePlayerLocomotionUtility.EnsureSyntyLocomotionDriver(root);
 
             if (root.GetComponent<TrainingBotLocomotionPresenter>() == null)
             {
@@ -347,6 +369,109 @@ namespace ShooterPrototype.Player
 
             var marker = hitObject.AddComponent<PlayerBoneHitbox>();
             marker.Configure(zone);
+        }
+
+        public static DuelNavBotController CreateDuelBot(
+            Vector3 position,
+            Quaternion rotation,
+            string nickname,
+            float skill)
+        {
+            var prefab = ResolveBotVisualPrefab();
+            GameObject root;
+            if (prefab != null)
+            {
+                root = Object.Instantiate(prefab, position, rotation);
+                root.name = "DuelNavBot";
+                PrepareDuelCharacterBot(root, 1);
+            }
+            else
+            {
+                root = CreateFallbackCapsuleBot(position, rotation, 1);
+                root.name = "DuelNavBot";
+            }
+
+            var identity = root.GetComponent<PlayerNetworkIdentity>();
+            if (identity != null)
+            {
+                identity.Configure("duel_nav_bot", false);
+            }
+
+            ConfigureDuelNavMeshAgent(root);
+            Object.Destroy(root.GetComponent<TrainingBotController>());
+
+            var skinState = PlayerSkinSelectionService.RollRandomBotNetworkState();
+            PlayerSkinSelectionService.ApplyNetworkStateToPlayer(root, skinState, forceReapply: true);
+            RefreshDuelBotPresentation(root);
+
+            var bot = root.GetComponent<DuelNavBotController>();
+            if (bot == null)
+            {
+                bot = root.AddComponent<DuelNavBotController>();
+            }
+
+            bot.Initialize(nickname, skill, skinState);
+            return bot;
+        }
+
+        private static void StripHeavyVisualComponentsForDuel(GameObject root)
+        {
+            DestroyAll<SyntyFirstPersonArmsPresenter>(root);
+            DestroyAll<SyntyWeaponHandBinder>(root);
+            DestroyAll<RemoteLeftHandIkBinder>(root);
+            DestroyAll<SyntySplitBodyPresentation>(root);
+            DestroyAll<SyntyFirstPersonArmLocomotionGate>(root);
+        }
+
+        private static void PrepareDuelCharacterBot(GameObject root, int botNumber)
+        {
+            StripHeavyVisualComponentsForDuel(root);
+            RemoveLocalOnlyObjects(root);
+
+            var identity = root.GetComponent<PlayerNetworkIdentity>();
+            if (identity == null)
+            {
+                identity = root.AddComponent<PlayerNetworkIdentity>();
+            }
+
+            identity.Configure($"duel_bot_{botNumber}", false);
+
+            var health = root.GetComponent<PlayerHealth>();
+            if (health == null)
+            {
+                health = root.AddComponent<PlayerHealth>();
+            }
+
+            health.SetDuelBotEliminationMode(true);
+
+            EnsureCh36Appearance(root);
+            SetupTrainingBotRemotePresentation(root);
+            DisableLocalGameplayComponents(root);
+            HideFirstPersonOnlyRenderers(root);
+            EnableDuelBotPresentation(root);
+        }
+
+        private static void EnableDuelBotPresentation(GameObject root)
+        {
+            SetEnabled<RemoteWeaponPresentation>(root, true);
+            SetEnabled<RemotePlayerShotEffects>(root, true);
+            SetEnabled<PlayerAudioController>(root, true);
+            SetEnabled<RemoteLookPitchPosture>(root, true);
+            SetEnabled<RemoteAnimatorHolsterPresentation>(root, true);
+
+            var holsterPresentation = root.GetComponent<RemoteAnimatorHolsterPresentation>();
+            holsterPresentation?.SetWeaponEquipped(false);
+        }
+
+        private static void ConfigureDuelNavMeshAgent(GameObject root)
+        {
+            ConfigureNavMeshAgent(root);
+
+            var agent = root.GetComponent<NavMeshAgent>();
+            if (agent != null)
+            {
+                agent.updateRotation = false;
+            }
         }
     }
 }

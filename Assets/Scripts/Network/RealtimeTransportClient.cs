@@ -50,8 +50,10 @@ namespace ShooterPrototype.Network
         [Serializable]
         public sealed class RealtimePlayerState
         {
-            public string ticketId;
-            public string characterModel;
+        public string ticketId;
+        public string nickname;
+        public int duelRating;
+        public string characterModel;
             public string skinShirt;
             public string skinPants;
             public string skinBoots;
@@ -121,6 +123,7 @@ namespace ShooterPrototype.Network
             public string type;
             public int serverTick;
             public int serverTickRate;
+            public int movementSampleRateHz;
             public int binaryVersion;
             public RealtimePlayerState[] players;
             public SelfAuthoritativePose selfAuthoritative;
@@ -496,6 +499,9 @@ namespace ShooterPrototype.Network
             public int duelSpawnSlotIndex = -1;
             public int duelOpponentTeamIndex = -1;
             public int duelOpponentSpawnSlotIndex = -1;
+            public int duelLocalDuelRating;
+            public string duelOpponentNickname;
+            public int duelOpponentDuelRating;
         }
 
         [Serializable]
@@ -753,6 +759,8 @@ namespace ShooterPrototype.Network
         private float lastSendErrorLogAt;
         private float lastSnapshotDecodeErrorLogAt;
         private readonly object snapshotLock = new object();
+        private readonly Queue<RealtimeSnapshot> pendingSnapshotQueue = new Queue<RealtimeSnapshot>();
+        private const int MaxPendingSnapshots = 64;
         private RealtimeSnapshot latestSnapshot;
         private bool hasLatestSnapshot;
         private float lastPingSentUnscaledTime = -10f;
@@ -793,7 +801,8 @@ namespace ShooterPrototype.Network
         public int LastRoundTripMs => lastRoundTripMs;
         public float LastSnapshotReceivedUnscaledTime => lastSnapshotReceivedUnscaledTime;
         public int LatestServerTick { get; private set; }
-        public int LatestServerTickRate { get; private set; } = 64;
+        public int LatestServerTickRate { get; private set; } = 30;
+        public int LatestMovementSampleRate { get; private set; } = 64;
 
         public NetworkStats GetNetworkStats()
         {
@@ -1599,6 +1608,21 @@ namespace ShooterPrototype.Network
 
                 snapshot = latestSnapshot;
                 return true;
+            }
+        }
+
+        public bool TryDequeueSnapshot(out RealtimeSnapshot snapshot)
+        {
+            lock (snapshotLock)
+            {
+                if (pendingSnapshotQueue.Count == 0)
+                {
+                    snapshot = null;
+                    return false;
+                }
+
+                snapshot = pendingSnapshotQueue.Dequeue();
+                return snapshot != null;
             }
         }
 
@@ -2770,24 +2794,42 @@ namespace ShooterPrototype.Network
                 return;
             }
 
-            if (!RealtimeSnapshotBinaryCodec.TryDecode(data, out var snapshot))
+            if (RealtimeSnapshotBinaryCodec.TryDecode(data, out var snapshot))
             {
-                if (Time.unscaledTime - lastSnapshotDecodeErrorLogAt > 2f)
-                {
-                    lastSnapshotDecodeErrorLogAt = Time.unscaledTime;
-                    Debug.LogWarning(
-                        $"[MoveDiag][snapshot-decode-fail] len={data?.Length ?? 0} " +
-                        "Restart QueueService after server updates.");
-                }
-                return;
-            }
-
             if (snapshot != null && snapshot.binaryVersion > 0)
             {
                 MovementNetworkDiagnostics.LogSnapshotDecodeOk(snapshot.binaryVersion, snapshot.serverTick);
             }
+            else if (snapshot?.players != null && snapshot.players.Length > 0 &&
+                     Time.unscaledTime - lastSnapshotDecodeErrorLogAt > 5f)
+            {
+                lastSnapshotDecodeErrorLogAt = Time.unscaledTime;
+                Debug.Log(
+                    $"[RealtimeTransportClient] JSON snapshot ok tick={snapshot.serverTick} " +
+                    $"players={snapshot.players.Length}");
+            }
 
             ApplyIncomingSnapshot(snapshot);
+                return;
+            }
+
+            if (data.Length >= 2 && data[0] == (byte)'{' &&
+                RealtimeSnapshotBinaryCodec.TryDecodeJsonSnapshot(data, out snapshot))
+            {
+                ApplyIncomingSnapshot(snapshot);
+                return;
+            }
+
+            if (Time.unscaledTime - lastSnapshotDecodeErrorLogAt > 2f)
+            {
+                lastSnapshotDecodeErrorLogAt = Time.unscaledTime;
+                var magic = data.Length >= 4
+                    ? Encoding.UTF8.GetString(data, 0, 4)
+                    : "?";
+                Debug.LogWarning(
+                    $"[MoveDiag][snapshot-decode-fail] len={data.Length} magic={magic} " +
+                    "Deploy updated QueueService (snapshotBinary.js field order fix).");
+            }
         }
 
         private void ApplyIncomingSnapshot(RealtimeSnapshot snapshot)
@@ -2810,6 +2852,12 @@ namespace ShooterPrototype.Network
 
             lock (snapshotLock)
             {
+                pendingSnapshotQueue.Enqueue(snapshot);
+                while (pendingSnapshotQueue.Count > MaxPendingSnapshots)
+                {
+                    pendingSnapshotQueue.Dequeue();
+                }
+
                 latestSnapshot = snapshot;
                 hasLatestSnapshot = true;
                 lastSnapshotReceivedUnscaledTime = MonotonicNowSeconds;
@@ -2822,6 +2870,16 @@ namespace ShooterPrototype.Network
                 if (snapshot.serverTickRate > 0)
                 {
                     LatestServerTickRate = snapshot.serverTickRate;
+                }
+
+                if (snapshot.movementSampleRateHz > 0)
+                {
+                    LatestMovementSampleRate = snapshot.movementSampleRateHz;
+                }
+                else if (snapshot.serverTickRate > 0 && snapshot.serverTickRate <= 128)
+                {
+                    // v12 fallback: old servers reused serverTickRate for pose timeline.
+                    LatestMovementSampleRate = snapshot.serverTickRate;
                 }
             }
         }
@@ -3113,6 +3171,7 @@ namespace ShooterPrototype.Network
             {
                 latestSnapshot = null;
                 hasLatestSnapshot = false;
+                pendingSnapshotQueue.Clear();
                 lastSnapshotReceivedUnscaledTime = 0f;
             }
 

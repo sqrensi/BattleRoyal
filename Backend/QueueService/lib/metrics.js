@@ -15,7 +15,11 @@ class Metrics {
   }
 
   setPlayersOnline(count) {
-    this.playersOnline = count;
+    this.playersOnline = Math.max(0, count);
+  }
+
+  adjustPlayersOnline(delta) {
+    this.playersOnline = Math.max(0, this.playersOnline + delta);
   }
 
   setActiveMatches(count) {

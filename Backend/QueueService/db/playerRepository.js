@@ -14,6 +14,7 @@ const {
   getAllAchievements,
 } = require("../data/achievement-catalog");
 const crypto = require("crypto");
+const config = require("../config");
 const { get, all, run, transaction, nowMs, newId, getDriverName } = require("./database");
 
 function useDb(tx) {
@@ -681,6 +682,148 @@ async function assignDefaultNicknameIfMissing(internalPlayerId) {
      WHERE player_id = ?`,
     [await generateUniqueNickname(), nowMs(), internalPlayerId]
   );
+}
+
+const maintenanceScheduled = new Set();
+const queueProfileCache = new Map();
+let queueDbActive = 0;
+const queueDbWaiters = [];
+let maintenanceActive = 0;
+const maintenancePending = [];
+
+function takeQueueDbSlot() {
+  return new Promise((resolve) => {
+    if (queueDbActive < config.queueDbConcurrency) {
+      queueDbActive += 1;
+      resolve();
+      return;
+    }
+
+    queueDbWaiters.push(resolve);
+  });
+}
+
+function releaseQueueDbSlot() {
+  queueDbActive = Math.max(0, queueDbActive - 1);
+  const next = queueDbWaiters.shift();
+  if (next) {
+    queueDbActive += 1;
+    next();
+  }
+}
+
+async function withQueueDbSlot(work) {
+  await takeQueueDbSlot();
+  try {
+    return await work();
+  } finally {
+    releaseQueueDbSlot();
+  }
+}
+
+function pumpMaintenanceQueue() {
+  while (maintenanceActive < config.maintenanceDbConcurrency && maintenancePending.length > 0) {
+    const job = maintenancePending.shift();
+    if (!job) {
+      break;
+    }
+
+    maintenanceActive += 1;
+    void runPlayerMaintenance(job.internalPlayerId, job.externalPlayerId).finally(() => {
+      maintenanceActive = Math.max(0, maintenanceActive - 1);
+      maintenanceScheduled.delete(job.internalPlayerId);
+      pumpMaintenanceQueue();
+    });
+  }
+}
+
+async function runPlayerMaintenance(internalPlayerId, externalPlayerId) {
+  try {
+    const playerRow = await getPlayerByExternalId(externalPlayerId);
+    if (!playerRow) {
+      return;
+    }
+
+    if (!playerRow.starter_pack_granted) {
+      await grantStarterPack(playerRow.id);
+    }
+    await syncPlayerAchievements(playerRow.id);
+    await ensurePlayerMatchStats(playerRow.id);
+    queueProfileCache.delete(normalizeExternalPlayerId(externalPlayerId));
+  } catch {
+    // ignored — queue path must stay fast
+  }
+}
+
+function schedulePlayerMaintenance(internalPlayerId, externalPlayerId) {
+  if (maintenanceScheduled.has(internalPlayerId)) {
+    return;
+  }
+
+  maintenanceScheduled.add(internalPlayerId);
+  maintenancePending.push({ internalPlayerId, externalPlayerId });
+  pumpMaintenanceQueue();
+}
+
+async function ensurePlayerForQueue(externalPlayerId) {
+  const normalizedExternalId = normalizeExternalPlayerId(externalPlayerId);
+  if (String(normalizedExternalId).startsWith("bot-player-")) {
+    const suffix = normalizedExternalId.slice(-8);
+    return {
+      nickname: `Bot-${suffix}`,
+      duelRating: 1000,
+    };
+  }
+
+  const cached = queueProfileCache.get(normalizedExternalId);
+  if (cached && Date.now() - cached.cachedAtMs < config.queueProfileCacheTtlMs) {
+    return cached.profile;
+  }
+
+  return withQueueDbSlot(async () => {
+    let playerRow = await getPlayerByExternalId(normalizedExternalId);
+    if (!playerRow) {
+      const createdAt = nowMs();
+      const playerId = newId();
+
+      await transaction(async (tx) => {
+        await tx.run(
+          `INSERT INTO players (id, external_player_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?)`,
+          [playerId, normalizedExternalId, createdAt, createdAt]
+        );
+
+        await tx.run(
+          `INSERT INTO player_profiles (
+             player_id, nickname, selected_character_model, currency_balance,
+             starter_pack_granted, updated_at
+           ) VALUES (?, ?, NULL, 0, FALSE, ?)`,
+          [playerId, await generateUniqueNickname(), createdAt]
+        );
+      });
+
+      playerRow = await getPlayerByExternalId(normalizedExternalId);
+    } else if (!playerRow.nickname) {
+      await assignDefaultNicknameIfMissing(playerRow.id);
+      playerRow = await getPlayerByExternalId(normalizedExternalId);
+    }
+
+    if (playerRow) {
+      schedulePlayerMaintenance(playerRow.id, normalizedExternalId);
+    }
+
+    const profile = {
+      nickname: playerRow && playerRow.nickname ? playerRow.nickname : "Игрок",
+      duelRating: playerRow && Number.isFinite(playerRow.duel_rating)
+        ? Math.max(0, playerRow.duel_rating)
+        : 1000,
+    };
+    queueProfileCache.set(normalizedExternalId, {
+      cachedAtMs: Date.now(),
+      profile,
+    });
+    return profile;
+  });
 }
 
 async function ensurePlayer(externalPlayerId) {
@@ -1397,6 +1540,7 @@ async function getLeaderboard(limit = 25, mode = "duel") {
 
 module.exports = {
   ensurePlayer,
+  ensurePlayerForQueue,
   getProfile: async (externalPlayerId) => {
     const playerRow = await getPlayerByExternalId(externalPlayerId);
     if (!playerRow) {

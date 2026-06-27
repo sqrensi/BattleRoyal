@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
 using UnityEngine;
 
@@ -19,7 +20,7 @@ namespace ShooterPrototype.Player
         [SerializeField] private float interpolationBackTimeSeconds = 0.024f;
         [SerializeField] private float interpolationBackTimeMin = 0.016f;
         [SerializeField] private float interpolationBackTimeMax = 0.055f;
-        [SerializeField] private int interpolationBackTicks = 1;
+        [SerializeField] private int interpolationBackTicks = 4;
         [SerializeField] private bool useAdaptiveInterpolation = true;
         [SerializeField] private bool useSmoothedServerClock = true;
         [SerializeField] private float serverClockSmoothRate = 8f;
@@ -40,7 +41,7 @@ namespace ShooterPrototype.Player
         [SerializeField] private float remotePlaneLocalLerpSpeed = 18f;
         [SerializeField] private float remoteDirectFollowDistance = 0f;
         [SerializeField] private float remoteMissingGraceSeconds = 1.25f;
-        [SerializeField] private float teleportSnapDistance = 4f;
+        [SerializeField] private float deliberateTeleportSnapDistance = 20f;
         [SerializeField] private float verticalSnapDistance = 1.2f;
         [SerializeField] private float remoteStaleSeconds = 8f;
         [SerializeField] private float snapshotSilenceReconnectSeconds = 12f;
@@ -56,13 +57,15 @@ namespace ShooterPrototype.Player
         private Coroutine syncCoroutine;
         private double latestServerTimeSeconds;
         private double latestServerTimeReceiptRealtimeSeconds;
-        private double latestServerTickRate = 64.0;
+        private double latestServerTickRate = 30.0;
+        private double latestMovementSampleRate = 64.0;
         private double smoothedServerTimeSeconds;
         private double smoothedClockLastRealtimeSeconds;
         private bool hasSmoothedServerClock;
         private float lastSnapshotReceivedAt;
         private int lastAppliedServerTick = -1;
         private int lastAppliedSnapshotSignature;
+        private int lastAppliedMovementSignature;
         private int lastReconciledSelfAuthSampleTick = -1;
         private int lastSnapshotBinaryVersion;
         private float lastConnectRequestAt = -10f;
@@ -85,6 +88,8 @@ namespace ShooterPrototype.Player
         private bool transportEventsSubscribed;
         private readonly Dictionary<string, RemoteAvatar> remoteAvatars = new Dictionary<string, RemoteAvatar>();
         private bool remoteAvatarsSuppressed;
+        private bool presenceInitialized;
+        private float lastRemoteMissingWarningAt = -10f;
 
         public int LiveMatchPlayerCount
         {
@@ -99,6 +104,8 @@ namespace ShooterPrototype.Player
                 return Mathf.Max(fromRemotes, fromLauncher);
             }
         }
+
+        public int RemoteAvatarCount => remoteAvatars.Count;
 
         private sealed class RemoteAvatar
         {
@@ -149,6 +156,8 @@ namespace ShooterPrototype.Player
             public bool HasSmoothedPlaneLocalPosition;
             public Vector3 SmoothedPlaneLocalPosition;
             public readonly List<PresenceSnapshot> Snapshots = new List<PresenceSnapshot>();
+            public string DisplayNickname = string.Empty;
+            public int DisplayDuelRating;
         }
 
         private struct PresenceSnapshot
@@ -181,8 +190,21 @@ namespace ShooterPrototype.Player
 
         public void Initialize(NetworkLauncher launcher, RealtimeTransportClient transportClient, string ticketId, GameObject remotePrefab)
         {
+            if (presenceInitialized &&
+                string.Equals(localTicketId, ticketId, StringComparison.Ordinal) &&
+                realtimeClient != null)
+            {
+                networkLauncher = launcher;
+                SubscribeTransportEvents();
+                return;
+            }
+
+            presenceInitialized = true;
             networkLauncher = launcher;
-            realtimeClient = transportClient;
+            realtimeClient = RealtimeTransportClient.Active != null &&
+                             (transportClient == null || transportClient == RealtimeTransportClient.Active)
+                ? RealtimeTransportClient.Active
+                : transportClient;
             localTicketId = ticketId;
             remotePlayerPrefab = remotePrefab;
             lastSnapshotReceivedAt = MonotonicNowSeconds();
@@ -281,6 +303,7 @@ namespace ShooterPrototype.Player
         private void OnEnable()
         {
             PlayerSkinOwnershipService.EquipmentChanged += HandleLocalEquipmentChanged;
+            TryAutoInitializeFromLauncher();
         }
 
         private void OnDisable()
@@ -299,6 +322,11 @@ namespace ShooterPrototype.Player
 
         private void Update()
         {
+            if (!presenceInitialized)
+            {
+                TryAutoInitializeFromLauncher();
+            }
+
             using (NetworkPerformanceMonitor.PollSnapshotMarker.Auto())
             {
                 PollLatestSnapshot();
@@ -386,7 +414,7 @@ namespace ShooterPrototype.Player
             var rootTransform = avatar.Root.transform;
             var currentPosition = rootTransform.position;
             var distance = Vector3.Distance(currentPosition, targetPosition);
-            if (distance >= teleportSnapDistance)
+            if (distance >= deliberateTeleportSnapDistance)
             {
                 rootTransform.SetPositionAndRotation(
                     targetPosition,
@@ -669,6 +697,47 @@ namespace ShooterPrototype.Player
             }
         }
 
+        public bool TryGetDuelOpponentDisplay(
+            string localTicketId,
+            out string nickname,
+            out int duelRating)
+        {
+            nickname = string.Empty;
+            duelRating = 0;
+
+            foreach (var pair in remoteAvatars)
+            {
+                if (string.IsNullOrWhiteSpace(pair.Key) ||
+                    string.Equals(pair.Key, localTicketId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var avatar = pair.Value;
+                if (avatar == null)
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(avatar.DisplayNickname))
+                {
+                    nickname = avatar.DisplayNickname.Trim();
+                }
+
+                if (avatar.DisplayDuelRating > 0)
+                {
+                    duelRating = avatar.DisplayDuelRating;
+                }
+
+                if (!string.IsNullOrWhiteSpace(nickname))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public void SnapAllRemoteAvatarsToDuelSpawn(int teamIndex, int slotIndex)
         {
             if (!DuelSpawnUtility.TryResolveSpawnPose(teamIndex, slotIndex, out var position, out var rotation))
@@ -715,18 +784,17 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            if (Vector3.Distance(avatar.Root.transform.position, position) >= teleportSnapDistance)
-            {
-                return true;
-            }
-
             if (avatar.Snapshots.Count > 0)
             {
                 var lastSnapshot = avatar.Snapshots[avatar.Snapshots.Count - 1].Position;
-                if (Vector3.Distance(lastSnapshot, position) >= teleportSnapDistance)
+                if (Vector3.Distance(lastSnapshot, position) >= deliberateTeleportSnapDistance)
                 {
                     return true;
                 }
+            }
+            else if (Vector3.Distance(avatar.Root.transform.position, position) >= deliberateTeleportSnapDistance)
+            {
+                return true;
             }
 
             return false;
@@ -926,8 +994,6 @@ namespace ShooterPrototype.Player
         private void SendLocalPose(bool forceImmediate = false)
         {
             if (realtimeClient == null ||
-                networkLauncher == null ||
-                !networkLauncher.IsClientConnected ||
                 string.IsNullOrWhiteSpace(localTicketId) ||
                 !realtimeClient.IsConnected)
             {
@@ -1079,8 +1145,6 @@ namespace ShooterPrototype.Player
             while (true)
             {
                 if (realtimeClient != null &&
-                    networkLauncher != null &&
-                    networkLauncher.IsClientConnected &&
                     !string.IsNullOrWhiteSpace(localTicketId))
                 {
                     realtimeClient.SetAutoReconnectEnabled(!ShouldSkipTransportReconnect());
@@ -1105,16 +1169,24 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (!realtimeClient.TryGetLatestSnapshot(out var snapshot) || snapshot == null)
+            while (realtimeClient.TryDequeueSnapshot(out var snapshot) && snapshot != null)
             {
-                return;
+                ApplySnapshotIfNew(snapshot);
             }
+        }
 
+        private void ApplySnapshotIfNew(RealtimeTransportClient.RealtimeSnapshot snapshot)
+        {
             var serverTick = snapshot.serverTick;
             var signature = ComputeSnapshotPresenceSignature(snapshot);
+            var movementSignature = ComputeSnapshotMovementSignature(snapshot);
+            var snapshotPlayerCount = snapshot.players != null ? snapshot.players.Length : 0;
+            var needsNewRemoteAvatar = snapshotPlayerCount > remoteAvatars.Count;
             if (serverTick > 0 &&
                 serverTick == lastAppliedServerTick &&
-                signature == lastAppliedSnapshotSignature)
+                signature == lastAppliedSnapshotSignature &&
+                movementSignature == lastAppliedMovementSignature &&
+                !needsNewRemoteAvatar)
             {
                 lastSnapshotReceivedAt = MonotonicNowSeconds();
                 lastSnapshotBinaryVersion = snapshot.binaryVersion;
@@ -1141,7 +1213,55 @@ namespace ShooterPrototype.Player
             }
 
             lastAppliedSnapshotSignature = signature;
+            lastAppliedMovementSignature = movementSignature;
             ApplyRealtimeSnapshot(snapshot);
+        }
+
+        private static int ComputeSnapshotMovementSignature(RealtimeTransportClient.RealtimeSnapshot snapshot)
+        {
+            if (snapshot?.players == null || snapshot.players.Length == 0)
+            {
+                return 0;
+            }
+
+            unchecked
+            {
+                var hash = 17;
+                hash = (hash * 31) + snapshot.serverTick;
+                for (var i = 0; i < snapshot.players.Length; i++)
+                {
+                    var player = snapshot.players[i];
+                    if (player?.position == null)
+                    {
+                        continue;
+                    }
+
+                    hash = (hash * 31) + player.sampleTick;
+                    hash = (hash * 31) + QuantizeMovementComponent(player.position.x);
+                    hash = (hash * 31) + QuantizeMovementComponent(player.position.y);
+                    hash = (hash * 31) + QuantizeMovementComponent(player.position.z);
+                    hash = (hash * 31) + QuantizeMovementComponent(player.yaw);
+                    hash = (hash * 31) + QuantizeMovementComponent(player.velX);
+                    hash = (hash * 31) + QuantizeMovementComponent(player.velY);
+                    hash = (hash * 31) + QuantizeMovementComponent(player.velZ);
+                    if (player.history != null && player.history.Length > 0)
+                    {
+                        hash = (hash * 31) + player.history.Length;
+                        var lastHistory = player.history[player.history.Length - 1];
+                        if (lastHistory != null)
+                        {
+                            hash = (hash * 31) + lastHistory.sampleTick;
+                        }
+                    }
+                }
+
+                return hash;
+            }
+        }
+
+        private static int QuantizeMovementComponent(float value)
+        {
+            return Mathf.RoundToInt(value * 20f);
         }
 
         private static string ShortTicketId(string ticketId)
@@ -1377,8 +1497,21 @@ namespace ShooterPrototype.Player
                 latestServerTickRate = realtimeClient.LatestServerTickRate;
             }
 
+            if (snapshot.movementSampleRateHz > 0)
+            {
+                latestMovementSampleRate = snapshot.movementSampleRateHz;
+            }
+            else if (realtimeClient != null && realtimeClient.LatestMovementSampleRate > 0)
+            {
+                latestMovementSampleRate = realtimeClient.LatestMovementSampleRate;
+            }
+            else
+            {
+                latestMovementSampleRate = syncTickRate;
+            }
+
             latestServerTimeSeconds = snapshot.serverTick > 0
-                ? snapshot.serverTick / latestServerTickRate
+                ? snapshot.serverTick / Math.Max(1.0, latestServerTickRate)
                 : Time.realtimeSinceStartupAsDouble;
             latestServerTimeReceiptRealtimeSeconds = Time.realtimeSinceStartupAsDouble;
             lastSnapshotBinaryVersion = snapshot.binaryVersion;
@@ -1387,6 +1520,20 @@ namespace ShooterPrototype.Player
             ApplyLocalMedkitFromSnapshot(snapshot.players);
             ApplySelfAuthoritativePose(snapshot.selfAuthoritative);
             var remoteCount = snapshot.players != null ? snapshot.players.Length : 0;
+            if (remoteCount > 0)
+            {
+                SetRemoteAvatarsVisible(true);
+            }
+
+            if (remoteCount > 0 &&
+                remoteAvatars.Count == 0 &&
+                Time.unscaledTime - lastRemoteMissingWarningAt > 3f)
+            {
+                lastRemoteMissingWarningAt = Time.unscaledTime;
+                Debug.LogWarning(
+                    $"[MatchPresenceSync] snapshot listed {remoteCount} remote player(s) but created 0 avatars " +
+                    $"(ticket={ShortTicketId(localTicketId)} tick={snapshot.serverTick}).");
+            }
             networkLauncher?.SetCurrentMatchPlayerCount(remoteCount + 1);
             if (debugRealtimeLogs && Time.unscaledTime - lastSnapshotDebugAt >= 1f)
             {
@@ -1446,14 +1593,24 @@ namespace ShooterPrototype.Player
             return GetEstimatedServerTimeSeconds();
         }
 
-        private float GetInterpolationBackSeconds()
+        private double GetMovementSampleRate()
         {
-            var tickRate = latestServerTickRate;
-            if (realtimeClient != null && realtimeClient.LatestServerTickRate > 0)
+            if (latestMovementSampleRate > 0.0)
             {
-                tickRate = realtimeClient.LatestServerTickRate;
+                return latestMovementSampleRate;
             }
 
+            if (realtimeClient != null && realtimeClient.LatestMovementSampleRate > 0)
+            {
+                return realtimeClient.LatestMovementSampleRate;
+            }
+
+            return Math.Max(1.0, syncTickRate);
+        }
+
+        private float GetInterpolationBackSeconds()
+        {
+            var tickRate = GetMovementSampleRate();
             var backByTicks = interpolationBackTicks / (float)Math.Max(1.0, tickRate);
             if (useFixedLowLatencyInterpolation)
             {
@@ -1640,11 +1797,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var tickRate = latestServerTickRate;
-            if (realtimeClient != null && realtimeClient.LatestServerTickRate > 0)
-            {
-                tickRate = realtimeClient.LatestServerTickRate;
-            }
+            var tickRate = GetMovementSampleRate();
 
             tickRate = Math.Max(1.0, tickRate);
 
@@ -1762,6 +1915,16 @@ namespace ShooterPrototype.Player
                     }
 
                     avatar.LastSeenAt = now;
+                    if (!string.IsNullOrWhiteSpace(p.nickname))
+                    {
+                        avatar.DisplayNickname = p.nickname.Trim();
+                    }
+
+                    if (p.duelRating > 0)
+                    {
+                        avatar.DisplayDuelRating = p.duelRating;
+                    }
+
                     var samplePosition = new Vector3(p.position.x, p.position.y, p.position.z);
                     avatar.LastKnownPosition = samplePosition;
                     avatar.LastKnownYaw = p.yaw;
@@ -1915,17 +2078,9 @@ namespace ShooterPrototype.Player
             health.SetNetworkMode(true);
             health.SetNetworkDeadState(false, 0, Vector3.forward);
 
-            var locomotionRig = root.GetComponentInChildren<ProceduralLocomotionRig>(true);
-            if (locomotionRig != null)
-            {
-                locomotionRig.SetNetworkMode(true);
-            }
+            RemotePlayerLocomotionUtility.EnsureNetworkRemoteLocomotion(root);
 
-            var syntyDriver = root.GetComponentInChildren<SyntyLocomotionDriver>(true);
-            if (syntyDriver != null)
-            {
-                syntyDriver.SetNetworkMode(true);
-            }
+            var locomotionRig = root.GetComponentInChildren<ProceduralLocomotionRig>(true);
 
             var selfSync = root.GetComponent<MatchPresenceSync>();
             if (selfSync != null)
@@ -2464,6 +2619,37 @@ namespace ShooterPrototype.Player
             return false;
         }
 
+        private void TryAutoInitializeFromLauncher()
+        {
+            if (presenceInitialized || GetComponent<LocalPlayerMarker>() == null)
+            {
+                return;
+            }
+
+            if (ActiveMatchContext.IsOfflineDuelSession ||
+                ActiveMatchContext.IsOfflineSoloSession ||
+                PlayerProfileService.IsOfflineMode)
+            {
+                return;
+            }
+
+            var launcher = networkLauncher ?? FindFirstObjectByType<NetworkLauncher>();
+            if (launcher == null || string.IsNullOrWhiteSpace(launcher.CurrentTicketId))
+            {
+                return;
+            }
+
+            var transport = RealtimeTransportClient.Active ?? FindFirstObjectByType<RealtimeTransportClient>();
+            if (transport == null)
+            {
+                return;
+            }
+
+            var spawnManager = FindFirstObjectByType<PlayerSpawnManager>();
+            var remotePrefab = spawnManager != null ? spawnManager.GetRemotePlayerPrefabForPreview() : null;
+            Initialize(launcher, transport, launcher.CurrentTicketId, remotePrefab);
+        }
+
         private void RemoveAvatar(string ticketId)
         {
             if (!remoteAvatars.TryGetValue(ticketId, out var avatar))
@@ -2502,11 +2688,7 @@ namespace ShooterPrototype.Player
                 return latestServerTimeSeconds;
             }
 
-            var tickRate = latestServerTickRate;
-            if (realtimeClient != null && realtimeClient.LatestServerTickRate > 0)
-            {
-                tickRate = realtimeClient.LatestServerTickRate;
-            }
+            var tickRate = GetMovementSampleRate();
 
             if (playerState.sampleTick > 0)
             {

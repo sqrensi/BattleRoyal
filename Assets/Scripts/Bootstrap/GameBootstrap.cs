@@ -117,7 +117,7 @@ namespace ShooterPrototype.Bootstrap
                     realtimeTransportClient = gameObject.AddComponent<RealtimeTransportClient>();
                 }
 
-                realtimeTransportClient.Configure(networkConfig.RealtimeWsUrl);
+                realtimeTransportClient.Configure(networkConfig.ResolveRealtimeWsUrl());
             }
 
             var mode = ResolveLaunchMode();
@@ -240,13 +240,21 @@ namespace ShooterPrototype.Bootstrap
             }
             else if (scene.name == duelSceneName && !Application.isBatchMode)
             {
-                EnsureDuelController();
+                if (ActiveMatchContext.IsOfflineDuelSession)
+                {
+                    EnsureOfflineDuelController();
+                }
+                else
+                {
+                    EnsureDuelController();
+                }
             }
 
             if (scene.name == mainMenuSceneName && !Application.isBatchMode)
             {
                 ActiveMatchContext.SetOfflineTrainingSession(false);
                 ActiveMatchContext.SetOfflineChallengeSession(false);
+                ActiveMatchContext.SetOfflineDuelSession(false);
                 LoadingScreenOverlay.Hide();
             }
 
@@ -296,6 +304,11 @@ namespace ShooterPrototype.Bootstrap
                 LoadingScreenOverlay.Hide();
                 yield return OfflineChallengeBootstrap.StartWhenPlayerReady(this);
             }
+            else if (ActiveMatchContext.IsOfflineDuelSession)
+            {
+                LoadingScreenOverlay.Hide();
+                yield return OfflineDuelBootstrap.StartWhenPlayerReady(this);
+            }
 
             Canvas.ForceUpdateCanvases();
             yield return null;
@@ -330,8 +343,33 @@ namespace ShooterPrototype.Bootstrap
             controllerObject.AddComponent<MatchTrainingController>();
         }
 
+        private void EnsureOfflineDuelController()
+        {
+            var online = FindFirstObjectByType<MatchDuelController>();
+            if (online != null)
+            {
+                Destroy(online.gameObject);
+            }
+
+            var existing = FindFirstObjectByType<MatchOfflineDuelController>();
+            if (existing != null)
+            {
+                existing.PrepareForNewMatch();
+                return;
+            }
+
+            var controllerObject = new GameObject("MatchOfflineDuel");
+            controllerObject.AddComponent<MatchOfflineDuelController>();
+        }
+
         private void EnsureDuelController()
         {
+            var offline = FindFirstObjectByType<MatchOfflineDuelController>();
+            if (offline != null)
+            {
+                Destroy(offline.gameObject);
+            }
+
             var existing = FindFirstObjectByType<MatchDuelController>();
             if (existing != null)
             {

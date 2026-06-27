@@ -81,6 +81,7 @@ class DuelBot {
 
     while (this.running) {
       try {
+        await sleep(250 + Math.floor(Math.random() * 1750));
         await this.runMatchCycle();
       } catch (error) {
         this.log(`error: ${error.message || error}`);
@@ -141,7 +142,7 @@ class DuelBot {
         await sleep(1000);
         return;
       }
-      await sleep(500);
+      await sleep(2000);
     }
 
     if (!this.matchId) {
@@ -196,7 +197,7 @@ class DuelBot {
 
     this.loopTimer = setInterval(() => {
       this.tickPose();
-    }, 50);
+    }, 100);
 
     const endDeadline = Date.now() + 15 * 60 * 1000;
     while (this.running && Date.now() < endDeadline) {

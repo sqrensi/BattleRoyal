@@ -4,31 +4,55 @@ using UnityEngine.AI;
 namespace ShooterPrototype.Player
 {
     /// <summary>
-    /// Drives remote-style locomotion animator params from NavMeshAgent velocity.
+    /// Drives remote-style locomotion animator params and footstep audio from NavMeshAgent motion.
+    /// Mirrors MatchPresenceSync.DriveRemoteLocomotion for offline bots.
     /// </summary>
     [DisallowMultipleComponent]
+    [DefaultExecutionOrder(100)]
     public sealed class TrainingBotLocomotionPresenter : MonoBehaviour
     {
         private const float WalkSpeedReference = 3.3f;
+        private const float SprintSpeedReference = 5.94f;
         private const float AnimSpeedSmoothTime = 0.12f;
+        private const float AnimStopSmoothTime = 0.05f;
         private const float MoveInputSmoothTime = 0.1f;
+        private const float MoveStopSmoothTime = 0.05f;
+
+        [SerializeField] private float footstepIntervalSlow = 0.5f;
+        [SerializeField] private float footstepIntervalFast = 0.42f;
+        [SerializeField] private float footstepIntervalSprint = 0.28f;
+        [SerializeField] private float footstepMoveThreshold = 0.12f;
 
         private NavMeshAgent agent;
         private ProceduralLocomotionRig locomotionRig;
         private PlayerHealth health;
+        private DuelNavBotController duelBot;
+        private PlayerAudioController audioController;
         private float smoothedAnimSpeed;
         private float animSpeedVelocity;
         private float smoothedMoveInputX;
         private float smoothedMoveInputZ;
         private float moveInputXVelocity;
         private float moveInputZVelocity;
-        private int idleUpdatePhase;
+        private float nextFootstepAt;
+        private Vector3 lastTrackedPosition;
+        private bool hasTrackedPosition;
 
         private void Awake()
         {
             agent = GetComponent<NavMeshAgent>();
             locomotionRig = GetComponentInChildren<ProceduralLocomotionRig>(true);
             health = GetComponent<PlayerHealth>();
+            duelBot = GetComponent<DuelNavBotController>();
+            audioController = GetComponent<PlayerAudioController>();
+        }
+
+        private void OnEnable()
+        {
+            lastTrackedPosition = transform.position;
+            hasTrackedPosition = true;
+            RemotePlayerLocomotionUtility.EnsureSyntyLocomotionDriver(gameObject);
+            TryConfigureRemoteAudio();
         }
 
         private void Update()
@@ -38,45 +62,46 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            TryConfigureRemoteAudio();
+
             var dt = Mathf.Max(0.0001f, Time.deltaTime);
-            var velocity = agent != null && agent.enabled ? agent.velocity : Vector3.zero;
-            velocity.y = 0f;
+            var velocity = ResolveHorizontalVelocity(dt);
+            var horizontalSpeed = velocity.magnitude;
+            var isSprinting = horizontalSpeed > WalkSpeedReference * 0.92f;
+            var speedReference = isSprinting ? SprintSpeedReference : WalkSpeedReference;
+            var targetAnimSpeed = horizontalSpeed <= 0.05f
+                ? 0f
+                : Mathf.Clamp01(horizontalSpeed / Mathf.Max(0.01f, speedReference));
 
-            var targetAnimSpeed = Mathf.Clamp01(velocity.magnitude / WalkSpeedReference);
-            if (targetAnimSpeed <= 0.02f && smoothedAnimSpeed <= 0.05f)
-            {
-                idleUpdatePhase++;
-                if ((idleUpdatePhase & 1) != 0)
-                {
-                    return;
-                }
-            }
-            else
-            {
-                idleUpdatePhase = 0;
-            }
-
+            var animSpeedSmooth = Mathf.Max(
+                0.01f,
+                targetAnimSpeed < smoothedAnimSpeed ? AnimStopSmoothTime : AnimSpeedSmoothTime);
             smoothedAnimSpeed = Mathf.SmoothDamp(
                 smoothedAnimSpeed,
                 targetAnimSpeed,
                 ref animSpeedVelocity,
-                AnimSpeedSmoothTime,
+                animSpeedSmooth,
                 Mathf.Infinity,
                 dt);
 
             ResolveMoveInput(velocity, targetAnimSpeed, out var moveInputX, out var moveInputZ);
+            var moveTargetMag = moveInputX * moveInputX + moveInputZ * moveInputZ;
+            var moveCurrentMag = smoothedMoveInputX * smoothedMoveInputX + smoothedMoveInputZ * smoothedMoveInputZ;
+            var moveSmooth = Mathf.Max(
+                0.01f,
+                moveTargetMag < moveCurrentMag ? MoveStopSmoothTime : MoveInputSmoothTime);
             smoothedMoveInputX = Mathf.SmoothDamp(
                 smoothedMoveInputX,
                 moveInputX,
                 ref moveInputXVelocity,
-                MoveInputSmoothTime,
+                moveSmooth,
                 Mathf.Infinity,
                 dt);
             smoothedMoveInputZ = Mathf.SmoothDamp(
                 smoothedMoveInputZ,
                 moveInputZ,
                 ref moveInputZVelocity,
-                MoveInputSmoothTime,
+                moveSmooth,
                 Mathf.Infinity,
                 dt);
 
@@ -85,7 +110,7 @@ namespace ShooterPrototype.Player
                 grounded: true,
                 jumpState: 0,
                 isCrouching: false,
-                isSprinting: false);
+                isSprinting: isSprinting);
             locomotionRig.SetNetworkMoveInput(smoothedMoveInputX, smoothedMoveInputZ);
             locomotionRig.SetNetworkAnimationState(
                 smoothedAnimSpeed,
@@ -93,8 +118,87 @@ namespace ShooterPrototype.Player
                 jumpState: 0,
                 animPhase01: 0f,
                 isCrouching: false,
-                isSprinting: false);
-            locomotionRig.SetNetworkLookPitch(0f);
+                isSprinting: isSprinting);
+            if (duelBot == null || !duelBot.ControlsAimPresentation)
+            {
+                locomotionRig.SetNetworkLookPitch(0f);
+            }
+
+            TryEmitFootstep(horizontalSpeed, isSprinting);
+        }
+
+        private Vector3 ResolveHorizontalVelocity(float dt)
+        {
+            if (agent != null && agent.enabled && agent.isOnNavMesh)
+            {
+                var agentVelocity = agent.velocity;
+                agentVelocity.y = 0f;
+                if (agentVelocity.sqrMagnitude > 0.01f)
+                {
+                    return agentVelocity;
+                }
+            }
+
+            if (!hasTrackedPosition)
+            {
+                lastTrackedPosition = transform.position;
+                hasTrackedPosition = true;
+                return Vector3.zero;
+            }
+
+            var delta = transform.position - lastTrackedPosition;
+            lastTrackedPosition = transform.position;
+            delta.y = 0f;
+            if (delta.sqrMagnitude <= 0.000001f || dt <= 0.0001f)
+            {
+                return Vector3.zero;
+            }
+
+            return delta / dt;
+        }
+
+        private void TryEmitFootstep(float horizontalSpeed, bool isSprinting)
+        {
+            if (!TryConfigureRemoteAudio() ||
+                horizontalSpeed < footstepMoveThreshold ||
+                Time.time < nextFootstepAt)
+            {
+                return;
+            }
+
+            var cadenceFast = isSprinting
+                ? Mathf.Max(0.06f, footstepIntervalSprint)
+                : Mathf.Max(0.08f, footstepIntervalFast);
+            var cadence = Mathf.Lerp(
+                Mathf.Max(0.1f, footstepIntervalSlow),
+                cadenceFast,
+                Mathf.Clamp01(horizontalSpeed / Mathf.Max(0.01f, WalkSpeedReference)));
+
+            nextFootstepAt = Time.time + cadence;
+            audioController.PlayFootstep(isLocal: false, isSprinting);
+        }
+
+        private bool TryConfigureRemoteAudio()
+        {
+            if (audioController == null)
+            {
+                audioController = GetComponent<PlayerAudioController>();
+            }
+
+            if (audioController == null || !audioController.enabled)
+            {
+                return false;
+            }
+
+            var localMarker = FindFirstObjectByType<LocalPlayerMarker>();
+            var localAudio = localMarker != null ? localMarker.GetComponent<PlayerAudioController>() : null;
+            if (localAudio == null)
+            {
+                return false;
+            }
+
+            audioController.InheritFrom(localAudio);
+            return true;
         }
 
         private void ResolveMoveInput(Vector3 worldVelocity, float speed01, out float moveInputX, out float moveInputZ)

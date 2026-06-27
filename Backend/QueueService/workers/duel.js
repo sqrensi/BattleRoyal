@@ -4,7 +4,6 @@ const Player = require("./player");
 const { WEAPON_SLOT_EMPTY } = require("./player");
 const combat = require("./combat");
 const movement = require("./movement");
-const DuelAiController = require("./duelAiController");
 const { getSpawnCount, resolveSpawnPose } = require("./spawnTable");
 const {
   buildMatchStateForTicket,
@@ -18,7 +17,6 @@ class Duel {
     this.limits = limits;
     this.roundsToWin = limits.roundsToWin;
 
-    this.aiController = new DuelAiController(this, limits);
     this.teamIndexByTicket = new Map();
     this.spawnSlotByTicket = new Map();
 
@@ -29,19 +27,16 @@ class Duel {
     this.players = sortedPlayers.map((playerData, index) => {
       const teamIndex = index % 2;
       this.teamIndexByTicket.set(playerData.ticketId, teamIndex);
-      const player = new Player({ ...playerData, spawnX: 0, spawnY: 0, spawnZ: 0 });
-      if (playerData.isAiBot) {
-        this.aiController.initializeBot(player, playerData.aiProfile || {}, null);
-      }
-      return player;
+      return new Player({ ...playerData, spawnX: 0, spawnY: 0, spawnZ: 0 });
     });
+    this.playerByTicket = new Map(this.players.map((player) => [player.ticketId, player]));
 
     this.rollRoundSpawns();
     this.applySpawnPositions();
 
     this.phase = "waiting";
     this.round = 0;
-    const joinTimeoutMs = Math.max(5000, Number(limits.matchJoinTimeoutMs) || 20000);
+    const joinTimeoutMs = Math.max(2000, Number(limits.matchJoinTimeoutMs) || 20000);
     this.timerEndsAtMs = Date.now() + joinTimeoutMs;
     this.winnerTicketId = "";
     this.roundWins = {};
@@ -50,11 +45,25 @@ class Duel {
     }
 
     this.serverTick = 0;
-    this.dirty = true;
+    this.snapshotDirty = true;
+    this.stateDirty = true;
     this.finished = false;
     this.lastSnapshotMs = 0;
+    this.lastStateBroadcastMs = 0;
     this.outbox = [];
     this.killFeedSeq = 0;
+  }
+
+  getPlayer(ticketId) {
+    return this.playerByTicket.get(ticketId) || null;
+  }
+
+  markStateDirty() {
+    this.stateDirty = true;
+  }
+
+  markSnapshotDirty() {
+    this.snapshotDirty = true;
   }
 
   getTeamIndex(ticketId) {
@@ -98,8 +107,8 @@ class Duel {
       player.velY = 0;
       player.velZ = 0;
       player.hasPose = true;
+      player.recordStateSample();
     }
-    this.aiController.onSpawnPositionsApplied();
   }
 
   broadcastKillFeed(killer, victim) {
@@ -125,22 +134,20 @@ class Duel {
   }
 
   getOpponent(ticketId) {
-    return this.players.find((p) => p.ticketId !== ticketId) || null;
+    for (const player of this.players) {
+      if (player.ticketId !== ticketId) {
+        return player;
+      }
+    }
+    return null;
   }
 
   bothConnected() {
-    return this.players.every((p) => p.isAiBot || p.connected);
-  }
-
-  hasHumanConnected() {
-    return this.players.some((p) => !p.isAiBot && p.connected);
+    return this.players.every((p) => p.connected);
   }
 
   canStartMatch() {
-    if (!this.bothConnected()) {
-      return false;
-    }
-    return this.hasHumanConnected() || this.players.every((p) => p.isAiBot);
+    return this.bothConnected();
   }
 
   queueMessage(ticketId, message) {
@@ -158,8 +165,8 @@ class Duel {
     this.round = 0;
     this.winnerTicketId = "";
     this.timerEndsAtMs = nowMs + this.limits.prepTimeoutMs;
-    this.aiController.onPhaseChange("prep");
-    this.dirty = true;
+    this.markStateDirty();
+    this.markSnapshotDirty();
   }
 
   beginWeaponPick(nowMs) {
@@ -179,24 +186,42 @@ class Duel {
       p.isHolstered = true;
     }
     this.timerEndsAtMs = nowMs + this.limits.weaponPickTimeoutMs;
-    this.aiController.onPhaseChange("weapon_pick");
-    this.dirty = true;
+    this.markStateDirty();
+    this.markSnapshotDirty();
   }
 
   onJoin(ticketId) {
-    const player = this.players.find((p) => p.ticketId === ticketId);
+    const player = this.getPlayer(ticketId);
     if (!player) {
       return;
     }
     player.connected = true;
+    if (!player.hasPose) {
+      const teamIndex = Math.max(0, this.getTeamIndex(ticketId));
+      const slot = this.getSpawnSlot(ticketId);
+      const pose = resolveSpawnPose(teamIndex, slot);
+      if (pose) {
+        player.x = pose.x;
+        player.y = pose.y;
+        player.z = pose.z;
+        player.yaw = pose.yaw || 0;
+        player.velX = 0;
+        player.velY = 0;
+        player.velZ = 0;
+        player.hasPose = true;
+        player.recordStateSample();
+      }
+    }
 
     if (this.phase === "waiting" && this.canStartMatch()) {
       this.beginPrep(Date.now());
     }
+    this.markStateDirty();
+    this.markSnapshotDirty();
   }
 
   onDisconnect(ticketId) {
-    const player = this.players.find((p) => p.ticketId === ticketId);
+    const player = this.getPlayer(ticketId);
     if (!player) {
       return;
     }
@@ -211,12 +236,12 @@ class Duel {
       this.winnerTicketId = opponent.ticketId;
       this.phase = "match_end";
       this.finished = true;
-      this.dirty = true;
+      this.markStateDirty();
     }
   }
 
   onPose(ticketId, message, nowMs) {
-    const player = this.players.find((p) => p.ticketId === ticketId);
+    const player = this.getPlayer(ticketId);
     if (!player || !player.alive) {
       return;
     }
@@ -226,14 +251,14 @@ class Duel {
     } else {
       movement.applyPresencePose(player, message, nowMs);
     }
-    this.dirty = true;
+    this.markSnapshotDirty();
   }
 
   onWeaponPick(ticketId, message, nowMs) {
     if (this.phase !== "weapon_pick") {
       return;
     }
-    const player = this.players.find((p) => p.ticketId === ticketId);
+    const player = this.getPlayer(ticketId);
     if (!player) {
       return;
     }
@@ -245,7 +270,8 @@ class Duel {
       return;
     }
     combat.equipWeapon(player, kind);
-    this.dirty = true;
+    this.markStateDirty();
+    this.markSnapshotDirty();
   }
 
   onShot(ticketId, message, nowMs) {
@@ -253,13 +279,13 @@ class Duel {
       return;
     }
 
-    const shooter = this.players.find((p) => p.ticketId === ticketId);
+    const shooter = this.getPlayer(ticketId);
     if (!shooter) {
       return;
     }
 
     if (shooter.recordShotEvent(message)) {
-      this.dirty = true;
+      this.markSnapshotDirty();
     }
   }
 
@@ -268,9 +294,9 @@ class Duel {
       return;
     }
 
-    const shooter = this.players.find((p) => p.ticketId === ticketId);
+    const shooter = this.getPlayer(ticketId);
     const targetId = typeof message.targetTicketId === "string" ? message.targetTicketId.trim() : "";
-    const target = this.players.find((p) => p.ticketId === targetId) || this.getOpponent(ticketId);
+    const target = this.getPlayer(targetId) || this.getOpponent(ticketId);
     if (!shooter || !target || target.ticketId === shooter.ticketId || !target.alive) {
       return;
     }
@@ -324,7 +350,8 @@ class Duel {
       this.winnerTicketId = shooter.ticketId;
       this.phase = "round_end";
       this.timerEndsAtMs = nowMs + this.limits.roundEndTimeoutMs;
-      this.dirty = true;
+      this.markStateDirty();
+      this.markSnapshotDirty();
     }
   }
 
@@ -343,20 +370,21 @@ class Duel {
     }
     this.phase = "fight";
     this.timerEndsAtMs = nowMs + this.limits.roundTimeoutMs;
-    this.aiController.onPhaseChange("fight");
-    this.dirty = true;
+    this.markStateDirty();
+    this.markSnapshotDirty();
   }
 
   awardRoundWin(ticketId, nowMs) {
     this.roundWins[ticketId] = (this.roundWins[ticketId] || 0) + 1;
-    const player = this.players.find((p) => p.ticketId === ticketId);
+    const player = this.getPlayer(ticketId);
     if (player) {
       player.roundWins = this.roundWins[ticketId];
     }
     this.winnerTicketId = ticketId;
     this.phase = "round_end";
     this.timerEndsAtMs = nowMs + this.limits.roundEndTimeoutMs;
-    this.dirty = true;
+    this.markStateDirty();
+    this.markSnapshotDirty();
   }
 
   resolveRoundTimeout(nowMs) {
@@ -386,7 +414,8 @@ class Duel {
       this.winnerTicketId = "";
       this.phase = "round_end";
       this.timerEndsAtMs = nowMs + this.limits.roundEndTimeoutMs;
-      this.dirty = true;
+      this.markStateDirty();
+      this.markSnapshotDirty();
       return;
     }
 
@@ -399,7 +428,7 @@ class Duel {
       this.winnerTicketId = winner.ticketId;
       this.phase = "match_end";
       this.finished = true;
-      this.dirty = true;
+      this.markStateDirty();
       return;
     }
 
@@ -424,13 +453,12 @@ class Duel {
             this.phase = "match_end";
             this.finished = true;
           }
-          this.dirty = true;
+          this.markStateDirty();
           break;
         case "prep":
           this.beginWeaponPick(nowMs);
           break;
         case "weapon_pick":
-          this.aiController.tickWeaponPick(nowMs);
           for (const p of this.players) {
             if (!p.hasWeapon || p.weaponKind === null) {
               const randomKind = Math.floor(Math.random() * 4);
@@ -451,29 +479,24 @@ class Duel {
     }
 
     if (this.phase === "fight") {
-      this.aiController.tick(nowMs);
       for (const p of this.players) {
-        if (!p.isAiBot) {
-          movement.tickMovement(p, dtSec);
-        }
+        movement.tickMovement(p, dtSec);
       }
-    } else if (this.phase === "prep") {
-      this.aiController.tick(nowMs);
     }
   }
 
   shouldSendSnapshot(nowMs, snapshotIntervalMs) {
-    if (!this.dirty && nowMs - this.lastSnapshotMs < snapshotIntervalMs) {
+    if (nowMs - this.lastSnapshotMs < snapshotIntervalMs) {
       return false;
     }
-    if (nowMs - this.lastSnapshotMs >= snapshotIntervalMs) {
-      return true;
-    }
-    return this.dirty;
+    return this.snapshotDirty || this.phase === "fight" || this.phase === "prep";
   }
 
   buildSnapshotForViewer(viewerTicketId) {
-    return buildSnapshotForViewer(this, viewerTicketId, this.limits.tickRateHz);
+    return buildSnapshotForViewer(this, viewerTicketId, this.limits.tickRateHz, {
+      poseSampleRateHz: this.limits.poseSampleRateHz,
+      snapshotHistorySamples: this.limits.snapshotHistorySamples,
+    });
   }
 
   buildStateForTicket(ticketId) {

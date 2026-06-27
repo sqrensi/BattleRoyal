@@ -111,6 +111,13 @@ function buildMatchStateForTicket(duel, ticketId) {
     duelSpawnSlotIndex: spawnSlotIndex >= 0 ? spawnSlotIndex : -1,
     duelOpponentTeamIndex: opponentTeamIndex,
     duelOpponentSpawnSlotIndex: opponentSpawnSlotIndex,
+    duelLocalDuelRating: localPlayer && Number.isFinite(localPlayer.duelRating)
+      ? Math.max(0, localPlayer.duelRating)
+      : 1000,
+    duelOpponentNickname: opponent ? (opponent.nickname || opponent.playerId || "") : "",
+    duelOpponentDuelRating: opponent && Number.isFinite(opponent.duelRating)
+      ? Math.max(0, opponent.duelRating)
+      : 1000,
   };
 }
 
@@ -121,13 +128,18 @@ function duelHolstered(player) {
   return player.weaponKind === null || player.weaponKind < 0;
 }
 
-function buildRemotePlayerState(player, serverTick) {
+function buildRemotePlayerState(player, serverTick, historySamples = 12) {
   const hasWeapon = !!(player.hasWeapon && player.weaponKind !== null && player.weaponKind >= 0);
   const weaponKind = hasWeapon ? player.weaponKind : 0;
+  const sampleTick = player.poseSampleSeq > 0 ? player.poseSampleSeq : (serverTick || 0);
+  const history = typeof player.getBroadcastStateHistory === "function"
+    ? player.getBroadcastStateHistory(historySamples)
+    : [];
 
   return {
     ticketId: player.ticketId,
     nickname: player.nickname || player.playerId || "Игрок",
+    duelRating: Number.isFinite(player.duelRating) ? Math.max(0, player.duelRating) : 1000,
     position: { x: player.x, y: player.y, z: player.z },
     yaw: player.yaw || 0,
     lookPitch: player.lookPitch || 0,
@@ -159,6 +171,9 @@ function buildRemotePlayerState(player, serverTick) {
     isAiming: !!player.isAiming,
     wallAvoidBlend: player.wallAvoidBlend || 0,
     deathSeq: player.deathSeq || 0,
+    deathFallDirX: player.deathFallDirX || 0,
+    deathFallDirY: player.deathFallDirY || 0,
+    deathFallDirZ: player.deathFallDirZ || 0,
     animSpeed: player.animSpeed || 0,
     isGrounded: player.isGrounded !== false,
     jumpState: Number.isFinite(player.jumpState) ? player.jumpState : 0,
@@ -168,8 +183,9 @@ function buildRemotePlayerState(player, serverTick) {
     velZ: player.velZ || 0,
     moveInputX: player.moveInputX || 0,
     moveInputZ: player.moveInputZ || 0,
-    sampleTick: serverTick || 0,
+    sampleTick,
     sampleTimeMs: Date.now(),
+    history,
     shotOriginX: player.shotOriginX || 0,
     shotOriginY: player.shotOriginY || 0,
     shotOriginZ: player.shotOriginZ || 0,
@@ -180,14 +196,21 @@ function buildRemotePlayerState(player, serverTick) {
     shotEndY: player.shotEndY || 0,
     shotEndZ: player.shotEndZ || 0,
     shotHasEndPoint: !!player.shotHasEndPoint,
-    recentShots: typeof player.formatRecentShotsForClient === "function"
+    recentShots: typeof player.formatRecentShotsForClient === "function" && player.shotSeq > 0
       ? player.formatRecentShotsForClient()
       : [],
+    weaponPickupSeq: player.weaponPickupSeq || 0,
+    medkitRemainingSeconds: player.medkitRemainingSeconds || 0,
+    medkitCount: player.medkitCount || 0,
+    isUsingMedkit: !!player.isUsingMedkit,
     killCount: player.roundWins || 0,
   };
 }
 
-function buildSnapshotForViewer(duel, viewerTicketId, tickRateHz) {
+function buildSnapshotForViewer(duel, viewerTicketId, tickRateHz, options) {
+  const opts = options || {};
+  const poseSampleRateHz = opts.poseSampleRateHz || tickRateHz;
+  const historySamples = opts.snapshotHistorySamples || 12;
   const viewer = duel.players.find((p) => p.ticketId === viewerTicketId);
   const others = [];
 
@@ -195,16 +218,18 @@ function buildSnapshotForViewer(duel, viewerTicketId, tickRateHz) {
     if (player.ticketId === viewerTicketId) {
       continue;
     }
-    if (!player.isAiBot && !player.hasPose && !player.connected) {
-      continue;
+    // Duel / 1v1: always include opponent (spawn pose is authoritative before client poses arrive).
+    const isSmallLobby = duel.mode === "duel" || duel.players.length <= 2;
+    if (isSmallLobby || player.connected || player.hasPose) {
+      others.push(buildRemotePlayerState(player, duel.serverTick, historySamples));
     }
-    others.push(buildRemotePlayerState(player, duel.serverTick));
   }
 
   const payload = {
     type: "snapshot",
     serverTick: duel.serverTick,
     serverTickRate: tickRateHz,
+    movementSampleRateHz: poseSampleRateHz,
     players: others,
   };
 
@@ -212,7 +237,7 @@ function buildSnapshotForViewer(duel, viewerTicketId, tickRateHz) {
     payload.selfAuthoritative = {
       position: { x: viewer.x, y: viewer.y, z: viewer.z },
       yaw: viewer.yaw || 0,
-      sampleTick: duel.serverTick,
+      sampleTick: viewer.poseSampleSeq > 0 ? viewer.poseSampleSeq : duel.serverTick,
     };
   }
 

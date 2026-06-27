@@ -46,11 +46,13 @@ namespace ShooterPrototype.UI
         [Header("Reliability")]
         [SerializeField] private int enqueueRetryCount = 2;
         [SerializeField] private float enqueueRetryDelaySeconds = 0.4f;
+        [SerializeField] private float duelBotFallbackQueueSeconds = 0f;
 
         private Coroutine queuePollingCoroutine;
         private Coroutine profileSyncCoroutine;
         private bool isQueueing;
         private string currentTicketId = string.Empty;
+        private float queueSearchStartedAtUnscaled;
         private string localPlayerId;
 
         private MainMenuUiSoundController uiSound;
@@ -168,9 +170,16 @@ namespace ShooterPrototype.UI
             if (PlayerProfileService.IsOfflineMode)
             {
                 var offlineMode = MainMenuGameModeSelector.SelectedMode;
+                if (offlineMode == MainMenuGameMode.Duel1v1)
+                {
+                    uiSound?.PlayStart();
+                    StartOfflineDuelWithBot();
+                    return;
+                }
+
                 if (!MainMenuGameModeUtility.IsOfflineSoloMode(offlineMode))
                 {
-                    SetStatus("В офлайне доступны тренировка и челлендж.");
+                    SetStatus("В офлайне доступны дуэль с ботом, тренировка и челлендж.");
                     return;
                 }
 
@@ -206,6 +215,12 @@ namespace ShooterPrototype.UI
                     StartOfflineTraining();
                 }
 
+                return;
+            }
+
+            if (selectedMode != MainMenuGameMode.Duel1v1)
+            {
+                SetStatus("Онлайн-режим 1 на 1 пока единственный доступный матч.");
                 return;
             }
 
@@ -293,6 +308,10 @@ namespace ShooterPrototype.UI
             realtimeClient?.EndMatchSession();
             networkLauncher?.DisconnectClient("Preparing queue search.");
 
+            isQueueing = true;
+            SetStartButtonState(isQueueing: true, interactable: true);
+            SetStatus(searchingStatusText);
+
             if (profileApiClient != null)
             {
                 yield return PlayerProfileService.SyncProfile(
@@ -317,7 +336,6 @@ namespace ShooterPrototype.UI
                 networkLauncher.ClearMatchContext();
             }
 
-            SetStatus(searchingStatusText);
             SetStartButtonState(isQueueing: true, interactable: false);
 
             var enqueueCompleted = false;
@@ -326,6 +344,9 @@ namespace ShooterPrototype.UI
             var enqueueError = string.Empty;
 
             ActiveMatchContext.SetMode(MainMenuGameModeSelector.SelectedMode);
+            ActiveMatchContext.SetOfflineDuelSession(false);
+            ActiveMatchContext.SetOfflineTrainingSession(false);
+            ActiveMatchContext.SetOfflineChallengeSession(false);
 
             var attempts = Mathf.Max(1, enqueueRetryCount + 1);
             for (var attempt = 1; attempt <= attempts; attempt++)
@@ -368,7 +389,7 @@ namespace ShooterPrototype.UI
             }
 
             currentTicketId = enqueueResponse.ticketId;
-            isQueueing = true;
+            queueSearchStartedAtUnscaled = Time.unscaledTime;
             SetStartButtonState(isQueueing: true, interactable: true);
 
             var pollDelay = GetQueuePollInterval();
@@ -401,6 +422,14 @@ namespace ShooterPrototype.UI
                 if (status.Equals("Queued", System.StringComparison.OrdinalIgnoreCase))
                 {
                     SetStatus($"{searchingStatusText} ({statusResponse.queueDurationSeconds:F1}s)");
+
+                    if (duelBotFallbackQueueSeconds > 0f &&
+                        MainMenuGameModeSelector.SelectedMode == MainMenuGameMode.Duel1v1 &&
+                        Time.unscaledTime - queueSearchStartedAtUnscaled >= duelBotFallbackQueueSeconds)
+                    {
+                        yield return StartCoroutine(StartOfflineDuelAfterQueueTimeoutRoutine());
+                        yield break;
+                    }
                 }
                 else if (status.Equals("Matched", System.StringComparison.OrdinalIgnoreCase))
                 {
@@ -408,6 +437,9 @@ namespace ShooterPrototype.UI
                     queuePollingCoroutine = null;
                     currentTicketId = string.Empty;
                     SetStartButtonState(isQueueing: false, interactable: false);
+                    ActiveMatchContext.SetOfflineDuelSession(false);
+                    ActiveMatchContext.SetOfflineTrainingSession(false);
+                    ActiveMatchContext.SetOfflineChallengeSession(false);
                     var playerCount = Mathf.Max(1, statusResponse.matchedPlayerCount);
                     networkLauncher.SetMatchContext(statusResponse.matchId, playerCount, statusResponse.ticketId);
                     SetStatus($"{connectingStatusText} {statusResponse.serverAddress}:{statusResponse.serverPort} | players: {playerCount}");
@@ -637,6 +669,37 @@ namespace ShooterPrototype.UI
             ActiveMatchContext.SetOfflineChallengeSession(true);
             LoadingScreenOverlay.Show("Загрузка челленджа...");
             StartCoroutine(LoadGameSceneRoutine());
+        }
+
+        private void StartOfflineDuelWithBot()
+        {
+            var realtimeClient = RealtimeTransportClient.Active ?? FindFirstObjectByType<RealtimeTransportClient>();
+            realtimeClient?.EndMatchSession();
+            networkLauncher?.DisconnectClient("Starting offline duel bot.");
+            ActiveMatchContext.SetMode(MainMenuGameMode.Duel1v1);
+            ActiveMatchContext.SetOfflineDuelSession(true);
+            LoadingScreenOverlay.Show("Загрузка дуэли...");
+            StartCoroutine(LoadGameSceneRoutine());
+        }
+
+        private IEnumerator StartOfflineDuelAfterQueueTimeoutRoutine()
+        {
+            var ticketId = currentTicketId;
+            isQueueing = false;
+            queuePollingCoroutine = null;
+            currentTicketId = string.Empty;
+            SetStartButtonState(isQueueing: false, interactable: false);
+
+            if (!string.IsNullOrWhiteSpace(ticketId))
+            {
+                yield return StartCoroutine(SendDequeueBestEffort(ticketId));
+            }
+
+            networkLauncher?.DisconnectClient("Queue timeout, starting offline duel bot.");
+            var realtimeClient = RealtimeTransportClient.Active ?? FindFirstObjectByType<RealtimeTransportClient>();
+            realtimeClient?.EndMatchSession();
+            SetStatus("Соперник не найден. Запуск бота...");
+            StartOfflineDuelWithBot();
         }
 
         public void RefreshLeaderboardForSelectedMode()
@@ -892,6 +955,10 @@ namespace ShooterPrototype.UI
         private IEnumerator ConnectAndEnterGameRoutine(string address, int port)
         {
             LoadingScreenOverlay.Show(connectingStatusText);
+            ActiveMatchContext.SetOfflineDuelSession(false);
+            ActiveMatchContext.SetOfflineTrainingSession(false);
+            ActiveMatchContext.SetOfflineChallengeSession(false);
+
             var connectTask = networkLauncher.ConnectToServerAsync(address, port);
             while (!connectTask.IsCompleted)
             {
@@ -924,6 +991,53 @@ namespace ShooterPrototype.UI
                 networkLauncher?.ClearMatchContext();
                 SetStartButtonState(isQueueing: false, interactable: true);
                 yield break;
+            }
+
+            var ticketId = networkLauncher != null ? networkLauncher.CurrentTicketId : string.Empty;
+            if (!string.IsNullOrWhiteSpace(ticketId))
+            {
+                var realtimeClient = RealtimeTransportClient.Active ?? FindFirstObjectByType<RealtimeTransportClient>();
+                if (realtimeClient == null && networkLauncher != null)
+                {
+                    realtimeClient = networkLauncher.GetComponent<RealtimeTransportClient>();
+                    if (realtimeClient == null)
+                    {
+                        realtimeClient = networkLauncher.gameObject.AddComponent<RealtimeTransportClient>();
+                    }
+                }
+
+                if (realtimeClient != null)
+                {
+                    var wsUrl = networkConfig != null
+                        ? networkConfig.ResolveRealtimeWsUrl()
+                        : (networkLauncher != null && networkLauncher.Config != null
+                            ? networkLauncher.Config.ResolveRealtimeWsUrl()
+                            : "ws://127.0.0.1:5051");
+                    realtimeClient.Configure(wsUrl);
+                    realtimeClient.BeginMatchSession(ticketId);
+
+                    var wsDeadline = Time.unscaledTime + 12f;
+                    while (!realtimeClient.IsReady && Time.unscaledTime < wsDeadline)
+                    {
+                        realtimeClient.EnsureConnected();
+                        yield return null;
+                    }
+
+                    if (!realtimeClient.IsReady)
+                    {
+                        LoadingScreenOverlay.Hide();
+                        realtimeClient.EndMatchSession();
+                        if (queueApiClient != null)
+                        {
+                            yield return StartCoroutine(SendLeaveMatchBestEffort(ticketId));
+                        }
+
+                        SetStatus("Не удалось подключиться к матчу (WebSocket). Проверь wss:// в NetworkConfig.");
+                        networkLauncher?.ClearMatchContext();
+                        SetStartButtonState(isQueueing: false, interactable: true);
+                        yield break;
+                    }
+                }
             }
 
             SetStatus(connectedStatusText);
