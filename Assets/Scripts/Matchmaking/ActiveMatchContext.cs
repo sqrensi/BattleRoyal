@@ -12,6 +12,8 @@ namespace ShooterPrototype.Matchmaking
 
         public static bool IsDuel => SelectedMode == MainMenuGameMode.Duel1v1;
 
+        public static bool IsDeathmatch => SelectedMode == MainMenuGameMode.Deathmatch;
+
         public static bool IsTraining => SelectedMode == MainMenuGameMode.Training;
 
         public static bool IsChallenge => SelectedMode == MainMenuGameMode.Challenge;
@@ -63,10 +65,18 @@ namespace ShooterPrototype.Matchmaking
             string battleRoyaleScene,
             string duelScene,
             string trainingScene = null,
-            string challengeScene = null)
+            string challengeScene = null,
+            string deathmatchScene = null)
         {
             if (string.IsNullOrWhiteSpace(sceneName))
             {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(deathmatchScene) &&
+                string.Equals(sceneName, deathmatchScene, System.StringComparison.OrdinalIgnoreCase))
+            {
+                SetMode(MainMenuGameMode.Deathmatch);
                 return;
             }
 
@@ -102,7 +112,8 @@ namespace ShooterPrototype.Matchmaking
             string battleRoyaleScene,
             string duelScene,
             string trainingScene = null,
-            string challengeScene = null)
+            string challengeScene = null,
+            string deathmatchScene = null)
         {
             if (IsChallenge && !string.IsNullOrWhiteSpace(challengeScene))
             {
@@ -112,6 +123,11 @@ namespace ShooterPrototype.Matchmaking
             if (IsTraining && !string.IsNullOrWhiteSpace(trainingScene))
             {
                 return trainingScene;
+            }
+
+            if (IsDeathmatch && !string.IsNullOrWhiteSpace(deathmatchScene))
+            {
+                return deathmatchScene;
             }
 
             return IsDuel ? duelScene : battleRoyaleScene;

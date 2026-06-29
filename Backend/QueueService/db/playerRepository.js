@@ -466,6 +466,9 @@ async function getPlayerMatchStats(playerId) {
 
 function calculateRatingDelta(placement, kills, matchMode, won) {
   const normalizedMode = String(matchMode || "").trim().toLowerCase();
+  if (normalizedMode === "deathmatch" || normalizedMode === "dm") {
+    return 0;
+  }
   if (normalizedMode === "duel" || normalizedMode === "1v1") {
     if (won === true) {
       return 15;
@@ -590,6 +593,8 @@ async function recordMatchStats(externalPlayerId, payload) {
 
       ratingDelta = calculateRatingDelta(placement, kills, payload && payload.matchMode, won);
 
+      const normalizedMode = matchMode;
+      const skipRatingUpdate = normalizedMode === "deathmatch" || normalizedMode === "dm";
       const ratingColumn = matchMode === "duel" || matchMode === "1v1" ? "duel_rating" : "rating";
 
       await tx.run(
@@ -605,13 +610,15 @@ async function recordMatchStats(externalPlayerId, payload) {
         [kills, deaths, won ? 1 : 0, placement, damageDealt, timestamp, playerRow.id]
       );
 
-      await tx.run(
-        `UPDATE player_profiles
-         ${buildRatingUpdateClause(ratingColumn)},
-             updated_at = ?
-         WHERE player_id = ?`,
-        [ratingDelta, timestamp, playerRow.id]
-      );
+      if (!skipRatingUpdate) {
+        await tx.run(
+          `UPDATE player_profiles
+           ${buildRatingUpdateClause(ratingColumn)},
+               updated_at = ?
+           WHERE player_id = ?`,
+          [ratingDelta, timestamp, playerRow.id]
+        );
+      }
 
       await tx.run(
         `INSERT INTO player_match_stat_reports

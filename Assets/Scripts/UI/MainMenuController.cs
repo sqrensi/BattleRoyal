@@ -40,13 +40,15 @@ namespace ShooterPrototype.UI
         [SerializeField] private bool autoLoadGameSceneOnSuccess = true;
         [SerializeField] private string gameSceneName = "Game";
         [SerializeField] private string duelSceneName = "1x1";
+        [SerializeField] private string deathmatchSceneName = "dm";
         [SerializeField] private string trainingSceneName = "training";
         [SerializeField] private string challengeSceneName = "challenge";
 
         [Header("Reliability")]
         [SerializeField] private int enqueueRetryCount = 2;
         [SerializeField] private float enqueueRetryDelaySeconds = 0.4f;
-        [SerializeField] private float duelBotFallbackQueueSeconds = 0f;
+        [Tooltip("1v1 online: if no human match within this many seconds, start local offline bot duel.")]
+        [SerializeField] private float duelBotFallbackQueueSeconds = 5f;
 
         private Coroutine queuePollingCoroutine;
         private Coroutine profileSyncCoroutine;
@@ -218,9 +220,10 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            if (selectedMode != MainMenuGameMode.Duel1v1)
+            if (selectedMode != MainMenuGameMode.Duel1v1 &&
+                selectedMode != MainMenuGameMode.Deathmatch)
             {
-                SetStatus("Онлайн-режим 1 на 1 пока единственный доступный матч.");
+                SetStatus("Онлайн доступны режимы «1 на 1» и «Дэзматч».");
                 return;
             }
 
@@ -440,6 +443,15 @@ namespace ShooterPrototype.UI
                     ActiveMatchContext.SetOfflineDuelSession(false);
                     ActiveMatchContext.SetOfflineTrainingSession(false);
                     ActiveMatchContext.SetOfflineChallengeSession(false);
+                    if (!string.IsNullOrWhiteSpace(statusResponse.matchMode))
+                    {
+                        ActiveMatchContext.SetMode(
+                            MainMenuGameModeUtility.FromApiValue(statusResponse.matchMode));
+                    }
+                    else
+                    {
+                        ActiveMatchContext.SetMode(MainMenuGameModeSelector.SelectedMode);
+                    }
                     var playerCount = Mathf.Max(1, statusResponse.matchedPlayerCount);
                     networkLauncher.SetMatchContext(statusResponse.matchId, playerCount, statusResponse.ticketId);
                     SetStatus($"{connectingStatusText} {statusResponse.serverAddress}:{statusResponse.serverPort} | players: {playerCount}");
@@ -917,7 +929,8 @@ namespace ShooterPrototype.UI
                 gameSceneName,
                 duelSceneName,
                 trainingSceneName,
-                challengeSceneName);
+                challengeSceneName,
+                deathmatchSceneName);
             if (string.IsNullOrWhiteSpace(targetScene))
             {
                 LoadingScreenOverlay.Hide();

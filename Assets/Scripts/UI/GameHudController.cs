@@ -507,7 +507,10 @@ namespace ShooterPrototype.UI
         {
             EnsureHudExists();
             EnsureDuelTopCenterHud(canvas != null ? canvas.transform : null);
-            SetMatchCornerStatsPanelVisible(false);
+            if (!ActiveMatchContext.IsDeathmatch)
+            {
+                SetMatchCornerStatsPanelVisible(false);
+            }
             if (duelTopCenterText == null)
             {
                 return;
@@ -632,6 +635,12 @@ namespace ShooterPrototype.UI
             }
 
             duelTopCenterText.gameObject.SetActive(true);
+        }
+
+        public void SetDeathmatchHud(int killCount, int aliveCount, int secondsRemaining)
+        {
+            SetMatchCornerStats(killCount, aliveCount);
+            SetTrainingTimerSeconds(secondsRemaining);
         }
 
         public void ScheduleTrainingGameOver(int killCount)
@@ -1230,6 +1239,11 @@ namespace ShooterPrototype.UI
 
         private static bool ShouldReportMatchStatsViaProfileApi()
         {
+            if (ActiveMatchContext.IsDeathmatch)
+            {
+                return false;
+            }
+
             if (!ActiveMatchContext.IsDuel)
             {
                 return true;
@@ -1241,6 +1255,11 @@ namespace ShooterPrototype.UI
 
         private int ResolveGameOverRatingDelta(bool won, MatchOutcomeSummary summary)
         {
+            if (ActiveMatchContext.IsDeathmatch)
+            {
+                return 0;
+            }
+
             if (serverMatchStatsReceived)
             {
                 return pendingServerRatingDelta;
@@ -1277,7 +1296,8 @@ namespace ShooterPrototype.UI
                 summary.Placement,
                 won,
                 damageDealt,
-                ActiveMatchContext.IsDuel ? "duel" : "battle_royale",
+                ActiveMatchContext.IsDuel ? "duel" :
+                ActiveMatchContext.IsDeathmatch ? "deathmatch" : "battle_royale",
                 (success, ratingDelta, _) =>
                 {
                     UpdateGameOverRatingText(
@@ -1332,8 +1352,15 @@ namespace ShooterPrototype.UI
             if (gameOverRewardsText != null)
             {
                 gameOverRewardsText.gameObject.SetActive(true);
-                gameOverRewardsText.text =
-                    $"+{summary.CoinReward:N0} монет  ·  {MatchRatingUtility.FormatDelta(ratingDelta)} рейтинг";
+                if (ActiveMatchContext.IsDeathmatch)
+                {
+                    gameOverRewardsText.text = $"+{summary.CoinReward:N0} монет";
+                }
+                else
+                {
+                    gameOverRewardsText.text =
+                        $"+{summary.CoinReward:N0} монет  ·  {MatchRatingUtility.FormatDelta(ratingDelta)} рейтинг";
+                }
             }
         }
 
@@ -1348,6 +1375,11 @@ namespace ShooterPrototype.UI
             {
                 if (!string.IsNullOrWhiteSpace(networkLauncher.CurrentMatchId))
                 {
+                    if (ActiveMatchContext.IsDeathmatch)
+                    {
+                        return $"deathmatch:{networkLauncher.CurrentMatchId.Trim()}";
+                    }
+
                     return $"duel:{networkLauncher.CurrentMatchId.Trim()}";
                 }
 
@@ -1993,6 +2025,12 @@ namespace ShooterPrototype.UI
             if (existingPanel != null)
             {
                 var versionMarker = existingPanel.GetComponent<CornerStatsLayoutMarker>();
+                if (duelWeaponPickPanel == null)
+                {
+                    duelWeaponPickPanel = existingPanel.GetComponent<RectTransform>();
+                    RebindDuelWeaponPickIcons(existingPanel);
+                }
+
                 if (versionMarker != null &&
                     versionMarker.Version >= DuelWeaponPickLayoutVersion &&
                     duelWeaponPickPanel != null)
@@ -2094,6 +2132,48 @@ namespace ShooterPrototype.UI
             button.targetGraphic = background;
             var capturedKind = kind;
             button.onClick.AddListener(() => duelWeaponPickHandler?.Invoke(capturedKind));
+        }
+
+        private void RebindDuelWeaponPickIcons(Transform panelRoot)
+        {
+            if (panelRoot == null)
+            {
+                return;
+            }
+
+            duelWeaponPickIcons.Clear();
+            var buttonsRoot = panelRoot.Find("DuelWeaponPickButtons");
+            if (buttonsRoot == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < buttonsRoot.childCount; i++)
+            {
+                var child = buttonsRoot.GetChild(i);
+                if (child == null)
+                {
+                    continue;
+                }
+
+                var prefix = "DuelWeaponPick_";
+                if (!child.name.StartsWith(prefix, System.StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var kindName = child.name.Substring(prefix.Length);
+                if (!System.Enum.TryParse(kindName, out WeaponKind kind))
+                {
+                    continue;
+                }
+
+                var icon = child.GetComponentInChildren<Image>();
+                if (icon != null)
+                {
+                    duelWeaponPickIcons[kind] = icon;
+                }
+            }
         }
 
         private void RefreshDuelWeaponPickIcons()

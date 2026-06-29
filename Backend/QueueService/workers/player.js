@@ -15,6 +15,8 @@ class Player {
     this.maxHp = 100;
     this.alive = true;
     this.roundWins = 0;
+    this.matchKills = 0;
+    this.respawnAtMs = 0;
 
     this.weaponKind = null;
     this.weaponSlot0Kind = WEAPON_SLOT_EMPTY;

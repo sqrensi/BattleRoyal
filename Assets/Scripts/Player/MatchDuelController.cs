@@ -75,6 +75,10 @@ namespace ShooterPrototype.Player
             {
                 transportClient.MatchStateReceived += HandleMatchState;
                 transportClient.MatchStatsReceived += HandleMatchStats;
+                if (transportClient.TryGetLatestMatchState(out var cachedState))
+                {
+                    HandleMatchState(cachedState);
+                }
             }
         }
 

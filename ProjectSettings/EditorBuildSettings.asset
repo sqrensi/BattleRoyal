@@ -20,6 +20,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/challenge.unity
     guid: 6e3057d479c95394587c0e4a1929f367
+  - enabled: 1
+    path: Assets/Scenes/dm.unity
+    guid: 38d7b162e43989a4698e2ed4c4cce72a
   m_configObjects:
     com.unity.addressableassets: {fileID: 11400000, guid: 3aa77465429f51741897806868f88125, type: 2}
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}

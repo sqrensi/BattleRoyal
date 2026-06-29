@@ -188,6 +188,9 @@ const handleProfileRoutes = registerProfileRoutes({
 
 function normalizeMatchMode(value) {
   const raw = String(value || "duel").trim().toLowerCase();
+  if (raw === "deathmatch" || raw === "dm" || raw === "deaths" || raw === "ffa") {
+    return "deathmatch";
+  }
   if (raw === "duel" || raw === "1v1" || raw === "duel_1v1") {
     return "duel";
   }
@@ -244,6 +247,73 @@ function countActiveMatches() {
     }
   }
   return count;
+}
+
+function countActiveMatchesByMode(mode) {
+  let count = 0;
+  for (const match of matchesById.values()) {
+    if (match.state !== "ended" && match.mode === mode) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+async function makeDeathmatch(players) {
+  if (countActiveMatches() >= config.maxConcurrentDuelMatches + config.maxConcurrentDeathmatchMatches) {
+    return null;
+  }
+  if (countActiveMatchesByMode("deathmatch") >= config.maxConcurrentDeathmatchMatches) {
+    return null;
+  }
+  if (!Array.isArray(players) || players.length < config.dmMinPlayers) {
+    return null;
+  }
+
+  const resolvedPlayers = [];
+  for (const ticket of players) {
+    const nickname = ticket.nickname ||
+      await playerRepository.resolvePlayerNickname(ticket.playerId, ticket.ticketId);
+    ticket.nickname = nickname;
+    resolvedPlayers.push(ticket);
+  }
+
+  const matchId = crypto.randomUUID();
+  const match = {
+    id: matchId,
+    mode: "deathmatch",
+    state: "creating",
+    players: resolvedPlayers,
+    ticketIds: resolvedPlayers.map((p) => p.ticketId),
+    createdAtMs: Date.now(),
+    workerId: null,
+  };
+
+  const assigned = workers.assign({
+    id: matchId,
+    mode: "deathmatch",
+    players: resolvedPlayers.map((ticket) => ({
+      ticketId: ticket.ticketId,
+      playerId: ticket.playerId,
+      nickname: ticket.nickname || "",
+      duelRating: Number.isFinite(ticket.duelRating) ? Math.max(0, ticket.duelRating) : 1000,
+    })),
+  });
+
+  if (!assigned) {
+    return null;
+  }
+
+  matchesById.set(matchId, match);
+  for (const ticket of resolvedPlayers) {
+    ticket.status = "Matched";
+    ticket.matchId = matchId;
+    ticket.matchedAtMs = Date.now();
+    ticketToMatch.set(ticket.ticketId, matchId);
+  }
+
+  metrics.setActiveMatches(countActiveMatches());
+  return match;
 }
 
 async function makeMatch(playerA, playerB) {
@@ -326,7 +396,49 @@ function buildTicketResponse(ticket) {
   };
 }
 
+async function tryMatchDeathmatchQueue() {
+  while (true) {
+    const dmTickets = queue.filter((ticket) =>
+      ticket &&
+      ticket.status === "Queued" &&
+      ticket.matchMode === "deathmatch"
+    );
+    if (dmTickets.length < config.dmMinPlayers) {
+      break;
+    }
+
+    if (countActiveMatchesByMode("deathmatch") >= config.maxConcurrentDeathmatchMatches) {
+      break;
+    }
+
+    const batchSize = Math.min(dmTickets.length, config.dmMaxPlayers);
+
+    const batch = dmTickets.slice(0, batchSize);
+    for (const ticket of batch) {
+      const idx = queue.findIndex((t) => t && t.ticketId === ticket.ticketId);
+      if (idx >= 0) {
+        queue.splice(idx, 1);
+      }
+    }
+
+    const match = await makeDeathmatch(batch);
+    if (!match) {
+      for (let i = batch.length - 1; i >= 0; i--) {
+        queue.unshift(batch[i]);
+      }
+      break;
+    }
+
+    log.info(
+      "match",
+      `created dm ${match.id} players=${batch.length} tickets=${batch.map((t) => t.ticketId.slice(0, 8)).join(",")} active=${countActiveMatches()} queue=${queue.length}`
+    );
+  }
+}
+
 async function tryMatchQueue() {
+  await tryMatchDeathmatchQueue();
+
   while (queue.length >= 2 && countActiveMatches() < config.maxConcurrentDuelMatches) {
     let indexA = -1;
     let indexB = -1;
@@ -369,6 +481,103 @@ async function tryMatchQueue() {
     );
   }
   metrics.setQueueSize(queue.length);
+}
+
+async function finalizeDeathmatchMatchStats(match, winnerTicketId, killCounts) {
+  if (!match || match.mode !== "deathmatch") {
+    return;
+  }
+
+  const sourceId = `deathmatch:${match.id}`;
+  const ranked = [...match.ticketIds]
+    .map((ticketId) => ({
+      ticketId,
+      kills: Math.max(0, Math.floor(Number(killCounts && killCounts[ticketId]) || 0)),
+    }))
+    .sort((a, b) => b.kills - a.kills);
+
+  const placementByTicket = new Map();
+  let nextPlacement = 1;
+  for (let i = 0; i < ranked.length; i++) {
+    if (i > 0 && ranked[i].kills < ranked[i - 1].kills) {
+      nextPlacement = i + 1;
+    }
+    placementByTicket.set(ranked[i].ticketId, nextPlacement);
+  }
+
+  const resolvedWinnerTicketId = String(winnerTicketId || "").trim() ||
+    resolveDeathmatchWinnerTicketId(killCounts, match.ticketIds);
+
+  for (const ticketId of match.ticketIds) {
+    const ticket = ticketsById.get(ticketId);
+    if (!ticket || !ticket.playerId || isWsBotTicket(ticket)) {
+      continue;
+    }
+
+    const kills = Math.max(0, Math.floor(Number(killCounts && killCounts[ticketId]) || 0));
+    const placement = placementByTicket.get(ticketId) || ranked.length;
+    const won = !!resolvedWinnerTicketId && ticketId === resolvedWinnerTicketId;
+
+    try {
+      const result = await playerRepository.recordMatchStats(ticket.playerId, {
+        sourceId,
+        kills,
+        deaths: 0,
+        placement,
+        won,
+        damageDealt: 0,
+        matchMode: "deathmatch",
+      });
+      if (!result.ok) {
+        log.warn("match", `stats ${ticket.playerId}: ${result.error || "failed"}`);
+        continue;
+      }
+
+      deliverMatchStats(ticketId, {
+        type: "match_stats",
+        sourceId,
+        won,
+        ratingDelta: 0,
+        alreadyReported: !!result.alreadyReported,
+        profile: {
+          duelRating: result.profile && Number.isFinite(result.profile.duelRating)
+            ? result.profile.duelRating
+            : 0,
+          rating: result.profile && Number.isFinite(result.profile.rating)
+            ? result.profile.rating
+            : 0,
+        },
+      });
+      log.info(
+        "match",
+        `dm stats ${ticket.playerId.slice(0, 8)} placement=${placement} kills=${kills} won=${won ? 1 : 0}`
+      );
+    } catch (error) {
+      log.warn("match", `stats ${ticket.playerId}: ${error.message || error}`);
+    }
+  }
+}
+
+function resolveDeathmatchWinnerTicketId(killCounts, ticketIds) {
+  if (!Array.isArray(ticketIds) || ticketIds.length === 0) {
+    return "";
+  }
+
+  let bestTicketId = "";
+  let bestKills = -1;
+  let tied = false;
+  for (const ticketId of ticketIds) {
+    const kills = Math.max(0, Math.floor(Number(killCounts && killCounts[ticketId]) || 0));
+    if (kills > bestKills) {
+      bestKills = kills;
+      bestTicketId = ticketId;
+      tied = false;
+    } else if (kills === bestKills && kills >= 0 && bestTicketId) {
+      tied = true;
+    }
+  }
+
+  return tied || !bestTicketId || bestKills <= 0 ? "" : bestTicketId;
 }
 
 async function finalizeDuelMatchStats(match, winnerTicketId, roundWins) {
@@ -515,6 +724,17 @@ function queuePairCompatible(a, b) {
     return false;
   }
 
+  const modeA = normalizeMatchMode(a.matchMode);
+  const modeB = normalizeMatchMode(b.matchMode);
+  if (modeA !== modeB) {
+    return false;
+  }
+
+  // Deathmatch batches only via tryMatchDeathmatchQueue — never pair as duel.
+  if (modeA === "deathmatch") {
+    return false;
+  }
+
   const wsA = isWsBotTicket(a);
   const wsB = isWsBotTicket(b);
   if (wsA || wsB) {
@@ -601,7 +821,11 @@ async function handleMatchFinished(msg) {
     match.winnerTicketId = msg.winnerTicketId || "";
     if (!msg.abandoned) {
       try {
-        await finalizeDuelMatchStats(match, msg.winnerTicketId || "", msg.roundWins || {});
+        if (match.mode === "deathmatch") {
+          await finalizeDeathmatchMatchStats(match, msg.winnerTicketId || "", msg.roundWins || {});
+        } else {
+          await finalizeDuelMatchStats(match, msg.winnerTicketId || "", msg.roundWins || {});
+        }
       } catch (error) {
         log.warn("match", `stats finalize failed for ${msg.matchId}: ${error.message || error}`);
       }
@@ -752,8 +976,8 @@ const server = http.createServer(async (req, res) => {
     const body = await readJsonBody(req);
     const playerId = normalizePlayerId(body && body.playerId);
     const matchMode = normalizeMatchMode(body && body.matchMode);
-    if (matchMode !== "duel") {
-      respondJson(res, 400, { ok: false, error: "OnlyDuelSupported" });
+    if (matchMode !== "duel" && matchMode !== "deathmatch") {
+      respondJson(res, 400, { ok: false, error: "UnsupportedMatchMode" });
       return;
     }
 

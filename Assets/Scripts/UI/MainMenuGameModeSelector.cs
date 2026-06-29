@@ -13,6 +13,7 @@ namespace ShooterPrototype.UI
         private static readonly MainMenuGameMode[] Modes =
         {
             MainMenuGameMode.Duel1v1,
+            MainMenuGameMode.Deathmatch,
             MainMenuGameMode.Training,
             MainMenuGameMode.Challenge,
         };

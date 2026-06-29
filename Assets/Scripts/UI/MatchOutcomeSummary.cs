@@ -44,6 +44,14 @@ namespace ShooterPrototype.UI
             return new MatchOutcomeSummary(kills, won ? 1 : 2, 0, coinReward);
         }
 
+        public static MatchOutcomeSummary CreateDeathmatch(bool won, int kills, int placement)
+        {
+            kills = Mathf.Max(0, kills);
+            placement = Mathf.Clamp(placement, 1, 20);
+            var coinReward = CalculateCoinReward(kills, 0, placement);
+            return new MatchOutcomeSummary(kills, placement, 0, coinReward);
+        }
+
         public static int CalculateCoinReward(int kills, int survivalSeconds, int placement)
         {
             placement = Mathf.Clamp(placement, 1, 20);

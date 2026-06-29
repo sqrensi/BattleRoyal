@@ -4,45 +4,44 @@ const Player = require("./player");
 const { WEAPON_SLOT_EMPTY } = require("./player");
 const combat = require("./combat");
 const movement = require("./movement");
-const { getSpawnCount, resolveSpawnPose } = require("./spawnTable");
+const { getSpawnCount, resolveSpawnPose, rollRandomSpawnSlot } = require("./dmSpawnTable");
 const {
   buildMatchStateForTicket,
   buildSnapshotForViewer,
 } = require("./clientProtocol");
 
-class Duel {
+class Deathmatch {
   constructor(matchData, limits) {
     this.id = matchData.id;
-    this.mode = matchData.mode || "duel";
+    this.mode = matchData.mode || "deathmatch";
     this.limits = limits;
-    this.roundsToWin = limits.roundsToWin;
+    this.maxPlayers = Math.max(2, Number(limits.dmMaxPlayers) || 6);
+    this.matchDurationMs = Math.max(60000, Number(limits.dmMatchDurationMs) || 600000);
+    this.respawnDelayMs = Math.max(1000, Number(limits.dmRespawnDelayMs) || 3000);
+    this.minPlayers = Math.max(2, Number(limits.dmMinPlayers) || 2);
 
-    this.teamIndexByTicket = new Map();
     this.spawnSlotByTicket = new Map();
-
     const sortedPlayers = [...matchData.players].sort((a, b) =>
       String(a.ticketId).localeCompare(String(b.ticketId))
     );
 
-    this.players = sortedPlayers.map((playerData, index) => {
-      const teamIndex = index % 2;
-      this.teamIndexByTicket.set(playerData.ticketId, teamIndex);
-      return new Player({ ...playerData, spawnX: 0, spawnY: 0, spawnZ: 0 });
-    });
+    this.players = sortedPlayers.map((playerData) => new Player({ ...playerData, spawnX: 0, spawnY: 0, spawnZ: 0 }));
     this.playerByTicket = new Map(this.players.map((player) => [player.ticketId, player]));
+    this.killCount = {};
+    for (const player of this.players) {
+      this.killCount[player.ticketId] = 0;
+      player.matchKills = 0;
+      player.respawnAtMs = 0;
+    }
 
-    this.rollRoundSpawns();
+    this.rollAllSpawns();
     this.applySpawnPositions();
 
     this.phase = "waiting";
-    this.round = 0;
     const joinTimeoutMs = Math.max(2000, Number(limits.matchJoinTimeoutMs) || 20000);
     this.timerEndsAtMs = Date.now() + joinTimeoutMs;
     this.winnerTicketId = "";
-    this.roundWins = {};
-    for (const p of this.players) {
-      this.roundWins[p.ticketId] = 0;
-    }
+    this.roundWins = this.killCount;
 
     this.serverTick = 0;
     this.snapshotDirty = true;
@@ -66,13 +65,6 @@ class Duel {
     this.snapshotDirty = true;
   }
 
-  getTeamIndex(ticketId) {
-    if (this.teamIndexByTicket.has(ticketId)) {
-      return this.teamIndexByTicket.get(ticketId);
-    }
-    return this.players.findIndex((p) => p.ticketId === ticketId);
-  }
-
   getSpawnSlot(ticketId) {
     if (this.spawnSlotByTicket.has(ticketId)) {
       return this.spawnSlotByTicket.get(ticketId);
@@ -80,21 +72,23 @@ class Duel {
     return 0;
   }
 
-  rollRoundSpawns() {
+  rollSpawnForTicket(ticketId) {
+    const slot = rollRandomSpawnSlot();
+    this.spawnSlotByTicket.set(ticketId, slot);
+    return slot;
+  }
+
+  rollAllSpawns() {
     this.spawnSlotByTicket.clear();
     for (const player of this.players) {
-      const teamIndex = Math.max(0, this.getTeamIndex(player.ticketId));
-      const slotCount = Math.max(1, getSpawnCount(teamIndex));
-      const slot = Math.floor(Math.random() * slotCount);
-      this.spawnSlotByTicket.set(player.ticketId, slot);
+      this.rollSpawnForTicket(player.ticketId);
     }
   }
 
   applySpawnPositions() {
     for (const player of this.players) {
-      const teamIndex = Math.max(0, this.getTeamIndex(player.ticketId));
       const slot = this.getSpawnSlot(player.ticketId);
-      const pose = resolveSpawnPose(teamIndex, slot);
+      const pose = resolveSpawnPose(slot);
       if (!pose) {
         continue;
       }
@@ -109,6 +103,24 @@ class Duel {
       player.hasPose = true;
       player.recordStateSample();
     }
+  }
+
+  connectedCount() {
+    return this.players.filter((p) => p.connected).length;
+  }
+
+  canStartMatch() {
+    return this.connectedCount() >= Math.min(this.minPlayers, this.players.length);
+  }
+
+  queueMessage(ticketId, message) {
+    this.outbox.push({ ticketId, message });
+  }
+
+  flushOutbox() {
+    const items = this.outbox;
+    this.outbox = [];
+    return items;
   }
 
   broadcastKillFeed(killer, victim) {
@@ -133,59 +145,29 @@ class Duel {
     }
   }
 
-  getOpponent(ticketId) {
-    for (const player of this.players) {
-      if (player.ticketId !== ticketId) {
-        return player;
-      }
-    }
-    return null;
-  }
-
-  bothConnected() {
-    return this.players.every((p) => p.connected);
-  }
-
-  canStartMatch() {
-    return this.bothConnected();
-  }
-
-  queueMessage(ticketId, message) {
-    this.outbox.push({ ticketId, message });
-  }
-
-  flushOutbox() {
-    const items = this.outbox;
-    this.outbox = [];
-    return items;
-  }
-
   beginPrep(nowMs) {
+    for (const player of this.players) {
+      combat.clearWeapon(player);
+    }
     this.phase = "prep";
-    this.round = 0;
-    this.winnerTicketId = "";
     this.timerEndsAtMs = nowMs + this.limits.prepTimeoutMs;
     this.markStateDirty();
     this.markSnapshotDirty();
   }
 
-  beginWeaponPick(nowMs) {
-    if (this.round <= 0) {
-      this.round = 1;
+  startFight(nowMs) {
+    for (const player of this.players) {
+      combat.clearWeapon(player);
+      player.hp = player.maxHp;
+      player.alive = true;
+      player.respawnAtMs = 0;
+      player.velX = 0;
+      player.velY = 0;
+      player.velZ = 0;
+      player.lastSeq = -1;
     }
-    this.phase = "weapon_pick";
-    this.winnerTicketId = "";
-    this.rollRoundSpawns();
-    this.applySpawnPositions();
-    for (const p of this.players) {
-      p.weaponKind = null;
-      p.hasWeapon = false;
-      p.weaponSlot0Kind = WEAPON_SLOT_EMPTY;
-      p.weaponSlot1Kind = WEAPON_SLOT_EMPTY;
-      p.activeWeaponSlot = WEAPON_SLOT_EMPTY;
-      p.isHolstered = true;
-    }
-    this.timerEndsAtMs = nowMs + this.limits.weaponPickTimeoutMs;
+    this.phase = "fight";
+    this.timerEndsAtMs = nowMs + this.matchDurationMs;
     this.markStateDirty();
     this.markSnapshotDirty();
   }
@@ -197,9 +179,8 @@ class Duel {
     }
     player.connected = true;
     if (!player.hasPose) {
-      const teamIndex = Math.max(0, this.getTeamIndex(ticketId));
       const slot = this.getSpawnSlot(ticketId);
-      const pose = resolveSpawnPose(teamIndex, slot);
+      const pose = resolveSpawnPose(slot);
       if (pose) {
         player.x = pose.x;
         player.y = pose.y;
@@ -231,9 +212,9 @@ class Duel {
       return;
     }
 
-    const opponent = this.getOpponent(ticketId);
-    if (opponent) {
-      this.winnerTicketId = opponent.ticketId;
+    const connected = this.players.filter((p) => p.connected);
+    if (connected.length === 0) {
+      this.winnerTicketId = this.resolveWinnerByKills();
       this.phase = "match_end";
       this.finished = true;
       this.markStateDirty();
@@ -246,29 +227,40 @@ class Duel {
       return;
     }
 
+    const payload = this.phase === "fight" ? (message || {}) : this.stripWeaponFromPose(message);
     if (this.phase === "fight") {
-      movement.applyPose(player, message, this.limits, nowMs);
+      movement.applyPose(player, payload, this.limits, nowMs);
     } else {
-      movement.applyPresencePose(player, message, nowMs);
+      movement.applyPresencePose(player, payload, nowMs);
     }
     this.markSnapshotDirty();
   }
 
+  stripWeaponFromPose(message) {
+    const payload = message && typeof message === "object" ? { ...message } : {};
+    payload.weaponKind = -1;
+    payload.weaponSlot0Kind = WEAPON_SLOT_EMPTY;
+    payload.weaponSlot1Kind = WEAPON_SLOT_EMPTY;
+    payload.activeWeaponSlot = WEAPON_SLOT_EMPTY;
+    payload.isHolstered = true;
+    return payload;
+  }
+
   onWeaponPick(ticketId, message, nowMs) {
-    if (this.phase !== "weapon_pick") {
+    if (this.phase !== "fight") {
       return;
     }
+
     const player = this.getPlayer(ticketId);
-    if (!player) {
+    if (!player || !player.alive) {
       return;
     }
-    if (player.hasWeapon && player.weaponKind !== null) {
-      return;
-    }
+
     const kind = Number(message.weaponKind ?? message.weapon);
     if (!Number.isFinite(kind)) {
       return;
     }
+
     combat.equipWeapon(player, kind);
     this.markStateDirty();
     this.markSnapshotDirty();
@@ -280,7 +272,7 @@ class Duel {
     }
 
     const shooter = this.getPlayer(ticketId);
-    if (!shooter) {
+    if (!shooter || !shooter.alive) {
       return;
     }
 
@@ -296,7 +288,7 @@ class Duel {
 
     const shooter = this.getPlayer(ticketId);
     const targetId = typeof message.targetTicketId === "string" ? message.targetTicketId.trim() : "";
-    const target = this.getPlayer(targetId) || this.getOpponent(ticketId);
+    const target = this.getPlayer(targetId);
     if (!shooter || !target || target.ticketId === shooter.ticketId || !target.alive) {
       return;
     }
@@ -344,101 +336,105 @@ class Duel {
 
     if (killed) {
       target.deathSeq = Math.max(0, Number(target.deathSeq) || 0) + 1;
+      this.killCount[shooter.ticketId] = (this.killCount[shooter.ticketId] || 0) + 1;
+      shooter.matchKills = this.killCount[shooter.ticketId];
+      target.respawnAtMs = nowMs + this.respawnDelayMs;
       this.broadcastKillFeed(shooter, target);
-      this.roundWins[shooter.ticketId] = (this.roundWins[shooter.ticketId] || 0) + 1;
-      shooter.roundWins = this.roundWins[shooter.ticketId];
-      this.winnerTicketId = shooter.ticketId;
-      this.phase = "round_end";
-      this.timerEndsAtMs = nowMs + this.limits.roundEndTimeoutMs;
       this.markStateDirty();
       this.markSnapshotDirty();
     }
   }
 
-  startFight(nowMs) {
-    this.applySpawnPositions();
-    for (let i = 0; i < this.players.length; i++) {
-      const savedKind = this.players[i].weaponKind;
-      const spawnPose = resolveSpawnPose(
-        Math.max(0, this.getTeamIndex(this.players[i].ticketId)),
-        this.getSpawnSlot(this.players[i].ticketId)
-      );
-      this.players[i].resetRound(spawnPose);
-      if (savedKind !== null && savedKind >= 0) {
-        combat.equipWeapon(this.players[i], savedKind);
-      }
+  respawnPlayer(player, nowMs) {
+    if (!player || player.alive) {
+      return;
     }
-    this.phase = "fight";
-    this.timerEndsAtMs = nowMs + this.limits.roundTimeoutMs;
+
+    const savedKind = player.weaponKind;
+    const slot = this.rollSpawnForTicket(player.ticketId);
+    const pose = resolveSpawnPose(slot);
+    player.hp = player.maxHp;
+    player.alive = true;
+    player.respawnAtMs = 0;
+    player.velX = 0;
+    player.velY = 0;
+    player.velZ = 0;
+    if (pose) {
+      player.x = pose.x;
+      player.y = pose.y;
+      player.z = pose.z;
+      player.yaw = pose.yaw || 0;
+      player.hasPose = true;
+      player.recordStateSample();
+    }
+    if (savedKind !== null && savedKind >= 0) {
+      combat.equipWeapon(player, savedKind);
+    }
+    player.deathSeq = Math.max(0, Number(player.deathSeq) || 0) + 1;
+    player.lastSeq = -1;
+    this.queueMessage(player.ticketId, {
+      type: "respawn",
+      ticketId: player.ticketId,
+      spawnSlotIndex: slot,
+      deathSeq: player.deathSeq,
+    });
     this.markStateDirty();
     this.markSnapshotDirty();
   }
 
-  awardRoundWin(ticketId, nowMs) {
-    this.roundWins[ticketId] = (this.roundWins[ticketId] || 0) + 1;
-    const player = this.getPlayer(ticketId);
-    if (player) {
-      player.roundWins = this.roundWins[ticketId];
-    }
-    this.winnerTicketId = ticketId;
-    this.phase = "round_end";
-    this.timerEndsAtMs = nowMs + this.limits.roundEndTimeoutMs;
-    this.markStateDirty();
-    this.markSnapshotDirty();
-  }
-
-  resolveRoundTimeout(nowMs) {
-    const alive = this.players.filter((p) => p.alive);
-    if (alive.length === 1) {
-      this.awardRoundWin(alive[0].ticketId, nowMs);
+  processRespawns(nowMs) {
+    if (this.phase !== "fight") {
       return;
     }
 
-    const pool = alive.length > 0 ? alive : this.players;
-    let best = null;
-    let bestHp = -Infinity;
-    let tiedBest = false;
+    for (const player of this.players) {
+      if (player.alive || !player.respawnAtMs) {
+        continue;
+      }
+      if (nowMs >= player.respawnAtMs) {
+        this.respawnPlayer(player, nowMs);
+      }
+    }
+  }
 
-    for (const player of pool) {
-      const hp = Number(player.hp) || 0;
-      if (hp > bestHp) {
-        bestHp = hp;
-        best = player;
-        tiedBest = false;
-      } else if (hp === bestHp) {
-        tiedBest = true;
+  resolveWinnerByKills() {
+    let bestTicketId = "";
+    let bestKills = -1;
+    let tied = false;
+
+    for (const player of this.players) {
+      const kills = Math.max(0, Number(this.killCount[player.ticketId]) || 0);
+      if (kills > bestKills) {
+        bestKills = kills;
+        bestTicketId = player.ticketId;
+        tied = false;
+      } else if (kills === bestKills && kills >= 0) {
+        if (bestTicketId) {
+          tied = true;
+        }
       }
     }
 
-    if (tiedBest || !best) {
-      this.winnerTicketId = "";
-      this.phase = "round_end";
-      this.timerEndsAtMs = nowMs + this.limits.roundEndTimeoutMs;
-      this.markStateDirty();
-      this.markSnapshotDirty();
-      return;
+    if (tied || !bestTicketId || bestKills <= 0) {
+      return "";
     }
-
-    this.awardRoundWin(best.ticketId, nowMs);
+    return bestTicketId;
   }
 
-  nextRound(nowMs) {
-    const winner = this.players.find((p) => (this.roundWins[p.ticketId] || 0) >= this.roundsToWin);
-    if (winner) {
-      this.winnerTicketId = winner.ticketId;
-      this.phase = "match_end";
-      this.finished = true;
-      this.markStateDirty();
-      return;
-    }
-
-    this.round += 1;
-    this.beginWeaponPick(nowMs);
+  endMatch(nowMs) {
+    this.winnerTicketId = this.resolveWinnerByKills();
+    this.phase = "match_end";
+    this.finished = true;
+    this.timerEndsAtMs = nowMs;
+    this.markStateDirty();
+    this.markSnapshotDirty();
   }
 
   tick(nowMs) {
     this.serverTick += 1;
     const dtSec = 1 / this.limits.tickRateHz;
+
+    this.processRespawns(nowMs);
 
     if (nowMs >= this.timerEndsAtMs) {
       switch (this.phase) {
@@ -446,32 +442,17 @@ class Duel {
           if (this.canStartMatch()) {
             this.beginPrep(nowMs);
           } else {
-            const connected = this.players.filter((p) => p.connected);
-            if (connected.length >= 1) {
-              this.winnerTicketId = connected[0].ticketId;
-            }
+            this.winnerTicketId = "";
             this.phase = "match_end";
             this.finished = true;
           }
           this.markStateDirty();
           break;
         case "prep":
-          this.beginWeaponPick(nowMs);
-          break;
-        case "weapon_pick":
-          for (const p of this.players) {
-            if (!p.hasWeapon || p.weaponKind === null) {
-              const randomKind = Math.floor(Math.random() * 4);
-              combat.equipWeapon(p, randomKind);
-            }
-          }
           this.startFight(nowMs);
           break;
         case "fight":
-          this.resolveRoundTimeout(nowMs);
-          break;
-        case "round_end":
-          this.nextRound(nowMs);
+          this.endMatch(nowMs);
           break;
         default:
           break;
@@ -479,8 +460,10 @@ class Duel {
     }
 
     if (this.phase === "fight") {
-      for (const p of this.players) {
-        movement.tickMovement(p, dtSec);
+      for (const player of this.players) {
+        if (player.alive) {
+          movement.tickMovement(player, dtSec);
+        }
       }
     }
   }
@@ -491,8 +474,7 @@ class Duel {
     }
     return this.snapshotDirty ||
       this.phase === "fight" ||
-      this.phase === "prep" ||
-      this.phase === "weapon_pick";
+      this.phase === "prep";
   }
 
   buildSnapshotForViewer(viewerTicketId) {
@@ -507,4 +489,4 @@ class Duel {
   }
 }
 
-module.exports = Duel;
+module.exports = Deathmatch;

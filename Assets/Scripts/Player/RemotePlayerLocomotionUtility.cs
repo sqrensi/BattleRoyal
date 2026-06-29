@@ -120,6 +120,24 @@ namespace ShooterPrototype.Player
             return animator != null ? animator : root.GetComponentInChildren<Animator>(true);
         }
 
+        public static void RestoreNetworkRemoteLocomotion(GameObject root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            ConfigureLocomotionRig(root);
+            var driver = EnsureSyntyLocomotionDriver(root);
+            if (driver != null)
+            {
+                driver.enabled = true;
+            }
+
+            EnsureRemoteAudio(root);
+            EnsureAlwaysAnimate(root);
+        }
+
         public static void StopLocomotionOnDeath(GameObject root)
         {
             if (root == null)
@@ -161,6 +179,24 @@ namespace ShooterPrototype.Player
                 animator.SetBool(SyntyLocomotionDriver.SprintingHash, false);
                 animator.SetBool(SyntyLocomotionDriver.CrouchingHash, false);
                 animator.SetInteger(SyntyLocomotionDriver.JumpStateHash, 0);
+            }
+        }
+
+        public static void RestoreTrainingBotLocomotion(GameObject root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            ConfigureLocomotionRig(root);
+            EnsureSyntyLocomotionDriver(root);
+            EnsureAlwaysAnimate(root);
+
+            var presenter = root.GetComponent<TrainingBotLocomotionPresenter>();
+            if (presenter != null)
+            {
+                presenter.enabled = true;
             }
         }
 

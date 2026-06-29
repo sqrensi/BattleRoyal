@@ -44,6 +44,7 @@ namespace ShooterPrototype.Matchmaking
         public int matchedPlayerCount;
         public string serverAddress;
         public int serverPort;
+        public string matchMode;
     }
 
     [Serializable]

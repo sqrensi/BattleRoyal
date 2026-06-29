@@ -61,6 +61,11 @@ namespace ShooterPrototype.Player
                 return true;
             }
 
+            if (DmSpawnUtility.IsDeathmatchScene(scene))
+            {
+                return true;
+            }
+
             return string.Equals(scene.name, gameSceneName, System.StringComparison.OrdinalIgnoreCase);
         }
 
@@ -130,6 +135,12 @@ namespace ShooterPrototype.Player
             if (existingLocalPlayer != null)
             {
                 ResetMovementStateForMatch(existingLocalPlayer.gameObject);
+                if (ActiveMatchContext.IsDeathmatch ||
+                    DmSpawnUtility.IsDeathmatchScene(SceneManager.GetActiveScene()))
+                {
+                    ResetPlayerLoadoutForSpawn(existingLocalPlayer.gameObject);
+                }
+
                 if (ShouldAttachPresenceSync())
                 {
                     AttachPresenceSync(existingLocalPlayer.gameObject);

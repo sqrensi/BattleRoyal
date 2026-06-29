@@ -1,0 +1,609 @@
+================================================================================
+  ПОЛНАЯ ЗАЩИТА VPS ДЛЯ SHOOTERPROTOTYPE / QUEUESERVICE
+  Версия: 2026-06-27
+  Стек: Node.js QueueService, PostgreSQL, nginx, Unity WebGL (Яндекс Игры)
+================================================================================
+
+Эта инструкция описывает пошаговую защиту VPS от взлома, утечки данных игроков
+и злоупотребления API. Выполняй пункты по порядку: сначала сеть, потом доступ,
+потом приложение.
+
+ВАЖНО: «100% защиты» не существует. Цель — закрыть реальные дыры вашего проекта
+и оставить минимальную поверхность атаки.
+
+
+================================================================================
+  ЧАСТЬ 0. ЧТО СЕЙЧАС УЯЗВИМО (ВАШ ПРОЕКТ)
+================================================================================
+
+Перед настройкой знай типичные риски QueueService:
+
+  1. /admin/bots/spawn, /admin/bots/stop, /admin/bots/status — БЕЗ авторизации
+  2. /health — отдаёт workers, metrics, bots, ws stats (разведка для атакующего)
+  3. /profile/* — write-операции по playerId без сессии (IDOR)
+  4. Порты 5050/5051 могут быть открыты в ufw напрямую (минуя nginx)
+  5. CORS: Access-Control-Allow-Origin: * (норм для WebGL, но API всё равно публичный)
+  6. playerId из клиента — не секрет; доверять ему нельзя
+  7. .env с DATABASE_URL и паролями — критичный файл на диске
+  8. BOTS_ENABLED=1 на проде — любой может создать нагрузку через /admin/bots/spawn
+
+
+================================================================================
+  ЧАСТЬ 1. АРХИТЕКТУРА «КАК ДОЛЖНО БЫТЬ»
+================================================================================
+
+Снаружи (интернет) видит ТОЛЬКО:
+
+  - TCP 443  (HTTPS + WSS через nginx)
+  - TCP 80   (редирект на HTTPS, certbot)
+  - TCP 22   (SSH — лучше ограничить по IP или через VPN)
+
+Внутри VPS (127.0.0.1):
+
+  - 5050  QueueService HTTP  (matchmaking, profile, enqueue)
+  - 5051  QueueService WS     (realtime: pose, snapshot)
+  - 5432  PostgreSQL          (только localhost)
+
+Схема:
+
+  Браузер (yandex.ru/games, HTTPS)
+        |
+        |  https://api.YOUR-DOMAIN.ru/profile/ensure
+        |  wss://api.YOUR-DOMAIN.ru/ws
+        v
+   Nginx :443 (Let's Encrypt)
+        |
+        +-- /      --> 127.0.0.1:5050
+        +-- /ws    --> 127.0.0.1:5051
+
+Никогда не публикуй:
+  http://IP:5050
+  http://IP:5051
+  ws://IP:5051
+
+
+================================================================================
+  ЧАСТЬ 2. FIREWALL (UFW)
+================================================================================
+
+SSH на VPS:
+
+  ssh root@YOUR_VPS_IP
+
+Установка и базовая политика:
+
+  apt update
+  apt install -y ufw
+
+  ufw default deny incoming
+  ufw default allow outgoing
+  ufw allow OpenSSH
+  ufw allow 80/tcp
+  ufw allow 443/tcp
+
+  # НЕ ОТКРЫВАЙ 5050 и 5051 наружу на проде:
+  # ufw allow 5050/tcp   <-- УДАЛИ, если уже добавлено
+  # ufw allow 5051/tcp   <-- УДАЛИ, если уже добавлено
+
+  ufw enable
+  ufw status verbose
+
+Проверка, что приложение слушает только localhost:
+
+  ss -tlnp | grep -E '5050|5051|5432'
+
+Хорошо:
+  127.0.0.1:5050
+  127.0.0.1:5051
+  127.0.0.1:5432
+
+Плохо:
+  0.0.0.0:5050
+  0.0.0.0:5051
+  0.0.0.0:5432
+
+Если Node слушает 0.0.0.0 — это настройка в server.js / websocket.js.
+QueueService по умолчанию bind на 0.0.0.0; защита — firewall + nginx,
+либо bind только 127.0.0.1 (продвинутый вариант).
+
+
+================================================================================
+  ЧАСТЬ 3. SSH — ЗАЩИТА ДОСТУПА К СЕРВЕРУ
+================================================================================
+
+3.1. Создай отдельного пользователя (не работай постоянно под root)
+
+  adduser deploy
+  usermod -aG sudo deploy
+
+  mkdir -p /home/deploy/.ssh
+  chmod 700 /home/deploy/.ssh
+  # Скопируй свой публичный ключ (~/.ssh/id_ed25519.pub) в:
+  nano /home/deploy/.ssh/authorized_keys
+  chmod 600 /home/deploy/.ssh/authorized_keys
+  chown -R deploy:deploy /home/deploy/.ssh
+
+3.2. Отключи вход по паролю и root
+
+  nano /etc/ssh/sshd_config
+
+  Установи:
+    PermitRootLogin no
+    PasswordAuthentication no
+    PubkeyAuthentication yes
+    MaxAuthTries 3
+    LoginGraceTime 30
+
+  Проверь конфиг и перезапусти:
+    sshd -t
+    systemctl restart sshd
+
+  ВАЖНО: не закрывай текущую SSH-сессию, пока не проверишь вход deploy
+  с другого окна:
+    ssh deploy@YOUR_VPS_IP
+
+3.3. Fail2ban (блокировка перебора паролей/сканирования)
+
+  apt install -y fail2ban
+
+  cat > /etc/fail2ban/jail.local << 'EOF'
+  [sshd]
+  enabled = true
+  port = ssh
+  maxretry = 5
+  bantime = 3600
+  findtime = 600
+  EOF
+
+  systemctl enable fail2ban
+  systemctl restart fail2ban
+  fail2ban-client status sshd
+
+3.4. (Опционально) SSH только с вашего IP
+
+  ufw delete allow OpenSSH
+  ufw allow from YOUR_HOME_IP to any port 22 proto tcp
+
+  Минус: при смене IP потеряешь доступ. Используй VPN или консоль хостера.
+
+
+================================================================================
+  ЧАСТЬ 4. NGINX + HTTPS
+================================================================================
+
+4.1. Установка
+
+  apt install -y nginx certbot python3-certbot-nginx
+
+4.2. Пример конфига /etc/nginx/sites-available/shooter-api
+
+  Замени api.YOUR-DOMAIN.ru на свой домен (например api.game35.ru).
+
+  --- начало файла ---
+  limit_req_zone $binary_remote_addr zone=api_limit:10m rate=30r/s;
+  limit_req_zone $binary_remote_addr zone=enqueue_limit:10m rate=5r/s;
+
+  server {
+      listen 80;
+      server_name api.YOUR-DOMAIN.ru;
+      return 301 https://$host$request_uri;
+  }
+
+  server {
+      listen 443 ssl http2;
+      server_name api.YOUR-DOMAIN.ru;
+
+      ssl_certificate     /etc/letsencrypt/live/api.YOUR-DOMAIN.ru/fullchain.pem;
+      ssl_certificate_key /etc/letsencrypt/live/api.YOUR-DOMAIN.ru/privkey.pem;
+      ssl_protocols TLSv1.2 TLSv1.3;
+      ssl_prefer_server_ciphers off;
+
+      add_header X-Content-Type-Options nosniff always;
+      add_header X-Frame-Options DENY always;
+      add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+      # ---- ADMIN: закрыть полностью с интернета ----
+      location /admin/ {
+          deny all;
+          return 403;
+      }
+
+      # ---- HEALTH: минимум информации или только localhost ----
+      location = /health {
+          # Вариант A: только с VPS
+          allow 127.0.0.1;
+          deny all;
+          proxy_pass http://127.0.0.1:5050;
+          proxy_set_header Host $host;
+      }
+
+      # Вариант B (если нужен публичный health для мониторинга):
+      # return 200 '{"ok":true}';
+      # add_header Content-Type application/json;
+
+      # ---- WebSocket ----
+      location /ws {
+          proxy_pass http://127.0.0.1:5051;
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection "upgrade";
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+          proxy_read_timeout 3600s;
+          proxy_send_timeout 3600s;
+      }
+
+      # ---- Enqueue: жёсткий лимит ----
+      location = /enqueue {
+          limit_req zone=enqueue_limit burst=10 nodelay;
+          proxy_pass http://127.0.0.1:5050;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+      }
+
+      # ---- Остальной HTTP API ----
+      location / {
+          limit_req zone=api_limit burst=60 nodelay;
+          client_max_body_size 1m;
+          proxy_pass http://127.0.0.1:5050;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+      }
+  }
+  --- конец файла ---
+
+  ln -sf /etc/nginx/sites-available/shooter-api /etc/nginx/sites-enabled/
+  nginx -t
+  systemctl reload nginx
+
+4.3. Сертификат Let's Encrypt
+
+  certbot --nginx -d api.YOUR-DOMAIN.ru
+
+  Автопродление:
+    systemctl status certbot.timer
+
+4.4. Проверка снаружи
+
+  curl -I https://api.YOUR-DOMAIN.ru/health
+  curl -I https://api.YOUR-DOMAIN.ru/admin/bots/status   # должен быть 403
+
+  # Прямой доступ к портам с другой машины (должен FAIL / timeout):
+  curl --connect-timeout 3 http://YOUR_VPS_IP:5050/health
+
+
+================================================================================
+  ЧАСТЬ 5. SYSTEMD — СЕРВИС НЕ ПОД ROOT
+================================================================================
+
+5.1. Отдельный пользователь для приложения
+
+  adduser --system --group --home /opt/shooter shooter
+  chown -R shooter:shooter /opt/shooter
+
+5.2. Пример /etc/systemd/system/shooter-queue.service
+
+  [Unit]
+  Description=ShooterPrototype QueueService
+  After=network.target postgresql.service
+
+  [Service]
+  Type=simple
+  User=shooter
+  Group=shooter
+  WorkingDirectory=/opt/shooter/QueueService
+  EnvironmentFile=/opt/shooter/QueueService/.env
+  ExecStart=/usr/bin/node server.js
+  Restart=on-failure
+  RestartSec=5
+
+  # Hardening
+  NoNewPrivileges=true
+  PrivateTmp=true
+  ProtectSystem=strict
+  ProtectHome=true
+  ReadWritePaths=/opt/shooter/QueueService/data
+
+  [Install]
+  WantedBy=multi-user.target
+
+  systemctl daemon-reload
+  systemctl enable shooter-queue
+  systemctl restart shooter-queue
+
+
+================================================================================
+  ЧАСТЬ 6. СЕКРЕТЫ И .env
+================================================================================
+
+6.1. Права на файлы
+
+  chmod 600 /opt/shooter/QueueService/.env
+  chown shooter:shooter /opt/shooter/QueueService/.env
+
+6.2. Что хранить в .env (и НЕ коммитить в git)
+
+  DATABASE_URL=postgres://shooter:STRONG_PASSWORD@127.0.0.1:5432/shooter
+  MATCH_SERVER_ADDRESS=api.YOUR-DOMAIN.ru
+  MATCH_SERVER_PORT=443          # клиент ходит через nginx HTTPS
+  REALTIME_WS_PORT=5051          # внутренний; клиент — wss://domain/ws
+
+  # Прод: боты выключены
+  BOTS_ENABLED=0
+
+  # Если нужны admin-боты только локально — см. часть 7
+  ADMIN_TOKEN=случайная_строка_64+_символов
+
+6.3. Генерация сильных паролей
+
+  openssl rand -base64 48
+
+6.4. Никогда не публикуй
+
+  - скриншоты .env
+  - DATABASE_URL в чатах / тикетах
+  - DUEL_SERVER_ARCHITECTURE_AND_CODE.txt на публичном web-root
+
+
+================================================================================
+  ЧАСТЬ 7. ЗАЩИТА ADMIN-ЭНДПОИНТОВ И БОТОВ
+================================================================================
+
+7.1. Прод (.env)
+
+  BOTS_ENABLED=0
+
+  Admin-маршруты (/admin/bots/*) не должны быть доступны с интернета.
+  nginx location /admin/ { deny all; } — обязательно.
+
+7.2. Staging / load-test (отдельный VPS или VPN)
+
+  BOTS_ENABLED=1
+
+  Доступ к /admin/* только:
+    - с localhost: curl http://127.0.0.1:5050/admin/bots/spawn ...
+    - или через SSH tunnel:
+        ssh -L 5050:127.0.0.1:5050 deploy@YOUR_VPS_IP
+        curl -X POST http://127.0.0.1:5050/admin/bots/spawn ...
+
+7.3. (Рекомендуется добавить в код) ADMIN_TOKEN
+
+  В .env:
+    ADMIN_TOKEN=<openssl rand -hex 32>
+
+  Все запросы /admin/* должны проверять заголовок:
+    X-Admin-Token: <значение из .env>
+
+  nginx дополнительно (если admin нужен только вам локально через tunnel):
+    location /admin/ {
+        allow 127.0.0.1;
+        deny all;
+    }
+
+
+================================================================================
+  ЧАСТЬ 8. POSTGRESQL
+================================================================================
+
+8.1. Только localhost
+
+  /etc/postgresql/*/main/postgresql.conf:
+    listen_addresses = 'localhost'
+
+  /etc/postgresql/*/main/pg_hba.conf:
+    local   all   postgres                  peer
+    host    all   shooter   127.0.0.1/32    scram-sha-256
+
+  systemctl restart postgresql
+
+8.2. Отдельный пользователь БД
+
+  sudo -u postgres psql
+
+  CREATE USER shooter WITH PASSWORD 'STRONG_PASSWORD';
+  CREATE DATABASE shooter OWNER shooter;
+  GRANT ALL PRIVILEGES ON DATABASE shooter TO shooter;
+
+  Не используй postgres / superuser для приложения.
+
+8.3. Бэкапы
+
+  pg_dump -U shooter shooter | gzip > /root/backups/shooter-$(date +%F).sql.gz
+
+  - храни бэкапы НЕ в /opt/shooter/QueueService
+  - шифруй при отправке в облако
+  - проверяй восстановление раз в месяц
+
+
+================================================================================
+  ЧАСТЬ 9. ЗАЩИТА ДАННЫХ ИГРОКОВ (API)
+================================================================================
+
+9.1. Что считается «информацией игры»
+
+  - профиль (ник, скины, рейтинг, инвентарь)
+  - ticketId / matchId во время матча
+  - метрики сервера из /health
+
+9.2. Текущие риски profile API
+
+  Любой может вызвать:
+    GET  /profile/{playerId}
+    PUT  /profile/{playerId}/nickname
+    POST /profile/{playerId}/purchase
+
+  если знает playerId. playerId виден в сети и не является паролем.
+
+9.3. Минимум без большого рефакторинга
+
+  - rate limit в nginx (см. часть 4)
+  - логировать подозрительные паттерны (много PUT с одного IP)
+  - не отдавать лишние поля в GET /profile (email, internal ids — если появятся)
+
+9.4. Правильная модель (следующий этап разработки)
+
+  1. POST /profile/ensure → сервер выдаёт sessionToken (JWT или random UUID в БД)
+  2. Все write-операции требуют Authorization: Bearer <token>
+  3. token привязан к playerId и expires
+  4. покупки — только после проверки платформы (Яндекс Игры signature / server-side IAP)
+
+9.5. WebSocket join
+
+  join по ticketId после /enqueue — ticket одноразовый и привязан к матчу.
+  Не логируй ticketId в публичные логи без необходимости.
+
+
+================================================================================
+  ЧАСТЬ 10. ЗАЩИТА ИГРОВОГО СЕРВЕРА (ЧИТЫ)
+================================================================================
+
+Клиент Unity WebGL полностью читаем. Секретов в билде нет.
+
+Сервер ОБЯЗАН проверять:
+  - скорость / телепорт (MAX_PLAYER_SPEED, MAX_TELEPORT_DISTANCE)
+  - rate pose/shot/hit (MAX_POSE_MSG_PER_SEC и т.д.)
+  - попадания на сервере, не по слову клиента
+
+Не храни на клиенте:
+  - admin URL
+  - пароли БД
+  - ADMIN_TOKEN
+
+
+================================================================================
+  ЧАСТЬ 11. ОБНОВЛЕНИЯ И МОНИТОРИНГ
+================================================================================
+
+11.1. Автообновления безопасности ОС
+
+  apt install -y unattended-upgrades
+  dpkg-reconfigure -plow unattended-upgrades
+
+11.2. Регулярно
+
+  apt update && apt upgrade -y
+
+11.3. Логи
+
+  journalctl -u shooter-queue -f
+  tail -f /var/log/nginx/access.log
+  tail -f /var/log/nginx/error.log
+
+11.4. На что смотреть в access.log
+
+  POST /admin/                  — атака или ошибка конфига nginx
+  GET /.env                     — сканирование
+  GET /wp-admin                 — боты-сканеры
+  тысячи POST /enqueue          — флуд очереди
+  POST /profile/.../purchase    — попытка накрутки валюты
+
+11.5. Метрики (локально)
+
+  curl -s http://127.0.0.1:5050/health | jq .
+
+  Следи за:
+    ws.droppedSnapshots
+    queue size
+    workers load
+
+
+================================================================================
+  ЧАСТЬ 12. ЯНДЕКС ИГРЫ — CSP И ДОМЕН
+================================================================================
+
+Подробнее: YANDEX-GAMES-HTTPS-CSP.md
+
+Кратко:
+  - только HTTPS домен (не IP, не :5050)
+  - wss://api.YOUR-DOMAIN.ru/ws
+  - домен добавить в CSP connect-src в кабинете Яндекс Игр
+  - mixed content (http API) блокируется браузером
+
+Клиент NetworkConfig:
+  ApiBaseUrl  = https://api.YOUR-DOMAIN.ru
+  RealtimeWs  = wss://api.YOUR-DOMAIN.ru/ws
+
+
+================================================================================
+  ЧАСТЬ 13. ЧЕКЛИСТ ПЕРЕД ПРОДОМ
+================================================================================
+
+  [ ] ufw: только 22, 80, 443 (5050/5051 закрыты снаружи)
+  [ ] ss -tlnp: 5050, 5051, 5432 на 127.0.0.1
+  [ ] nginx HTTPS, TLS 1.2+
+  [ ] /admin/ -> deny all в nginx
+  [ ] BOTS_ENABLED=0 в prod .env
+  [ ] /health не отдаёт полные metrics публично
+  [ ] .env chmod 600, владелец shooter
+  [ ] systemd User=shooter, не root
+  [ ] SSH: ключи, PermitRootLogin no, fail2ban
+  [ ] PostgreSQL listen localhost, отдельный user
+  [ ] DATABASE_URL пароль сильный, не в git
+  [ ] rate limit nginx на /enqueue и /
+  [ ] бэкапы БД настроены
+  [ ] домен в CSP Яндекс Игр
+  [ ] curl https://IP:5050/health снаружи — timeout/refused
+
+
+================================================================================
+  ЧАСТЬ 14. ЧТО ДЕЛАТЬ ПРИ ВЗЛОМЕ / ПОДОЗРЕНИИ
+================================================================================
+
+  1. ufw deny from ATTACKER_IP (если известен)
+  2. systemctl stop shooter-queue
+  3. сменить пароль PostgreSQL и ADMIN_TOKEN
+  4. проверить crontab, ~/.ssh/authorized_keys, новые пользователи
+  5. grep -r "admin/bots" /var/log/nginx/
+  6. восстановить из бэкапа, если менялись файлы
+  7. пересобрать/перезалить QueueService из доверенного git
+  8. включить мониторинг логов на неделю
+
+
+================================================================================
+  ЧАСТЬ 15. БЫСТРЫЕ КОМАНДЫ ПРОВЕРКИ
+================================================================================
+
+  # Firewall
+  ufw status verbose
+
+  # Открытые порты
+  ss -tlnp
+
+  # Права .env
+  ls -la /opt/shooter/QueueService/.env
+
+  # Health локально
+  curl -s http://127.0.0.1:5050/health | head -c 500
+
+  # Admin закрыт снаружи
+  curl -s -o /dev/null -w "%{http_code}" https://api.YOUR-DOMAIN.ru/admin/bots/status
+
+  # SSL
+  curl -vI https://api.YOUR-DOMAIN.ru/ 2>&1 | grep -i ssl
+
+  # Fail2ban
+  fail2ban-client status sshd
+
+  # Сервис
+  systemctl status shooter-queue
+
+
+================================================================================
+  СВЯЗАННЫЕ ФАЙЛЫ В РЕПОЗИТОРИИ
+================================================================================
+
+  DEPLOY.md                  — деплой QueueService
+  DEPLOY-VPS.md              — краткий VPS деплой
+  YANDEX-GAMES-HTTPS-CSP.md  — HTTPS, nginx, CSP для WebGL
+  env.vps.example            — пример переменных окружения
+
+
+================================================================================
+  КОНЕЦ ДОКУМЕНТА
+================================================================================

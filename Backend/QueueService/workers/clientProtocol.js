@@ -21,7 +21,102 @@ function mapPhaseToClient(serverPhase) {
   }
 }
 
-function buildMatchStateForTicket(duel, ticketId) {
+function buildDeathmatchStateForTicket(match, ticketId) {
+  const nowMs = Date.now();
+  const clientPhase = mapPhaseToClient(match.phase);
+  const localPlayer = match.players.find((p) => p.ticketId === ticketId) || null;
+  const spawnSlotIndex = typeof match.getSpawnSlot === "function"
+    ? match.getSpawnSlot(ticketId)
+    : 0;
+
+  let countdownRemainingSeconds = 0;
+  if (match.timerEndsAtMs > nowMs) {
+    countdownRemainingSeconds = Math.max(0, Math.ceil((match.timerEndsAtMs - nowMs) / 1000));
+  }
+
+  let respawnRemainingSeconds = 0;
+  if (localPlayer && !localPlayer.alive && localPlayer.respawnAtMs > nowMs) {
+    respawnRemainingSeconds = Math.max(0, Math.ceil((localPlayer.respawnAtMs - nowMs) / 1000));
+  }
+
+  const localKills = match.killCount && Number.isFinite(match.killCount[ticketId])
+    ? Math.max(0, match.killCount[ticketId])
+    : 0;
+  const connectedCount = match.players.filter((p) => p.connected).length;
+  const aliveCount = match.players.filter((p) => p.alive && p.connected).length;
+  const movementLocked = clientPhase === "ending" ||
+    clientPhase === "lobby" ||
+    clientPhase === "prep" ||
+    !!(localPlayer && !localPlayer.alive);
+  const isAlive = !!(localPlayer && localPlayer.alive);
+  const hasWeapon = !!(localPlayer && localPlayer.hasWeapon && localPlayer.weaponKind !== null && localPlayer.weaponKind >= 0);
+  const combatEnabled = clientPhase === "round" && isAlive && hasWeapon;
+  const pickedWeaponKind = hasWeapon ? localPlayer.weaponKind : -1;
+  const isLocalWinner = !!(
+    ticketId &&
+    match.winnerTicketId &&
+    ticketId === match.winnerTicketId &&
+    clientPhase === "ending"
+  );
+
+  return {
+    type: "match_state",
+    matchMode: "deathmatch",
+    phase: clientPhase,
+    joinLocked: match.phase !== "waiting",
+    countdownRemainingSeconds,
+    planeStartedAtMs: 0,
+    planeEndsAtMs: 0,
+    playingStartedAtMs: match.phase === "fight" ? match.timerEndsAtMs - match.matchDurationMs : 0,
+    endingStartedAtMs: clientPhase === "ending" ? nowMs : 0,
+    winnerTicketId: clientPhase === "ending" ? (match.winnerTicketId || "") : "",
+    aliveCount,
+    connectedCount,
+    hasJumped: false,
+    hasLanded: true,
+    inCombat: combatEnabled,
+    localKillCount: localKills,
+    isLocalWinner,
+    winnerDisconnectSeconds: 0,
+    forceJump: false,
+    useForcedDrop: false,
+    dropPosX: 0,
+    dropPosZ: 0,
+    mapCenterX: 0,
+    mapCenterZ: 0,
+    planeStartX: 0,
+    planeStartZ: 0,
+    planeEndX: 0,
+    planeEndZ: 0,
+    planeY: 0,
+    planeSpeed: 0,
+    planePosX: 0,
+    planePosY: 0,
+    planePosZ: 0,
+    planeSpawnIndex: spawnSlotIndex >= 0 ? spawnSlotIndex : 0,
+    planeSpawnSlotCount: Math.max(1, match.players.length),
+    localTicketId: ticketId || "",
+    duelRoundNumber: 0,
+    duelLocalRoundWins: localKills,
+    duelOpponentRoundWins: 0,
+    duelRoundsToWin: 0,
+    duelMovementLocked: movementLocked,
+    duelCombatEnabled: combatEnabled,
+    duelPickedWeaponKind: pickedWeaponKind,
+    duelTeamIndex: 0,
+    duelSpawnSlotIndex: spawnSlotIndex >= 0 ? spawnSlotIndex : -1,
+    duelOpponentTeamIndex: -1,
+    duelOpponentSpawnSlotIndex: -1,
+    duelLocalDuelRating: 0,
+    duelOpponentNickname: "",
+    duelOpponentDuelRating: 0,
+    dmMaxPlayers: Math.max(2, Number(match.maxPlayers) || match.players.length),
+    dmRespawnRemainingSeconds: respawnRemainingSeconds,
+    dmLocalAlive: isAlive,
+  };
+}
+
+function buildDuelStateForTicket(duel, ticketId) {
   const nowMs = Date.now();
   const clientPhase = mapPhaseToClient(duel.phase);
   const opponent = duel.getOpponent(ticketId);
@@ -118,7 +213,17 @@ function buildMatchStateForTicket(duel, ticketId) {
     duelOpponentDuelRating: opponent && Number.isFinite(opponent.duelRating)
       ? Math.max(0, opponent.duelRating)
       : 1000,
+    dmMaxPlayers: 0,
+    dmRespawnRemainingSeconds: 0,
+    dmLocalAlive: !!(localPlayer && localPlayer.alive),
   };
+}
+
+function buildMatchStateForTicket(match, ticketId) {
+  if (match && match.mode === "deathmatch") {
+    return buildDeathmatchStateForTicket(match, ticketId);
+  }
+  return buildDuelStateForTicket(match, ticketId);
 }
 
 function duelHolstered(player) {
@@ -203,41 +308,46 @@ function buildRemotePlayerState(player, serverTick, historySamples = 12) {
     medkitRemainingSeconds: player.medkitRemainingSeconds || 0,
     medkitCount: player.medkitCount || 0,
     isUsingMedkit: !!player.isUsingMedkit,
-    killCount: player.roundWins || 0,
+    killCount: Number.isFinite(player.matchKills)
+      ? Math.max(0, player.matchKills)
+      : (player.roundWins || 0),
   };
 }
 
-function buildSnapshotForViewer(duel, viewerTicketId, tickRateHz, options) {
+function buildSnapshotForViewer(match, viewerTicketId, tickRateHz, options) {
   const opts = options || {};
   const poseSampleRateHz = opts.poseSampleRateHz || tickRateHz;
   const historySamples = opts.snapshotHistorySamples || 12;
-  const viewer = duel.players.find((p) => p.ticketId === viewerTicketId);
+  const viewer = match.players.find((p) => p.ticketId === viewerTicketId);
   const others = [];
+  const isDeathmatch = match.mode === "deathmatch";
+  const isSmallDuelLobby = match.mode === "duel" && match.players.length <= 2;
 
-  for (const player of duel.players) {
+  for (const player of match.players) {
     if (player.ticketId === viewerTicketId) {
       continue;
     }
-    // Duel / 1v1: always include opponent (spawn pose is authoritative before client poses arrive).
-    const isSmallLobby = duel.mode === "duel" || duel.players.length <= 2;
-    if (isSmallLobby || player.connected || player.hasPose) {
-      others.push(buildRemotePlayerState(player, duel.serverTick, historySamples));
+    if (isDeathmatch || isSmallDuelLobby || player.connected || player.hasPose) {
+      others.push(buildRemotePlayerState(player, match.serverTick, historySamples));
     }
   }
 
   const payload = {
     type: "snapshot",
-    serverTick: duel.serverTick,
+    serverTick: match.serverTick,
     serverTickRate: tickRateHz,
     movementSampleRateHz: poseSampleRateHz,
     players: others,
   };
 
-  if (viewer && viewer.hasPose && duel.phase === "fight") {
+  if (viewer && viewer.hasPose && (
+    match.phase === "fight" ||
+    (isDeathmatch && match.phase === "prep")
+  )) {
     payload.selfAuthoritative = {
       position: { x: viewer.x, y: viewer.y, z: viewer.z },
       yaw: viewer.yaw || 0,
-      sampleTick: viewer.poseSampleSeq > 0 ? viewer.poseSampleSeq : duel.serverTick,
+      sampleTick: viewer.poseSampleSeq > 0 ? viewer.poseSampleSeq : match.serverTick,
     };
   }
 
@@ -247,5 +357,7 @@ function buildSnapshotForViewer(duel, viewerTicketId, tickRateHz, options) {
 module.exports = {
   mapPhaseToClient,
   buildMatchStateForTicket,
+  buildDuelStateForTicket,
+  buildDeathmatchStateForTicket,
   buildSnapshotForViewer,
 };

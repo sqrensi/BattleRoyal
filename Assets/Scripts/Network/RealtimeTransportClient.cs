@@ -502,6 +502,18 @@ namespace ShooterPrototype.Network
             public int duelLocalDuelRating;
             public string duelOpponentNickname;
             public int duelOpponentDuelRating;
+            public int dmMaxPlayers;
+            public int dmRespawnRemainingSeconds;
+            public bool dmLocalAlive = true;
+        }
+
+        [Serializable]
+        public sealed class RespawnMessage
+        {
+            public string type;
+            public string ticketId;
+            public int spawnSlotIndex = -1;
+            public int deathSeq;
         }
 
         [Serializable]
@@ -787,6 +799,7 @@ namespace ShooterPrototype.Network
         private readonly Queue<Action> criticalMainThreadActions = new Queue<Action>();
         private readonly Queue<Action> mainThreadActions = new Queue<Action>();
         private MatchStateMessage pendingMatchStateMessage;
+        private MatchStateMessage latestMatchStateMessage;
         private DamageZoneStateMessage pendingZoneStateMessage;
         private PickupStateMessage pendingPickupStateMessage;
         private bool matchStateFlushScheduled;
@@ -830,6 +843,7 @@ namespace ShooterPrototype.Network
         }
 
         public event Action<DamageMessage> DamageReceived;
+        public event Action<RespawnMessage> RespawnReceived;
         public event Action JoinAcknowledged;
         public static RealtimeTransportClient Active { get; private set; }
         public event Action<PickupStateMessage> PickupStateReceived;
@@ -842,6 +856,12 @@ namespace ShooterPrototype.Network
         public event Action<HealMessage> HealReceived;
         public event Action<DamageZoneStateMessage> DamageZoneStateReceived;
         public event Action<MatchStateMessage> MatchStateReceived;
+
+        public bool TryGetLatestMatchState(out MatchStateMessage message)
+        {
+            message = latestMatchStateMessage;
+            return message != null;
+        }
         public event Action<MatchDisconnectMessage> MatchDisconnectReceived;
         public event Action<KillFeedMessage> KillFeedReceived;
         public event Action<MatchStatsMessage> MatchStatsReceived;
@@ -995,6 +1015,7 @@ namespace ShooterPrototype.Network
 
             if (message != null)
             {
+                latestMatchStateMessage = message;
                 MatchStateReceived?.Invoke(message);
             }
         }
@@ -2492,6 +2513,23 @@ namespace ShooterPrototype.Network
                 {
                     var message = damageMessage;
                     EnqueueMainThreadAction(() => DamageReceived?.Invoke(message), critical: true);
+                    return;
+                }
+
+                RespawnMessage respawnMessage = null;
+                try
+                {
+                    respawnMessage = JsonUtility.FromJson<RespawnMessage>(json);
+                }
+                catch
+                {
+                    // ignored
+                }
+
+                if (respawnMessage != null && string.Equals(respawnMessage.type, "respawn", StringComparison.Ordinal))
+                {
+                    var message = respawnMessage;
+                    EnqueueMainThreadAction(() => RespawnReceived?.Invoke(message), critical: true);
                     return;
                 }
 

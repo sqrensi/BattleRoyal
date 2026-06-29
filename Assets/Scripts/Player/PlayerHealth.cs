@@ -492,6 +492,11 @@ namespace ShooterPrototype.Player
                 characterController.enabled = true;
             }
 
+            if (networkMode)
+            {
+                RemotePlayerLocomotionUtility.RestoreNetworkRemoteLocomotion(gameObject);
+            }
+
             if (!networkMode && fpsController != null)
             {
                 fpsController.NotifyLocalRespawned(1f);

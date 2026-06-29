@@ -25,6 +25,7 @@ namespace ShooterPrototype.Bootstrap
         [SerializeField] private string mainMenuSceneName = "MainMenu";
         [SerializeField] private string gameSceneName = "Game";
         [SerializeField] private string duelSceneName = "1x1";
+        [SerializeField] private string deathmatchSceneName = "dm";
         [SerializeField] private string trainingSceneName = "training";
         [SerializeField] private string challengeSceneName = "challenge";
         [SerializeField] private GameObject battleRoyalePlanePrefab;
@@ -158,7 +159,8 @@ namespace ShooterPrototype.Bootstrap
                     gameSceneName,
                     duelSceneName,
                     trainingSceneName,
-                    challengeSceneName);
+                    challengeSceneName,
+                    deathmatchSceneName);
                 playerSpawnManager.Configure(ResolveActiveGameSceneName());
                 playerSpawnManager.HandleSceneLoaded(activeScene);
             }
@@ -171,7 +173,8 @@ namespace ShooterPrototype.Bootstrap
                 gameSceneName,
                 duelSceneName,
                 trainingSceneName,
-                challengeSceneName);
+                challengeSceneName,
+                deathmatchSceneName);
         }
 
         private void OnEnable()
@@ -209,10 +212,12 @@ namespace ShooterPrototype.Bootstrap
                 gameSceneName,
                 duelSceneName,
                 trainingSceneName,
-                challengeSceneName);
+                challengeSceneName,
+                deathmatchSceneName);
 
             var isMatchScene = scene.name == gameSceneName ||
                                scene.name == duelSceneName ||
+                               scene.name == deathmatchSceneName ||
                                scene.name == trainingSceneName ||
                                scene.name == challengeSceneName;
             if (gameHudController != null)
@@ -248,6 +253,10 @@ namespace ShooterPrototype.Bootstrap
                 {
                     EnsureDuelController();
                 }
+            }
+            else if (scene.name == deathmatchSceneName && !Application.isBatchMode)
+            {
+                EnsureDeathmatchController();
             }
 
             if (scene.name == mainMenuSceneName && !Application.isBatchMode)
@@ -370,6 +379,12 @@ namespace ShooterPrototype.Bootstrap
                 Destroy(offline.gameObject);
             }
 
+            var deathmatch = FindFirstObjectByType<MatchDeathmatchController>();
+            if (deathmatch != null)
+            {
+                Destroy(deathmatch.gameObject);
+            }
+
             var existing = FindFirstObjectByType<MatchDuelController>();
             if (existing != null)
             {
@@ -379,6 +394,32 @@ namespace ShooterPrototype.Bootstrap
 
             var controllerObject = new GameObject("MatchDuel");
             var controller = controllerObject.AddComponent<MatchDuelController>();
+            controller.PrepareForNewMatch();
+        }
+
+        private void EnsureDeathmatchController()
+        {
+            var duel = FindFirstObjectByType<MatchDuelController>();
+            if (duel != null)
+            {
+                Destroy(duel.gameObject);
+            }
+
+            var offline = FindFirstObjectByType<MatchOfflineDuelController>();
+            if (offline != null)
+            {
+                Destroy(offline.gameObject);
+            }
+
+            var existing = FindFirstObjectByType<MatchDeathmatchController>();
+            if (existing != null)
+            {
+                existing.PrepareForNewMatch();
+                return;
+            }
+
+            var controllerObject = new GameObject("MatchDeathmatch");
+            var controller = controllerObject.AddComponent<MatchDeathmatchController>();
             controller.PrepareForNewMatch();
         }
 

@@ -6,6 +6,7 @@ namespace ShooterPrototype.Matchmaking
         Training = 1,
         Duel1v1 = 2,
         Challenge = 3,
+        Deathmatch = 4,
     }
 
     public static class MainMenuGameModeUtility
@@ -17,6 +18,7 @@ namespace ShooterPrototype.Matchmaking
                 MainMenuGameMode.Training => "training",
                 MainMenuGameMode.Duel1v1 => "duel",
                 MainMenuGameMode.Challenge => "challenge",
+                MainMenuGameMode.Deathmatch => "deathmatch",
                 _ => "battle_royale",
             };
         }
@@ -28,6 +30,7 @@ namespace ShooterPrototype.Matchmaking
                 MainMenuGameMode.Training => "Тренировка",
                 MainMenuGameMode.Duel1v1 => "1 на 1",
                 MainMenuGameMode.Challenge => "Челлендж",
+                MainMenuGameMode.Deathmatch => "Дэзматч",
                 _ => "Королевская битва",
             };
         }
@@ -40,6 +43,22 @@ namespace ShooterPrototype.Matchmaking
         public static bool IsOfflineSoloMode(MainMenuGameMode mode)
         {
             return mode is MainMenuGameMode.Training or MainMenuGameMode.Challenge;
+        }
+
+        public static MainMenuGameMode FromApiValue(string apiValue)
+        {
+            var normalized = string.IsNullOrWhiteSpace(apiValue)
+                ? string.Empty
+                : apiValue.Trim().ToLowerInvariant();
+
+            return normalized switch
+            {
+                "training" => MainMenuGameMode.Training,
+                "duel" or "1v1" => MainMenuGameMode.Duel1v1,
+                "challenge" => MainMenuGameMode.Challenge,
+                "deathmatch" or "dm" => MainMenuGameMode.Deathmatch,
+                _ => MainMenuGameMode.BattleRoyale,
+            };
         }
     }
 }

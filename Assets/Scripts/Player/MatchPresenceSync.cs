@@ -84,6 +84,7 @@ namespace ShooterPrototype.Player
         private PlayerMedkitController localMedkitController;
         private MatchBattleRoyaleController battleRoyaleController;
         private MatchDuelController duelController;
+        private MatchDeathmatchController deathmatchController;
         private string localCharacterModelName = string.Empty;
         private bool transportEventsSubscribed;
         private readonly Dictionary<string, RemoteAvatar> remoteAvatars = new Dictionary<string, RemoteAvatar>();
@@ -352,6 +353,7 @@ namespace ShooterPrototype.Player
                 var avatarHealth = avatar.Health;
                 if (avatarHealth != null && avatarHealth.IsDead)
                 {
+                    EnsureRemoteAvatarVisible(avatar);
                     if (now - avatar.LastSeenAt > remoteStaleSeconds)
                     {
                         staleIds.Add(kv.Key);
@@ -359,6 +361,8 @@ namespace ShooterPrototype.Player
 
                     continue;
                 }
+
+                EnsureRemoteAvatarVisible(avatar);
 
                 if (now - avatar.LastSeenAt > remoteMissingGraceSeconds &&
                     avatar.Snapshots.Count == 0 &&
@@ -404,10 +408,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (!avatar.Root.activeSelf)
-            {
-                avatar.Root.SetActive(true);
-            }
+            EnsureRemoteAvatarVisible(avatar);
 
             DetachRemoteFromPlane(avatar, avatar.Root.transform);
 
@@ -466,6 +467,11 @@ namespace ShooterPrototype.Player
 
         private bool ShouldHideRemoteDuringPlanePhase(Vector3 targetPosition)
         {
+            if (ActiveMatchContext.IsDeathmatch || ActiveMatchContext.IsDuel)
+            {
+                return false;
+            }
+
             if (battleRoyaleController == null)
             {
                 battleRoyaleController = FindFirstObjectByType<MatchBattleRoyaleController>();
@@ -761,6 +767,30 @@ namespace ShooterPrototype.Player
             }
         }
 
+        private void ReconcileRemoteAvatarAfterRespawn(RemoteAvatar avatar, Vector3 position, float yaw)
+        {
+            if (avatar == null)
+            {
+                return;
+            }
+
+            avatar.Snapshots.Clear();
+            avatar.LastAppliedStateTick = -1;
+            avatar.HorizontalSmoothVelocity = Vector2.zero;
+            avatar.VerticalSmoothVelocity = 0f;
+            avatar.LastKnownPosition = position;
+            avatar.LastKnownYaw = yaw;
+            avatar.HasKnownPose = true;
+
+            if (avatar.Root != null)
+            {
+                EnsureRemoteAvatarVisible(avatar);
+                RemotePlayerLocomotionUtility.RestoreNetworkRemoteLocomotion(avatar.Root);
+            }
+
+            SnapRemoteAvatarToPose(avatar, position, yaw);
+        }
+
         private static void SnapRemoteAvatarToPose(RemoteAvatar avatar, Vector3 position, float yaw)
         {
             if (avatar?.Root == null)
@@ -808,6 +838,19 @@ namespace ShooterPrototype.Player
                 {
                     kv.Value.Root.SetActive(!remoteAvatarsSuppressed);
                 }
+            }
+        }
+
+        private void EnsureRemoteAvatarVisible(RemoteAvatar avatar)
+        {
+            if (remoteAvatarsSuppressed || avatar?.Root == null)
+            {
+                return;
+            }
+
+            if (!avatar.Root.activeSelf)
+            {
+                avatar.Root.SetActive(true);
             }
         }
 
@@ -878,6 +921,24 @@ namespace ShooterPrototype.Player
             out byte weaponSlot1Kind,
             out int activeWeaponSlot)
         {
+            if (deathmatchController == null)
+            {
+                deathmatchController = FindFirstObjectByType<MatchDeathmatchController>();
+            }
+
+            if (deathmatchController != null &&
+                ActiveMatchContext.IsDeathmatch &&
+                !deathmatchController.ShouldSendWeaponInNetworkPose)
+            {
+                isHolstered = true;
+                hasWeapon = false;
+                weaponKind = 0;
+                weaponSlot0Kind = PlayerWeaponLoadout.EmptySlotKind;
+                weaponSlot1Kind = PlayerWeaponLoadout.EmptySlotKind;
+                activeWeaponSlot = PlayerWeaponLoadout.NoActiveSlot;
+                return;
+            }
+
             SyncLocalWeaponLoadoutFromMount();
 
             var loadoutReady = localWeaponLoadout != null && localWeaponLoadout.HasAnyWeapon;
@@ -1673,7 +1734,17 @@ namespace ShooterPrototype.Player
                 duelController = FindFirstObjectByType<MatchDuelController>();
             }
 
+            if (deathmatchController == null)
+            {
+                deathmatchController = FindFirstObjectByType<MatchDeathmatchController>();
+            }
+
             if (battleRoyaleController != null && battleRoyaleController.ShouldSuppressPoseReconcile)
+            {
+                return true;
+            }
+
+            if (deathmatchController != null && deathmatchController.ShouldSuppressPoseReconcile)
             {
                 return true;
             }
@@ -1911,7 +1982,7 @@ namespace ShooterPrototype.Player
                             p.deathSeq,
                             new Vector3(p.deathFallDirX, p.deathFallDirY, p.deathFallDirZ));
                         avatar.WasDead = false;
-                        SnapRemoteAvatarToPose(avatar, revivedPosition, p.yaw);
+                        ReconcileRemoteAvatarAfterRespawn(avatar, revivedPosition, p.yaw);
                     }
 
                     avatar.LastSeenAt = now;
@@ -1992,6 +2063,10 @@ namespace ShooterPrototype.Player
                         p.deathSeq,
                         new Vector3(p.deathFallDirX, p.deathFallDirY, p.deathFallDirZ));
                     avatar.WasDead = p.isDead;
+                    if (p.isDead)
+                    {
+                        EnsureRemoteAvatarVisible(avatar);
+                    }
                 }
             }
 

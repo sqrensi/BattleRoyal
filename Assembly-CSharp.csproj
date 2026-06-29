@@ -50,6 +50,7 @@
   <ItemGroup>
     <Compile Include="Assets\Scripts\UI\InventoryIconCatalog.cs" />
     <Compile Include="Assets\Scripts\Bootstrap\GameBootstrap.cs" />
+    <Compile Include="Assets\Scripts\Player\MatchDeathmatchController.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\AutoTranslateLangs\Scripts\UtilsLang.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextEventHandler.cs" />
     <Compile Include="Assets\Scripts\Network\RealtimePoseBinaryCodec.cs" />
@@ -302,6 +303,7 @@
     <Compile Include="Assets\Scripts\Player\Day5RuntimeSetup.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\EditorScr\Attributes\NestedYGAttribute.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\ObjectSpin.cs" />
+    <Compile Include="Assets\Scripts\Player\DmSpawnUtility.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_PhoneNumberValidator.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Other\AdvCallingSimulation.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuUiLayout.cs" />

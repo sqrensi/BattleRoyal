@@ -126,6 +126,22 @@ function resolveHitDamage(message, weapon) {
   return damage;
 }
 
+function clearWeapon(player) {
+  if (!player) {
+    return;
+  }
+
+  player.weaponKind = null;
+  player.weaponSlot0Kind = WEAPON_SLOT_EMPTY;
+  player.weaponSlot1Kind = WEAPON_SLOT_EMPTY;
+  player.activeWeaponSlot = WEAPON_SLOT_EMPTY;
+  player.isHolstered = true;
+  player.hasWeapon = false;
+  player.ammoInMag = 0;
+  player.spareAmmo = 0;
+  player.reloadingUntilMs = 0;
+}
+
 function equipWeapon(player, weaponKind) {
   const kind = Math.max(0, Math.min(3, Math.floor(Number(weaponKind))));
   const weapon = getWeapon(kind);
@@ -163,6 +179,7 @@ module.exports = {
   validateHit,
   applyHit,
   equipWeapon,
+  clearWeapon,
   tryReload,
   resolveHitDamage,
 };

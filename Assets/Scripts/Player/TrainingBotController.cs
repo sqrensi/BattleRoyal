@@ -75,6 +75,7 @@ namespace ShooterPrototype.Player
             transform.SetPositionAndRotation(position, rotation);
             health?.ForceReviveAt(position, rotation);
             SetVisualVisible(true);
+            RemotePlayerLocomotionUtility.RestoreTrainingBotLocomotion(gameObject);
 
             if (agent == null)
             {
@@ -82,16 +83,48 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            agent.enabled = true;
-            if (NavMesh.SamplePosition(position, out var navHit, 2f, NavMesh.AllAreas))
-            {
-                agent.Warp(navHit.position);
-            }
-
+            RestoreNavMeshAgent(position);
             configured = CanControlAgent(agent);
             if (configured)
             {
                 PickNextDestination(true);
+                return;
+            }
+
+            StartCoroutine(ResumeNavMeshAfterWarpRoutine(position));
+        }
+
+        private IEnumerator ResumeNavMeshAfterWarpRoutine(Vector3 position)
+        {
+            yield return null;
+
+            if (health == null || health.IsDead || agent == null)
+            {
+                yield break;
+            }
+
+            RestoreNavMeshAgent(position);
+            configured = CanControlAgent(agent);
+            if (configured)
+            {
+                PickNextDestination(true);
+            }
+        }
+
+        private void RestoreNavMeshAgent(Vector3 position)
+        {
+            agent.enabled = true;
+            agent.updatePosition = true;
+            agent.updateRotation = true;
+            agent.isStopped = false;
+
+            if (NavMesh.SamplePosition(position, out var navHit, 2f, NavMesh.AllAreas))
+            {
+                agent.Warp(navHit.position);
+            }
+            else
+            {
+                agent.Warp(position);
             }
         }
 

@@ -4,6 +4,7 @@ const { parentPort, workerData } = require("worker_threads");
 const config = require("../config");
 const log = require("../lib/logger");
 const Duel = require("./duel");
+const Deathmatch = require("./deathmatch");
 const { MasterToWorker, WorkerToMaster, PlayerEventType } = require("./protocol");
 const { maybeEncodeBinary } = require("./snapshot");
 
@@ -19,6 +20,10 @@ const limits = {
   roundEndTimeoutMs: workerData.roundEndTimeoutMs,
   prepTimeoutMs: workerData.prepTimeoutMs,
   matchJoinTimeoutMs: workerData.matchJoinTimeoutMs,
+  dmMinPlayers: workerData.dmMinPlayers,
+  dmMaxPlayers: workerData.dmMaxPlayers,
+  dmMatchDurationMs: workerData.dmMatchDurationMs,
+  dmRespawnDelayMs: workerData.dmRespawnDelayMs,
   aiThinkHz: workerData.aiThinkHz,
   maxPlayerSpeed: workerData.maxPlayerSpeed,
   maxTeleportDistance: workerData.maxTeleportDistance,
@@ -233,12 +238,16 @@ parentPort.on("message", (msg) => {
   }
 
   if (msg.type === MasterToWorker.CREATE_MATCH) {
-    const duel = new Duel(msg.match, limits);
-    matches.set(msg.match.id, duel);
-    post(WorkerToMaster.MATCH_CREATED, { matchId: msg.match.id, playerTicketIds: duel.players.map((p) => p.ticketId) });
-    // Apply WS joins that arrived before the worker finished creating the match.
+    const matchInstance = msg.match && msg.match.mode === "deathmatch"
+      ? new Deathmatch(msg.match, limits)
+      : new Duel(msg.match, limits);
+    matches.set(msg.match.id, matchInstance);
+    post(WorkerToMaster.MATCH_CREATED, {
+      matchId: msg.match.id,
+      playerTicketIds: matchInstance.players.map((p) => p.ticketId),
+    });
     flushPendingPlayerEvents(msg.match.id);
-    broadcastMatchState(duel);
+    broadcastMatchState(matchInstance);
     return;
   }
 
