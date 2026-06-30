@@ -88,6 +88,8 @@ namespace ShooterPrototype.Network
             public float medkitRemainingSeconds;
             public int medkitCount;
             public int killCount;
+            public int deathCount;
+            public int damageDealt;
             public int weaponPickupSeq;
             public int weaponKind;
             public int weaponSlot0Kind;
@@ -449,6 +451,16 @@ namespace ShooterPrototype.Network
         }
 
         [Serializable]
+        public sealed class DmScoreboardRowMessage
+        {
+            public string ticketId;
+            public string nickname;
+            public int kills;
+            public int deaths;
+            public int damage;
+        }
+
+        [Serializable]
         public sealed class MatchStateMessage
         {
             public string type;
@@ -506,6 +518,8 @@ namespace ShooterPrototype.Network
             public int dmRespawnRemainingSeconds;
             public bool dmLocalAlive = true;
             public int dmLocalDeathSeq;
+            public int dmMatchSecondsRemaining;
+            public DmScoreboardRowMessage[] dmScoreboard;
         }
 
         [Serializable]

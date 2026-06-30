@@ -39,6 +39,7 @@ function applySqliteMigrations(db) {
   applyPlayerAchievementClaimedAtMigration(db, insertMigration);
   applyPlayerRatingMigration(db, insertMigration);
   applyModeLeaderboardMigration(db, insertMigration);
+  applyModeStatsLeaderboardMigration(db, insertMigration);
 }
 
 function applyModeLeaderboardMigration(db, insertMigration) {
@@ -66,6 +67,36 @@ function applyModeLeaderboardMigration(db, insertMigration) {
   }
 
   db.exec("UPDATE player_profiles SET duel_rating = 1000 WHERE duel_rating IS NULL OR duel_rating < 0;");
+
+  insertMigration.run(migrationName, nowMs());
+}
+
+function applyModeStatsLeaderboardMigration(db, insertMigration) {
+  const migrationName = "008_mode_stats_leaderboards";
+  const applied = db
+    .prepare("SELECT 1 AS ok FROM schema_migrations WHERE name = ?")
+    .get(migrationName);
+  if (applied) {
+    return;
+  }
+
+  const statsColumns = db.prepare("PRAGMA table_info(player_match_stats)").all();
+  const hasColumn = (name) => statsColumns.some((column) => column.name === name);
+  if (!hasColumn("dm_total_kills")) {
+    db.exec(
+      "ALTER TABLE player_match_stats ADD COLUMN dm_total_kills INTEGER NOT NULL DEFAULT 0 CHECK (dm_total_kills >= 0);"
+    );
+  }
+  if (!hasColumn("dm_total_deaths")) {
+    db.exec(
+      "ALTER TABLE player_match_stats ADD COLUMN dm_total_deaths INTEGER NOT NULL DEFAULT 0 CHECK (dm_total_deaths >= 0);"
+    );
+  }
+  if (!hasColumn("training_time_seconds")) {
+    db.exec(
+      "ALTER TABLE player_match_stats ADD COLUMN training_time_seconds INTEGER NOT NULL DEFAULT 0 CHECK (training_time_seconds >= 0);"
+    );
+  }
 
   insertMigration.run(migrationName, nowMs());
 }

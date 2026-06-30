@@ -81,6 +81,16 @@ function buildDeathmatchStateForTicket(match, ticketId) {
   const hasWeapon = !!(localPlayer && localPlayer.hasWeapon && localPlayer.weaponKind !== null && localPlayer.weaponKind >= 0);
   const combatEnabled = clientPhase === "round" && isAlive && hasWeapon;
   const pickedWeaponKind = hasWeapon ? localPlayer.weaponKind : -1;
+  const dmMatchSecondsRemaining = match.phase === "fight" && match.timerEndsAtMs > nowMs
+    ? Math.max(0, Math.ceil((match.timerEndsAtMs - nowMs) / 1000))
+    : countdownRemainingSeconds;
+  const dmScoreboard = match.players.map((player) => ({
+    ticketId: player.ticketId,
+    nickname: player.nickname || player.playerId || "Игрок",
+    kills: Math.max(0, Number(match.killCount && match.killCount[player.ticketId]) || 0),
+    deaths: Math.max(0, Number(player.matchDeaths) || 0),
+    damage: Math.max(0, Math.floor(Number(player.damageDealt) || 0)),
+  }));
   const isLocalWinner = !!(
     ticketId &&
     match.winnerTicketId &&
@@ -143,6 +153,8 @@ function buildDeathmatchStateForTicket(match, ticketId) {
     dmRespawnRemainingSeconds: respawnRemainingSeconds,
     dmLocalAlive: isAlive,
     dmLocalDeathSeq: localPlayer ? Math.max(0, Number(localPlayer.deathSeq) || 0) : 0,
+    dmMatchSecondsRemaining,
+    dmScoreboard,
   };
 }
 
@@ -341,6 +353,8 @@ function buildRemotePlayerState(player, serverTick, historySamples = 12) {
     killCount: Number.isFinite(player.matchKills)
       ? Math.max(0, player.matchKills)
       : (player.roundWins || 0),
+    deathCount: Math.max(0, Number(player.matchDeaths) || 0),
+    damageDealt: Math.max(0, Math.floor(Number(player.damageDealt) || 0)),
   };
 }
 

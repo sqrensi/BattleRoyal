@@ -36,7 +36,7 @@ namespace ShooterPrototype.Player
         private int lastRevivedDeathSeq = -1;
         private Vector3 lastServerHitDirection = Vector3.forward;
         private int localPlacementEstimate = 1;
-        private const int DmWeaponSpareAmmo = 60;
+        private const int DmWeaponSpareAmmo = 999;
 
         public bool ShouldSuppressPoseReconcile =>
             string.Equals(currentPhase, "ending", StringComparison.Ordinal);
@@ -223,6 +223,16 @@ namespace ShooterPrototype.Player
             if (message.killed && message.deathSeq > 0)
             {
                 serverSaysAlive = false;
+            }
+
+            if (playerHealth != null)
+            {
+                playerHealth.ApplyAuthoritativeDamage(
+                    message.damage,
+                    message.remainingHealth,
+                    hitDirection,
+                    message.killed,
+                    message.deathSeq);
             }
         }
 
@@ -600,9 +610,28 @@ namespace ShooterPrototype.Player
 
         private void UpdateHud(RealtimeTransportClient.MatchStateMessage state)
         {
-            var countdown = Mathf.Max(0, state.countdownRemainingSeconds);
+            var countdown = state.dmMatchSecondsRemaining > 0
+                ? state.dmMatchSecondsRemaining
+                : Mathf.Max(0, state.countdownRemainingSeconds);
             gameHud?.SetDeathmatchHud(state.localKillCount, state.aliveCount, countdown);
             gameHud?.SetMatchStatusMessage(string.Empty);
+            SyncScoreboardFromMatchStateWithPresence(state);
+        }
+
+        private static void SyncScoreboardFromMatchState(RealtimeTransportClient.MatchStateMessage state)
+        {
+            if (state?.dmScoreboard == null || state.dmScoreboard.Length == 0)
+            {
+                return;
+            }
+
+            MatchScoreboardTracker.SyncFromDeathmatchState(state.dmScoreboard);
+        }
+
+        private void SyncScoreboardFromMatchStateWithPresence(RealtimeTransportClient.MatchStateMessage state)
+        {
+            SyncScoreboardFromMatchState(state);
+            presenceSync?.ApplyScoreboardNicknames(state?.dmScoreboard);
         }
 
         private void TryApplySpawnTeleport(RealtimeTransportClient.MatchStateMessage state, bool force)

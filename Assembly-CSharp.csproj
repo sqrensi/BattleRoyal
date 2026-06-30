@@ -67,8 +67,8 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\EnvMapAnimator.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuNicknameEditor.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerHitboxCleanup.cs" />
-    <Compile Include="Assets\PluginYourGames\Modules\Authorization\Scripts\Auth_info.cs" />
     <Compile Include="Assets\Scripts\UI\MatchScoreboardPanelController.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\Authorization\Scripts\Auth_info.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\InfoYG\TemplateSettings.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\Authorization\Scripts\Auth_yg.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\InfoYG\InfoYG.cs" />

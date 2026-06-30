@@ -66,6 +66,7 @@ namespace ShooterPrototype.Player
         public int totalKills;
         public int totalDeaths;
         public int totalWins;
+        public int totalDamage;
         public float avgPlacement;
         public float avgDamage;
         public float kdRatio;
@@ -187,6 +188,7 @@ namespace ShooterPrototype.Player
         public int damageDealt;
         public string matchMode;
         public int completionTimeMs;
+        public int trainingTimeSeconds;
     }
 
     [Serializable]
@@ -212,6 +214,10 @@ namespace ShooterPrototype.Player
         public string nickname;
         public int rating;
         public int challengeTimeMs;
+        public int kills;
+        public int deaths;
+        public float kdRatio;
+        public int trainingTimeSeconds;
         public string playerId;
     }
 

@@ -55,8 +55,7 @@ namespace ShooterPrototype.UI
             RequestRefresh();
         }
 
-        private bool UsesEmptyLeaderboardPlaceholder =>
-            leaderboardMode is MainMenuGameMode.Training or MainMenuGameMode.Deathmatch;
+        private bool UsesEmptyLeaderboardPlaceholder => false;
 
         public void Build(RectTransform stackParent)
         {
@@ -295,7 +294,7 @@ namespace ShooterPrototype.UI
         {
             return mode switch
             {
-                MainMenuGameMode.Training => "Топ 25",
+                MainMenuGameMode.Training => "Топ 25 (тренировка)",
                 MainMenuGameMode.Duel1v1 => "Топ 25 (1v1)",
                 MainMenuGameMode.Challenge => "Топ 25 (челлендж)",
                 MainMenuGameMode.Deathmatch => "Топ 25 (DM)",
@@ -446,6 +445,41 @@ namespace ShooterPrototype.UI
             };
         }
 
+        private static string FormatTrainingTime(int totalSeconds)
+        {
+            if (totalSeconds <= 0)
+            {
+                return "—";
+            }
+
+            var hours = totalSeconds / 3600;
+            var minutes = (totalSeconds % 3600) / 60;
+            var seconds = totalSeconds % 60;
+            return hours > 0
+                ? $"{hours}:{minutes:00}:{seconds:00}"
+                : $"{minutes}:{seconds:00}";
+        }
+
+        private static string FormatDeathmatchKd(LeaderboardEntryDto entry)
+        {
+            if (entry == null)
+            {
+                return "—";
+            }
+
+            if (entry.kdRatio > 0.001f)
+            {
+                return entry.kdRatio.ToString("0.0");
+            }
+
+            if (entry.deaths > 0)
+            {
+                return (entry.kills / (float)entry.deaths).ToString("0.0");
+            }
+
+            return entry.kills > 0 ? entry.kills.ToString("0.0") : "0.0";
+        }
+
         private static string FormatChallengeTime(int timeMs)
         {
             if (timeMs < 0)
@@ -536,20 +570,45 @@ namespace ShooterPrototype.UI
             nicknameText.overflowMode = TextOverflowModes.Ellipsis;
             UiTheme.ApplyTmp(nicknameText, isSelf ? UiTextRole.Accent : UiTextRole.Body);
 
+            if (IsDeathmatchMode)
+            {
+                CreateStatCell(rowObject.transform, entry.kills.ToString(), 40f);
+                CreateStatCell(rowObject.transform, FormatDeathmatchKd(entry), 44f);
+                return;
+            }
+
             var ratingObject = new GameObject("Rating");
             ratingObject.transform.SetParent(rowObject.transform, false);
             var ratingLayout = ratingObject.AddComponent<LayoutElement>();
-            ratingLayout.preferredWidth = IsChallengeMode ? 72f : 52f;
-            ratingLayout.minWidth = IsChallengeMode ? 72f : 52f;
+            ratingLayout.preferredWidth = IsChallengeMode || IsTrainingMode ? 72f : 52f;
+            ratingLayout.minWidth = IsChallengeMode || IsTrainingMode ? 72f : 52f;
             var ratingText = ratingObject.AddComponent<TextMeshProUGUI>();
             ratingText.text = IsChallengeMode
                 ? FormatChallengeTime(entry.challengeTimeMs > 0 ? entry.challengeTimeMs : entry.rating)
-                : entry.rating.ToString("N0");
+                : IsTrainingMode
+                    ? FormatTrainingTime(entry.trainingTimeSeconds > 0 ? entry.trainingTimeSeconds : entry.rating)
+                    : entry.rating.ToString("N0");
             ratingText.fontSize = rowFontSize;
             ratingText.alignment = TextAlignmentOptions.MidlineRight;
             ratingText.enableWordWrapping = false;
             ratingText.overflowMode = TextOverflowModes.Overflow;
             UiTheme.ApplyTmp(ratingText, UiTextRole.Accent);
+        }
+
+        private void CreateStatCell(Transform parent, string text, float width)
+        {
+            var cellObject = new GameObject("Stat");
+            cellObject.transform.SetParent(parent, false);
+            var cellLayout = cellObject.AddComponent<LayoutElement>();
+            cellLayout.preferredWidth = width;
+            cellLayout.minWidth = width;
+            var cellText = cellObject.AddComponent<TextMeshProUGUI>();
+            cellText.text = text ?? string.Empty;
+            cellText.fontSize = rowFontSize;
+            cellText.alignment = TextAlignmentOptions.MidlineRight;
+            cellText.enableWordWrapping = false;
+            cellText.overflowMode = TextOverflowModes.Overflow;
+            UiTheme.ApplyTmp(cellText, UiTextRole.Accent);
         }
 
         private static void StretchFull(RectTransform rect)

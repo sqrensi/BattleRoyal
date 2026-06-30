@@ -2,6 +2,8 @@
 
 const { WEAPON_SLOT_EMPTY } = require("./player");
 
+const DM_WEAPON_SPARE_AMMO = 999;
+
 const WEAPONS = {
   0: { id: "assault_rifle", damage: 25, range: 120, fireIntervalMs: 100, magSize: 30, reloadMs: 2000 },
   1: { id: "sniper_rifle", damage: 80, range: 200, fireIntervalMs: 900, magSize: 7, reloadMs: 2500 },
@@ -49,7 +51,7 @@ function canFire(attacker, nowMs) {
   return { ok: true, weapon };
 }
 
-function validateHit(attacker, target, message, limits) {
+function validateHit(attacker, target, message, limits, nowMs = Date.now()) {
   if (!target.alive) {
     return { ok: false, reason: "target_dead" };
   }
@@ -59,20 +61,30 @@ function validateHit(attacker, target, message, limits) {
   const hitY = Number(message.hitY ?? target.y);
   const hitZ = Number(message.hitZ ?? target.z);
 
-  const dist = distance3(attacker.x, attacker.y, attacker.z, hitX, hitY, hitZ);
-  if (dist > weapon.range + 2) {
+  const distToHit = distance3(attacker.x, attacker.y, attacker.z, hitX, hitY, hitZ);
+  if (distToHit > weapon.range + limits.playerHitRadius * 2) {
     attacker.cheatFlags |= 2;
     return { ok: false, reason: "range" };
   }
 
-  const toTarget = distance3(attacker.x, attacker.y, attacker.z, target.x, target.y, target.z);
-  if (toTarget > weapon.range + limits.playerHitRadius) {
-    return { ok: false, reason: "out_of_range" };
+  const poseGrace =
+    (target.respawnPoseGraceUntilMs && nowMs < target.respawnPoseGraceUntilMs) ||
+    (target.joinPoseGraceUntilMs && nowMs < target.joinPoseGraceUntilMs) ||
+    !target.hasPose;
+
+  let targetX = target.x;
+  let targetY = target.y;
+  let targetZ = target.z;
+  if (poseGrace) {
+    targetX = hitX;
+    targetY = hitY;
+    targetZ = hitZ;
   }
 
-  const centerY = target.y + 0.9;
-  const miss = distance3(hitX, hitY, hitZ, target.x, centerY, target.z);
-  if (miss > limits.playerHitRadius * 1.35) {
+  const centerY = targetY + 0.9;
+  const miss = distance3(hitX, hitY, hitZ, targetX, centerY, targetZ);
+  const missAllowance = poseGrace ? limits.playerHitRadius * 4 : limits.playerHitRadius * 1.35;
+  if (miss > missAllowance) {
     return { ok: false, reason: "miss" };
   }
 
@@ -142,9 +154,12 @@ function clearWeapon(player) {
   player.reloadingUntilMs = 0;
 }
 
-function equipWeapon(player, weaponKind) {
+function equipWeapon(player, weaponKind, spareAmmo = null) {
   const kind = Math.max(0, Math.min(3, Math.floor(Number(weaponKind))));
   const weapon = getWeapon(kind);
+  const resolvedSpareAmmo = Number.isFinite(spareAmmo)
+    ? Math.max(0, Math.min(DM_WEAPON_SPARE_AMMO, Math.floor(spareAmmo)))
+    : weapon.magSize * 2;
   player.weaponKind = kind;
   player.weaponSlot0Kind = kind;
   player.weaponSlot1Kind = WEAPON_SLOT_EMPTY;
@@ -152,8 +167,12 @@ function equipWeapon(player, weaponKind) {
   player.isHolstered = false;
   player.hasWeapon = true;
   player.ammoInMag = weapon.magSize;
-  player.spareAmmo = weapon.magSize * 2;
+  player.spareAmmo = resolvedSpareAmmo;
   player.reloadingUntilMs = 0;
+}
+
+function equipDeathmatchWeapon(player, weaponKind) {
+  equipWeapon(player, weaponKind, DM_WEAPON_SPARE_AMMO);
 }
 
 function tryReload(player, nowMs) {
@@ -179,6 +198,8 @@ module.exports = {
   validateHit,
   applyHit,
   equipWeapon,
+  equipDeathmatchWeapon,
+  DM_WEAPON_SPARE_AMMO,
   clearWeapon,
   tryReload,
   resolveHitDamage,

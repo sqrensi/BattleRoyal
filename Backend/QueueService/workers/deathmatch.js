@@ -14,7 +14,8 @@ const DM_RESPAWN_DEBUG =
   process.env.DM_RESPAWN_DEBUG === "1" || process.env.DM_RESPAWN_DEBUG === "true";
 const DM_RESPAWN_TRACE =
   process.env.DM_RESPAWN_TRACE === "1" || process.env.DM_RESPAWN_TRACE === "true" || DM_RESPAWN_DEBUG;
-const RESPAWN_POSE_GRACE_MS = 2500;
+const RESPAWN_POSE_GRACE_MS = 5000;
+const JOIN_POSE_GRACE_MS = 6000;
 
 function logDmRespawn(event, payload) {
   if (!DM_RESPAWN_TRACE) {
@@ -44,7 +45,10 @@ class Deathmatch {
     for (const player of this.players) {
       this.killCount[player.ticketId] = 0;
       player.matchKills = 0;
+      player.matchDeaths = 0;
+      player.damageDealt = 0;
       player.respawnAtMs = 0;
+      player.joinPoseGraceUntilMs = 0;
     }
 
     this.rollAllSpawns();
@@ -207,11 +211,86 @@ class Deathmatch {
       }
     }
 
+    if (this.phase === "fight" && player.alive) {
+      combat.clearWeapon(player);
+    }
+
+    if (!player.joinPoseGraceUntilMs || player.joinPoseGraceUntilMs < Date.now()) {
+      player.joinPoseGraceUntilMs = Date.now() + JOIN_POSE_GRACE_MS;
+    }
+
     if (this.phase === "waiting" && this.canStartMatch()) {
       this.beginPrep(Date.now());
     }
     this.markStateDirty();
     this.markSnapshotDirty();
+  }
+
+  addPlayers(playersData, nowMs = Date.now()) {
+    if (this.finished || this.phase === "match_end" || !Array.isArray(playersData)) {
+      return [];
+    }
+
+    const addedTicketIds = [];
+    for (const data of playersData) {
+      if (this.players.length >= this.maxPlayers) {
+        break;
+      }
+
+      const ticketId = typeof data.ticketId === "string" ? data.ticketId.trim() : "";
+      if (!ticketId || this.playerByTicket.has(ticketId)) {
+        continue;
+      }
+
+      const player = new Player({ ...data, spawnX: 0, spawnY: 0, spawnZ: 0 });
+      player.connected = false;
+      this.players.push(player);
+      this.playerByTicket.set(player.ticketId, player);
+      this.killCount[player.ticketId] = 0;
+      player.matchKills = 0;
+      this.rollSpawnForTicket(player.ticketId);
+
+      const pose = resolveSpawnPose(this.getSpawnSlot(player.ticketId));
+      if (pose) {
+        player.x = pose.x;
+        player.y = pose.y;
+        player.z = pose.z;
+        player.yaw = pose.yaw || 0;
+        player.velX = 0;
+        player.velY = 0;
+        player.velZ = 0;
+        player.hasPose = true;
+        player.recordStateSample();
+      }
+
+      player.alive = true;
+      player.hp = player.maxHp;
+      player.respawnAtMs = 0;
+      player.matchDeaths = 0;
+      player.damageDealt = 0;
+      player.joinPoseGraceUntilMs = nowMs + JOIN_POSE_GRACE_MS;
+      combat.clearWeapon(player);
+
+      if (this.phase === "fight") {
+        player.lastSeq = null;
+      }
+
+      addedTicketIds.push(player.ticketId);
+    }
+
+    if (addedTicketIds.length > 0) {
+      this.markStateDirty();
+      this.markSnapshotDirty();
+      logDmRespawn("players.added", {
+        matchId: this.id,
+        phase: this.phase,
+        added: addedTicketIds,
+        playerCount: this.players.length,
+        nowMs,
+      });
+    }
+
+    return addedTicketIds;
   }
 
   onDisconnect(ticketId) {
@@ -274,7 +353,7 @@ class Deathmatch {
       return;
     }
 
-    combat.equipWeapon(player, kind);
+    combat.equipDeathmatchWeapon(player, kind);
     this.markStateDirty();
     this.markSnapshotDirty();
   }
@@ -311,7 +390,7 @@ class Deathmatch {
       return;
     }
 
-    const hit = combat.validateHit(shooter, target, message, this.limits);
+    const hit = combat.validateHit(shooter, target, message, this.limits, nowMs);
     if (!hit.ok) {
       return;
     }
@@ -320,6 +399,8 @@ class Deathmatch {
     if (damage <= 0) {
       return;
     }
+
+    shooter.damageDealt = Math.max(0, Number(shooter.damageDealt) || 0) + damage;
 
     let dirX = Number(message.dirX ?? 0);
     let dirY = Number(message.dirY ?? 0);
@@ -337,6 +418,7 @@ class Deathmatch {
 
     const killed = combat.applyHit(shooter, target, damage, nowMs);
     if (killed) {
+      target.matchDeaths = Math.max(0, Number(target.matchDeaths) || 0) + 1;
       target.deathSeq = Math.max(0, Number(target.deathSeq) || 0) + 1;
       logDmRespawn("kill", {
         ticketId: target.ticketId,
@@ -397,7 +479,7 @@ class Deathmatch {
       player.recordStateSample();
     }
     if (savedKind !== null && savedKind >= 0) {
-      combat.equipWeapon(player, savedKind);
+      combat.equipDeathmatchWeapon(player, savedKind);
     }
     player.deathSeq = Math.max(0, Number(player.deathSeq) || 0) + 1;
     logDmRespawn("respawn", {
@@ -467,6 +549,14 @@ class Deathmatch {
     this.timerEndsAtMs = nowMs;
     this.markStateDirty();
     this.markSnapshotDirty();
+  }
+
+  buildDeathCounts() {
+    const deathCounts = {};
+    for (const player of this.players) {
+      deathCounts[player.ticketId] = Math.max(0, Number(player.matchDeaths) || 0);
+    }
+    return deathCounts;
   }
 
   tick(nowMs) {

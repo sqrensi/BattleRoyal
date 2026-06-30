@@ -151,6 +151,25 @@ class WorkerManager {
     return true;
   }
 
+  addPlayersToMatch(matchId, players) {
+    const workerId = this.matchToWorker.get(matchId);
+    if (workerId === undefined || !Array.isArray(players) || players.length === 0) {
+      return false;
+    }
+
+    const slot = this.slots.find((s) => s.workerId === workerId);
+    if (!slot) {
+      return false;
+    }
+
+    slot.worker.postMessage({
+      type: MasterToWorker.ADD_PLAYERS,
+      matchId,
+      players,
+    });
+    return true;
+  }
+
   getWorkerIdForMatch(matchId) {
     return this.matchToWorker.get(matchId);
   }

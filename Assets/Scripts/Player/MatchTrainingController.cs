@@ -346,7 +346,11 @@ namespace ShooterPrototype.Player
             }
 
             sessionEnded = true;
-            gameHud?.ScheduleTrainingGameOver(killCount);
+            var elapsedSeconds = Mathf.Clamp(
+                Mathf.RoundToInt(SessionDurationSeconds - Mathf.Max(0f, remainingSeconds)),
+                1,
+                Mathf.RoundToInt(SessionDurationSeconds));
+            gameHud?.ScheduleTrainingGameOver(killCount, elapsedSeconds);
         }
 
         private static string ResolveLocalKillerName()

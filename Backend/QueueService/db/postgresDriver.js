@@ -33,7 +33,33 @@ class PostgresDriver {
       ["001_initial_schema", Date.now()]
     );
     await this.applyModeLeaderboardMigration();
+    await this.applyModeStatsLeaderboardMigration();
     await this.syncAchievementDefinitions();
+  }
+
+  async applyModeStatsLeaderboardMigration() {
+    const migrationName = "008_mode_stats_leaderboards";
+    const applied = await this.get(
+      "SELECT 1 AS ok FROM schema_migrations WHERE name = ?",
+      [migrationName]
+    );
+    if (applied) {
+      return;
+    }
+
+    await this.pool.query(
+      "ALTER TABLE player_match_stats ADD COLUMN IF NOT EXISTS dm_total_kills INTEGER NOT NULL DEFAULT 0"
+    );
+    await this.pool.query(
+      "ALTER TABLE player_match_stats ADD COLUMN IF NOT EXISTS dm_total_deaths INTEGER NOT NULL DEFAULT 0"
+    );
+    await this.pool.query(
+      "ALTER TABLE player_match_stats ADD COLUMN IF NOT EXISTS training_time_seconds INTEGER NOT NULL DEFAULT 0"
+    );
+    await this.run(
+      "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?) ON CONFLICT (name) DO NOTHING",
+      [migrationName, Date.now()]
+    );
   }
 
   async applyModeLeaderboardMigration() {

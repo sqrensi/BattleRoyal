@@ -95,6 +95,7 @@ namespace ShooterPrototype.UI
         private bool gameOverFlowStarted;
         private bool gameOverPanelVisible;
         private MatchOutcomeSummary pendingMatchOutcome;
+        private int pendingTrainingElapsedSeconds;
         private bool matchRewardGranted;
         private Coroutine matchRewardCoroutine;
         private bool matchStatsReported;
@@ -741,7 +742,7 @@ namespace ShooterPrototype.UI
             SetTrainingTimerSeconds(secondsRemaining);
         }
 
-        public void ScheduleTrainingGameOver(int killCount)
+        public void ScheduleTrainingGameOver(int killCount, int elapsedSeconds = 0)
         {
             if (gameOverFlowStarted)
             {
@@ -749,6 +750,7 @@ namespace ShooterPrototype.UI
             }
 
             EnsureHudExists();
+            pendingTrainingElapsedSeconds = Mathf.Max(0, elapsedSeconds);
             pendingMatchOutcome = MatchOutcomeSummary.CreateTraining(killCount);
             gameOverFlowStarted = true;
             SetPauseMenuOpen(false);
@@ -957,6 +959,14 @@ namespace ShooterPrototype.UI
 
         private IEnumerator TrainingGameOverFlowRoutine(int killCount)
         {
+            if (!matchStatsReported &&
+                pendingTrainingElapsedSeconds > 0 &&
+                PlayerProfileService.CanReportMatchStatsToServer)
+            {
+                matchStatsReported = true;
+                yield return RecordTrainingStatsRoutine(pendingTrainingElapsedSeconds);
+            }
+
             yield return new WaitForSecondsRealtime(1f);
 
             SetVictoryBanner(false);
@@ -996,7 +1006,6 @@ namespace ShooterPrototype.UI
             }
 
             matchRewardGranted = true;
-            matchStatsReported = true;
             ApplyGameOverInputLock(true);
 
             gameOverPanelVisible = true;
@@ -1404,6 +1413,30 @@ namespace ShooterPrototype.UI
                 });
 
             matchStatsCoroutine = null;
+        }
+
+        private IEnumerator RecordTrainingStatsRoutine(int elapsedSeconds)
+        {
+            var completed = false;
+            var success = false;
+            yield return PlayerProfileService.RecordTrainingSession(
+                this,
+                elapsedSeconds,
+                ok =>
+                {
+                    completed = true;
+                    success = ok;
+                });
+
+            if (!completed)
+            {
+                yield break;
+            }
+
+            if (!success)
+            {
+                Debug.LogWarning("[GameHudController] Failed to report training session time.");
+            }
         }
 
         private void UpdateGameOverRatingText(MatchOutcomeSummary summary, int ratingDelta)

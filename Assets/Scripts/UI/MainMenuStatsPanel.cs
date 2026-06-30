@@ -29,9 +29,8 @@ namespace ShooterPrototype.UI
         private TMP_Text kdValueLabel;
         private TMP_Text killsValueLabel;
         private TMP_Text deathsValueLabel;
-        private TMP_Text avgPlacementValueLabel;
         private TMP_Text winsValueLabel;
-        private TMP_Text avgDamageValueLabel;
+        private TMP_Text totalDamageValueLabel;
         private TMP_Text matchesValueLabel;
 
         public void Configure(MainMenuUiSoundController sound)
@@ -192,9 +191,8 @@ namespace ShooterPrototype.UI
             kdValueLabel = CreateStatCard(contentRect.transform, "K/D", accent: true);
             killsValueLabel = CreateStatCard(contentRect.transform, "Киллы");
             deathsValueLabel = CreateStatCard(contentRect.transform, "Смерти");
-            avgPlacementValueLabel = CreateStatCard(contentRect.transform, "Средний топ");
             winsValueLabel = CreateStatCard(contentRect.transform, "Побед", accent: true);
-            avgDamageValueLabel = CreateStatCard(contentRect.transform, "Средний урон");
+            totalDamageValueLabel = CreateStatCard(contentRect.transform, "Общий урон");
             matchesValueLabel = CreateStatCard(contentRect.transform, "Матчей сыграно");
         }
 
@@ -262,13 +260,8 @@ namespace ShooterPrototype.UI
                 : stats.totalKills.ToString("0.00");
             killsValueLabel.text = stats.totalKills.ToString("N0");
             deathsValueLabel.text = stats.totalDeaths.ToString("N0");
-            avgPlacementValueLabel.text = stats.matchCount > 0
-                ? "#" + stats.avgPlacement.ToString("0.0")
-                : "—";
             winsValueLabel.text = stats.totalWins.ToString("N0");
-            avgDamageValueLabel.text = stats.matchCount > 0
-                ? stats.avgDamage.ToString("0")
-                : "0";
+            totalDamageValueLabel.text = stats.totalDamage.ToString("N0");
             matchesValueLabel.text = stats.matchCount.ToString("N0");
         }
 
@@ -277,9 +270,8 @@ namespace ShooterPrototype.UI
             kdValueLabel.text = "—";
             killsValueLabel.text = "—";
             deathsValueLabel.text = "—";
-            avgPlacementValueLabel.text = "—";
             winsValueLabel.text = "—";
-            avgDamageValueLabel.text = "—";
+            totalDamageValueLabel.text = "—";
             matchesValueLabel.text = "—";
         }
 

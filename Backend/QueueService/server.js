@@ -396,7 +396,103 @@ function buildTicketResponse(ticket) {
   };
 }
 
+function findJoinableDeathmatchMatch() {
+  let bestMatch = null;
+  let bestPlayerCount = -1;
+
+  for (const match of matchesById.values()) {
+    if (!match || match.mode !== "deathmatch" || match.state !== "active") {
+      continue;
+    }
+
+    const playerCount = Array.isArray(match.ticketIds) ? match.ticketIds.length : 0;
+    if (playerCount >= config.dmMaxPlayers) {
+      continue;
+    }
+
+    if (!bestMatch || playerCount > bestPlayerCount) {
+      bestMatch = match;
+      bestPlayerCount = playerCount;
+    }
+  }
+
+  return bestMatch;
+}
+
+async function addTicketToExistingDeathmatch(ticket, match) {
+  if (!ticket || !match || match.mode !== "deathmatch" || match.state !== "active") {
+    return false;
+  }
+
+  const playerCount = Array.isArray(match.ticketIds) ? match.ticketIds.length : 0;
+  if (playerCount >= config.dmMaxPlayers) {
+    return false;
+  }
+
+  const nickname = ticket.nickname ||
+    await playerRepository.resolvePlayerNickname(ticket.playerId, ticket.ticketId);
+  ticket.nickname = nickname;
+
+  const playerPayload = {
+    ticketId: ticket.ticketId,
+    playerId: ticket.playerId,
+    nickname: ticket.nickname || "",
+    duelRating: Number.isFinite(ticket.duelRating) ? Math.max(0, ticket.duelRating) : 1000,
+  };
+
+  if (!workers.addPlayersToMatch(match.id, [playerPayload])) {
+    return false;
+  }
+
+  if (!Array.isArray(match.ticketIds)) {
+    match.ticketIds = [];
+  }
+  if (!Array.isArray(match.players)) {
+    match.players = [];
+  }
+
+  match.ticketIds.push(ticket.ticketId);
+  match.players.push(ticket);
+  ticket.status = "Matched";
+  ticket.matchId = match.id;
+  ticket.matchedAtMs = Date.now();
+  ticketToMatch.set(ticket.ticketId, match.id);
+
+  log.info(
+    "match",
+    `joined dm ${match.id.slice(0, 8)} ticket=${ticket.ticketId.slice(0, 8)} players=${match.ticketIds.length}/${config.dmMaxPlayers}`
+  );
+  return true;
+}
+
+async function tryJoinQueuedTicketsToExistingDeathmatches() {
+  while (true) {
+    const joinableMatch = findJoinableDeathmatchMatch();
+    if (!joinableMatch) {
+      break;
+    }
+
+    const ticketIndex = queue.findIndex((ticket) =>
+      ticket &&
+      ticket.status === "Queued" &&
+      ticket.matchMode === "deathmatch"
+    );
+    if (ticketIndex < 0) {
+      break;
+    }
+
+    const ticket = queue.splice(ticketIndex, 1)[0];
+    const joined = await addTicketToExistingDeathmatch(ticket, joinableMatch);
+    if (!joined) {
+      queue.unshift(ticket);
+      break;
+    }
+  }
+}
+
 async function tryMatchDeathmatchQueue() {
+  await tryJoinQueuedTicketsToExistingDeathmatches();
+
   while (true) {
     const dmTickets = queue.filter((ticket) =>
       ticket &&
@@ -483,7 +579,7 @@ async function tryMatchQueue() {
   metrics.setQueueSize(queue.length);
 }
 
-async function finalizeDeathmatchMatchStats(match, winnerTicketId, killCounts) {
+async function finalizeDeathmatchMatchStats(match, winnerTicketId, killCounts, deathCounts) {
   if (!match || match.mode !== "deathmatch") {
     return;
   }
@@ -515,6 +611,7 @@ async function finalizeDeathmatchMatchStats(match, winnerTicketId, killCounts) {
     }
 
     const kills = Math.max(0, Math.floor(Number(killCounts && killCounts[ticketId]) || 0));
+    const deaths = Math.max(0, Math.floor(Number(deathCounts && deathCounts[ticketId]) || 0));
     const placement = placementByTicket.get(ticketId) || ranked.length;
     const won = !!resolvedWinnerTicketId && ticketId === resolvedWinnerTicketId;
 
@@ -522,7 +619,7 @@ async function finalizeDeathmatchMatchStats(match, winnerTicketId, killCounts) {
       const result = await playerRepository.recordMatchStats(ticket.playerId, {
         sourceId,
         kills,
-        deaths: 0,
+        deaths,
         placement,
         won,
         damageDealt: 0,
@@ -822,7 +919,12 @@ async function handleMatchFinished(msg) {
     if (!msg.abandoned) {
       try {
         if (match.mode === "deathmatch") {
-          await finalizeDeathmatchMatchStats(match, msg.winnerTicketId || "", msg.roundWins || {});
+          await finalizeDeathmatchMatchStats(
+            match,
+            msg.winnerTicketId || "",
+            msg.roundWins || {},
+            msg.deathCounts || {}
+          );
         } else {
           await finalizeDuelMatchStats(match, msg.winnerTicketId || "", msg.roundWins || {});
         }

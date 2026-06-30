@@ -15,8 +15,8 @@ MonoBehaviour:
   serverAddress: api.game35.ru
   serverPort: 0
   connectTimeoutSeconds: 5
-  queueApiBaseUrl: 
-  queueApiBaseUrlSecure: 
+  queueApiBaseUrl: https://api.game35.ru
+  queueApiBaseUrlSecure: https://api.game35.ru
   realtimeWsUrl: ws://api.game35.ru/ws
   realtimeWsUrlSecure: wss://api.game35.ru/ws
   queueRequestTimeoutSeconds: 5

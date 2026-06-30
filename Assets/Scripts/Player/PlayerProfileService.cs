@@ -1251,5 +1251,43 @@ namespace ShooterPrototype.Player
 
             onCompleted?.Invoke(false, improved);
         }
+
+        public static IEnumerator RecordTrainingSession(
+            MonoBehaviour runner,
+            int elapsedSeconds,
+            Action<bool> onCompleted)
+        {
+            var trainingTimeSeconds = Mathf.Max(1, elapsedSeconds);
+            if (UsesLocalProgressOnly || runner == null || !TryResolveApiClient(out var apiClient))
+            {
+                onCompleted?.Invoke(true);
+                yield break;
+            }
+
+            var playerId = PlayerIdentityService.GetOrCreatePlayerId();
+            var sourceId = $"training_{playerId}_{DateTime.UtcNow.Ticks}";
+            var completed = false;
+            var success = false;
+
+            var request = new PlayerProfileMatchStatsRequest
+            {
+                sourceId = sourceId,
+                kills = 0,
+                deaths = 0,
+                placement = 1,
+                won = false,
+                damageDealt = 0,
+                matchMode = "training",
+                trainingTimeSeconds = trainingTimeSeconds
+            };
+
+            yield return apiClient.RecordMatchStats(playerId, request, (ok, _, __, ___) =>
+            {
+                completed = true;
+                success = ok;
+            });
+
+            onCompleted?.Invoke(completed && success);
+        }
     }
 }

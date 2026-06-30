@@ -458,6 +458,7 @@ async function getPlayerMatchStats(playerId) {
     totalKills,
     totalDeaths,
     totalWins,
+    totalDamage,
     avgPlacement,
     avgDamage,
     kdRatio,
@@ -497,6 +498,68 @@ async function recordMatchStats(externalPlayerId, payload) {
     .trim()
     .toLowerCase();
   const completionTimeMs = Math.max(0, Math.floor(Number(payload && payload.completionTimeMs)));
+
+  if (matchMode === "training") {
+    const trainingTimeSeconds = Math.max(
+      0,
+      Math.floor(Number(payload && payload.trainingTimeSeconds))
+    );
+    if (!Number.isFinite(trainingTimeSeconds) || trainingTimeSeconds <= 0) {
+      return { ok: false, error: "InvalidStats", message: "Training time is required." };
+    }
+
+    const playerRow = await getPlayerByExternalId(externalPlayerId);
+    if (!playerRow) {
+      return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
+    }
+
+    await ensurePlayerMatchStats(playerRow.id);
+    const timestamp = nowMs();
+
+    try {
+      const alreadyReported = await transaction(async (tx) => {
+        const existing = await tx.get(
+          `SELECT id
+           FROM player_match_stat_reports
+           WHERE player_id = ? AND source_id = ?`,
+          [playerRow.id, normalizedSourceId]
+        );
+        if (existing) {
+          return true;
+        }
+
+        await tx.run(
+          `UPDATE player_match_stats
+           SET training_time_seconds = training_time_seconds + ?,
+               updated_at = ?
+           WHERE player_id = ?`,
+          [trainingTimeSeconds, timestamp, playerRow.id]
+        );
+
+        await tx.run(
+          `INSERT INTO player_match_stat_reports
+           (player_id, source_id, reported_at, rating_delta)
+           VALUES (?, ?, ?, 0)`,
+          [playerRow.id, normalizedSourceId, timestamp]
+        );
+
+        return false;
+      });
+
+      return {
+        ok: true,
+        alreadyReported,
+        ratingDelta: 0,
+        profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: "RecordFailed",
+        message: error && error.message ? error.message : "Failed to record training time.",
+      };
+    }
+  }
 
   if (matchMode === "challenge") {
     if (!Number.isFinite(completionTimeMs) || completionTimeMs <= 0) {
@@ -596,6 +659,8 @@ async function recordMatchStats(externalPlayerId, payload) {
       const normalizedMode = matchMode;
       const skipRatingUpdate = normalizedMode === "deathmatch" || normalizedMode === "dm";
       const ratingColumn = matchMode === "duel" || matchMode === "1v1" ? "duel_rating" : "rating";
+      const dmKills = skipRatingUpdate ? kills : 0;
+      const dmDeaths = skipRatingUpdate ? deaths : 0;
 
       await tx.run(
         `UPDATE player_match_stats
@@ -605,9 +670,11 @@ async function recordMatchStats(externalPlayerId, payload) {
              total_wins = total_wins + ?,
              total_placement_sum = total_placement_sum + ?,
              total_damage = total_damage + ?,
+             dm_total_kills = dm_total_kills + ?,
+             dm_total_deaths = dm_total_deaths + ?,
              updated_at = ?
          WHERE player_id = ?`,
-        [kills, deaths, won ? 1 : 0, placement, damageDealt, timestamp, playerRow.id]
+        [kills, deaths, won ? 1 : 0, placement, damageDealt, dmKills, dmDeaths, timestamp, playerRow.id]
       );
 
       if (!skipRatingUpdate) {
@@ -1522,6 +1589,71 @@ async function getLeaderboard(limit = 25, mode = "duel") {
       challengeTimeMs: Number.isFinite(row.challenge_time_ms) ? row.challenge_time_ms : -1,
       playerId: row.player_id || "",
     }));
+  }
+
+  if (normalizedMode === "deathmatch" || normalizedMode === "dm") {
+    const rows = await all(
+      `SELECT COALESCE(NULLIF(TRIM(pp.nickname), ''), 'Игрок') AS nickname,
+              pms.dm_total_kills AS kills,
+              pms.dm_total_deaths AS deaths,
+              p.external_player_id AS player_id
+       FROM player_match_stats pms
+       INNER JOIN players p ON p.id = pms.player_id
+       INNER JOIN player_profiles pp ON pp.player_id = p.id
+       WHERE pms.dm_total_kills > 0
+       ORDER BY pms.dm_total_kills DESC, pms.dm_total_deaths ASC, pms.updated_at ASC
+       LIMIT ?`,
+      [normalizedLimit]
+    );
+
+    return rows.map((row, index) => {
+      const kills = Number.isFinite(row.kills) ? Math.max(0, row.kills) : 0;
+      const deaths = Number.isFinite(row.deaths) ? Math.max(0, row.deaths) : 0;
+      const kdRatio = deaths > 0 ? kills / deaths : kills;
+      return {
+        rank: index + 1,
+        nickname: row.nickname || "Игрок",
+        rating: kills,
+        kills,
+        deaths,
+        kdRatio,
+        challengeTimeMs: -1,
+        trainingTimeSeconds: 0,
+        playerId: row.player_id || "",
+      };
+    });
+  }
+
+  if (normalizedMode === "training") {
+    const rows = await all(
+      `SELECT COALESCE(NULLIF(TRIM(pp.nickname), ''), 'Игрок') AS nickname,
+              pms.training_time_seconds AS training_time_seconds,
+              p.external_player_id AS player_id
+       FROM player_match_stats pms
+       INNER JOIN players p ON p.id = pms.player_id
+       INNER JOIN player_profiles pp ON pp.player_id = p.id
+       WHERE pms.training_time_seconds > 0
+       ORDER BY pms.training_time_seconds DESC, pms.updated_at ASC
+       LIMIT ?`,
+      [normalizedLimit]
+    );
+
+    return rows.map((row, index) => {
+      const trainingTimeSeconds = Number.isFinite(row.training_time_seconds)
+        ? Math.max(0, row.training_time_seconds)
+        : 0;
+      return {
+        rank: index + 1,
+        nickname: row.nickname || "Игрок",
+        rating: trainingTimeSeconds,
+        kills: 0,
+        deaths: 0,
+        kdRatio: 0,
+        challengeTimeMs: -1,
+        trainingTimeSeconds,
+        playerId: row.player_id || "",
+      };
+    });
   }
 
   const ratingColumn = normalizedMode === "duel" || normalizedMode === "1v1" ? "duel_rating" : "rating";

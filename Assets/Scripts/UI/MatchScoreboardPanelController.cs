@@ -330,7 +330,15 @@ namespace ShooterPrototype.UI
 
         private void SyncRowsFromContext()
         {
-            if (transportClient != null && transportClient.TryGetLatestSnapshot(out var snapshot))
+            if (transportClient != null &&
+                transportClient.TryGetLatestMatchState(out var matchState) &&
+                string.Equals(matchState.matchMode, "deathmatch", StringComparison.OrdinalIgnoreCase) &&
+                matchState.dmScoreboard != null &&
+                matchState.dmScoreboard.Length > 0)
+            {
+                MatchScoreboardTracker.SyncFromDeathmatchState(matchState.dmScoreboard);
+            }
+            else if (transportClient != null && transportClient.TryGetLatestSnapshot(out var snapshot))
             {
                 MatchScoreboardTracker.SyncFromSnapshot(snapshot.players);
             }

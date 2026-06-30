@@ -16,7 +16,7 @@ namespace ShooterPrototype.Player
         private const float PrepSeconds = 15f;
 
         private const int BotCount = 5;
-        private const int DmWeaponSpareAmmo = 60;
+        private const int DmWeaponSpareAmmo = 999;
         private const float RespawnDelaySeconds = 3f;
 
         private static readonly string[] BotNicknamePool =

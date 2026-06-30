@@ -96,6 +96,33 @@ namespace ShooterPrototype.Player
             AddDamage(ticketId, damage);
         }
 
+        public static void SyncFromDeathmatchState(RealtimeTransportClient.DmScoreboardRowMessage[] rows)
+        {
+            if (rows == null || rows.Length == 0)
+            {
+                return;
+            }
+
+            for (var i = 0; i < rows.Length; i++)
+            {
+                var row = rows[i];
+                if (row == null || string.IsNullOrWhiteSpace(row.ticketId))
+                {
+                    continue;
+                }
+
+                Upsert(row.ticketId, row.nickname);
+                if (!ByTicket.TryGetValue(row.ticketId, out var entry))
+                {
+                    continue;
+                }
+
+                entry.Kills = Mathf.Max(0, row.kills);
+                entry.Deaths = Mathf.Max(0, row.deaths);
+                entry.Damage = Mathf.Max(0, row.damage);
+            }
+        }
+
         public static void SyncFromSnapshot(RealtimeTransportClient.RealtimePlayerState[] players)
         {
             if (players == null)
@@ -112,10 +139,14 @@ namespace ShooterPrototype.Player
                 }
 
                 Upsert(player.ticketId, player.nickname);
-                if (ByTicket.TryGetValue(player.ticketId, out var entry) && player.killCount > entry.Kills)
+                if (!ByTicket.TryGetValue(player.ticketId, out var entry))
                 {
-                    entry.Kills = player.killCount;
+                    continue;
                 }
+
+                entry.Kills = Mathf.Max(entry.Kills, Mathf.Max(0, player.killCount));
+                entry.Deaths = Mathf.Max(entry.Deaths, player.deathCount);
+                entry.Damage = Mathf.Max(entry.Damage, player.damageDealt);
             }
         }
 

@@ -702,6 +702,30 @@ namespace ShooterPrototype.Player
             ApplyRemoteAvatarSuppressionState();
         }
 
+        public void ApplyScoreboardNicknames(RealtimeTransportClient.DmScoreboardRowMessage[] rows)
+        {
+            if (rows == null || rows.Length == 0)
+            {
+                return;
+            }
+
+            for (var i = 0; i < rows.Length; i++)
+            {
+                var row = rows[i];
+                if (row == null ||
+                    string.IsNullOrWhiteSpace(row.ticketId) ||
+                    string.IsNullOrWhiteSpace(row.nickname))
+                {
+                    continue;
+                }
+
+                if (remoteAvatars.TryGetValue(row.ticketId, out var avatar))
+                {
+                    avatar.DisplayNickname = row.nickname.Trim();
+                }
+            }
+        }
+
         public void SnapAllRemoteAvatarsToLastKnownPose()
         {
             foreach (var kv in remoteAvatars)
@@ -2280,6 +2304,11 @@ namespace ShooterPrototype.Player
                     if (!string.IsNullOrWhiteSpace(p.nickname))
                     {
                         avatar.DisplayNickname = p.nickname.Trim();
+                    }
+                    else if (MatchScoreboardTracker.TryGetEntry(p.ticketId, out var scoreEntry) &&
+                             !string.IsNullOrWhiteSpace(scoreEntry.Nickname))
+                    {
+                        avatar.DisplayNickname = scoreEntry.Nickname;
                     }
 
                     if (p.duelRating > 0)

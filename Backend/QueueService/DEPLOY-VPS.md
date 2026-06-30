@@ -31,6 +31,27 @@ curl http://127.0.0.1:5050/health
 
 ## С Windows
 
+**Один деплой (рекомендуется):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File Backend\QueueService\deploy.ps1
+```
+
+С обновлением npm-зависимостей (если менялся `package.json`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File Backend\QueueService\deploy.ps1 -Install
+```
+
+Переменные (если не `deploy@api.game35.ru`):
+
+```powershell
+$env:DEPLOY_HOST = "api.game35.ru"
+$env:DEPLOY_USER = "deploy"
+```
+
+Полная заливка папки вручную:
+
 ```powershell
 scp -r "c:\me\unity\ShooterPrototype\Backend\QueueService" root@IP:/opt/shooter/
 ```

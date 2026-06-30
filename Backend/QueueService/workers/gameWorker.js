@@ -43,6 +43,18 @@ function post(type, payload) {
   parentPort.postMessage({ type, ...payload });
 }
 
+function postMatchFinished(match) {
+  const payload = {
+    matchId: match.id,
+    winnerTicketId: match.winnerTicketId,
+    roundWins: match.roundWins,
+  };
+  if (typeof match.buildDeathCounts === "function") {
+    payload.deathCounts = match.buildDeathCounts();
+  }
+  post(WorkerToMaster.MATCH_FINISHED, payload);
+}
+
 function sendToPlayers(match, fn) {
   for (const player of match.players) {
     fn(player.ticketId);
@@ -217,11 +229,7 @@ function handlePlayerEvent(msg) {
 
   if (match.finished) {
     broadcastMatchState(match);
-    post(WorkerToMaster.MATCH_FINISHED, {
-      matchId: match.id,
-      winnerTicketId: match.winnerTicketId,
-      roundWins: match.roundWins,
-    });
+    postMatchFinished(match);
     removeMatch(match.id);
     return true;
   }
@@ -251,6 +259,22 @@ parentPort.on("message", (msg) => {
     return;
   }
 
+  if (msg.type === MasterToWorker.ADD_PLAYERS) {
+    const match = matches.get(msg.matchId);
+    if (!match || match.finished || typeof match.addPlayers !== "function") {
+      return;
+    }
+
+    const addedTicketIds = match.addPlayers(msg.players || [], Date.now());
+    if (addedTicketIds.length === 0) {
+      return;
+    }
+
+    broadcastMatchState(match);
+    broadcastSnapshot(match, Date.now(), true);
+    return;
+  }
+
   if (msg.type === MasterToWorker.SHUTDOWN) {
     running = false;
     matches.clear();
@@ -267,11 +291,7 @@ parentPort.on("message", (msg) => {
     deliverOutbox(match);
     if (match.finished) {
       broadcastMatchState(match);
-      post(WorkerToMaster.MATCH_FINISHED, {
-        matchId: match.id,
-        winnerTicketId: match.winnerTicketId,
-        roundWins: match.roundWins,
-      });
+      postMatchFinished(match);
       removeMatch(match.id);
     }
     return;
@@ -312,11 +332,7 @@ const loop = setInterval(() => {
 
       if (match.finished) {
         broadcastMatchState(match);
-        post(WorkerToMaster.MATCH_FINISHED, {
-          matchId: match.id,
-          winnerTicketId: match.winnerTicketId,
-          roundWins: match.roundWins,
-        });
+        postMatchFinished(match);
         removeMatch(match.id);
       }
     } catch (error) {

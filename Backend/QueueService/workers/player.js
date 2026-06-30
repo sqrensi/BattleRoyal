@@ -74,6 +74,9 @@ class Player {
     this.lastPoseMs = 0;
     this.lastSeq = null;
     this.respawnPoseGraceUntilMs = 0;
+    this.joinPoseGraceUntilMs = 0;
+    this.matchDeaths = 0;
+    this.damageDealt = 0;
     this.cheatFlags = 0;
     this.isAiBot = !!data.isAiBot;
 
