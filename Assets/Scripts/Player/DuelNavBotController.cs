@@ -7,7 +7,9 @@ namespace ShooterPrototype.Player
     [DisallowMultipleComponent]
     public sealed class DuelNavBotController : MonoBehaviour
     {
-        private const float ThinkIntervalSeconds = 0.08f;
+        private const float ThinkIntervalSeconds = 0.11f;
+        private const float DmThinkIntervalSeconds = 0.18f;
+        private const float DmTargetRefreshSeconds = 0.72f;
         private const float AimEyeHeight = 1.55f;
         private const float BodyYawTurnSpeed = 18f;
 
@@ -30,9 +32,12 @@ namespace ShooterPrototype.Player
         private int strafeDir = 1;
         private bool combatEnabled;
         private bool configured;
+        private bool freeTargetMode;
         private float currentLookPitch;
+        private float nextTargetRefreshAt;
 
         public string Nickname { get; private set; } = "Бот";
+        public string ScoreboardTicketId { get; private set; } = "offline-bot";
         public string KillFeedVictimLabel => Nickname;
         public bool ControlsAimPresentation => combatEnabled && combatTarget != null && !health.IsDead;
 
@@ -42,8 +47,8 @@ namespace ShooterPrototype.Player
         {
             Nickname = string.IsNullOrWhiteSpace(nickname) ? "Бот" : nickname.Trim();
             botSkinState = skinState;
-            skill = Mathf.Clamp(botSkill, 0.35f, 0.95f);
-            aggression = Mathf.Clamp(0.5f + skill * 0.35f, 0.5f, 0.95f);
+            skill = Mathf.Clamp(botSkill, 0.3f, 0.9f);
+            aggression = Mathf.Clamp(0.38f + skill * 0.28f, 0.38f, 0.8f);
             health = GetComponent<PlayerHealth>();
             agent = GetComponent<NavMeshAgent>();
             weaponPresentation = GetComponent<RemoteWeaponPresentation>();
@@ -74,6 +79,20 @@ namespace ShooterPrototype.Player
             combatTarget = target;
         }
 
+        public void SetFreeTargetMode(bool enabled)
+        {
+            freeTargetMode = enabled;
+            if (enabled)
+            {
+                RefreshFreeTarget(force: true);
+            }
+        }
+
+        public void SetScoreboardTicketId(string ticketId)
+        {
+            ScoreboardTicketId = string.IsNullOrWhiteSpace(ticketId) ? "offline-bot" : ticketId.Trim();
+        }
+
         public void PrepareCombatRound()
         {
             equippedWeaponKind = RollRoundWeaponKind();
@@ -101,7 +120,11 @@ namespace ShooterPrototype.Player
 
         public void ApplyHit(float damage, Vector3 hitDirection)
         {
-            health?.ApplyLocalShooterDamage(damage, hitDirection);
+            health?.ApplyLocalShooterDamage(
+                damage,
+                hitDirection,
+                "offline-local",
+                PlayerProfileService.Nickname);
         }
 
         public void WarpTo(Vector3 position, Quaternion rotation)
@@ -139,7 +162,23 @@ namespace ShooterPrototype.Player
 
         private void Update()
         {
-            if (!combatEnabled || health == null || health.IsDead || combatTarget == null)
+            if (!combatEnabled || health == null || health.IsDead)
+            {
+                return;
+            }
+
+            if (freeTargetMode)
+            {
+                if (combatTarget == null ||
+                    combatTarget.GetComponentInParent<PlayerHealth>() is not PlayerHealth targetHealth ||
+                    targetHealth.IsDead ||
+                    Time.time >= nextTargetRefreshAt)
+                {
+                    RefreshFreeTarget(force: false);
+                }
+            }
+
+            if (combatTarget == null)
             {
                 return;
             }
@@ -151,7 +190,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            nextThinkAt = Time.time + ThinkIntervalSeconds;
+            nextThinkAt = Time.time + (freeTargetMode ? DmThinkIntervalSeconds : ThinkIntervalSeconds);
             TickCombat();
         }
 
@@ -172,8 +211,8 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var preferredRange = 8.5f;
-            var moveSpeed = 4.8f + aggression * 3.8f;
+            var preferredRange = 9.5f;
+            var moveSpeed = 4.1f + aggression * 3.1f;
             Vector3 destination;
 
             if (distance > preferredRange + 1.5f)
@@ -195,7 +234,8 @@ namespace ShooterPrototype.Player
                 destination = transform.position + perp * strafeDir * 3.8f;
             }
 
-            if (NavMesh.SamplePosition(destination, out var hit, wanderRadius, NavMesh.AllAreas))
+            if (NavMesh.SamplePosition(destination, out var hit, wanderRadius, NavMesh.AllAreas) &&
+                CanControlAgent(agent))
             {
                 agent.isStopped = false;
                 agent.speed = moveSpeed;
@@ -238,10 +278,10 @@ namespace ShooterPrototype.Player
 
         private void TryShoot(Vector3 targetPos)
         {
-            var baseInterval = 0.48f + (1f - skill) * 0.32f;
-            nextShotAt = Time.time + baseInterval + UnityEngine.Random.Range(0.02f, 0.22f);
+            var baseInterval = 0.58f + (1f - skill) * 0.4f;
+            nextShotAt = Time.time + baseInterval + UnityEngine.Random.Range(0.06f, 0.32f);
 
-            var hitChance = 0.1f + skill * 0.34f;
+            var hitChance = 0.07f + skill * 0.26f;
             if (UnityEngine.Random.value > hitChance)
             {
                 PlayShotPresentation(targetPos, false);
@@ -253,7 +293,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var targetHealth = combatTarget.GetComponent<PlayerHealth>();
+            var targetHealth = combatTarget.GetComponentInParent<PlayerHealth>();
             if (targetHealth == null || targetHealth.IsDead)
             {
                 return;
@@ -261,9 +301,70 @@ namespace ShooterPrototype.Player
 
             PlayShotPresentation(targetPos, true);
 
-            var damage = UnityEngine.Random.value < 0.04f + skill * 0.06f ? 100f : 22f + skill * 10f;
+            var damage = UnityEngine.Random.value < 0.03f + skill * 0.04f ? 100f : 18f + skill * 8f;
             var hitDir = (targetPos - transform.position).normalized;
-            targetHealth.ApplyEnvironmentalDamage(damage, hitDir);
+            if (targetHealth.IsTrainingBotMode)
+            {
+                targetHealth.ApplyLocalShooterDamage(damage, hitDir, ScoreboardTicketId, Nickname);
+            }
+            else if (MatchOfflineDeathmatchController.Active != null)
+            {
+                targetHealth.ApplyEnvironmentalDamage(damage, hitDir, ScoreboardTicketId, Nickname);
+            }
+            else
+            {
+                targetHealth.ApplyEnvironmentalDamage(damage, hitDir);
+            }
+
+            MatchScoreboardTracker.AddDamageDealt(ScoreboardTicketId, Mathf.RoundToInt(damage));
+        }
+
+        private void RefreshFreeTarget(bool force)
+        {
+            if (!force && Time.time < nextTargetRefreshAt)
+            {
+                return;
+            }
+
+            nextTargetRefreshAt = Time.time + DmTargetRefreshSeconds;
+
+            if (MatchOfflineDeathmatchController.Active != null &&
+                MatchOfflineDeathmatchController.Active.TryFindNearestEnemy(
+                    transform.position,
+                    health,
+                    maxEngageDistance + 8f,
+                    out var registryTarget))
+            {
+                combatTarget = registryTarget;
+                return;
+            }
+
+            Transform bestTarget = null;
+            var bestDistance = float.MaxValue;
+            var origin = transform.position;
+            var candidates = FindObjectsByType<PlayerHealth>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            for (var i = 0; i < candidates.Length; i++)
+            {
+                var candidateHealth = candidates[i];
+                if (candidateHealth == null ||
+                    candidateHealth == health ||
+                    candidateHealth.IsDead)
+                {
+                    continue;
+                }
+
+                var candidateRoot = candidateHealth.transform;
+                var distance = Vector3.Distance(origin, candidateRoot.position);
+                if (distance > maxEngageDistance + 8f || distance >= bestDistance)
+                {
+                    continue;
+                }
+
+                bestDistance = distance;
+                bestTarget = candidateRoot;
+            }
+
+            combatTarget = bestTarget;
         }
 
         private void PlayShotPresentation(Vector3 targetPos, bool aimedShot)
@@ -290,8 +391,8 @@ namespace ShooterPrototype.Player
             if (!aimedShot)
             {
                 direction = Quaternion.Euler(
-                    UnityEngine.Random.Range(-4f, 4f),
-                    UnityEngine.Random.Range(-7f, 7f),
+                    UnityEngine.Random.Range(-6f, 6f),
+                    UnityEngine.Random.Range(-10f, 10f),
                     0f) * direction;
             }
 
@@ -376,13 +477,19 @@ namespace ShooterPrototype.Player
             agent.enabled = true;
             agent.updatePosition = true;
             agent.updateRotation = false;
+            if (!agent.isOnNavMesh)
+            {
+                configured = false;
+                return;
+            }
+
             agent.isStopped = stopped;
             if (!stopped)
             {
                 agent.ResetPath();
             }
 
-            configured = CanControlAgent(agent);
+            configured = true;
         }
 
         private static bool CanControlAgent(NavMeshAgent navAgent)

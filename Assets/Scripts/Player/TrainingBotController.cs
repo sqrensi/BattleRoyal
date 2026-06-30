@@ -40,10 +40,29 @@ namespace ShooterPrototype.Player
                 health.TrainingBotDied += HandleBotDied;
             }
 
+            TryPlaceAgentOnNavMesh(transform.position);
             configured = CanControlAgent(agent);
             if (configured)
             {
                 PickNextDestination(true);
+            }
+        }
+
+        private void TryPlaceAgentOnNavMesh(Vector3 position)
+        {
+            if (agent == null)
+            {
+                return;
+            }
+
+            agent.enabled = true;
+            if (NavMesh.SamplePosition(position, out var navHit, 4f, NavMesh.AllAreas))
+            {
+                agent.Warp(navHit.position);
+            }
+            else
+            {
+                agent.enabled = false;
             }
         }
 
@@ -116,7 +135,6 @@ namespace ShooterPrototype.Player
             agent.enabled = true;
             agent.updatePosition = true;
             agent.updateRotation = true;
-            agent.isStopped = false;
 
             if (NavMesh.SamplePosition(position, out var navHit, 2f, NavMesh.AllAreas))
             {
@@ -125,6 +143,11 @@ namespace ShooterPrototype.Player
             else
             {
                 agent.Warp(position);
+            }
+
+            if (CanControlAgent(agent))
+            {
+                agent.isStopped = false;
             }
         }
 

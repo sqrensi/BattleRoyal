@@ -20,6 +20,8 @@ namespace ShooterPrototype.UI
 
         private static readonly MainMenuGameMode[] OfflineModes =
         {
+            MainMenuGameMode.Duel1v1,
+            MainMenuGameMode.Deathmatch,
             MainMenuGameMode.Training,
             MainMenuGameMode.Challenge,
         };
@@ -35,7 +37,7 @@ namespace ShooterPrototype.UI
         private Button previousButton;
         private Button nextButton;
         private int builtLayoutVersion;
-        private bool offlineRestricted;
+        private bool onlineModesRestricted;
 
         public static MainMenuGameMode SelectedMode => selectedMode;
 
@@ -122,12 +124,12 @@ namespace ShooterPrototype.UI
             rootRect.sizeDelta = new Vector2(width, selectorHeight);
         }
 
-        public void SetOfflineRestricted(bool restricted)
+        public void SetOnlineModesRestricted(bool restricted)
         {
-            offlineRestricted = restricted;
-            if (restricted && !MainMenuGameModeUtility.IsOfflineSoloMode(selectedMode))
+            onlineModesRestricted = restricted;
+            if (restricted && !MainMenuGameModeUtility.IsOfflinePlayMode(selectedMode))
             {
-                selectedMode = MainMenuGameMode.Training;
+                selectedMode = MainMenuGameMode.Duel1v1;
             }
 
             RefreshLabel();
@@ -227,7 +229,7 @@ namespace ShooterPrototype.UI
 
         private void Cycle(int delta)
         {
-            if (offlineRestricted)
+            if (onlineModesRestricted)
             {
                 selectedMode = CycleMode(selectedMode, OfflineModes, delta);
                 RefreshLabel();

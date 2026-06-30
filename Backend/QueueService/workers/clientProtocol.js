@@ -2,6 +2,35 @@
 
 const { WEAPON_SLOT_EMPTY } = require("./player");
 
+const DM_RESPAWN_DEBUG =
+  process.env.DM_RESPAWN_DEBUG === "1" || process.env.DM_RESPAWN_DEBUG === "true";
+const DM_RESPAWN_TRACE =
+  process.env.DM_RESPAWN_TRACE === "1" || process.env.DM_RESPAWN_TRACE === "true" || DM_RESPAWN_DEBUG;
+
+function logDmRespawnSnapshot(players, serverTick) {
+  if (!DM_RESPAWN_TRACE || !Array.isArray(players)) {
+    return;
+  }
+  for (const player of players) {
+    if (!player || !player.position) {
+      continue;
+    }
+    console.log("[DMRespawn] snapshot.player", JSON.stringify({
+      serverTick,
+      ticketId: player.ticketId,
+      isDead: player.isDead,
+      deathSeq: player.deathSeq,
+      sampleTick: player.sampleTick,
+      position: player.position,
+      vel: { x: player.velX, y: player.velY, z: player.velZ },
+      historyLen: Array.isArray(player.history) ? player.history.length : 0,
+      lastHistory: Array.isArray(player.history) && player.history.length > 0
+        ? player.history[player.history.length - 1]
+        : null,
+    }));
+  }
+}
+
 function mapPhaseToClient(serverPhase) {
   switch (serverPhase) {
     case "waiting":
@@ -113,6 +142,7 @@ function buildDeathmatchStateForTicket(match, ticketId) {
     dmMaxPlayers: Math.max(2, Number(match.maxPlayers) || match.players.length),
     dmRespawnRemainingSeconds: respawnRemainingSeconds,
     dmLocalAlive: isAlive,
+    dmLocalDeathSeq: localPlayer ? Math.max(0, Number(localPlayer.deathSeq) || 0) : 0,
   };
 }
 
@@ -330,6 +360,10 @@ function buildSnapshotForViewer(match, viewerTicketId, tickRateHz, options) {
     if (isDeathmatch || isSmallDuelLobby || player.connected || player.hasPose) {
       others.push(buildRemotePlayerState(player, match.serverTick, historySamples));
     }
+  }
+
+  if (isDeathmatch) {
+    logDmRespawnSnapshot(others, match.serverTick);
   }
 
   const payload = {

@@ -72,7 +72,8 @@ class Player {
     this.poseSampleSeq = 0;
     this.stateHistory = [];
     this.lastPoseMs = 0;
-    this.lastSeq = -1;
+    this.lastSeq = null;
+    this.respawnPoseGraceUntilMs = 0;
     this.cheatFlags = 0;
     this.isAiBot = !!data.isAiBot;
 

@@ -29,7 +29,7 @@ namespace ShooterPrototype.UI
         private const int GameplayHintLayoutVersion = 5;
         private const int MatchWaitStatusLayoutVersion = 5;
         private const int DuelTopCenterHudLayoutVersion = 2;
-        private const int DuelPlayersPanelLayoutVersion = 3;
+        private const int DuelPlayersPanelLayoutVersion = 6;
         private const int DuelRoundCountdownLayoutVersion = 1;
         private const int DuelWeaponPickLayoutVersion = 1;
         private const float GameplayHintOffsetX = 72f;
@@ -43,8 +43,10 @@ namespace ShooterPrototype.UI
         private Canvas canvas;
         private GameObject topBarPanel;
         private bool topBarVisible;
+        private bool matchHudActive;
         private CombatHudController combatHud;
         private GameKillFeedController killFeed;
+        private MatchScoreboardPanelController scoreboard;
         private TMP_Text connectionText;
         private TMP_Text playersText;
         private TMP_Text pingText;
@@ -64,6 +66,10 @@ namespace ShooterPrototype.UI
         private TMP_Text matchStatusText;
         private TMP_Text duelTopCenterText;
         private TMP_Text duelPlayersPanelText;
+        private TMP_Text duelPlayersLocalNickText;
+        private TMP_Text duelPlayersLocalRatingText;
+        private TMP_Text duelPlayersOpponentNickText;
+        private TMP_Text duelPlayersOpponentRatingText;
         private TMP_Text duelRoundCountdownText;
         private RectTransform duelWeaponPickPanel;
         private readonly Dictionary<WeaponKind, Image> duelWeaponPickIcons = new Dictionary<WeaponKind, Image>(4);
@@ -190,6 +196,12 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            if (scoreboard != null && scoreboard.IsOpen)
+            {
+                scoreboard.SetOpen(false);
+                return;
+            }
+
             if (pauseMenuOpen && pauseSettingsOpen)
             {
                 SetPauseSettingsOpen(false);
@@ -205,7 +217,7 @@ namespace ShooterPrototype.UI
             EnsurePauseMenuPanel(canvas != null ? canvas.transform : null);
             pauseMenuOpen = open;
             IsPauseMenuOpen = open;
-            FpsCharacterController.SuppressTabCursorToggle = open;
+            RefreshMatchTabSuppression();
             if (!open)
             {
                 pauseSettingsOpen = false;
@@ -311,8 +323,16 @@ namespace ShooterPrototype.UI
             }
         }
 
+        public bool TryGetHudCanvas(out Canvas hudCanvas)
+        {
+            EnsureHudExists();
+            hudCanvas = canvas;
+            return hudCanvas != null;
+        }
+
         public void SetActiveForScene(bool isGameScene)
         {
+            matchHudActive = isGameScene;
             if (isGameScene)
             {
                 EnsureEventSystemExists();
@@ -338,6 +358,14 @@ namespace ShooterPrototype.UI
                 SetTopBarVisible(topBarVisible);
                 combatHud?.SetActiveForScene(true);
                 killFeed?.SetActiveForScene(true);
+                EnsureScoreboard();
+                if (canvas != null)
+                {
+                    scoreboard?.EnsureOnCanvas(canvas);
+                }
+
+                scoreboard?.SetActiveForScene(true);
+                RefreshMatchTabSuppression();
                 SetMatchCornerStatsPanelVisible(!ActiveMatchContext.IsDuel);
             }
             else
@@ -346,8 +374,15 @@ namespace ShooterPrototype.UI
                 StopPingRefresh();
                 combatHud?.SetActiveForScene(false);
                 killFeed?.SetActiveForScene(false);
+                scoreboard?.SetActiveForScene(false);
+                RefreshMatchTabSuppression();
                 ApplyMenuCursor();
             }
+        }
+
+        private void RefreshMatchTabSuppression()
+        {
+            FpsCharacterController.SuppressTabCursorToggle = matchHudActive || pauseMenuOpen;
         }
 
         private static void ApplyMenuCursor()
@@ -563,36 +598,99 @@ namespace ShooterPrototype.UI
         {
             EnsureHudExists();
             EnsureDuelPlayersPanel(canvas != null ? canvas.transform : null);
-            if (duelPlayersPanelText == null)
+            if (duelPlayersLocalNickText == null && duelPlayersPanelText == null)
             {
                 return;
             }
 
             var localName = FormatDuelHudName(localNickname, "Вы");
             var opponentName = FormatDuelHudName(opponentNickname, "Соперник");
-            duelPlayersPanelText.text =
-                $"{FormatDuelPlayerLine(localName, localRating)}\n{FormatDuelPlayerLine(opponentName, opponentRating)}";
-            ApplyBoldHudText(duelPlayersPanelText);
+            if (duelPlayersLocalNickText != null)
+            {
+                duelPlayersLocalNickText.text = localName;
+            }
 
-            var panel = duelPlayersPanelText.transform.parent;
+            if (duelPlayersLocalRatingText != null)
+            {
+                duelPlayersLocalRatingText.text = FormatDuelRating(localRating);
+            }
+
+            if (duelPlayersOpponentNickText != null)
+            {
+                duelPlayersOpponentNickText.text = opponentName;
+            }
+
+            if (duelPlayersOpponentRatingText != null)
+            {
+                duelPlayersOpponentRatingText.text = FormatDuelRating(opponentRating);
+            }
+
+            if (duelPlayersPanelText != null &&
+                (duelPlayersLocalNickText == null || duelPlayersOpponentNickText == null))
+            {
+                duelPlayersPanelText.text =
+                    $"{FormatDuelPlayerLine(localName, localRating)}\n{FormatDuelPlayerLine(opponentName, opponentRating)}";
+            }
+            ApplyDuelPanelNickText(duelPlayersPanelText);
+            ApplyDuelPanelNickText(duelPlayersLocalNickText);
+            ApplyDuelPanelNickText(duelPlayersLocalRatingText);
+            ApplyDuelPanelNickText(duelPlayersOpponentNickText);
+            ApplyDuelPanelNickText(duelPlayersOpponentRatingText);
+
+            var panel = duelPlayersLocalNickText != null
+                ? duelPlayersLocalNickText.transform.parent.parent
+                : duelPlayersPanelText != null
+                    ? duelPlayersPanelText.transform.parent
+                    : null;
             if (panel != null)
             {
                 panel.gameObject.SetActive(true);
             }
 
-            duelPlayersPanelText.gameObject.SetActive(true);
+            if (duelPlayersPanelText != null)
+            {
+                duelPlayersPanelText.gameObject.SetActive(duelPlayersLocalNickText == null);
+            }
         }
 
         public void ClearDuelPlayersPanel()
         {
-            if (duelPlayersPanelText == null)
+            if (duelPlayersPanelText == null && duelPlayersLocalNickText == null)
             {
                 return;
             }
 
-            duelPlayersPanelText.text = string.Empty;
-            duelPlayersPanelText.gameObject.SetActive(false);
-            var panel = duelPlayersPanelText.transform.parent;
+            if (duelPlayersPanelText != null)
+            {
+                duelPlayersPanelText.text = string.Empty;
+                duelPlayersPanelText.gameObject.SetActive(false);
+            }
+
+            if (duelPlayersLocalNickText != null)
+            {
+                duelPlayersLocalNickText.text = string.Empty;
+            }
+
+            if (duelPlayersLocalRatingText != null)
+            {
+                duelPlayersLocalRatingText.text = string.Empty;
+            }
+
+            if (duelPlayersOpponentNickText != null)
+            {
+                duelPlayersOpponentNickText.text = string.Empty;
+            }
+
+            if (duelPlayersOpponentRatingText != null)
+            {
+                duelPlayersOpponentRatingText.text = string.Empty;
+            }
+
+            var panel = duelPlayersPanelText != null
+                ? duelPlayersPanelText.transform.parent
+                : duelPlayersLocalNickText != null
+                    ? duelPlayersLocalNickText.transform.parent.parent
+                    : null;
             if (panel != null)
             {
                 panel.gameObject.SetActive(false);
@@ -1593,7 +1691,27 @@ namespace ShooterPrototype.UI
             EnsurePauseMenuPanel(root);
             combatHud?.EnsureOnCanvas(canvas);
             killFeed?.EnsureOnCanvas(canvas);
+            EnsureScoreboard();
+            scoreboard?.EnsureOnCanvas(canvas);
             Canvas.ForceUpdateCanvases();
+        }
+
+        private void EnsureScoreboard()
+        {
+            if (scoreboard == null)
+            {
+                scoreboard = GetComponent<MatchScoreboardPanelController>();
+                if (scoreboard == null)
+                {
+                    scoreboard = gameObject.AddComponent<MatchScoreboardPanelController>();
+                }
+            }
+        }
+
+        public void SetScoreboardLocalTicket(string ticketId)
+        {
+            EnsureScoreboard();
+            scoreboard?.SetLocalTicketId(ticketId);
         }
 
         private void EnsureCombatHud()
@@ -1928,14 +2046,28 @@ namespace ShooterPrototype.UI
             {
                 var versionMarker = existingPanel.GetComponent<CornerStatsLayoutMarker>();
                 if (versionMarker != null &&
-                    versionMarker.Version >= DuelPlayersPanelLayoutVersion &&
-                    duelPlayersPanelText != null)
+                    versionMarker.Version >= DuelPlayersPanelLayoutVersion)
                 {
-                    ApplyBoldHudText(duelPlayersPanelText);
-                    return;
+                    if (duelPlayersLocalNickText == null)
+                    {
+                        RebindDuelPlayersPanelTexts(existingPanel);
+                    }
+
+                    if (duelPlayersLocalNickText != null)
+                    {
+                        ApplyDuelPanelNickText(duelPlayersLocalNickText);
+                        ApplyDuelPanelNickText(duelPlayersLocalRatingText);
+                        ApplyDuelPanelNickText(duelPlayersOpponentNickText);
+                        ApplyDuelPanelNickText(duelPlayersOpponentRatingText);
+                        return;
+                    }
                 }
 
                 duelPlayersPanelText = null;
+                duelPlayersLocalNickText = null;
+                duelPlayersLocalRatingText = null;
+                duelPlayersOpponentNickText = null;
+                duelPlayersOpponentRatingText = null;
                 Destroy(existingPanel.gameObject);
             }
 
@@ -1947,26 +2079,105 @@ namespace ShooterPrototype.UI
             panelRect.anchorMin = new Vector2(0f, 1f);
             panelRect.anchorMax = new Vector2(0f, 1f);
             panelRect.pivot = new Vector2(0f, 1f);
-            panelRect.sizeDelta = new Vector2(188f, 52f);
+            panelRect.sizeDelta = new Vector2(210f, 46f);
             panelRect.anchoredPosition = new Vector2(8f, -8f);
 
-            var labelObject = new GameObject("DuelPlayersText");
-            labelObject.transform.SetParent(panelObject.transform, false);
-            var labelRect = labelObject.AddComponent<RectTransform>();
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            labelRect.offsetMin = new Vector2(2f, 2f);
-            labelRect.offsetMax = new Vector2(-2f, -2f);
+            var panelImage = panelObject.AddComponent<Image>();
+            UiTheme.ApplyPanel(panelImage, UiPanelStyle.Hud);
 
-            duelPlayersPanelText = labelObject.AddComponent<TextMeshProUGUI>();
-            ApplyBoldHudText(duelPlayersPanelText);
-            duelPlayersPanelText.fontSize = 14f;
-            duelPlayersPanelText.alignment = TextAlignmentOptions.TopLeft;
-            duelPlayersPanelText.enableWordWrapping = false;
-            duelPlayersPanelText.overflowMode = TextOverflowModes.Overflow;
-            duelPlayersPanelText.lineSpacing = -8f;
-            duelPlayersPanelText.text = string.Empty;
+            var layout = panelObject.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(6, 6, 4, 4);
+            layout.spacing = 1f;
+            layout.childAlignment = TextAnchor.UpperLeft;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+
+            duelPlayersLocalNickText = CreateDuelPlayersRow(
+                panelObject.transform,
+                "LocalRow",
+                out duelPlayersLocalRatingText);
+            duelPlayersOpponentNickText = CreateDuelPlayersRow(
+                panelObject.transform,
+                "OpponentRow",
+                out duelPlayersOpponentRatingText);
+            duelPlayersPanelText = null;
             panelObject.SetActive(false);
+        }
+
+        private void RebindDuelPlayersPanelTexts(Transform panel)
+        {
+            if (panel == null)
+            {
+                return;
+            }
+
+            var localRow = panel.Find("LocalRow");
+            var opponentRow = panel.Find("OpponentRow");
+            duelPlayersLocalNickText = localRow != null
+                ? localRow.Find("Nickname")?.GetComponent<TMP_Text>()
+                : null;
+            duelPlayersLocalRatingText = localRow != null
+                ? localRow.Find("Rating")?.GetComponent<TMP_Text>()
+                : null;
+            duelPlayersOpponentNickText = opponentRow != null
+                ? opponentRow.Find("Nickname")?.GetComponent<TMP_Text>()
+                : null;
+            duelPlayersOpponentRatingText = opponentRow != null
+                ? opponentRow.Find("Rating")?.GetComponent<TMP_Text>()
+                : null;
+        }
+
+        private TMP_Text CreateDuelPlayersRow(Transform parent, string rowName, out TMP_Text ratingText)
+        {
+            var rowObject = new GameObject(rowName);
+            rowObject.transform.SetParent(parent, false);
+            var rowLayout = rowObject.AddComponent<LayoutElement>();
+            rowLayout.preferredHeight = 17f;
+            rowLayout.minHeight = 17f;
+
+            var nickObject = new GameObject("Nickname");
+            nickObject.transform.SetParent(rowObject.transform, false);
+            var nickRect = nickObject.AddComponent<RectTransform>();
+            nickRect.anchorMin = Vector2.zero;
+            nickRect.anchorMax = Vector2.one;
+            nickRect.offsetMin = Vector2.zero;
+            nickRect.offsetMax = new Vector2(-46f, 0f);
+            var nickText = nickObject.AddComponent<TextMeshProUGUI>();
+            nickText.fontSize = 12f;
+            nickText.alignment = TextAlignmentOptions.MidlineLeft;
+            nickText.overflowMode = TextOverflowModes.Ellipsis;
+            nickText.enableWordWrapping = false;
+            ApplyDuelPanelNickText(nickText);
+
+            var ratingObject = new GameObject("Rating");
+            ratingObject.transform.SetParent(rowObject.transform, false);
+            var ratingRect = ratingObject.AddComponent<RectTransform>();
+            ratingRect.anchorMin = new Vector2(1f, 0f);
+            ratingRect.anchorMax = new Vector2(1f, 1f);
+            ratingRect.pivot = new Vector2(1f, 0.5f);
+            ratingRect.sizeDelta = new Vector2(44f, 0f);
+            ratingRect.anchoredPosition = Vector2.zero;
+            ratingText = ratingObject.AddComponent<TextMeshProUGUI>();
+            ratingText.fontSize = 12f;
+            ratingText.alignment = TextAlignmentOptions.MidlineRight;
+            ratingText.overflowMode = TextOverflowModes.Overflow;
+            ApplyDuelPanelNickText(ratingText);
+
+            return nickText;
+        }
+
+        private static void ApplyDuelPanelNickText(TMP_Text text)
+        {
+            if (text == null)
+            {
+                return;
+            }
+
+            UiTheme.ApplyTmp(text, UiTextRole.Body);
+            text.fontStyle = FontStyles.Bold;
+            text.color = UiTheme.TextPrimary;
         }
 
         private void EnsureDuelRoundCountdownText(Transform root)
@@ -2874,7 +3085,9 @@ namespace ShooterPrototype.UI
                     consecutivePingFailures = 0;
                     if (pingText != null)
                     {
-                        pingText.text = PlayerProfileService.IsOfflineMode ? "Челлендж (офлайн)" : "Челлендж";
+                        pingText.text = ActiveMatchContext.IsOfflineChallengeSession
+                            ? "Челлендж (офлайн)"
+                            : "Челлендж";
                     }
 
                     RefreshFpsText();
@@ -2895,12 +3108,14 @@ namespace ShooterPrototype.UI
                     continue;
                 }
 
-                if (PlayerProfileService.IsOfflineMode)
+                if (ActiveMatchContext.IsOfflineSoloSession)
                 {
                     consecutivePingFailures = 0;
                     if (pingText != null)
                     {
-                        pingText.text = "Офлайн";
+                        pingText.text = ActiveMatchContext.IsTraining
+                            ? "Тренировка"
+                            : "Офлайн";
                     }
 
                     RefreshFpsText();

@@ -56,6 +56,13 @@ namespace ShooterPrototype.Network
                 return realtimeWsUrlSecure.TrimEnd('/');
             }
 #endif
+            var queueUrl = ResolveQueueApiBaseUrl();
+            if (queueUrl.StartsWith("https://", System.StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(realtimeWsUrlSecure))
+            {
+                return realtimeWsUrlSecure.TrimEnd('/');
+            }
+
             return string.IsNullOrWhiteSpace(realtimeWsUrl)
                 ? "ws://127.0.0.1:5051"
                 : realtimeWsUrl.TrimEnd('/');

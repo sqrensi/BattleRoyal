@@ -46,14 +46,17 @@ namespace ShooterPrototype.UI
                 titleText.text = ResolveTitle(mode);
             }
 
-            if (mode == MainMenuGameMode.Training)
+            if (UsesEmptyLeaderboardPlaceholder)
             {
-                RenderTrainingPlaceholder();
+                RenderEmptyLeaderboardPlaceholder();
                 return;
             }
 
             RequestRefresh();
         }
+
+        private bool UsesEmptyLeaderboardPlaceholder =>
+            leaderboardMode is MainMenuGameMode.Training or MainMenuGameMode.Deathmatch;
 
         public void Build(RectTransform stackParent)
         {
@@ -146,13 +149,13 @@ namespace ShooterPrototype.UI
                 profileApiClient = menuController != null ? menuController.ProfileApiClient : null;
             }
 
-            if (leaderboardMode == MainMenuGameMode.Training)
+            if (UsesEmptyLeaderboardPlaceholder)
             {
-                RenderTrainingPlaceholder();
+                RenderEmptyLeaderboardPlaceholder();
                 yield break;
             }
 
-            if (PlayerProfileService.IsOfflineMode)
+            if (!PlayerProfileService.IsServerSynced)
             {
                 RenderEntries(System.Array.Empty<LeaderboardEntryDto>());
                 yield break;
@@ -295,13 +298,16 @@ namespace ShooterPrototype.UI
                 MainMenuGameMode.Training => "Топ 25",
                 MainMenuGameMode.Duel1v1 => "Топ 25 (1v1)",
                 MainMenuGameMode.Challenge => "Топ 25 (челлендж)",
+                MainMenuGameMode.Deathmatch => "Топ 25 (DM)",
                 _ => "Топ 25 (BR)",
             };
         }
 
         private bool IsTrainingMode => leaderboardMode == MainMenuGameMode.Training;
 
-        private void RenderTrainingPlaceholder()
+        private bool IsDeathmatchMode => leaderboardMode == MainMenuGameMode.Deathmatch;
+
+        private void RenderEmptyLeaderboardPlaceholder()
         {
             ClearContent();
             for (var rank = 1; rank <= 5; rank++)
@@ -385,7 +391,7 @@ namespace ShooterPrototype.UI
 
         private bool ShouldPinSelfAboveTop(LeaderboardEntryDto topEntry)
         {
-            if (IsTrainingMode)
+            if (IsTrainingMode || IsDeathmatchMode)
             {
                 return false;
             }
@@ -416,7 +422,7 @@ namespace ShooterPrototype.UI
             {
                 MainMenuGameMode.Duel1v1 => PlayerProfileService.DuelRating,
                 MainMenuGameMode.Challenge => PlayerProfileService.ChallengeBestTimeMs,
-                _ => PlayerProfileService.Rating,
+                _ => -1,
             };
         }
 

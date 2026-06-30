@@ -33,6 +33,8 @@ namespace ShooterPrototype.Player
         private bool manualWeaponPickOpen;
         private bool serverSaysAlive = true;
         private int lastAppliedSpawnSlot = -1;
+        private int lastRevivedDeathSeq = -1;
+        private Vector3 lastServerHitDirection = Vector3.forward;
         private int localPlacementEstimate = 1;
         private const int DmWeaponSpareAmmo = 60;
 
@@ -49,6 +51,7 @@ namespace ShooterPrototype.Player
             initialWeaponPickDone = false;
             manualWeaponPickOpen = false;
             serverSaysAlive = true;
+            lastRevivedDeathSeq = -1;
             lastAppliedSpawnSlot = -1;
             localPlacementEstimate = 1;
             remotesRevealed = false;
@@ -76,6 +79,7 @@ namespace ShooterPrototype.Player
                 transportClient.MatchStateReceived += HandleMatchState;
                 transportClient.MatchStatsReceived += HandleMatchStats;
                 transportClient.RespawnReceived += HandleRespawn;
+                transportClient.DamageReceived += HandleDamageReceived;
                 if (transportClient.TryGetLatestMatchState(out var cachedState))
                 {
                     HandleMatchState(cachedState);
@@ -90,6 +94,7 @@ namespace ShooterPrototype.Player
                 transportClient.MatchStateReceived -= HandleMatchState;
                 transportClient.MatchStatsReceived -= HandleMatchStats;
                 transportClient.RespawnReceived -= HandleRespawn;
+                transportClient.DamageReceived -= HandleDamageReceived;
             }
 
             fpsController?.SetWeaponPickUiMode(false);
@@ -190,14 +195,45 @@ namespace ShooterPrototype.Player
             KeepRemotesVisibleWhileDead();
         }
 
-        private void EnsureLocalDeathFromServer()
+        private void HandleDamageReceived(RealtimeTransportClient.DamageMessage message)
+        {
+            if (message == null || lastState == null)
+            {
+                return;
+            }
+
+            if (!string.Equals(lastState.matchMode, "deathmatch", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var localTicketId = ResolveLocalTicketId(lastState);
+            if (string.IsNullOrWhiteSpace(localTicketId) ||
+                !string.Equals(message.targetTicketId, localTicketId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var hitDirection = new Vector3(message.dirX, message.dirY, message.dirZ);
+            if (hitDirection.sqrMagnitude > 0.0001f)
+            {
+                lastServerHitDirection = hitDirection.normalized;
+            }
+
+            if (message.killed && message.deathSeq > 0)
+            {
+                serverSaysAlive = false;
+            }
+        }
+
+        private void EnsureLocalDeathFromServer(int serverDeathSeq = -1)
         {
             if (playerHealth == null || playerHealth.IsDead)
             {
                 return;
             }
 
-            playerHealth.ForceDeathFromServer(Vector3.forward);
+            playerHealth.ForceDeathFromServer(lastServerHitDirection, serverDeathSeq);
         }
 
         private void KeepRemotesVisibleWhileDead()
@@ -307,7 +343,7 @@ namespace ShooterPrototype.Player
             }
 
             serverSaysAlive = true;
-            TryReviveAtServerSpawn(lastState, message.spawnSlotIndex);
+            TryReviveAtServerSpawn(lastState, message.spawnSlotIndex, message.deathSeq);
         }
 
         private void HandleMatchState(RealtimeTransportClient.MatchStateMessage state)
@@ -383,13 +419,8 @@ namespace ShooterPrototype.Player
 
             if (previousAlive && !serverSaysAlive)
             {
-                EnsureLocalDeathFromServer();
+                EnsureLocalDeathFromServer(state.dmLocalDeathSeq);
                 KeepRemotesVisibleWhileDead();
-            }
-
-            if (!previousAlive && serverSaysAlive && currentPhase == "round")
-            {
-                TryReviveAtServerSpawn(state);
             }
 
             switch (currentPhase)
@@ -428,7 +459,11 @@ namespace ShooterPrototype.Player
         {
             SetMovementLocked(!serverSaysAlive || state.duelMovementLocked);
             SetCombatEnabled(state.duelCombatEnabled && IsLocalPlayerAlive());
-            fpsController?.SetServerReconciliationSuspended(false);
+            if (IsLocalPlayerAlive())
+            {
+                fpsController?.SetServerReconciliationSuspended(false);
+            }
+
             EnableCharacterControllerIfNeeded();
             EnsureRemotesVisible();
 
@@ -594,7 +629,10 @@ namespace ShooterPrototype.Player
             lastAppliedSpawnSlot = state.duelSpawnSlotIndex;
         }
 
-        private void TryReviveAtServerSpawn(RealtimeTransportClient.MatchStateMessage state, int spawnSlotOverride = -1)
+        private void TryReviveAtServerSpawn(
+            RealtimeTransportClient.MatchStateMessage state,
+            int spawnSlotOverride = -1,
+            int serverDeathSeq = -1)
         {
             if (state == null)
             {
@@ -607,13 +645,37 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            if (serverDeathSeq >= 0)
+            {
+                if (serverDeathSeq <= lastRevivedDeathSeq)
+                {
+                    return;
+                }
+
+                lastRevivedDeathSeq = serverDeathSeq;
+            }
+            else if (playerHealth != null && !playerHealth.IsDead && serverSaysAlive)
+            {
+                return;
+            }
+
             if (!DmSpawnUtility.TryResolveSpawnPose(slot, out var position, out var rotation))
             {
                 return;
             }
 
+            transportClient?.ResetPoseSequenceForRespawn();
+            if (serverDeathSeq >= 0)
+            {
+                playerHealth?.ApplyServerDeathSequence(serverDeathSeq);
+            }
+
             ForceReviveLocalPlayer(position, rotation, reviveIfDead: true);
             lastAppliedSpawnSlot = slot;
+            DmRespawnTrace.Log(
+                "local-respawn",
+                $"slot={slot} deathSeq={serverDeathSeq} lastRevived={lastRevivedDeathSeq} " +
+                $"pos=({position.x:F2},{position.y:F2},{position.z:F2}) yaw={rotation.eulerAngles.y:F1}");
             SetMovementLocked(false);
             SetCombatEnabled(state.duelCombatEnabled);
             EnableCharacterControllerIfNeeded();

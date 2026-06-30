@@ -42,6 +42,11 @@ namespace ShooterPrototype.Player
             return true;
         }
 
+        public static Vector3 GroundFeetPosition(Vector3 requestedPosition)
+        {
+            return ResolveGroundedFeetPosition(requestedPosition);
+        }
+
         public static bool TryApplyGroundedPose(
             Transform playerRoot,
             CharacterController characterController,

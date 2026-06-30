@@ -42,6 +42,7 @@ namespace ShooterPrototype.Player
         private int botDuelRating;
         private int localRoundWins;
         private int botRoundWins;
+        private int damageDealtToOpponent;
         private int roundNumber;
         private int localTeamIndex;
         private int localSpawnSlot;
@@ -59,6 +60,26 @@ namespace ShooterPrototype.Player
         public static MatchOfflineDuelController Active { get; private set; }
 
         public bool IsSessionActive => sessionStarted && !matchEnded;
+
+        public int LocalRoundWins => localRoundWins;
+
+        public int BotRoundWins => botRoundWins;
+
+        public string OpponentNickname => bot != null ? bot.Nickname : "Соперник";
+
+        public int DamageDealtToOpponent => damageDealtToOpponent;
+
+        public void RecordDamageToOpponent(float damage)
+        {
+            if (damage <= 0f)
+            {
+                return;
+            }
+
+            var rounded = Mathf.RoundToInt(damage);
+            damageDealtToOpponent += rounded;
+            MatchScoreboardTracker.AddDamage("offline-bot", rounded);
+        }
 
         private void Awake()
         {
@@ -112,6 +133,7 @@ namespace ShooterPrototype.Player
             matchOutcomeScheduled = false;
             localRoundWins = 0;
             botRoundWins = 0;
+            damageDealtToOpponent = 0;
             roundNumber = 0;
             localWeaponPicked = false;
             botDuelRating = 0;
@@ -166,12 +188,12 @@ namespace ShooterPrototype.Player
 
             BindLocalPlayer();
             yield return EnsureNavMeshReadyRoutine();
-            WeaponBlockUtility.EnsureSceneWeaponBlocks(gameObject.scene);
-            WeaponBlockUtility.EnsureSceneBotOccluderProxies(gameObject.scene);
+            WeaponBlockUtility.RemoveSceneBotOccluderProxies(gameObject.scene);
             RollSpawns();
             SpawnBot();
             EnableLocalPlayerForDuel();
             yield return EnsureHudReadyRoutine();
+            gameHud?.SetScoreboardLocalTicket("offline-local");
             ClearLocalLoadout();
             flowCoroutine = StartCoroutine(MatchFlowRoutine());
         }
@@ -361,7 +383,7 @@ namespace ShooterPrototype.Player
             currentPhase = "round_end";
             bot?.SetCombatEnabled(false);
             SetMovementLocked(false);
-            SetLocalCombatEnabled(false);
+            SetLocalCombatEnabled(true);
             fpsController?.SetWeaponPickUiMode(false);
             gameHud?.HideDuelWeaponPickPanel();
 
@@ -462,7 +484,7 @@ namespace ShooterPrototype.Player
         private void SpawnBot()
         {
             var nickname = BotNicknames[UnityEngine.Random.Range(0, BotNicknames.Length)];
-            var skill = UnityEngine.Random.Range(0.45f, 0.85f);
+            var skill = UnityEngine.Random.Range(0.38f, 0.72f);
             var pose = GetSpawnPosition(botTeamIndex, botSpawnSlot);
             var rotation = GetSpawnRotation(botTeamIndex, botSpawnSlot);
             bot = TrainingBotFactory.CreateDuelBot(pose, rotation, nickname, skill);

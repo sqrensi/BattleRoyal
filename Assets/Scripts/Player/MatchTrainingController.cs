@@ -39,6 +39,8 @@ namespace ShooterPrototype.Player
 
         public bool IsSessionActive => sessionStarted && !sessionEnded;
 
+        public int KillCount => killCount;
+
         private void Awake()
         {
             Active = this;
@@ -79,6 +81,7 @@ namespace ShooterPrototype.Player
             remainingSeconds = SessionDurationSeconds;
 
             CacheReferences();
+            gameHud?.SetScoreboardLocalTicket("offline-local");
             ResolvePlayerSpawn();
 
             LoadingScreenOverlay.SetMessage("Подготовка тренировки...");
@@ -171,16 +174,22 @@ namespace ShooterPrototype.Player
 
         private IEnumerator EnsureNavMeshReadyRoutine()
         {
+            const float timeoutSeconds = 8f;
+            var deadline = Time.unscaledTime + timeoutSeconds;
             var sampleOrigin = playerSpawn != null ? playerSpawn.position : Vector3.zero;
-            if (TrySampleNavMeshPosition(sampleOrigin, 48f, out _))
+            while (Time.unscaledTime < deadline)
             {
-                yield break;
+                if (TrySampleNavMeshPosition(sampleOrigin, 48f, out _))
+                {
+                    yield break;
+                }
+
+                yield return null;
             }
 
             Debug.LogWarning(
                 "[MatchTrainingController] NavMesh not found near spawn. Bake NavMesh on the training scene " +
                 "(NavMesh Surface on walkable floor) so bots can move.");
-            yield return null;
         }
 
         private static bool TrySampleNavMeshPosition(Vector3 position, float radius, out Vector3 result)

@@ -165,9 +165,26 @@ namespace ShooterPrototype.Network
             var timeout = Mathf.Max(1, Mathf.RoundToInt(config.ConnectTimeoutSeconds * 1000f));
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             var queueHealthUrl = BuildQueueHealthUrl(config);
-            var connected = !string.IsNullOrWhiteSpace(queueHealthUrl)
-                ? await TryConnectQueueHealthUrlAsync(queueHealthUrl, timeout)
-                : await TryConnectServerReachableAsync(address, port, timeout);
+            bool connected;
+            if (UsesHttpsQueueApi(config))
+            {
+                // Production: REST/WSS go through nginx on 443. Ticket may still list :5050
+                // (internal QueueService port) — that port is not exposed to the client.
+                connected = true;
+                if (!string.IsNullOrWhiteSpace(queueHealthUrl))
+                {
+                    await TryConnectQueueHealthUrlAsync(queueHealthUrl, timeout);
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(queueHealthUrl))
+            {
+                connected = await TryConnectQueueHealthUrlAsync(queueHealthUrl, timeout);
+            }
+            else
+            {
+                connected = await TryConnectServerReachableAsync(address, port, timeout);
+            }
+
             stopwatch.Stop();
 
             isConnecting = false;
@@ -187,7 +204,7 @@ namespace ShooterPrototype.Network
                 lastConnectLatencyMs = -1;
                 connectedServerAddress = string.Empty;
                 connectedServerPort = 0;
-                lastConnectionError = $"Failed to connect to server {address}:{port}.";
+                lastConnectionError = BuildConnectionFailureMessage(config, address, port, queueHealthUrl);
                 EmitStatus(lastConnectionError);
             }
 
@@ -330,6 +347,32 @@ namespace ShooterPrototype.Network
 
             var baseUrl = networkConfig.ResolveQueueApiBaseUrl();
             return string.IsNullOrWhiteSpace(baseUrl) ? string.Empty : $"{baseUrl.TrimEnd('/')}/health";
+        }
+
+        private static bool UsesHttpsQueueApi(NetworkConfig networkConfig)
+        {
+            var baseUrl = networkConfig?.ResolveQueueApiBaseUrl();
+            return !string.IsNullOrWhiteSpace(baseUrl) &&
+                   baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string BuildConnectionFailureMessage(
+            NetworkConfig networkConfig,
+            string address,
+            int port,
+            string queueHealthUrl)
+        {
+            if (!string.IsNullOrWhiteSpace(queueHealthUrl))
+            {
+                return $"Failed to reach server API ({queueHealthUrl}).";
+            }
+
+            if (UsesHttpsQueueApi(networkConfig))
+            {
+                return "Failed to reach server API over HTTPS.";
+            }
+
+            return $"Failed to connect to server {address}:{port}.";
         }
 
         private static async Task<bool> TryConnectQueueHealthUrlAsync(string healthUrl, int timeoutMilliseconds)

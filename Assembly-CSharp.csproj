@@ -68,10 +68,12 @@
     <Compile Include="Assets\Scripts\UI\MainMenuNicknameEditor.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerHitboxCleanup.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\Authorization\Scripts\Auth_info.cs" />
+    <Compile Include="Assets\Scripts\UI\MatchScoreboardPanelController.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\InfoYG\TemplateSettings.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\Authorization\Scripts\Auth_yg.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\InfoYG\InfoYG.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuAchievementsPanel.cs" />
+    <Compile Include="Assets\Scripts\Player\MatchOfflineDeathmatchController.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextSelector_A.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponAudioOverrides.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerMedkitController.cs" />
@@ -92,6 +94,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerPickupContext.cs" />
     <Compile Include="Assets\Scripts\Player\ClientSettingsService.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Server\ServerJson.cs" />
+    <Compile Include="Assets\Scripts\Player\DmRespawnTrace.cs" />
     <Compile Include="Assets\Scripts\Network\RealtimeSnapshotBinaryCodec.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuGameModeSelector.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\AutoTranslateLangs\Scripts\CorrectLang.cs" />
@@ -99,6 +102,7 @@
     <Compile Include="Assets\Scripts\Player\WeaponKindUtility.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Basic\GameReadyAPI.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuNotificationState.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuReconnectButton.cs" />
     <Compile Include="Assets\Scripts\Player\TrainingPickupZoneMarker.cs" />
     <Compile Include="Assets\Scripts\Player\PickupSpawnZone.cs" />
     <Compile Include="Assets\Scripts\Player\TrainingBotController.cs" />
@@ -207,6 +211,7 @@
     <Compile Include="Assets\Scripts\Player\ProceduralLocomotionRig.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuScrollSupport.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Basic\GamePause.cs" />
+    <Compile Include="Assets\Scripts\Player\MatchScoreboardTracker.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteMedkitPresentation.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuSettingsPanel.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_AutoStopLoopedEffect.cs" />
@@ -216,6 +221,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerProfileService.cs" />
     <Compile Include="Assets\Scripts\Player\ThreadArmRig.cs" />
     <Compile Include="Assets\Scripts\Player\DamageZoneMath.cs" />
+    <Compile Include="Assets\Scripts\Bootstrap\OfflineDeathmatchBootstrap.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\ChatController.cs" />
     <Compile Include="Assets\Scripts\Player\RemotePlayerShotEffects.cs" />
     <Compile Include="Assets\Scripts\Network\RealtimeTransportClient.cs" />

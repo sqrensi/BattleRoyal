@@ -208,6 +208,7 @@ namespace ShooterPrototype.Player
             agent.updateRotation = true;
             agent.obstacleAvoidanceType = ObstacleAvoidanceType.LowQualityObstacleAvoidance;
             agent.baseOffset = 0f;
+            agent.enabled = false;
         }
 
         private static void DisableLocalGameplayComponents(GameObject root)
@@ -375,7 +376,8 @@ namespace ShooterPrototype.Player
             Vector3 position,
             Quaternion rotation,
             string nickname,
-            float skill)
+            float skill,
+            bool offlineDmMode = false)
         {
             var prefab = ResolveBotVisualPrefab();
             GameObject root;
@@ -389,6 +391,7 @@ namespace ShooterPrototype.Player
             {
                 root = CreateFallbackCapsuleBot(position, rotation, 1);
                 root.name = "DuelNavBot";
+                PrepareDuelCharacterBot(root, 1);
             }
 
             var identity = root.GetComponent<PlayerNetworkIdentity>();
@@ -411,6 +414,11 @@ namespace ShooterPrototype.Player
             }
 
             bot.Initialize(nickname, skill, skinState);
+            if (offlineDmMode)
+            {
+                root.GetComponent<PlayerHealth>()?.ConfigureOfflineDmBot();
+            }
+
             return bot;
         }
 

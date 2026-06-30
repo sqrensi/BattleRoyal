@@ -505,6 +505,7 @@ namespace ShooterPrototype.Network
             public int dmMaxPlayers;
             public int dmRespawnRemainingSeconds;
             public bool dmLocalAlive = true;
+            public int dmLocalDeathSeq;
         }
 
         [Serializable]
@@ -634,6 +635,8 @@ namespace ShooterPrototype.Network
             public float dirX;
             public float dirY;
             public float dirZ;
+            public bool killed;
+            public int deathSeq;
         }
 
         [Serializable]
@@ -1239,6 +1242,16 @@ namespace ShooterPrototype.Network
             hasLastSentPose = false;
             lastPoseSentUnscaledTime = -999f;
             lastSentPoseMessage = null;
+        }
+
+        public void ResetPoseSequenceForRespawn()
+        {
+            nextPoseSeq = 0;
+            hasPendingPose = false;
+            pendingPoseBinary = null;
+            pendingPoseMessage = null;
+            ResetPoseSendCache();
+            DmRespawnTrace.Log("pose-seq-reset", $"ticket={connectedTicketId} nextPoseSeq=0");
         }
 
         public void SendPose(

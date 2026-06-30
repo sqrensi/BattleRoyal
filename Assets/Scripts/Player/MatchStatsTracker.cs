@@ -20,7 +20,9 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            damageDealtThisMatch += Mathf.RoundToInt(damage);
+            var rounded = Mathf.RoundToInt(damage);
+            damageDealtThisMatch += rounded;
+            MatchScoreboardTracker.AddLocalDamage(rounded);
         }
     }
 }

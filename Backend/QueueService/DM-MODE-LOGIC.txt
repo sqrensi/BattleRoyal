@@ -1,0 +1,400 @@
+================================================================================
+  DEATHMATCH (DM) — ПОЛНАЯ ЛОГИКА РЕЖИМА
+  ShooterPrototype / QueueService + Unity Client
+  Документ описывает только штатную логику DM (без костылей и фиксов багов).
+================================================================================
+
+СОДЕРЖАНИЕ
+  1. Обзор
+  2. Файлы
+  3. Сервер: матч и фазы
+  4. Сервер: спавн
+  5. Сервер: смерть и респавн
+  6. Сервер: pose / движение / снапшоты
+  7. Клиент: MatchDeathmatchController (локальный игрок)
+  8. Клиент: MatchPresenceSync (remote + сеть)
+  9. Клиент: DmSpawnUtility
+  10. Протокол (WS / match_state / snapshot / respawn)
+  11. Диаграммы потоков
+
+
+================================================================================
+1. ОБЗОР
+================================================================================
+
+DM — free-for-all deathmatch на карте dm:
+  - До 6 игроков (dmMaxPlayers)
+  - Фазы: waiting → prep → fight → match_end
+  - Смерть → задержка respawnDelayMs → респавн на случайной точке spawn table
+  - Победитель — игрок с максимумом киллов к концу таймера матча
+  - Нет раундов как в 1v1; mid-match respawn есть только в DM
+
+Две системы координат спавна:
+  - Сервер: dmSpawnTable.js (y=0, фиксированные координаты сцены)
+  - Клиент: DmSpawnUtility (дочерние объекты SpawnPoints в сцене + raycast ground)
+
+Синхронизация позиций:
+  - Локальный игрок шлёт pose по WebSocket
+  - Сервер валидирует applyPose, обновляет player.x/y/z
+  - Снапшоты (RTS1 binary) рассылают позицию + history другим клиентам
+  - Remote аватары интерполируют из снапшотов в MatchPresenceSync
+
+
+================================================================================
+2. ФАЙЛЫ
+================================================================================
+
+СЕРВЕР (Backend/QueueService/workers/)
+  deathmatch.js      — класс Deathmatch: фазы, киллы, респавн, tick
+  dmSpawnTable.js    — 13 точек спавна DM (мир)
+  clientProtocol.js  — buildDeathmatchStateForTicket, buildSnapshotForViewer
+  movement.js        — applyPose, applyPresencePose, tickMovement
+  player.js          — сущность игрока, stateHistory, recordStateSample
+  combat.js          — урон, смерть (alive=false), оружие
+  gameWorker.js      — маршрутизация POSE/SHOT/HIT в match.onPose и т.д.
+
+СЕРВЕР (сеть)
+  network/poseBinary.js      — декод binary pose (RTP1)
+  network/snapshotBinary.js  — encode/decode snapshot (RTS1)
+
+КЛИЕНТ (Assets/Scripts/Player/)
+  MatchDeathmatchController.cs — фазы DM, локальная смерть/респавн, HUD
+  MatchPresenceSync.cs         — pose send, snapshots, remote avatars
+  DmSpawnUtility.cs            — spawn points сцены dm, ground raycast
+  PlayerHealth.cs              — смерть/респавн локального и network remote
+  PlayerSpawnManager.cs        — префаб remote player
+
+КЛИЕНТ (сеть)
+  RealtimeTransportClient.cs
+  RealtimeSnapshotBinaryCodec.cs
+
+
+================================================================================
+3. СЕРВЕР: МАТЧ И ФАЗЫ
+================================================================================
+
+Класс: Deathmatch (deathmatch.js)
+
+Создание матча (constructor):
+  - Сортировка игроков по ticketId
+  - new Player() для каждого
+  - rollAllSpawns() — случайный slot на ticket
+  - applySpawnPositions() — player.x/y/z из dmSpawnTable
+  - phase = "waiting", timer = join timeout
+
+Фазы (server phase → client phase через mapPhaseToClient):
+  waiting   → lobby
+  prep      → prep
+  fight     → round        (клиент использует те же поля что duel: duelMovementLocked и т.д.)
+  match_end → ending
+
+tick(nowMs) каждый server tick:
+  1. processRespawns(nowMs)
+  2. Проверка timerEndsAtMs → смена фазы
+  3. В fight: movement.tickMovement для alive игроков (интеграция vel)
+
+Переходы по таймеру:
+  waiting + canStartMatch() → beginPrep()
+  prep → startFight()
+  fight → endMatch() → resolveWinnerByKills()
+
+onJoin(ticketId):
+  - player.connected = true
+  - Если нет hasPose — позиция из spawn slot
+  - waiting + enough players → beginPrep()
+
+onDisconnect:
+  - connected = false
+  - Если никого не осталось → match_end
+
+
+================================================================================
+4. СЕРВЕР: СПАВН
+================================================================================
+
+dmSpawnTable.js — DM_SPAWNS[13]:
+  Индекс 0..12, координаты (x, y=0, z), yaw=0
+  resolveSpawnPose(slotIndex) — clamp к таблице
+  rollRandomSpawnSlot() — Math.random
+
+spawnSlotByTicket: Map ticketId → slot index
+
+Начало матча:
+  rollAllSpawns() — новый random slot на каждого
+  applySpawnPositions() — все player на своих слотах
+
+Респавн (см. §5):
+  rollSpawnForTicket() — НОВЫЙ random slot (перезаписывает Map)
+
+Клиентский spawn (DmSpawnUtility):
+  - Ищет GameObject "SpawnPoints", сортирует детей по имени
+  - slotIndex → тот же индекс в отсортированном списке
+  - GroundFeetPosition через raycast (y реальная поверхность)
+
+ВАЖНО: сервер шлёт y=0 из таблицы; клиент при локальном респавне ставит grounded Y.
+
+
+================================================================================
+5. СЕРВЕР: СМЕРТЬ И РЕСПАВН
+================================================================================
+
+Смерть (deathmatch.js onHit → combat.applyHit):
+  - target.alive = false
+  - target.deathSeq++
+  - target.respawnAtMs = nowMs + respawnDelayMs (default 3000ms)
+  - killCount[killer]++, broadcastKillFeed
+  - WS damage → жертве
+
+Пока alive=false:
+  - onPose игнорируется (early return)
+  - tickMovement не применяется
+  - Снапшоты: isDead: true, позиция = место смерти
+
+processRespawns (каждый tick в fight):
+  - Если !alive && nowMs >= respawnAtMs → respawnPlayer()
+
+respawnPlayer(player, nowMs):
+  - slot = rollSpawnForTicket(ticketId)  // новый слот
+  - pose = resolveSpawnPose(slot)
+  - hp = maxHp, alive = true, respawnAtMs = 0
+  - vel = 0
+  - x,y,z,yaw = pose (spawn table)
+  - recordStateSample()
+  - Восстановить weaponKind если был
+  - deathSeq++ (второй инкремент: kill + respawn)
+  - lastSeq = -1
+  - WS { type: "respawn", ticketId, spawnSlotIndex, deathSeq } → только этому игроку
+  - markStateDirty, markSnapshotDirty
+
+deathSeq:
+  - Увеличивается при kill (+1) и при respawn (+1)
+  - Клиент использует для SetNetworkDeadState / отсечения stale death
+
+
+================================================================================
+6. СЕРВЕР: POSE / ДВИЖЕНИЕ / СНАПШОТЫ
+================================================================================
+
+onPose(ticketId, message, nowMs):
+  - Требует player.alive
+  - fight → movement.applyPose(player, payload, limits, nowMs)
+  - prep/waiting → applyPresencePose (без anti-cheat, strip weapon)
+
+applyPose (movement.js):
+  1. normalizePoseMessage — x,y,z из message.position или message
+  2. applyNetworkPose(pose) — anim, moveInput, lookPitch, skins, shot fields...
+  3. Проверка seq (out of order → reject, но applyNetworkPose уже вызван)
+  4. lastSeq = seq
+  5. Anti-teleport: dist > maxTeleportDistance → reject (позиция не обновляется)
+  6. Anti-speed: speed > maxPlayerSpeed*1.35 → reject
+  7. player.x/y/z/yaw/vel = pose, recordStateSample()
+
+tickMovement:
+  - player.x += velX * dt (только alive)
+
+buildRemotePlayerState (clientProtocol.js):
+  - position: { x: player.x, y: player.y, z: player.z }
+  - isDead: !player.alive
+  - sampleTick: player.poseSampleSeq
+  - history: player.getBroadcastStateHistory(12)
+  - animSpeed, moveInput, shotOrigin*, deathSeq, ...
+
+buildDeathmatchStateForTicket:
+  - matchMode: "deathmatch"
+  - phase: mapPhaseToClient
+  - dmLocalAlive, dmRespawnRemainingSeconds
+  - duelSpawnSlotIndex: текущий slot (переиспользование полей duel UI)
+  - duelMovementLocked: true если мёртв или не fight
+  - duelCombatEnabled: fight && alive && hasWeapon
+
+Снапшоты:
+  - buildSnapshotForViewer → encode RTS1
+  - selfAuthoritative: позиция viewer для reconcile
+  - others: все remote игроки кроме viewer
+
+
+================================================================================
+7. КЛИЕНТ: MatchDeathmatchController
+================================================================================
+
+Файл: MatchDeathmatchController.cs
+
+Подписки:
+  - MatchStateReceived → HandleMatchState
+  - RespawnReceived → HandleRespawn (только local ticket)
+  - MatchStatsReceived
+
+HandleMatchState (matchMode == "deathmatch"):
+  - ActiveMatchContext.SetMode(Deathmatch)
+  - serverSaysAlive = state.dmLocalAlive
+  - ApplyPhase(previousAlive)
+
+ApplyPhase:
+  - previousAlive && !serverSaysAlive → ForceDeathFromServer, KeepRemotesVisibleWhileDead
+  - !previousAlive && serverSaysAlive && phase==round → TryReviveAtServerSpawn
+  - round → ApplyFightPhase (movement, combat, weapon pick UI)
+  - prep → spawn teleport, lock movement
+  - ending → match outcome
+
+HandleRespawn (WS, только local):
+  - serverSaysAlive = true
+  - TryReviveAtServerSpawn(lastState, message.spawnSlotIndex)
+    → DmSpawnUtility.TryResolveSpawnPose(slot)
+    → ForceReviveLocalPlayer
+    → SetMovementLocked(false), FlushLocalPose
+
+EnforceLocalDeadState (Update):
+  - Если local PlayerHealth.IsDead → LockDeadControls, KeepRemotesVisibleWhileDead
+
+TryReviveAtServerSpawn:
+  - DmSpawnUtility grounded position
+  - presenceSync.FlushLocalPose() после телепорта
+
+Фазы клиента = duel-совместимые имена:
+  lobby, prep, round (= server fight), ending
+
+
+================================================================================
+8. КЛИЕНТ: MatchPresenceSync
+================================================================================
+
+Общий для DM и Duel. DM-специфика минимальна.
+
+Отправка pose (SyncRoutine → SendLocalPose):
+  - transform.position, yaw, anim, moveInput, isDead, deathSeq
+  - inputAuth = !isDead && !movementLocked
+  - RealtimeTransportClient.SendPose → binary RTP1
+
+Приём snapshot (PollLatestSnapshot → ApplyRealtimeSnapshot):
+  - ApplyRemotePresence(players)
+  - ApplySelfAuthoritativePose (только local)
+  - ApplyLocalMedkitFromSnapshot
+
+ApplyRemotePresence — remote игроки:
+
+  Создание аватара:
+    - CreateAvatar(ticketId, position, yaw)
+    - WasDead = p.isDead
+
+  Переход dead → alive (респавн remote):
+    if (avatar.WasDead && !p.isDead):
+      - SetNetworkDeadState(false, deathSeq, fallDir)
+      - WasDead = false
+      - ReconcileRemoteAvatarAfterRespawn(avatar, snapshot position, yaw)
+        · Snapshots.Clear(), LastAppliedStateTick = -1
+        · RestoreNetworkRemoteLocomotion
+        · SnapRemoteAvatarToPose
+
+  Каждый снапшот:
+    - LastKnownPosition/Yaw из p.position
+    - IngestPlayerStateSamples → interpolation buffer
+    - Weapon, skins, shot events
+    - SetNetworkDeadState(p.isDead, deathSeq)
+    - WasDead = p.isDead
+
+Update() — remote интерполяция:
+  - EvaluatePose(Snapshots, renderTime)
+  - ApplyRemoteTransform
+  - DriveRemoteLocomotion
+  - Если WasDead && Health.IsDead → continue (не двигаем мёртвого)
+
+ReconcileRemoteAvatarAfterRespawn:
+  - Очистка буфера интерполяции
+  - Snap к позиции из снапшота (серверные координаты spawn table на первом alive кадре)
+
+Нет отдельного HandleRemotePlayerRespawn на клиенте — remote респавн только через snapshot isDead flip.
+
+
+================================================================================
+9. КЛИЕНТ: DmSpawnUtility
+================================================================================
+
+Сцена dm, корень "SpawnPoints":
+  - Дети сортируются по имени (как индексы dmSpawnTable)
+  - TryResolveSpawnPose(slot) → grounded position + yaw
+  - GroundFeetPosition — raycast вниз
+
+Используется:
+  - MatchDeathmatchController.TryReviveAtServerSpawn (local respawn)
+  - TryApplySpawnTeleport (начало prep/fight)
+
+Серверный slot index должен соответствовать индексу в отсортированном SpawnPoints.
+
+
+================================================================================
+10. ПРОТОКОЛ
+================================================================================
+
+WebSocket сообщения (релевантные DM):
+
+  pose (binary RTP1 / JSON)
+    Клиент → сервер, ~20-64 Hz
+    Поля: position, yaw, poseSeq, animSpeed, moveInput, isDead, deathSeq, weapon...
+
+  snapshot (binary RTS1)
+    Сервер → клиент
+    players[]: position, history[], isDead, sampleTick, shotOrigin, ...
+
+  match_state (JSON)
+    Сервер → клиент
+    dmLocalAlive, dmRespawnRemainingSeconds, duelSpawnSlotIndex, phase, ...
+
+  respawn (JSON)
+    Сервер → respawned игроку
+    { ticketId, spawnSlotIndex, deathSeq }
+
+  damage (JSON)
+    Сервер → жертве при hit
+
+  kill_feed (JSON)
+    Всем при kill
+
+Порядок при респавне (типичный):
+  1. Сервер: respawnPlayer → alive=true, позиция spawn table
+  2. WS respawn → локальный клиент: TryReviveAtServerSpawn (grounded)
+  3. Снапшот: isDead=false → remote observers: ReconcileRemoteAvatarAfterRespawn
+  4. Локальный клиент шлёт pose → applyPose → server x/y/z обновляется
+  5. Следующие снапшоты несут движущуюся позицию
+
+
+================================================================================
+11. ДИАГРАММЫ ПОТОКОВ
+================================================================================
+
+11.1 Жизненный цикл матча
+─────────────────────────
+  [waiting/lobby] ──players join──► [prep] ──timer──► [fight/round] ──timer──► [match_end/ending]
+                                        │                    │
+                                        │                    ├── kills + respawns
+                                        │                    └── poses + snapshots
+
+
+11.2 Локальная смерть и респавн
+───────────────────────────────
+  Hit (hp=0) ──► server alive=false, deathSeq++, respawnAtMs
+       │
+       ├──► match_state: dmLocalAlive=false ──► client ForceDeathFromServer
+       │
+       └──► after respawnDelayMs: respawnPlayer
+                 ├──► WS respawn ──► HandleRespawn ──► DmSpawnUtility revive + FlushPose
+                 └──► snapshot isDead=false
+
+
+11.3 Remote observer (другой клиент)
+──────────────────────────────────
+  snapshot isDead=true  ──► SetNetworkDeadState(true), death fall, WasDead=true
+  snapshot isDead=false ──► ReconcileRemoteAvatarAfterRespawn(server position)
+       │
+       └──► IngestPlayerStateSamples + Update interpolation
+
+
+11.4 Позиция в снапшоте
+───────────────────────
+  Client pose ──► applyPose ──► player.x/y/z ──► buildRemotePlayerState ──► RTS1 encode
+                                                                    │
+                                                                    └──► peer ApplyRemotePresence
+
+
+================================================================================
+КОНЕЦ ДОКУМЕНТА
+================================================================================

@@ -45,6 +45,14 @@ namespace ShooterPrototype.Matchmaking
             return mode is MainMenuGameMode.Training or MainMenuGameMode.Challenge;
         }
 
+        public static bool IsOfflinePlayMode(MainMenuGameMode mode)
+        {
+            return mode is MainMenuGameMode.Training
+                or MainMenuGameMode.Challenge
+                or MainMenuGameMode.Duel1v1
+                or MainMenuGameMode.Deathmatch;
+        }
+
         public static MainMenuGameMode FromApiValue(string apiValue)
         {
             var normalized = string.IsNullOrWhiteSpace(apiValue)

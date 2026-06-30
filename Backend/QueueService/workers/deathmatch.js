@@ -10,6 +10,19 @@ const {
   buildSnapshotForViewer,
 } = require("./clientProtocol");
 
+const DM_RESPAWN_DEBUG =
+  process.env.DM_RESPAWN_DEBUG === "1" || process.env.DM_RESPAWN_DEBUG === "true";
+const DM_RESPAWN_TRACE =
+  process.env.DM_RESPAWN_TRACE === "1" || process.env.DM_RESPAWN_TRACE === "true" || DM_RESPAWN_DEBUG;
+const RESPAWN_POSE_GRACE_MS = 2500;
+
+function logDmRespawn(event, payload) {
+  if (!DM_RESPAWN_TRACE) {
+    return;
+  }
+  console.log(`[DMRespawn] ${event}`, JSON.stringify(payload));
+}
+
 class Deathmatch {
   constructor(matchData, limits) {
     this.id = matchData.id;
@@ -164,7 +177,7 @@ class Deathmatch {
       player.velX = 0;
       player.velY = 0;
       player.velZ = 0;
-      player.lastSeq = -1;
+      player.lastSeq = null;
     }
     this.phase = "fight";
     this.timerEndsAtMs = nowMs + this.matchDurationMs;
@@ -323,6 +336,16 @@ class Deathmatch {
     }
 
     const killed = combat.applyHit(shooter, target, damage, nowMs);
+    if (killed) {
+      target.deathSeq = Math.max(0, Number(target.deathSeq) || 0) + 1;
+      logDmRespawn("kill", {
+        ticketId: target.ticketId,
+        deathSeq: target.deathSeq,
+        position: { x: target.x, y: target.y, z: target.z },
+        killerTicketId: shooter.ticketId,
+      });
+    }
+
     this.queueMessage(target.ticketId, {
       type: "damage",
       attackerTicketId: shooter.ticketId,
@@ -332,10 +355,11 @@ class Deathmatch {
       dirX,
       dirY,
       dirZ,
+      killed,
+      deathSeq: killed ? target.deathSeq : 0,
     });
 
     if (killed) {
-      target.deathSeq = Math.max(0, Number(target.deathSeq) || 0) + 1;
       this.killCount[shooter.ticketId] = (this.killCount[shooter.ticketId] || 0) + 1;
       shooter.matchKills = this.killCount[shooter.ticketId];
       target.respawnAtMs = nowMs + this.respawnDelayMs;
@@ -359,6 +383,11 @@ class Deathmatch {
     player.velX = 0;
     player.velY = 0;
     player.velZ = 0;
+    player.poseSampleSeq = 0;
+    player.stateHistory = [];
+    player.lastSeq = null;
+    player.lastPoseMs = nowMs;
+    player.respawnPoseGraceUntilMs = nowMs + RESPAWN_POSE_GRACE_MS;
     if (pose) {
       player.x = pose.x;
       player.y = pose.y;
@@ -371,13 +400,23 @@ class Deathmatch {
       combat.equipWeapon(player, savedKind);
     }
     player.deathSeq = Math.max(0, Number(player.deathSeq) || 0) + 1;
-    player.lastSeq = -1;
-    this.queueMessage(player.ticketId, {
+    logDmRespawn("respawn", {
+      ticketId: player.ticketId,
+      deathSeq: player.deathSeq,
+      spawnSlot: slot,
+      position: pose ? { x: pose.x, y: pose.y, z: pose.z } : null,
+      sampleTick: player.poseSampleSeq,
+      historyLen: player.stateHistory.length,
+    });
+    const respawnPayload = {
       type: "respawn",
       ticketId: player.ticketId,
       spawnSlotIndex: slot,
       deathSeq: player.deathSeq,
-    });
+    };
+    for (const peer of this.players) {
+      this.queueMessage(peer.ticketId, respawnPayload);
+    }
     this.markStateDirty();
     this.markSnapshotDirty();
   }

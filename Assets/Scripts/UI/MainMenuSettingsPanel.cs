@@ -11,6 +11,8 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuSettingsPanel : MonoBehaviour
     {
+        private const int SettingsLayoutVersion = 2;
+
         [SerializeField] private float edgeMargin = 28f;
         [SerializeField] private float leftReservedWidth = 228f;
         [SerializeField] private float topReservedHeight = 92f;
@@ -33,6 +35,7 @@ namespace ShooterPrototype.UI
         private bool suppressRefresh;
         private bool useMenuBackdrop = true;
         private bool instantTransitions;
+        private int builtLayoutVersion;
         private Coroutine transitionCoroutine;
         private Action backHandler;
 
@@ -57,6 +60,7 @@ namespace ShooterPrototype.UI
             public TMP_Text ValueLabel;
             public System.Func<bool> Getter;
             public System.Action<bool> Setter;
+            public System.Func<bool> Interactable;
         }
 
         public void Configure(MainMenuUiSoundController sound)
@@ -91,9 +95,24 @@ namespace ShooterPrototype.UI
 
         public void Build(RectTransform canvasRect)
         {
-            if (panelRect != null || canvasRect == null)
+            if (canvasRect == null)
             {
                 return;
+            }
+
+            if (panelRect != null)
+            {
+                if (builtLayoutVersion >= SettingsLayoutVersion)
+                {
+                    return;
+                }
+
+                Destroy(panelRect.gameObject);
+                panelRect = null;
+                contentRect = null;
+                panelGroup = null;
+                sliderRows.Clear();
+                toggleRows.Clear();
             }
 
             hostCanvas = canvasRect.GetComponent<Canvas>();
@@ -118,6 +137,7 @@ namespace ShooterPrototype.UI
 
             BuildHeader(panelObject.transform);
             BuildScrollContent(panelObject.transform);
+            builtLayoutVersion = SettingsLayoutVersion;
             RefreshFromSettings();
         }
 
@@ -313,7 +333,25 @@ namespace ShooterPrototype.UI
 
         private void BuildSettingsRows(Transform parent)
         {
+            CreateSectionTitle(parent, "Матчмейкинг");
+            CreateToggleRow(
+                parent,
+                "Подбор с ботами",
+                () => ClientSettingsService.AllowBotMatchmaking,
+                ClientSettingsService.SetAllowBotMatchmaking,
+                () => ClientSettingsService.CanToggleBotMatchmaking());
+
             CreateSectionTitle(parent, "Графика");
+            CreateSliderRow(
+                parent,
+                "Ограничение FPS",
+                0f,
+                2f,
+                () => ClientSettingsService.TargetFpsSliderIndex,
+                value => ClientSettingsService.SetTargetFpsSliderIndex(Mathf.RoundToInt(value)),
+                wholeNumbers: true,
+                valueLabelFormatter: value =>
+                    ClientSettingsService.GetTargetFpsLabelFromSliderIndex(Mathf.RoundToInt(value)));
             CreateSliderRow(
                 parent,
                 "Масштаб рендера",
@@ -446,7 +484,8 @@ namespace ShooterPrototype.UI
             Transform parent,
             string label,
             System.Func<bool> getter,
-            System.Action<bool> setter)
+            System.Action<bool> setter,
+            System.Func<bool> interactable = null)
         {
             var rowObject = new GameObject("ToggleRow_" + label, typeof(RectTransform));
             rowObject.transform.SetParent(parent, false);
@@ -503,13 +542,19 @@ namespace ShooterPrototype.UI
                 ButtonImage = buttonImage,
                 ValueLabel = valueLabel,
                 Getter = getter,
-                Setter = setter
+                Setter = setter,
+                Interactable = interactable
             };
             toggleRows.Add(binding);
 
             button.onClick.AddListener(() =>
             {
                 if (suppressRefresh || binding.Getter == null || binding.Setter == null)
+                {
+                    return;
+                }
+
+                if (binding.Interactable != null && !binding.Interactable())
                 {
                     return;
                 }
@@ -648,7 +693,7 @@ namespace ShooterPrototype.UI
             });
         }
 
-        private void RefreshFromSettings()
+        public void RefreshFromSettings()
         {
             if (contentRect == null)
             {
@@ -686,7 +731,17 @@ namespace ShooterPrototype.UI
             }
 
             var enabled = binding.Getter();
+            if (binding.Interactable != null && !binding.Interactable())
+            {
+                enabled = true;
+            }
+
             binding.ValueLabel.text = enabled ? "Вкл" : "Выкл";
+            if (binding.Button != null)
+            {
+                binding.Button.interactable = binding.Interactable == null || binding.Interactable();
+            }
+
             if (binding.ButtonImage != null)
             {
                 binding.ButtonImage.color = enabled ? UiTheme.ToggleOn : UiTheme.ToggleOff;

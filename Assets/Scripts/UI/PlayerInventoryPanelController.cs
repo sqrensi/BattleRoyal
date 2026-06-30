@@ -14,6 +14,7 @@ namespace ShooterPrototype.UI
     [DefaultExecutionOrder(650)]
     public sealed class PlayerInventoryPanelController : MonoBehaviour
     {
+        private const bool OpenInventoryOnTab = false;
         private const float NearbyRadius = 4f;
         private const float DoubleClickWindowSeconds = 0.35f;
         private static PlayerInventoryPanelController activePanel;
@@ -85,7 +86,10 @@ namespace ShooterPrototype.UI
             }
 
             CacheComponents();
-            FpsCharacterController.SuppressTabCursorToggle = true;
+            if (OpenInventoryOnTab)
+            {
+                FpsCharacterController.SuppressTabCursorToggle = true;
+            }
             EnsureEventSystemExists();
             BuildUi();
             SetPanelOpen(false);
@@ -123,7 +127,7 @@ namespace ShooterPrototype.UI
                 SetPanelOpen(false);
             }
 
-            if (ReadInventoryTogglePressed())
+            if (OpenInventoryOnTab && ReadInventoryTogglePressed())
             {
                 SetPanelOpen(!wasOpen);
             }

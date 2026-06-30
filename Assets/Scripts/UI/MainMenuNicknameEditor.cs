@@ -246,29 +246,26 @@ namespace ShooterPrototype.UI
             }
 
             var mode = MainMenuGameModeSelector.SelectedMode;
+            var showDuelRating = mode == MainMenuGameMode.Duel1v1;
+
             if (ratingLabelText != null)
             {
-                ratingLabelText.text = mode switch
+                ratingLabelText.gameObject.SetActive(showDuelRating);
+                if (showDuelRating)
                 {
-                    MainMenuGameMode.Training => "Рейтинг",
-                    MainMenuGameMode.Duel1v1 => "Рейтинг 1v1",
-                    MainMenuGameMode.Challenge => "Лучшее время",
-                    _ => "Рейтинг BR",
-                };
+                    ratingLabelText.text = "Рейтинг 1v1";
+                }
             }
 
-            if (mode == MainMenuGameMode.Training)
+            ratingText.gameObject.SetActive(showDuelRating);
+            if (!showDuelRating)
             {
-                ratingText.text = "—";
                 return;
             }
 
-            ratingText.text = mode switch
-            {
-                MainMenuGameMode.Duel1v1 => PlayerProfileService.DuelRating.ToString("N0"),
-                MainMenuGameMode.Challenge => FormatChallengeBestTime(PlayerProfileService.ChallengeBestTimeMs),
-                _ => PlayerProfileService.Rating.ToString("N0"),
-            };
+            ratingText.text = PlayerProfileService.IsServerSynced
+                ? PlayerProfileService.DuelRating.ToString("N0")
+                : "—";
         }
 
         private static string FormatChallengeBestTime(int timeMs)

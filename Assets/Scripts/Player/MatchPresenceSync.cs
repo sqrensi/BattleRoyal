@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
+using ShooterPrototype.UI;
 using UnityEngine;
 
 namespace ShooterPrototype.Player
@@ -139,6 +140,12 @@ namespace ShooterPrototype.Player
             public int LastAppliedHitPlayerSeq = -1;
             public int LastAppliedFootstepSeq = -1;
             public bool WasDead;
+            public int LastDeathSeq = -1;
+            public int LastRevivedDeathSeq = -1;
+            public int PendingRespawnSpawnSlot = -1;
+            public float PostRespawnTeleportGuardUntil;
+            public float LastDriftLogAt;
+            public Vector3 ReviveSpawnPosition;
             public bool WasHolstered;
             public bool HadWeapon;
             public int LastAppliedStateTick = -1;
@@ -245,6 +252,9 @@ namespace ShooterPrototype.Player
                 realtimeClient.BeginMatchSession(ticketId);
             }
 
+            var gameHud = FindFirstObjectByType<GameHudController>();
+            gameHud?.SetScoreboardLocalTicket(ticketId);
+
             if (realtimeClient != null && realtimeClient.IsReady)
             {
                 SendLocalPose(forceImmediate: true);
@@ -260,6 +270,7 @@ namespace ShooterPrototype.Player
 
             realtimeClient.JoinAcknowledged += HandleTransportJoinAcknowledged;
             realtimeClient.PlayerLandReceived += HandleRemotePlayerLand;
+            realtimeClient.RespawnReceived += HandleRemoteRespawnBroadcast;
             transportEventsSubscribed = true;
         }
 
@@ -273,6 +284,7 @@ namespace ShooterPrototype.Player
 
             realtimeClient.JoinAcknowledged -= HandleTransportJoinAcknowledged;
             realtimeClient.PlayerLandReceived -= HandleRemotePlayerLand;
+            realtimeClient.RespawnReceived -= HandleRemoteRespawnBroadcast;
             transportEventsSubscribed = false;
         }
 
@@ -375,6 +387,7 @@ namespace ShooterPrototype.Player
                 var targetPose = EvaluatePose(avatar.Snapshots, renderTime, avatar);
                 ApplyRemoteTransform(avatar, targetPose.Position, targetPose.Yaw);
                 DriveRemoteLocomotion(avatar, targetPose);
+                TraceRemotePositionDrift(kv.Key, avatar, targetPose, now);
 
                 if (now - avatar.LastSeenAt > remoteStaleSeconds)
                 {
@@ -767,13 +780,26 @@ namespace ShooterPrototype.Player
             }
         }
 
-        private void ReconcileRemoteAvatarAfterRespawn(RemoteAvatar avatar, Vector3 position, float yaw)
+        private void ReconcileRemoteAvatarAfterRespawn(RemoteAvatar avatar, Vector3 position, float yaw, int revivedDeathSeq = -1)
         {
             if (avatar == null)
             {
                 return;
             }
 
+            if (ActiveMatchContext.IsDeathmatch)
+            {
+                position = DmSpawnUtility.GroundFeetPosition(position);
+            }
+
+            if (revivedDeathSeq >= 0)
+            {
+                avatar.LastRevivedDeathSeq = revivedDeathSeq;
+                avatar.LastDeathSeq = revivedDeathSeq;
+            }
+
+            avatar.ReviveSpawnPosition = position;
+            avatar.PostRespawnTeleportGuardUntil = Time.unscaledTime + 0.75f;
             avatar.Snapshots.Clear();
             avatar.LastAppliedStateTick = -1;
             avatar.HorizontalSmoothVelocity = Vector2.zero;
@@ -789,6 +815,205 @@ namespace ShooterPrototype.Player
             }
 
             SnapRemoteAvatarToPose(avatar, position, yaw);
+        }
+
+        private void HandleRemoteRespawnBroadcast(RealtimeTransportClient.RespawnMessage message)
+        {
+            if (message == null ||
+                string.IsNullOrWhiteSpace(message.ticketId) ||
+                !ActiveMatchContext.IsDeathmatch)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(localTicketId) &&
+                string.Equals(message.ticketId, localTicketId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!remoteAvatars.TryGetValue(message.ticketId, out var avatar))
+            {
+                return;
+            }
+
+            if (!avatar.WasDead && message.deathSeq <= avatar.LastDeathSeq)
+            {
+                DmRespawnTrace.Log(
+                    "respawn-ws-skip",
+                    $"ticket={message.ticketId} reason=duplicate deathSeq={message.deathSeq} last={avatar.LastDeathSeq}");
+                return;
+            }
+
+            avatar.PendingRespawnSpawnSlot = message.spawnSlotIndex;
+            avatar.LastDeathSeq = message.deathSeq;
+
+            if (!DmSpawnUtility.TryResolveSpawnPose(
+                    message.spawnSlotIndex,
+                    out var position,
+                    out var rotation))
+            {
+                return;
+            }
+
+            avatar.Health?.SetNetworkDeadState(false, message.deathSeq, Vector3.forward);
+            avatar.WasDead = false;
+            ReconcileRemoteAvatarAfterRespawn(avatar, position, rotation.eulerAngles.y, message.deathSeq);
+            LogDmRespawnRemote(
+                avatar,
+                new RealtimeTransportClient.RealtimePlayerState
+                {
+                    ticketId = message.ticketId,
+                    deathSeq = message.deathSeq,
+                    position = new RealtimeTransportClient.PositionDto
+                    {
+                        x = position.x,
+                        y = position.y,
+                        z = position.z,
+                    },
+                    isDead = false,
+                },
+                "respawn-ws",
+                avatar.LastDeathSeq);
+        }
+
+        private void HandleRemoteDeathSeqTransition(
+            RemoteAvatar avatar,
+            RealtimeTransportClient.RealtimePlayerState player)
+        {
+            if (avatar == null || player == null)
+            {
+                return;
+            }
+
+            if (player.deathSeq == avatar.LastDeathSeq)
+            {
+                return;
+            }
+
+            if (player.deathSeq < avatar.LastDeathSeq)
+            {
+                return;
+            }
+
+            if (avatar.LastDeathSeq < 0)
+            {
+                avatar.LastDeathSeq = player.deathSeq;
+                avatar.WasDead = player.isDead;
+                return;
+            }
+
+            var previousDeathSeq = avatar.LastDeathSeq;
+            avatar.LastDeathSeq = player.deathSeq;
+            var fallDirection = new Vector3(player.deathFallDirX, player.deathFallDirY, player.deathFallDirZ);
+
+            if (player.isDead)
+            {
+                avatar.Health?.SetNetworkDeadState(true, player.deathSeq, fallDirection);
+                avatar.WasDead = true;
+                avatar.Snapshots.Clear();
+                avatar.LastAppliedStateTick = -1;
+                LogDmRespawnRemote(avatar, player, "death", previousDeathSeq);
+                return;
+            }
+
+            avatar.Health?.SetNetworkDeadState(false, player.deathSeq, fallDirection);
+            avatar.WasDead = false;
+            var revivedPosition = new Vector3(player.position.x, player.position.y, player.position.z);
+            var revivedYaw = player.yaw;
+            if (avatar.PendingRespawnSpawnSlot >= 0 &&
+                DmSpawnUtility.TryResolveSpawnPose(
+                    avatar.PendingRespawnSpawnSlot,
+                    out var groundedPosition,
+                    out var groundedRotation))
+            {
+                revivedPosition = groundedPosition;
+                revivedYaw = groundedRotation.eulerAngles.y;
+                avatar.PendingRespawnSpawnSlot = -1;
+            }
+
+            ReconcileRemoteAvatarAfterRespawn(avatar, revivedPosition, revivedYaw, player.deathSeq);
+            LogDmRespawnRemote(avatar, player, "respawn", previousDeathSeq);
+        }
+
+        private void LogDmRespawnRemote(
+            RemoteAvatar avatar,
+            RealtimeTransportClient.RealtimePlayerState player,
+            string phase,
+            int previousDeathSeq)
+        {
+            if ((!DmRespawnTrace.Enabled && !debugRealtimeLogs) || avatar?.Root == null || player == null)
+            {
+                return;
+            }
+
+            var root = avatar.Root.transform.position;
+            var message =
+                $"remote-{phase} ticket={player.ticketId} " +
+                $"deathSeq {previousDeathSeq}->{player.deathSeq} isDead={player.isDead} " +
+                $"pos=({player.position.x:F2},{player.position.y:F2},{player.position.z:F2}) " +
+                $"WasDead={avatar.WasDead} LastAppliedStateTick={avatar.LastAppliedStateTick} " +
+                $"buffer={avatar.Snapshots.Count} guardUntil={avatar.PostRespawnTeleportGuardUntil:F2} " +
+                $"root=({root.x:F2},{root.y:F2},{root.z:F2})";
+
+            if (DmRespawnTrace.Enabled)
+            {
+                DmRespawnTrace.Log(phase, message);
+            }
+            else
+            {
+                Debug.Log($"[DMRespawn] {message}");
+            }
+        }
+
+        private void TraceRemotePositionDrift(
+            string ticketId,
+            RemoteAvatar avatar,
+            InterpolatedPose targetPose,
+            float now)
+        {
+            if (!DmRespawnTrace.Enabled || !ActiveMatchContext.IsDeathmatch || avatar?.Root == null)
+            {
+                return;
+            }
+
+            var rootPos = avatar.Root.transform.position;
+            var driftFromLastKnown = Vector3.Distance(rootPos, avatar.LastKnownPosition);
+            var driftFromInterp = Vector3.Distance(rootPos, targetPose.Position);
+            if (driftFromLastKnown < 1.5f && driftFromInterp < 1.5f)
+            {
+                return;
+            }
+
+            DmRespawnTrace.LogThrottled(
+                ref avatar.LastDriftLogAt,
+                0.5f,
+                "remote-drift",
+                $"ticket={ticketId} deathSeq={avatar.LastDeathSeq} revived={avatar.LastRevivedDeathSeq} " +
+                $"root=({rootPos.x:F2},{rootPos.y:F2},{rootPos.z:F2}) " +
+                $"lastKnown=({avatar.LastKnownPosition.x:F2},{avatar.LastKnownPosition.y:F2},{avatar.LastKnownPosition.z:F2}) " +
+                $"interp=({targetPose.Position.x:F2},{targetPose.Position.y:F2},{targetPose.Position.z:F2}) " +
+                $"driftKnown={driftFromLastKnown:F2} driftInterp={driftFromInterp:F2} " +
+                $"buffer={avatar.Snapshots.Count} guardActive={now < avatar.PostRespawnTeleportGuardUntil}");
+        }
+
+        private void LogIngestSkip(
+            RemoteAvatar avatar,
+            RealtimeTransportClient.RealtimePlayerState player,
+            string reason)
+        {
+            if (!DmRespawnTrace.Enabled || avatar == null || player == null)
+            {
+                return;
+            }
+
+            var root = avatar.Root != null ? avatar.Root.transform.position : Vector3.zero;
+            DmRespawnTrace.Log(
+                "ingest-skip",
+                $"ticket={player.ticketId} reason={reason} deathSeq={player.deathSeq} isDead={player.isDead} " +
+                $"sampleTick={player.sampleTick} lastApplied={avatar.LastAppliedStateTick} " +
+                $"revived={avatar.LastRevivedDeathSeq} guardActive={Time.unscaledTime < avatar.PostRespawnTeleportGuardUntil} " +
+                $"root=({root.x:F2},{root.y:F2},{root.z:F2}) buffer={avatar.Snapshots.Count}");
         }
 
         private static void SnapRemoteAvatarToPose(RemoteAvatar avatar, Vector3 position, float yaw)
@@ -807,9 +1032,38 @@ namespace ShooterPrototype.Player
                 Quaternion.Euler(0f, yaw, 0f));
         }
 
+        private bool ShouldSkipIngestDuringPostRespawnGuard(
+            RemoteAvatar avatar,
+            RealtimeTransportClient.RealtimePlayerState player)
+        {
+            if (avatar == null || player == null || player.position == null)
+            {
+                return false;
+            }
+
+            if (Time.unscaledTime >= avatar.PostRespawnTeleportGuardUntil)
+            {
+                return false;
+            }
+
+            var snapPos = new Vector3(player.position.x, player.position.y, player.position.z);
+            if (avatar.ReviveSpawnPosition == Vector3.zero)
+            {
+                return false;
+            }
+
+            // Only block snapshots that would teleport back to a stale pre-respawn position.
+            return Vector3.Distance(snapPos, avatar.ReviveSpawnPosition) >= deliberateTeleportSnapDistance;
+        }
+
         private bool ShouldSnapRemoteTeleport(RemoteAvatar avatar, Vector3 position)
         {
             if (avatar?.Root == null)
+            {
+                return false;
+            }
+
+            if (Time.unscaledTime < avatar.PostRespawnTeleportGuardUntil)
             {
                 return false;
             }
@@ -1230,9 +1484,22 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            RealtimeTransportClient.RealtimeSnapshot latestSnapshot = null;
             while (realtimeClient.TryDequeueSnapshot(out var snapshot) && snapshot != null)
             {
-                ApplySnapshotIfNew(snapshot);
+                if (latestSnapshot == null ||
+                    snapshot.serverTick > latestSnapshot.serverTick ||
+                    (snapshot.serverTick == latestSnapshot.serverTick &&
+                     snapshot.players != null &&
+                     (latestSnapshot.players == null || snapshot.players.Length >= latestSnapshot.players.Length)))
+                {
+                    latestSnapshot = snapshot;
+                }
+            }
+
+            if (latestSnapshot != null)
+            {
+                ApplySnapshotIfNew(latestSnapshot);
             }
         }
 
@@ -1868,6 +2135,24 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            if (avatar.LastDeathSeq >= 0 && player.deathSeq < avatar.LastDeathSeq)
+            {
+                LogIngestSkip(avatar, player, "stale_death_seq");
+                return;
+            }
+
+            if (player.isDead && avatar.LastRevivedDeathSeq >= player.deathSeq && !avatar.WasDead)
+            {
+                LogIngestSkip(avatar, player, "stale_death_snapshot");
+                return;
+            }
+
+            if (ShouldSkipIngestDuringPostRespawnGuard(avatar, player))
+            {
+                LogIngestSkip(avatar, player, "post_respawn_guard_stale_pos");
+                return;
+            }
+
             var tickRate = GetMovementSampleRate();
 
             tickRate = Math.Max(1.0, tickRate);
@@ -1879,6 +2164,10 @@ namespace ShooterPrototype.Player
                     new Vector3(player.position.x, player.position.y, player.position.z)))
             {
                 var latestPosition = new Vector3(player.position.x, player.position.y, player.position.z);
+                DmRespawnTrace.Log(
+                    "ingest-snap",
+                    $"ticket={player.ticketId} sampleTick={player.sampleTick} deathSeq={player.deathSeq} " +
+                    $"pos=({latestPosition.x:F2},{latestPosition.y:F2},{latestPosition.z:F2})");
                 SnapRemoteAvatarToPose(avatar, latestPosition, player.yaw);
                 var timeSeconds = player.sampleTick / tickRate;
                 var velocity = new Vector3(player.velX, player.velY, player.velZ);
@@ -1967,6 +2256,7 @@ namespace ShooterPrototype.Player
                         avatar.LastAppliedReloadSeq = Mathf.Max(0, p.reloadSeq);
                         avatar.LastAppliedHitPlayerSeq = Mathf.Max(0, p.hitPlayerSeq);
                         avatar.LastAppliedFootstepSeq = Mathf.Max(0, p.footstepSeq);
+                        avatar.LastDeathSeq = p.deathSeq;
                         avatar.WasDead = p.isDead;
                         avatar.SmoothedNetworkAnimSpeed = p.animSpeed;
                         avatar.SmoothedMoveInputX = p.moveInputX;
@@ -1974,16 +2264,17 @@ namespace ShooterPrototype.Player
                         remoteAvatars[p.ticketId] = avatar;
                     }
 
-                    if (avatar.WasDead && !p.isDead)
+                    if (avatar.LastDeathSeq >= 0 && p.deathSeq < avatar.LastDeathSeq)
                     {
-                        var revivedPosition = new Vector3(p.position.x, p.position.y, p.position.z);
-                        avatar.Health?.SetNetworkDeadState(
-                            false,
-                            p.deathSeq,
-                            new Vector3(p.deathFallDirX, p.deathFallDirY, p.deathFallDirZ));
-                        avatar.WasDead = false;
-                        ReconcileRemoteAvatarAfterRespawn(avatar, revivedPosition, p.yaw);
+                        continue;
                     }
+
+                    if (p.isDead && avatar.LastRevivedDeathSeq >= p.deathSeq && !avatar.WasDead)
+                    {
+                        continue;
+                    }
+
+                    HandleRemoteDeathSeqTransition(avatar, p);
 
                     avatar.LastSeenAt = now;
                     if (!string.IsNullOrWhiteSpace(p.nickname))
@@ -2058,11 +2349,15 @@ namespace ShooterPrototype.Player
 
                     ApplyRemotePresenceEventsForAvatar(avatar, p);
 
-                    avatar.Health?.SetNetworkDeadState(
-                        p.isDead,
-                        p.deathSeq,
-                        new Vector3(p.deathFallDirX, p.deathFallDirY, p.deathFallDirZ));
-                    avatar.WasDead = p.isDead;
+                    if (!(p.isDead && avatar.LastRevivedDeathSeq >= p.deathSeq && !avatar.WasDead))
+                    {
+                        avatar.Health?.SetNetworkDeadState(
+                            p.isDead,
+                            p.deathSeq,
+                            new Vector3(p.deathFallDirX, p.deathFallDirY, p.deathFallDirZ));
+                        avatar.WasDead = p.isDead;
+                    }
+
                     if (p.isDead)
                     {
                         EnsureRemoteAvatarVisible(avatar);
@@ -2702,6 +2997,7 @@ namespace ShooterPrototype.Player
             }
 
             if (ActiveMatchContext.IsOfflineDuelSession ||
+                ActiveMatchContext.IsOfflineDeathmatchSession ||
                 ActiveMatchContext.IsOfflineSoloSession ||
                 PlayerProfileService.IsOfflineMode)
             {

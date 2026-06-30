@@ -149,7 +149,8 @@ namespace ShooterPrototype.Player
             var box = proxyObject.AddComponent<BoxCollider>();
             box.center = bounds.center;
             box.size = bounds.size;
-            box.isTrigger = false;
+            // Trigger-only: bot LOS raycasts still hit; CharacterController ignores triggers.
+            box.isTrigger = true;
 
             if (WeaponBlockLayers.IsConfigured)
             {
@@ -297,6 +298,57 @@ namespace ShooterPrototype.Player
             }
 
             return false;
+        }
+
+        public static int RemoveSceneBotOccluderProxies(Scene scene)
+        {
+            if (!scene.IsValid() || !scene.isLoaded)
+            {
+                return 0;
+            }
+
+            var removed = 0;
+            var roots = scene.GetRootGameObjects();
+            for (var i = 0; i < roots.Length; i++)
+            {
+                removed += RemoveBotOccluderProxiesInHierarchy(roots[i].transform);
+            }
+
+            if (removed > 0)
+            {
+                Debug.Log($"[WeaponBlockUtility] Removed {removed} bot occluder proxy collider(s) from scene '{scene.name}'.");
+            }
+
+            ProcessedBotOccluderSceneHandles.Remove(scene.handle);
+            return removed;
+        }
+
+        private static int RemoveBotOccluderProxiesInHierarchy(Transform root)
+        {
+            if (root == null)
+            {
+                return 0;
+            }
+
+            var removed = 0;
+            var transforms = root.GetComponentsInChildren<Transform>(true);
+            for (var i = transforms.Length - 1; i >= 0; i--)
+            {
+                var transform = transforms[i];
+                if (transform == null || transform.name != "BotOccluderProxy")
+                {
+                    continue;
+                }
+
+#if UNITY_EDITOR
+                Object.DestroyImmediate(transform.gameObject);
+#else
+                Object.Destroy(transform.gameObject);
+#endif
+                removed++;
+            }
+
+            return removed;
         }
 
         public static void ResetProcessedScenesForTests()

@@ -106,6 +106,14 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            if (!PlayerProfileService.IsServerSynced)
+            {
+                ApplySelectedCharacterAndSkins(previewInstance);
+                EnsurePreviewBodyVisible(previewInstance);
+                ClearMenuWeaponPresentation(previewInstance);
+                return;
+            }
+
             PlayerSkinSelectionService.ApplyToPlayer(previewInstance, forceReapply: true);
             EnsurePreviewBodyVisible(previewInstance);
             ClearMenuWeaponPresentation(previewInstance);
@@ -452,6 +460,14 @@ namespace ShooterPrototype.Player
 
         private void ApplySelectedCharacterAndSkins(GameObject root)
         {
+            if (!PlayerProfileService.IsServerSynced)
+            {
+                var bootstrap = root.GetComponent<RemoteThirdPersonPlayerBootstrap>();
+                bootstrap?.ApplyRemoteThirdPersonMode();
+                PlayerSkinSelectionService.ApplyDefaultSkinsToPlayer(root, forceReapply: true);
+                return;
+            }
+
             var selectedModel = CharacterSelectionService.ResolveSelectedModel(charactersResourcesFolder);
             if (selectedModel.ModelAsset != null)
             {

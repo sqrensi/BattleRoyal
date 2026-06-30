@@ -18,6 +18,8 @@ namespace ShooterPrototype.Player
         private const string TextureMipmapLimitKey = "client_settings_texture_mipmap";
         private const string GlobalAdsSensitivityKey = "client_settings_global_ads_sensitivity";
         private const string MaxPerformanceKey = "client_max_performance";
+        private const string AllowBotMatchmakingKey = "client_settings_allow_bot_matchmaking";
+        private const string TargetFpsKey = "client_settings_target_fps";
         private const string LegacyMuteKey = "client_audio_muted";
         private const string AdsSensitivityKeyPrefix = "client_settings_ads_sensitivity_";
 
@@ -28,6 +30,9 @@ namespace ShooterPrototype.Player
         public const float DefaultMouseSensitivity = 2.2f;
         public const float DefaultRenderScale = 1f;
         public const float DefaultGlobalAdsSensitivity = 1f;
+        public const int DefaultTargetFps = 60;
+
+        private static readonly int[] TargetFpsOptions = { 30, 60, 144 };
 
         private static bool loaded;
         private static string loadedForPlayerId;
@@ -46,12 +51,15 @@ namespace ShooterPrototype.Player
         public static int TextureMipmapLimit { get; private set; }
         public static float GlobalAdsSensitivityMultiplier { get; private set; } = DefaultGlobalAdsSensitivity;
         public static bool MaxPerformanceEnabled { get; private set; }
+        public static bool AllowBotMatchmaking { get; private set; } = true;
+        public static int TargetFps { get; private set; } = DefaultTargetFps;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void Bootstrap()
         {
             EnsureLoaded();
             ApplyMasterVolume();
+            ApplyTargetFrameRate();
         }
 
         public static void EnsureLoaded()
@@ -83,6 +91,8 @@ namespace ShooterPrototype.Player
                 GlobalAdsSensitivityKey,
                 DefaultGlobalAdsSensitivity);
             MaxPerformanceEnabled = UserScopedPlayerPrefs.GetInt(MaxPerformanceKey, 0) == 1;
+            AllowBotMatchmaking = UserScopedPlayerPrefs.GetInt(AllowBotMatchmakingKey, 1) == 1;
+            TargetFps = NormalizeTargetFps(UserScopedPlayerPrefs.GetInt(TargetFpsKey, DefaultTargetFps));
 
             if (UserScopedPlayerPrefs.HasKey(ShadowsEnabledKey))
             {
@@ -285,6 +295,58 @@ namespace ShooterPrototype.Player
             return GetTextureQualityLabel(2 - Mathf.Clamp(index, 0, 2));
         }
 
+        public static void SetAllowBotMatchmaking(bool enabled)
+        {
+            EnsureLoaded();
+            AllowBotMatchmaking = enabled;
+            UserScopedPlayerPrefs.SetInt(AllowBotMatchmakingKey, enabled ? 1 : 0);
+            SaveAndNotify();
+        }
+
+        public static bool CanToggleBotMatchmaking()
+        {
+            return PlayerProfileService.IsServerSynced;
+        }
+
+        public static int TargetFpsSliderIndex
+        {
+            get
+            {
+                for (var i = 0; i < TargetFpsOptions.Length; i++)
+                {
+                    if (TargetFpsOptions[i] == TargetFps)
+                    {
+                        return i;
+                    }
+                }
+
+                return 1;
+            }
+        }
+
+        public static void SetTargetFpsSliderIndex(int index)
+        {
+            EnsureLoaded();
+            var clamped = Mathf.Clamp(index, 0, TargetFpsOptions.Length - 1);
+            TargetFps = TargetFpsOptions[clamped];
+            UserScopedPlayerPrefs.SetInt(TargetFpsKey, TargetFps);
+            SaveAndNotify();
+            ApplyTargetFrameRate();
+        }
+
+        public static string GetTargetFpsLabelFromSliderIndex(int index)
+        {
+            var clamped = Mathf.Clamp(index, 0, TargetFpsOptions.Length - 1);
+            return TargetFpsOptions[clamped].ToString();
+        }
+
+        public static void ApplyTargetFrameRate()
+        {
+            EnsureLoaded();
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = TargetFps;
+        }
+
         public static void SetMaxPerformanceEnabled(bool enabled)
         {
             EnsureLoaded();
@@ -433,6 +495,19 @@ namespace ShooterPrototype.Player
             UserScopedPlayerPrefs.SetInt(PostProcessingKey, 1);
             UserScopedPlayerPrefs.SetInt(MsaaKey, MsaaSampleCount);
             UserScopedPlayerPrefs.SetInt(TextureMipmapLimitKey, TextureMipmapLimit);
+        }
+
+        private static int NormalizeTargetFps(int fps)
+        {
+            for (var i = 0; i < TargetFpsOptions.Length; i++)
+            {
+                if (TargetFpsOptions[i] == fps)
+                {
+                    return fps;
+                }
+            }
+
+            return DefaultTargetFps;
         }
 
         private static int NormalizeMsaa(int sampleCount)

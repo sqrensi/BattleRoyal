@@ -149,7 +149,16 @@ namespace ShooterPrototype.Player
                 if (ActiveMatchContext.IsSoloPracticeScene)
                 {
                     MatchTrainingController.Active?.OnLocalPlayerSpawned(existingLocalPlayer);
+                }
+
+                if (ActiveMatchContext.IsOfflineDuelSession)
+                {
                     MatchOfflineDuelController.Active?.OnLocalPlayerSpawned(existingLocalPlayer);
+                }
+
+                if (ActiveMatchContext.IsOfflineDeathmatchSession)
+                {
+                    MatchOfflineDeathmatchController.Active?.OnLocalPlayerSpawned(existingLocalPlayer);
                 }
 
                 return;
@@ -234,12 +243,19 @@ namespace ShooterPrototype.Player
             splitBody?.ApplyViewMode();
 
             var selectedModel = CharacterSelectionService.ResolveSelectedModel(charactersResourcesFolder);
-            if (selectedModel.ModelAsset != null)
+            if (PlayerProfileService.IsServerSynced && selectedModel.ModelAsset != null)
             {
                 CharacterModelApplier.TryApplyToPlayer(instance, selectedModel.ModelAsset);
             }
 
-            ApplySelectedSkinsToPlayer(instance);
+            if (PlayerProfileService.IsServerSynced)
+            {
+                ApplySelectedSkinsToPlayer(instance);
+            }
+            else
+            {
+                PlayerSkinSelectionService.ApplyDefaultSkinsToPlayer(instance, forceReapply: true);
+            }
 
             if (ShouldAttachPresenceSync())
             {
@@ -258,14 +274,18 @@ namespace ShooterPrototype.Player
             {
                 MatchOfflineDuelController.Active?.OnLocalPlayerSpawned(instance.GetComponent<LocalPlayerMarker>());
             }
+
+            if (ActiveMatchContext.IsOfflineDeathmatchSession)
+            {
+                MatchOfflineDeathmatchController.Active?.OnLocalPlayerSpawned(instance.GetComponent<LocalPlayerMarker>());
+            }
         }
 
         private bool ShouldAttachPresenceSync()
         {
             return enableMatchPresenceSync &&
                    !ActiveMatchContext.IsSoloPracticeScene &&
-                   !ActiveMatchContext.IsOfflineSoloSession &&
-                   !PlayerProfileService.IsOfflineMode;
+                   !ActiveMatchContext.IsOfflineSoloSession;
         }
 
         private void EnsurePlayerPrefabs()

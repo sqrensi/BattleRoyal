@@ -22,7 +22,6 @@ namespace ShooterPrototype.Player
             }
 
             WeaponBlockUtility.EnsureSceneWeaponBlocks(scene);
-            WeaponBlockUtility.EnsureSceneBotOccluderProxies(scene);
             RebuildOccluders(scene);
         }
 

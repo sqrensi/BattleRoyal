@@ -40,6 +40,7 @@ namespace ShooterPrototype.UI
         private CanvasGroup bottomRightStackGroup;
         private MainMenuNavNotificationBadges navNotificationBadges;
         private MainMenuServerConnectionGate connectionGate;
+        private MainMenuReconnectButton reconnectButton;
 
         public void ApplyLayout(MainMenuController controller)
         {
@@ -75,7 +76,10 @@ namespace ShooterPrototype.UI
 
             if (controller.StatusText != null)
             {
-                LayoutStatusText(controller.StatusText, canvasRect);
+                var startRect = controller.StartButton != null
+                    ? controller.StartButton.GetComponent<RectTransform>()
+                    : null;
+                LayoutStatusText(controller.StatusText, canvasRect, startRect);
             }
 
             layoutApplied = true;
@@ -150,6 +154,11 @@ namespace ShooterPrototype.UI
                 connectionGate = EnsureConnectionGate(controller);
                 connectionGate.Configure(controller, controller.StatusText);
                 connectionGate.Build(canvasRect, EnsureUiSound(controller));
+
+                reconnectButton = EnsureReconnectButton(controller);
+                reconnectButton.Configure(controller, EnsureUiSound(controller));
+                reconnectButton.Build(canvasRect);
+
                 connectionGate.RegisterMenuGroup(topNavBarObject != null ? EnsureCanvasGroup(topNavBarObject) : null);
                 connectionGate.RegisterMenuGroup(startButtonGroup);
                 connectionGate.RegisterMenuGroup(bottomRightStackGroup != null
@@ -295,6 +304,24 @@ namespace ShooterPrototype.UI
 
             return gate;
         }
+
+        private static MainMenuReconnectButton EnsureReconnectButton(MainMenuController controller)
+        {
+            if (controller == null)
+            {
+                return null;
+            }
+
+            var reconnect = controller.GetComponent<MainMenuReconnectButton>();
+            if (reconnect == null)
+            {
+                reconnect = controller.gameObject.AddComponent<MainMenuReconnectButton>();
+            }
+
+            return reconnect;
+        }
+
+        public MainMenuReconnectButton ReconnectButton => reconnectButton;
 
         private void BuildCurrencyDisplay(MainMenuController controller, RectTransform canvasRect)
         {
@@ -508,22 +535,41 @@ namespace ShooterPrototype.UI
             gameModeSelector.Build(canvasRect, modeLeft, modeBottom, modeWidth, uiSound);
         }
 
-        private void LayoutStatusText(TMP_Text statusText, RectTransform canvasRect)
+        private void LayoutStatusText(TMP_Text statusText, RectTransform canvasRect, RectTransform startButtonRect)
         {
+            const float statusGap = 16f;
+
             var rect = statusText.rectTransform;
             rect.SetParent(canvasRect, false);
-            rect.anchorMin = new Vector2(0f, 0f);
-            rect.anchorMax = new Vector2(1f, 0f);
-            rect.pivot = new Vector2(0.5f, 0f);
-            rect.offsetMin = new Vector2(edgeMargin, edgeMargin);
-            rect.offsetMax = new Vector2(-edgeMargin, edgeMargin + statusHeight);
 
-            statusText.alignment = TextAlignmentOptions.Center;
+            if (startButtonRect != null)
+            {
+                var left = startButtonRect.anchoredPosition.x + startButtonRect.sizeDelta.x + statusGap;
+                var bottom = startButtonRect.anchoredPosition.y +
+                             (startButtonRect.sizeDelta.y - statusHeight) * 0.5f;
+
+                rect.anchorMin = new Vector2(0f, 0f);
+                rect.anchorMax = new Vector2(0f, 0f);
+                rect.pivot = new Vector2(0f, 0.5f);
+                rect.anchoredPosition = new Vector2(left, bottom + statusHeight * 0.5f);
+                rect.sizeDelta = new Vector2(560f, statusHeight);
+            }
+            else
+            {
+                rect.anchorMin = new Vector2(0f, 0f);
+                rect.anchorMax = new Vector2(1f, 0f);
+                rect.pivot = new Vector2(0.5f, 0f);
+                rect.offsetMin = new Vector2(edgeMargin, edgeMargin);
+                rect.offsetMax = new Vector2(-edgeMargin, edgeMargin + statusHeight);
+            }
+
+            statusText.alignment = TextAlignmentOptions.MidlineLeft;
             statusText.fontSize = statusFontSize;
             UiTheme.ApplyTmp(statusText, UiTextRole.Muted);
             statusText.enableWordWrapping = true;
             statusText.overflowMode = TextOverflowModes.Ellipsis;
             statusText.raycastTarget = false;
+            statusText.gameObject.SetActive(false);
         }
 
         private Button CreateNavButton(

@@ -63,6 +63,10 @@ namespace ShooterPrototype.Player
         public float MaxHealth => Mathf.Max(1f, maxHealth);
         public float CurrentHealth => Mathf.Clamp(currentHealth, 0f, MaxHealth);
         public bool IsDead => isDead;
+        public bool IsTrainingBotMode => trainingBotMode;
+
+        public string LastAttackerTicketId { get; private set; } = string.Empty;
+        public string LastAttackerNickname { get; private set; } = string.Empty;
 
         public event System.Action TrainingBotDied;
         public event System.Action<float> LocalDamageTaken;
@@ -70,7 +74,12 @@ namespace ShooterPrototype.Player
         public int DeathSequence => deathSequence;
         public Vector3 DeathFallDirection => deathFallDirection;
 
-        public void ForceDeathFromServer(Vector3 hitDirection)
+        public void ApplyServerDeathSequence(int serverDeathSeq)
+        {
+            deathSequence = Mathf.Max(0, serverDeathSeq);
+        }
+
+        public void ForceDeathFromServer(Vector3 hitDirection, int serverDeathSeq = -1)
         {
             if (networkMode || isDead)
             {
@@ -84,13 +93,22 @@ namespace ShooterPrototype.Player
             }
 
             currentHealth = 0f;
+            if (serverDeathSeq >= 0)
+            {
+                deathSequence = serverDeathSeq;
+                EnterDeathState(startRespawn: !eliminationMode);
+                return;
+            }
+
             HandleDeath();
         }
 
         public void ApplyAuthoritativeDamage(
             float amount,
             float remainingHealth,
-            Vector3 hitDirection)
+            Vector3 hitDirection,
+            bool killed = false,
+            int serverDeathSeq = -1)
         {
             if (networkMode || isDead || amount <= 0f)
             {
@@ -126,18 +144,40 @@ namespace ShooterPrototype.Player
 
             if (currentHealth <= 0.001f)
             {
-                HandleDeath();
+                if (killed && serverDeathSeq >= 0)
+                {
+                    deathSequence = serverDeathSeq;
+                    EnterDeathState(startRespawn: !eliminationMode);
+                }
+                else
+                {
+                    HandleDeath();
+                }
             }
         }
 
-        public void ApplyEnvironmentalDamage(float amount, Vector3 hitDirection)
+        public void ApplyEnvironmentalDamage(
+            float amount,
+            Vector3 hitDirection,
+            string attackerTicketId = null,
+            string attackerNickname = null)
         {
             if (networkMode || isDead || amount <= 0f)
             {
                 return;
             }
 
-            ApplyDamage(amount, string.Empty, hitDirection);
+            if (!string.IsNullOrWhiteSpace(attackerTicketId))
+            {
+                LastAttackerTicketId = attackerTicketId.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(attackerNickname))
+            {
+                LastAttackerNickname = attackerNickname.Trim();
+            }
+
+            ApplyDamage(amount, attackerTicketId ?? string.Empty, hitDirection);
         }
 
         public bool TryHeal(float amount)
@@ -225,7 +265,12 @@ namespace ShooterPrototype.Player
             }
 
             var hitDirection = new Vector3(damageMessage.dirX, damageMessage.dirY, damageMessage.dirZ);
-            ApplyAuthoritativeDamage(damageMessage.damage, damageMessage.remainingHealth, hitDirection);
+            ApplyAuthoritativeDamage(
+                damageMessage.damage,
+                damageMessage.remainingHealth,
+                hitDirection,
+                damageMessage.killed,
+                damageMessage.deathSeq);
         }
 
         private void ApplyDamage(float amount, string attackerTicketId, Vector3 hitDirection)
@@ -268,6 +313,7 @@ namespace ShooterPrototype.Player
                 TrainingBotDied?.Invoke();
             }
 
+            MatchOfflineDeathmatchController.Active?.NotifyEntityDied(this);
             EnterDeathState(startRespawn: !eliminationMode);
         }
 
@@ -310,11 +356,33 @@ namespace ShooterPrototype.Player
             enableDeathFall = true;
         }
 
-        public void ApplyLocalShooterDamage(float amount, Vector3 hitDirection)
+        public void ConfigureOfflineDmBot()
+        {
+            trainingBotMode = true;
+            SetNetworkMode(false);
+            SetEliminationMode(false);
+            enableDeathFall = true;
+        }
+
+        public void ApplyLocalShooterDamage(
+            float amount,
+            Vector3 hitDirection,
+            string attackerTicketId = null,
+            string attackerNickname = null)
         {
             if (!trainingBotMode || isDead || amount <= 0f)
             {
                 return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(attackerTicketId))
+            {
+                LastAttackerTicketId = attackerTicketId.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(attackerNickname))
+            {
+                LastAttackerNickname = attackerNickname.Trim();
             }
 
             ApplyDamage(amount, string.Empty, hitDirection);
@@ -393,12 +461,12 @@ namespace ShooterPrototype.Player
             deathSeq = Mathf.Max(0, deathSeq);
             if (dead)
             {
-                if (deathSeq <= lastNetworkDeathSeq && isDead)
+                if (deathSeq <= lastNetworkDeathSeq)
                 {
                     return;
                 }
 
-                lastNetworkDeathSeq = Mathf.Max(lastNetworkDeathSeq, deathSeq);
+                lastNetworkDeathSeq = deathSeq;
                 var horizontalDir = Vector3.ProjectOnPlane(networkDeathFallDirection, Vector3.up);
                 if (horizontalDir.sqrMagnitude > 0.0001f)
                 {
@@ -408,6 +476,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            lastNetworkDeathSeq = Mathf.Max(lastNetworkDeathSeq, deathSeq);
             if (!isDead)
             {
                 return;
@@ -443,8 +512,12 @@ namespace ShooterPrototype.Player
             var navMeshAgent = GetComponent<UnityEngine.AI.NavMeshAgent>();
             if (navMeshAgent != null)
             {
-                navMeshAgent.isStopped = true;
-                navMeshAgent.ResetPath();
+                if (navMeshAgent.enabled && navMeshAgent.isOnNavMesh)
+                {
+                    navMeshAgent.isStopped = true;
+                    navMeshAgent.ResetPath();
+                }
+
                 navMeshAgent.updatePosition = false;
                 navMeshAgent.updateRotation = false;
                 navMeshAgent.enabled = false;
@@ -481,6 +554,8 @@ namespace ShooterPrototype.Player
         {
             StopDeathFallPhysics();
             isDead = false;
+            LastAttackerTicketId = string.Empty;
+            LastAttackerNickname = string.Empty;
 
             if (restoreHealth)
             {

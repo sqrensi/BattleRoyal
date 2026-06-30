@@ -83,7 +83,7 @@ namespace ShooterPrototype.Bootstrap
                 return;
             }
 
-            Application.targetFrameRate = -1;
+            Application.targetFrameRate = ClientSettingsService.TargetFps;
             QualitySettings.vSyncCount = 0;
             projectShadowsMode = QualitySettings.shadows;
             projectMaximumLodLevel = QualitySettings.maximumLODLevel;

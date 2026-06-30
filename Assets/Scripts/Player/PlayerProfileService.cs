@@ -113,9 +113,9 @@ namespace ShooterPrototype.Player
             IsOfflineMode = false;
         }
 
-        public static bool UsesLocalProgressOnly => IsOfflineMode || !IsServerSynced;
+        public static bool UsesLocalProgressOnly => !IsServerSynced;
 
-        public static bool CanReportMatchStatsToServer => IsServerSynced && !IsOfflineMode;
+        public static bool CanReportMatchStatsToServer => IsServerSynced;
 
         public static void ApplyLiveRatings(int duelRating, int rating)
         {
@@ -252,7 +252,7 @@ namespace ShooterPrototype.Player
                 return CurrentProfile.achievements;
             }
 
-            if (IsOfflineMode)
+            if (!IsServerSynced)
             {
                 return LoadOfflineAchievementsFromCatalog();
             }

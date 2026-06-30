@@ -256,7 +256,14 @@ namespace ShooterPrototype.Bootstrap
             }
             else if (scene.name == deathmatchSceneName && !Application.isBatchMode)
             {
-                EnsureDeathmatchController();
+                if (ActiveMatchContext.IsOfflineDeathmatchSession)
+                {
+                    EnsureOfflineDeathmatchController();
+                }
+                else
+                {
+                    EnsureDeathmatchController();
+                }
             }
 
             if (scene.name == mainMenuSceneName && !Application.isBatchMode)
@@ -264,6 +271,7 @@ namespace ShooterPrototype.Bootstrap
                 ActiveMatchContext.SetOfflineTrainingSession(false);
                 ActiveMatchContext.SetOfflineChallengeSession(false);
                 ActiveMatchContext.SetOfflineDuelSession(false);
+                ActiveMatchContext.SetOfflineDeathmatchSession(false);
                 LoadingScreenOverlay.Hide();
             }
 
@@ -318,6 +326,11 @@ namespace ShooterPrototype.Bootstrap
                 LoadingScreenOverlay.Hide();
                 yield return OfflineDuelBootstrap.StartWhenPlayerReady(this);
             }
+            else if (ActiveMatchContext.IsOfflineDeathmatchSession)
+            {
+                LoadingScreenOverlay.Hide();
+                yield return OfflineDeathmatchBootstrap.StartWhenPlayerReady(this);
+            }
 
             Canvas.ForceUpdateCanvases();
             yield return null;
@@ -360,6 +373,12 @@ namespace ShooterPrototype.Bootstrap
                 Destroy(online.gameObject);
             }
 
+            var offlineDm = FindFirstObjectByType<MatchOfflineDeathmatchController>();
+            if (offlineDm != null)
+            {
+                Destroy(offlineDm.gameObject);
+            }
+
             var existing = FindFirstObjectByType<MatchOfflineDuelController>();
             if (existing != null)
             {
@@ -377,6 +396,12 @@ namespace ShooterPrototype.Bootstrap
             if (offline != null)
             {
                 Destroy(offline.gameObject);
+            }
+
+            var offlineDm = FindFirstObjectByType<MatchOfflineDeathmatchController>();
+            if (offlineDm != null)
+            {
+                Destroy(offlineDm.gameObject);
             }
 
             var deathmatch = FindFirstObjectByType<MatchDeathmatchController>();
@@ -397,6 +422,31 @@ namespace ShooterPrototype.Bootstrap
             controller.PrepareForNewMatch();
         }
 
+        private void EnsureOfflineDeathmatchController()
+        {
+            var online = FindFirstObjectByType<MatchDeathmatchController>();
+            if (online != null)
+            {
+                Destroy(online.gameObject);
+            }
+
+            var duel = FindFirstObjectByType<MatchOfflineDuelController>();
+            if (duel != null)
+            {
+                Destroy(duel.gameObject);
+            }
+
+            var existing = FindFirstObjectByType<MatchOfflineDeathmatchController>();
+            if (existing != null)
+            {
+                existing.PrepareForNewMatch();
+                return;
+            }
+
+            var controllerObject = new GameObject("MatchOfflineDeathmatch");
+            controllerObject.AddComponent<MatchOfflineDeathmatchController>();
+        }
+
         private void EnsureDeathmatchController()
         {
             var duel = FindFirstObjectByType<MatchDuelController>();
@@ -409,6 +459,12 @@ namespace ShooterPrototype.Bootstrap
             if (offline != null)
             {
                 Destroy(offline.gameObject);
+            }
+
+            var offlineDm = FindFirstObjectByType<MatchOfflineDeathmatchController>();
+            if (offlineDm != null)
+            {
+                Destroy(offlineDm.gameObject);
             }
 
             var existing = FindFirstObjectByType<MatchDeathmatchController>();

@@ -353,7 +353,7 @@ namespace ShooterPrototype.UI
             rewardBadgeObject.name = "RewardBadge";
 
             Button claimButton = null;
-            if (entry.completed && !PlayerProfileService.IsOfflineMode)
+            if (entry.completed && PlayerProfileService.IsServerSynced)
             {
                 var claimButtonObject = new GameObject("ClaimButton", typeof(RectTransform));
                 claimButtonObject.transform.SetParent(bottomRowObject.transform, false);
@@ -455,7 +455,7 @@ namespace ShooterPrototype.UI
 
         private void OnClaimClicked(PlayerAchievementEntry entry)
         {
-            if (PlayerProfileService.IsOfflineMode || entry == null || claimInProgress || !entry.completed)
+            if (!PlayerProfileService.IsServerSynced || entry == null || claimInProgress || !entry.completed)
             {
                 return;
             }

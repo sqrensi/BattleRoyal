@@ -1105,9 +1105,7 @@ namespace ShooterPrototype.Player
             var trainingBot = targetCollider.GetComponentInParent<TrainingBotController>();
             var duelBot = targetCollider.GetComponentInParent<DuelNavBotController>();
             var damage = ResolveDamage(hitZone);
-            if (duelBot != null &&
-                MatchOfflineDuelController.Active != null &&
-                MatchOfflineDuelController.Active.IsSessionActive)
+            if (duelBot != null && IsOfflineNavBotCombatActive())
             {
                 if (hitZone == HitZone.Head)
                 {
@@ -1119,6 +1117,7 @@ namespace ShooterPrototype.Player
                 }
 
                 MatchStatsTracker.AddDamageDealt(damage);
+                MatchOfflineDuelController.Active?.RecordDamageToOpponent(damage);
                 duelBot.ApplyHit(damage, shotDirection);
                 return;
             }
@@ -1228,6 +1227,14 @@ namespace ShooterPrototype.Player
             reloadSequence++;
             reloadCoroutine = StartCoroutine(ReloadRoutine());
             return true;
+        }
+
+        private static bool IsOfflineNavBotCombatActive()
+        {
+            return (MatchOfflineDuelController.Active != null &&
+                    MatchOfflineDuelController.Active.IsSessionActive) ||
+                   (MatchOfflineDeathmatchController.Active != null &&
+                    MatchOfflineDeathmatchController.Active.IsSessionActive);
         }
 
         private bool ShouldBlockFireByWallCollision()

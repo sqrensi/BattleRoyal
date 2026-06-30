@@ -147,19 +147,24 @@ namespace ShooterPrototype.UI
             SetGroupsImmediate(mainMenuGroups, 1f, interactable: true);
         }
 
-        public void EnterInventory()
-        {
-            OpenPanel(MainMenuPanelMode.Inventory);
-        }
-
         public void EnterShop()
         {
-            if (PlayerProfileService.IsOfflineMode)
+            if (!PlayerProfileService.IsServerSynced)
             {
                 return;
             }
 
             OpenPanel(MainMenuPanelMode.Shop);
+        }
+
+        public void EnterInventory()
+        {
+            if (!PlayerProfileService.IsServerSynced)
+            {
+                return;
+            }
+
+            OpenPanel(MainMenuPanelMode.Inventory);
         }
 
         public void EnterAchievements()
@@ -172,16 +177,21 @@ namespace ShooterPrototype.UI
             OpenPanel(MainMenuPanelMode.Stats);
         }
 
-        public void SetOfflineRestrictions(bool offline)
+        public void SetServerSyncRestrictions(bool serverSynced)
         {
             if (shopButton != null)
             {
-                shopButton.interactable = !offline;
+                shopButton.interactable = serverSynced;
+            }
+
+            if (inventoryButton != null)
+            {
+                inventoryButton.interactable = serverSynced;
             }
 
             if (statsButton != null)
             {
-                statsButton.interactable = !offline;
+                statsButton.interactable = serverSynced;
             }
         }
 
