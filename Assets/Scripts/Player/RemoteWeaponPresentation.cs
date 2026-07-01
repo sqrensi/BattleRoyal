@@ -1597,8 +1597,7 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
-                body.isKinematic = true;
-                body.useGravity = false;
+                Destroy(body);
             }
 
             var colliders = root.GetComponentsInChildren<Collider>(true);

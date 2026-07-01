@@ -15,7 +15,7 @@ namespace ShooterPrototype.Player
         public const float MatchDurationSeconds = 600f;
         private const float PrepSeconds = 15f;
 
-        private const int BotCount = 5;
+        private const int BotCount = 3;
         private const int DmWeaponSpareAmmo = 999;
         private const float RespawnDelaySeconds = 3f;
 
@@ -271,7 +271,7 @@ namespace ShooterPrototype.Player
                 yield break;
             }
 
-            if (!DmSpawnUtility.TryResolveSpawnPose(0, out var position, out var rotation))
+            if (!DmSpawnUtility.TryResolveRandomSpawnPose(out var position, out var rotation))
             {
                 position = localPlayer.transform.position;
                 rotation = localPlayer.transform.rotation;
@@ -305,12 +305,15 @@ namespace ShooterPrototype.Player
             {
                 if (bots[i].Bot == bot)
                 {
-                    spawnSlot = bots[i].SpawnSlot;
+                    spawnSlot = DmSpawnUtility.RollRandomSpawnSlot(bots[i].SpawnSlot);
+                    var entry = bots[i];
+                    entry.SpawnSlot = spawnSlot;
+                    bots[i] = entry;
                     break;
                 }
             }
 
-            if (!DmSpawnUtility.TryResolveSpawnPose(spawnSlot + 1, out var position, out var rotation))
+            if (!DmSpawnUtility.TryResolveSpawnPose(spawnSlot, out var position, out var rotation))
             {
                 position = bot.transform.position;
                 rotation = bot.transform.rotation;
@@ -330,7 +333,8 @@ namespace ShooterPrototype.Player
             var nicknames = PickUniqueBotNicknames(BotCount);
             for (var i = 0; i < BotCount; i++)
             {
-                if (!DmSpawnUtility.TryResolveSpawnPose(i + 1, out var position, out var rotation))
+                var spawnSlot = DmSpawnUtility.RollRandomSpawnSlot();
+                if (!DmSpawnUtility.TryResolveSpawnPose(spawnSlot, out var position, out var rotation))
                 {
                     position = Vector3.zero;
                     rotation = Quaternion.identity;
@@ -351,7 +355,7 @@ namespace ShooterPrototype.Player
                     Bot = bot,
                     TicketId = ticketId,
                     Nickname = nickname,
-                    SpawnSlot = i,
+                    SpawnSlot = spawnSlot,
                 });
 
                 yield return null;

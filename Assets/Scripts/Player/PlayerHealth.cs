@@ -43,6 +43,10 @@ namespace ShooterPrototype.Player
         private Coroutine respawnRoutine;
         private FpsCharacterController fpsController;
         private PlayerWeaponController weaponController;
+        private PlayerWeaponMount weaponMount;
+        private PlayerWeaponHolsterController weaponHolster;
+        private PlayerPickupController pickupController;
+        private SyntyLocomotionDriver syntyLocomotionDriver;
         private CharacterController characterController;
         private ProceduralLocomotionRig locomotionRig;
         private PlayerNetworkIdentity identity;
@@ -203,6 +207,14 @@ namespace ShooterPrototype.Player
             initialSpawnRotation = transform.rotation;
             fpsController = GetComponent<FpsCharacterController>();
             weaponController = GetComponent<PlayerWeaponController>();
+            weaponMount = GetComponent<PlayerWeaponMount>();
+            weaponHolster = GetComponent<PlayerWeaponHolsterController>();
+            pickupController = GetComponent<PlayerPickupController>();
+            syntyLocomotionDriver = GetComponent<SyntyLocomotionDriver>();
+            if (syntyLocomotionDriver == null)
+            {
+                syntyLocomotionDriver = GetComponentInChildren<SyntyLocomotionDriver>(true);
+            }
             characterController = GetComponent<CharacterController>();
             identity = GetComponent<PlayerNetworkIdentity>();
             locomotionRig = GetComponentInChildren<ProceduralLocomotionRig>(true);
@@ -509,6 +521,8 @@ namespace ShooterPrototype.Player
                 weaponController.enabled = false;
             }
 
+            SuspendDeathCombatPresentation();
+
             var navMeshAgent = GetComponent<UnityEngine.AI.NavMeshAgent>();
             if (navMeshAgent != null)
             {
@@ -523,10 +537,7 @@ namespace ShooterPrototype.Player
                 navMeshAgent.enabled = false;
             }
 
-            if (trainingBotMode)
-            {
-                RemotePlayerLocomotionUtility.StopLocomotionOnDeath(gameObject);
-            }
+            RemotePlayerLocomotionUtility.StopLocomotionOnDeath(gameObject);
 
             if (enableDeathFall)
             {
@@ -590,6 +601,64 @@ namespace ShooterPrototype.Player
                 RemotePlayerLocomotionUtility.FinalizeDuelBotPresentation(gameObject);
             }
 
+            RestoreDeathCombatPresentation(restoreLocalOnlyControls: !networkMode);
+        }
+
+        private void SuspendDeathCombatPresentation()
+        {
+            if (weaponMount != null)
+            {
+                weaponMount.enabled = false;
+            }
+
+            if (weaponHolster != null)
+            {
+                weaponHolster.enabled = false;
+            }
+
+            if (pickupController != null)
+            {
+                pickupController.enabled = false;
+            }
+
+            if (syntyLocomotionDriver != null)
+            {
+                syntyLocomotionDriver.enabled = false;
+            }
+
+            if (locomotionRig != null)
+            {
+                locomotionRig.SetNetworkMoveInput(0f, 0f);
+                locomotionRig.SetNetworkAnimationState(0f, true, 0, 0f, false, false);
+            }
+        }
+
+        private void RestoreDeathCombatPresentation(bool restoreLocalOnlyControls)
+        {
+            if (weaponMount != null)
+            {
+                weaponMount.enabled = true;
+            }
+
+            if (weaponHolster != null)
+            {
+                weaponHolster.enabled = true;
+            }
+
+            if (!restoreLocalOnlyControls)
+            {
+                return;
+            }
+
+            if (pickupController != null)
+            {
+                pickupController.enabled = true;
+            }
+
+            if (syntyLocomotionDriver != null)
+            {
+                syntyLocomotionDriver.enabled = true;
+            }
         }
 
         private void StartSimpleDeathFall()
@@ -909,8 +978,12 @@ namespace ShooterPrototype.Player
 
             if (deathRigidbody != null)
             {
-                deathRigidbody.linearVelocity = Vector3.zero;
-                deathRigidbody.angularVelocity = Vector3.zero;
+                if (!deathRigidbody.isKinematic)
+                {
+                    deathRigidbody.linearVelocity = Vector3.zero;
+                    deathRigidbody.angularVelocity = Vector3.zero;
+                }
+
                 deathRigidbody.useGravity = false;
                 deathRigidbody.isKinematic = true;
                 deathRigidbody.constraints = RigidbodyConstraints.None;

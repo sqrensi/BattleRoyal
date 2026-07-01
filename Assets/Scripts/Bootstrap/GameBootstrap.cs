@@ -78,6 +78,7 @@ namespace ShooterPrototype.Bootstrap
             {
                 EnsurePerformancePreset();
                 EnsureNetworkPerformanceMonitor();
+                EnsureSceneOcclusionBootstrap();
             }
 
             if (networkLauncher == null)
@@ -216,8 +217,8 @@ namespace ShooterPrototype.Bootstrap
                 deathmatchSceneName);
 
             var isMatchScene = scene.name == gameSceneName ||
-                               scene.name == duelSceneName ||
-                               scene.name == deathmatchSceneName ||
+                               MatchMapPool.IsDuelSceneName(scene.name) ||
+                               MatchMapPool.IsDeathmatchSceneName(scene.name) ||
                                scene.name == trainingSceneName ||
                                scene.name == challengeSceneName;
             if (gameHudController != null)
@@ -243,7 +244,7 @@ namespace ShooterPrototype.Bootstrap
             {
                 EnsureChallengeController();
             }
-            else if (scene.name == duelSceneName && !Application.isBatchMode)
+            else if (MatchMapPool.IsDuelScene(scene) && !Application.isBatchMode)
             {
                 if (ActiveMatchContext.IsOfflineDuelSession)
                 {
@@ -254,7 +255,7 @@ namespace ShooterPrototype.Bootstrap
                     EnsureDuelController();
                 }
             }
-            else if (scene.name == deathmatchSceneName && !Application.isBatchMode)
+            else if (MatchMapPool.IsDeathmatchScene(scene) && !Application.isBatchMode)
             {
                 if (ActiveMatchContext.IsOfflineDeathmatchSession)
                 {
@@ -268,6 +269,7 @@ namespace ShooterPrototype.Bootstrap
 
             if (scene.name == mainMenuSceneName && !Application.isBatchMode)
             {
+                ActiveMatchContext.ClearSelectedMapScene();
                 ActiveMatchContext.SetOfflineTrainingSession(false);
                 ActiveMatchContext.SetOfflineChallengeSession(false);
                 ActiveMatchContext.SetOfflineDuelSession(false);
@@ -511,6 +513,14 @@ namespace ShooterPrototype.Bootstrap
             if (performancePreset == null)
             {
                 performancePreset = gameObject.AddComponent<PerformancePresetController>();
+            }
+        }
+
+        private void EnsureSceneOcclusionBootstrap()
+        {
+            if (GetComponent<SceneOcclusionBootstrap>() == null)
+            {
+                gameObject.AddComponent<SceneOcclusionBootstrap>();
             }
         }
 

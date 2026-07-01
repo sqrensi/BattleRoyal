@@ -29,7 +29,7 @@ class Deathmatch {
     this.id = matchData.id;
     this.mode = matchData.mode || "deathmatch";
     this.limits = limits;
-    this.maxPlayers = Math.max(2, Number(limits.dmMaxPlayers) || 6);
+    this.maxPlayers = Math.max(2, Number(limits.dmMaxPlayers) || 4);
     this.matchDurationMs = Math.max(60000, Number(limits.dmMatchDurationMs) || 600000);
     this.respawnDelayMs = Math.max(1000, Number(limits.dmRespawnDelayMs) || 3000);
     this.minPlayers = Math.max(2, Number(limits.dmMinPlayers) || 2);
@@ -90,7 +90,18 @@ class Deathmatch {
   }
 
   rollSpawnForTicket(ticketId) {
-    const slot = rollRandomSpawnSlot();
+    const spawnCount = getSpawnCount();
+    if (spawnCount <= 0) {
+      this.spawnSlotByTicket.set(ticketId, 0);
+      return 0;
+    }
+
+    const previous = this.spawnSlotByTicket.get(ticketId);
+    let slot = rollRandomSpawnSlot();
+    if (spawnCount > 1 && previous !== undefined && slot === previous) {
+      slot = (slot + 1 + Math.floor(Math.random() * (spawnCount - 1))) % spawnCount;
+    }
+
     this.spawnSlotByTicket.set(ticketId, slot);
     return slot;
   }
@@ -183,6 +194,8 @@ class Deathmatch {
       player.velZ = 0;
       player.lastSeq = null;
     }
+    this.rollAllSpawns();
+    this.applySpawnPositions();
     this.phase = "fight";
     this.timerEndsAtMs = nowMs + this.matchDurationMs;
     this.markStateDirty();
@@ -196,7 +209,7 @@ class Deathmatch {
     }
     player.connected = true;
     if (!player.hasPose) {
-      const slot = this.getSpawnSlot(ticketId);
+      const slot = this.rollSpawnForTicket(ticketId);
       const pose = resolveSpawnPose(slot);
       if (pose) {
         player.x = pose.x;

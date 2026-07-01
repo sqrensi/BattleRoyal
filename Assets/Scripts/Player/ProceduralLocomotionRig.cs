@@ -167,6 +167,8 @@ namespace ShooterPrototype.Player
             return true;
         }
 
+        public bool ProceduralVisualsDisabled => disableProceduralVisuals;
+
         public void SetProceduralVisualsEnabled(bool enabled)
         {
             disableProceduralVisuals = !enabled;

@@ -386,7 +386,11 @@ namespace ShooterPrototype.Player
 
                 var targetPose = EvaluatePose(avatar.Snapshots, renderTime, avatar);
                 ApplyRemoteTransform(avatar, targetPose.Position, targetPose.Yaw);
-                DriveRemoteLocomotion(avatar, targetPose);
+                if (EnemyPresentationVisibilityUtility.IsPresentationActive(avatar.Root))
+                {
+                    DriveRemoteLocomotion(avatar, targetPose);
+                }
+
                 TraceRemotePositionDrift(kv.Key, avatar, targetPose, now);
 
                 if (now - avatar.LastSeenAt > remoteStaleSeconds)
@@ -2612,7 +2616,10 @@ namespace ShooterPrototype.Player
                 yield break;
             }
 
-            PlayerSkinSelectionService.ApplyNetworkStateToPlayer(avatar.Root, skinState, forceReapply: true);
+            PlayerSkinSelectionService.ApplyNetworkStateToPlayer(
+                avatar.Root,
+                skinState,
+                forceReapply: !avatar.HasAppliedSkinState || !avatar.AppliedSkinState.Equals(skinState));
             avatar.RemoteWeapon?.SetNetworkWeaponSkins(skinState);
             avatar.AppliedSkinState = skinState;
             avatar.HasAppliedSkinState = true;

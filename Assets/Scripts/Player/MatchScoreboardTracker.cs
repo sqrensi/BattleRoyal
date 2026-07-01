@@ -22,10 +22,20 @@ namespace ShooterPrototype.Player
 
         private static string localTicketId = string.Empty;
 
+        private static int dataRevision;
+
+        public static int DataRevision => dataRevision;
+
+        private static void BumpRevision()
+        {
+            dataRevision++;
+        }
+
         public static void Reset(string localTicket = null)
         {
             ByTicket.Clear();
             localTicketId = localTicket ?? string.Empty;
+            BumpRevision();
         }
 
         public static void SetLocalTicket(string ticketId)
@@ -44,11 +54,14 @@ namespace ShooterPrototype.Player
             {
                 entry = new MatchScoreboardEntry { TicketId = ticketId };
                 ByTicket[ticketId] = entry;
+                BumpRevision();
             }
 
-            if (!string.IsNullOrWhiteSpace(nickname))
+            if (!string.IsNullOrWhiteSpace(nickname) &&
+                !string.Equals(entry.Nickname, nickname.Trim(), StringComparison.Ordinal))
             {
                 entry.Nickname = nickname.Trim();
+                BumpRevision();
             }
         }
 
@@ -58,25 +71,37 @@ namespace ShooterPrototype.Player
             string killerNickname,
             string victimNickname)
         {
+            var changed = false;
             var hasKiller = !string.IsNullOrWhiteSpace(killerTicketId) &&
                             !string.Equals(killerTicketId, "world", StringComparison.Ordinal);
 
             if (hasKiller)
             {
+                var revisionBefore = dataRevision;
                 Upsert(killerTicketId, killerNickname);
+                changed |= dataRevision != revisionBefore;
                 if (ByTicket.TryGetValue(killerTicketId, out var killer))
                 {
                     killer.Kills++;
+                    changed = true;
                 }
             }
 
             if (!string.IsNullOrWhiteSpace(victimTicketId))
             {
+                var revisionBefore = dataRevision;
                 Upsert(victimTicketId, victimNickname);
+                changed |= dataRevision != revisionBefore;
                 if (ByTicket.TryGetValue(victimTicketId, out var victim))
                 {
                     victim.Deaths++;
+                    changed = true;
                 }
+            }
+
+            if (changed)
+            {
+                BumpRevision();
             }
         }
 
@@ -103,6 +128,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            var changed = false;
             for (var i = 0; i < rows.Length; i++)
             {
                 var row = rows[i];
@@ -111,15 +137,29 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
+                var revisionBefore = dataRevision;
                 Upsert(row.ticketId, row.nickname);
+                changed |= dataRevision != revisionBefore;
                 if (!ByTicket.TryGetValue(row.ticketId, out var entry))
                 {
                     continue;
                 }
 
-                entry.Kills = Mathf.Max(0, row.kills);
-                entry.Deaths = Mathf.Max(0, row.deaths);
-                entry.Damage = Mathf.Max(0, row.damage);
+                var kills = Mathf.Max(0, row.kills);
+                var deaths = Mathf.Max(0, row.deaths);
+                var damage = Mathf.Max(0, row.damage);
+                if (entry.Kills != kills || entry.Deaths != deaths || entry.Damage != damage)
+                {
+                    entry.Kills = kills;
+                    entry.Deaths = deaths;
+                    entry.Damage = damage;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                BumpRevision();
             }
         }
 
@@ -130,6 +170,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            var changed = false;
             for (var i = 0; i < players.Length; i++)
             {
                 var player = players[i];
@@ -138,15 +179,29 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
+                var revisionBefore = dataRevision;
                 Upsert(player.ticketId, player.nickname);
+                changed |= dataRevision != revisionBefore;
                 if (!ByTicket.TryGetValue(player.ticketId, out var entry))
                 {
                     continue;
                 }
 
-                entry.Kills = Mathf.Max(entry.Kills, Mathf.Max(0, player.killCount));
-                entry.Deaths = Mathf.Max(entry.Deaths, player.deathCount);
-                entry.Damage = Mathf.Max(entry.Damage, player.damageDealt);
+                var kills = Mathf.Max(entry.Kills, Mathf.Max(0, player.killCount));
+                var deaths = Mathf.Max(entry.Deaths, player.deathCount);
+                var damage = Mathf.Max(entry.Damage, player.damageDealt);
+                if (entry.Kills != kills || entry.Deaths != deaths || entry.Damage != damage)
+                {
+                    entry.Kills = kills;
+                    entry.Deaths = deaths;
+                    entry.Damage = damage;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                BumpRevision();
             }
         }
 
@@ -161,6 +216,7 @@ namespace ShooterPrototype.Player
             if (ByTicket.TryGetValue(ticketId, out var entry))
             {
                 entry.Damage += damage;
+                BumpRevision();
             }
         }
 
@@ -186,10 +242,22 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            entry.Kills = Mathf.Max(0, kills);
-            entry.Deaths = Mathf.Max(0, deaths);
-            entry.Damage = Mathf.Max(0, damage);
+            var killsValue = Mathf.Max(0, kills);
+            var deathsValue = Mathf.Max(0, deaths);
+            var damageValue = Mathf.Max(0, damage);
+            if (entry.Kills == killsValue &&
+                entry.Deaths == deathsValue &&
+                entry.Damage == damageValue &&
+                entry.PingMs == pingMs)
+            {
+                return;
+            }
+
+            entry.Kills = killsValue;
+            entry.Deaths = deathsValue;
+            entry.Damage = damageValue;
             entry.PingMs = pingMs;
+            BumpRevision();
         }
 
         public static void SetLocalPing(int pingMs)

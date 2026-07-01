@@ -147,7 +147,7 @@ namespace ShooterPrototype.Player
                 StartCoroutine(SpawnTracer(visualOrigin, endPoint));
             }
 
-            audioController?.PlayShot(false, activeAudioOverrides);
+            audioController?.PlayShot(false, visualOrigin, activeAudioOverrides);
         }
 
         private Vector3 ResolveThirdPersonMuzzlePosition(float lookPitch)
@@ -372,20 +372,15 @@ namespace ShooterPrototype.Player
 
         private IEnumerator SpawnTracer(Vector3 start, Vector3 end)
         {
-            var tracerObject = new GameObject("RemoteShotTracer");
-            var line = tracerObject.AddComponent<LineRenderer>();
-            line.positionCount = 2;
-            line.useWorldSpace = true;
-            line.startWidth = tracerWidth;
-            line.endWidth = tracerWidth;
-            line.material = ResolveTracerMaterial();
-            line.startColor = tracerColor;
-            line.endColor = tracerColor;
-            line.SetPosition(0, start);
-            line.SetPosition(1, end);
-
-            yield return new WaitForSeconds(Mathf.Max(0.01f, tracerDuration));
-            Destroy(tracerObject);
+            ShotTracerSpawner.TrySpawn(
+                this,
+                start,
+                end,
+                tracerDuration,
+                tracerWidth,
+                tracerColor,
+                ResolveTracerMaterial());
+            yield break;
         }
 
         private Material ResolveTracerMaterial()

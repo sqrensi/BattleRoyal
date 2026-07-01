@@ -64,49 +64,7 @@ namespace ShooterPrototype.Player
             SetupTrainingBotRemotePresentation(root);
             DisableLocalGameplayComponents(root);
             HideFirstPersonOnlyRenderers(root);
-            OptimizeTrainingBotAnimators(root);
-        }
-
-        private static void OptimizeTrainingBotAnimators(GameObject root)
-        {
-            var animators = root.GetComponentsInChildren<Animator>(true);
-            for (var i = 0; i < animators.Length; i++)
-            {
-                var animator = animators[i];
-                if (animator == null)
-                {
-                    continue;
-                }
-
-                animator.cullingMode = AnimatorCullingMode.CullUpdateTransforms;
-            }
-        }
-
-        private static void ConfigureDuelBotAnimators(GameObject root)
-        {
-            var animators = root.GetComponentsInChildren<Animator>(true);
-            for (var i = 0; i < animators.Length; i++)
-            {
-                var animator = animators[i];
-                if (animator == null)
-                {
-                    continue;
-                }
-
-                animator.enabled = true;
-                animator.applyRootMotion = false;
-                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
-            }
-        }
-
-        private static void ConfigureDuelBotLocomotionDriver(GameObject root)
-        {
-            RemotePlayerLocomotionUtility.EnsureSyntyLocomotionDriver(root);
-        }
-
-        private static void ConfigureDuelBotRemoteAudio(GameObject root)
-        {
-            RemotePlayerLocomotionUtility.EnsureRemoteAudio(root);
+            EnemyPresentationVisibilityUtility.ConfigureEnemyPresentation(root);
         }
 
         public static void RefreshDuelBotPresentation(GameObject root)

@@ -144,8 +144,7 @@ namespace ShooterPrototype.Player
 
         public static bool IsDuelScene(Scene scene)
         {
-            return scene.IsValid() &&
-                   string.Equals(scene.name, "1x1", System.StringComparison.OrdinalIgnoreCase);
+            return ShooterPrototype.Matchmaking.MatchMapPool.IsDuelScene(scene);
         }
     }
 }

@@ -191,8 +191,10 @@ namespace ShooterPrototype.Player
         private SyntyWeaponHandBinder handBinder;
         private PlayerMedkitController medkitController;
         private PlayerWeaponHolsterController holsterController;
+        private PlayerHealth playerHealth;
 
         private bool BlocksLocalAimInput =>
+            (playerHealth != null && playerHealth.IsDead) ||
             PlayerInventoryPanelController.IsOpen ||
             GameHudController.IsPauseMenuOpen ||
             (medkitController != null && medkitController.IsUsingMedkit) ||
@@ -209,6 +211,7 @@ namespace ShooterPrototype.Player
 
             medkitController = GetComponent<PlayerMedkitController>();
             holsterController = GetComponent<PlayerWeaponHolsterController>();
+            playerHealth = GetComponent<PlayerHealth>();
             defaultAdsCameraFov = adsCameraFov;
             activeAdsCameraFov = adsCameraFov;
             defaultLocalScale = localScale;
@@ -698,6 +701,16 @@ namespace ShooterPrototype.Player
 
         private void LateUpdate()
         {
+            if (playerHealth == null)
+            {
+                playerHealth = GetComponent<PlayerHealth>();
+            }
+
+            if (playerHealth != null && playerHealth.IsDead)
+            {
+                return;
+            }
+
             if (handBinder == null)
             {
                 handBinder = GetComponent<SyntyWeaponHandBinder>();

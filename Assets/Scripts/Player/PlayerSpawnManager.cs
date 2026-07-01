@@ -182,6 +182,9 @@ namespace ShooterPrototype.Player
             {
                 instance.AddComponent<LocalPlayerMarker>();
             }
+
+            GameplayRuntimeCache.RegisterLocalPlayer(instance.GetComponent<LocalPlayerMarker>());
+            PlayerRenderingUtility.DisablePlayerShadows(instance);
             var identity = instance.GetComponent<PlayerNetworkIdentity>();
             if (identity == null)
             {

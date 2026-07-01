@@ -28,6 +28,35 @@ namespace ShooterPrototype.Matchmaking
 
         public static bool IsOfflineDeathmatchSession { get; private set; }
 
+        public static string SelectedMapScene { get; private set; }
+
+        public static void SetSelectedMapScene(string sceneName)
+        {
+            SelectedMapScene = string.IsNullOrWhiteSpace(sceneName) ? null : sceneName.Trim();
+        }
+
+        public static void ClearSelectedMapScene()
+        {
+            SelectedMapScene = null;
+        }
+
+        public static void PrepareRandomMapForCurrentMode(string duelFallback, string deathmatchFallback)
+        {
+            if (IsDuel)
+            {
+                SetSelectedMapScene(MatchMapPool.PickRandomDuelScene(duelFallback));
+                return;
+            }
+
+            if (IsDeathmatch)
+            {
+                SetSelectedMapScene(MatchMapPool.PickRandomDeathmatchScene(deathmatchFallback));
+                return;
+            }
+
+            ClearSelectedMapScene();
+        }
+
         public static void SetOfflineDuelSession(bool active)
         {
             IsOfflineDuelSession = active;
@@ -91,9 +120,10 @@ namespace ShooterPrototype.Matchmaking
             }
 
             if (!string.IsNullOrWhiteSpace(deathmatchScene) &&
-                string.Equals(sceneName, deathmatchScene, System.StringComparison.OrdinalIgnoreCase))
+                MatchMapPool.IsDeathmatchSceneName(sceneName))
             {
                 SetMode(MainMenuGameMode.Deathmatch);
+                SetSelectedMapScene(sceneName);
                 return;
             }
 
@@ -112,9 +142,10 @@ namespace ShooterPrototype.Matchmaking
             }
 
             if (!string.IsNullOrWhiteSpace(duelScene) &&
-                string.Equals(sceneName, duelScene, System.StringComparison.OrdinalIgnoreCase))
+                MatchMapPool.IsDuelSceneName(sceneName))
             {
                 SetMode(MainMenuGameMode.Duel1v1);
+                SetSelectedMapScene(sceneName);
                 return;
             }
 
@@ -142,12 +173,31 @@ namespace ShooterPrototype.Matchmaking
                 return trainingScene;
             }
 
-            if (IsDeathmatch && !string.IsNullOrWhiteSpace(deathmatchScene))
+            if (IsDeathmatch)
             {
-                return deathmatchScene;
+                if (!string.IsNullOrWhiteSpace(SelectedMapScene))
+                {
+                    return SelectedMapScene;
+                }
+
+                return !string.IsNullOrWhiteSpace(deathmatchScene)
+                    ? deathmatchScene
+                    : MatchMapPool.PickRandomDeathmatchScene("dm");
             }
 
-            return IsDuel ? duelScene : battleRoyaleScene;
+            if (IsDuel)
+            {
+                if (!string.IsNullOrWhiteSpace(SelectedMapScene))
+                {
+                    return SelectedMapScene;
+                }
+
+                return !string.IsNullOrWhiteSpace(duelScene)
+                    ? duelScene
+                    : MatchMapPool.PickRandomDuelScene("1x1");
+            }
+
+            return battleRoyaleScene;
         }
     }
 }

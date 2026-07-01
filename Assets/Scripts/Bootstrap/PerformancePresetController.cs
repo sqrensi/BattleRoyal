@@ -143,7 +143,7 @@ namespace ShooterPrototype.Bootstrap
                 : maxPerformanceMaximumLodLevel;
             QualitySettings.realtimeReflectionProbes = postProcessingEnabled;
             QualitySettings.softParticles = postProcessingEnabled;
-            QualitySettings.skinWeights = SkinWeights.FourBones;
+            QualitySettings.skinWeights = postProcessingEnabled ? SkinWeights.FourBones : SkinWeights.TwoBones;
             QualitySettings.vSyncCount = 0;
 
             ApplyUrpSettings(new UrpPresetState

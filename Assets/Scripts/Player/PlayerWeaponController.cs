@@ -96,6 +96,7 @@ namespace ShooterPrototype.Player
         private Material tracerMaterial;
         private FpsCharacterController fpsController;
         private PlayerWeaponMount weaponMount;
+        private PlayerHealth playerHealth;
         private PlayerWeaponLoadoutController weaponLoadoutController;
         private PlayerAudioController audioController;
         private RealtimeTransportClient realtimeClient;
@@ -150,6 +151,7 @@ namespace ShooterPrototype.Player
 
             fpsController = GetComponent<FpsCharacterController>();
             weaponMount = GetComponent<PlayerWeaponMount>();
+            playerHealth = GetComponent<PlayerHealth>();
             weaponLoadoutController = GetComponent<PlayerWeaponLoadoutController>();
             weaponHolster = GetComponent<PlayerWeaponHolsterController>();
             audioController = GetComponent<PlayerAudioController>();
@@ -320,6 +322,16 @@ namespace ShooterPrototype.Player
 
         private void Update()
         {
+            if (playerHealth == null)
+            {
+                playerHealth = GetComponent<PlayerHealth>();
+            }
+
+            if (playerHealth != null && playerHealth.IsDead)
+            {
+                return;
+            }
+
             TryResolveRuntimeMuzzle();
 
             if (PlayerInventoryPanelController.IsOpen || GameHudController.IsPauseMenuOpen)
@@ -1380,53 +1392,15 @@ namespace ShooterPrototype.Player
 
         private IEnumerator SpawnTracer(Vector3 from, Vector3 to)
         {
-            var tracerObject = new GameObject("ShotTracer");
-            var line = tracerObject.AddComponent<LineRenderer>();
-            line.positionCount = 2;
-            line.useWorldSpace = true;
-            line.startWidth = tracerWidth;
-            line.endWidth = tracerWidth;
-            line.startColor = tracerColor;
-            line.endColor = tracerColor;
-            line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            line.receiveShadows = false;
-            line.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
-            line.sortingOrder = 40;
-            line.numCapVertices = 0;
-            line.numCornerVertices = 0;
-
-            if (tracerMaterial == null)
-            {
-                var shader = Shader.Find("Universal Render Pipeline/Unlit");
-                if (shader == null)
-                {
-                    shader = Shader.Find("Unlit/Color");
-                }
-                if (shader == null)
-                {
-                    shader = Shader.Find("Standard");
-                }
-
-                if (shader != null)
-                {
-                    tracerMaterial = new Material(shader);
-                    if (tracerMaterial.HasProperty("_Color"))
-                    {
-                        tracerMaterial.color = tracerColor;
-                    }
-                }
-            }
-
-            if (tracerMaterial != null)
-            {
-                line.sharedMaterial = tracerMaterial;
-            }
-
-            line.SetPosition(0, from);
-            line.SetPosition(1, to);
-
-            yield return new WaitForSecondsRealtime(Mathf.Max(0.01f, tracerDuration));
-            Destroy(tracerObject);
+            ShotTracerSpawner.TrySpawn(
+                this,
+                from,
+                to,
+                tracerDuration,
+                tracerWidth,
+                tracerColor,
+                tracerMaterial);
+            yield break;
         }
 
         private GameObject ResolveMuzzleFlashVfx()

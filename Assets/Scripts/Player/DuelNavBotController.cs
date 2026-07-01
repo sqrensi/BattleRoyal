@@ -183,7 +183,10 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            UpdateAimPresentation(combatTarget.position);
+            if (EnemyPresentationVisibilityUtility.IsPresentationActive(gameObject))
+            {
+                UpdateAimPresentation(combatTarget.position);
+            }
 
             if (Time.time < nextThinkAt)
             {
@@ -328,14 +331,21 @@ namespace ShooterPrototype.Player
 
             nextTargetRefreshAt = Time.time + DmTargetRefreshSeconds;
 
-            if (MatchOfflineDeathmatchController.Active != null &&
-                MatchOfflineDeathmatchController.Active.TryFindNearestEnemy(
-                    transform.position,
-                    health,
-                    maxEngageDistance + 8f,
-                    out var registryTarget))
+            if (MatchOfflineDeathmatchController.Active != null)
             {
-                combatTarget = registryTarget;
+                if (MatchOfflineDeathmatchController.Active.TryFindNearestEnemy(
+                        transform.position,
+                        health,
+                        maxEngageDistance + 8f,
+                        out var registryTarget))
+                {
+                    combatTarget = registryTarget;
+                }
+                else
+                {
+                    combatTarget = null;
+                }
+
                 return;
             }
 

@@ -812,6 +812,10 @@ namespace ShooterPrototype.Player
             {
                 weaponController.RefreshWeaponAvailability();
             }
+            else if (weaponController != null && !IsLocalPlayerAlive())
+            {
+                weaponController.enabled = false;
+            }
         }
 
         private void ScheduleMatchOutcome(bool won)

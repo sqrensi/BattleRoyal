@@ -29,6 +29,7 @@ namespace ShooterPrototype.UI
         private bool sceneActive;
         private RealtimeTransportClient transportClient;
         private string localTicketId = "offline-local";
+        private int lastRenderedRevision = -1;
 
         public bool IsOpen => isOpen;
 
@@ -207,7 +208,12 @@ namespace ShooterPrototype.UI
                     SetOpen(true);
                 }
 
-                RefreshTable();
+                if (lastRenderedRevision != MatchScoreboardTracker.DataRevision)
+                {
+                    RefreshTable();
+                    lastRenderedRevision = MatchScoreboardTracker.DataRevision;
+                }
+
                 return;
             }
 
@@ -230,6 +236,7 @@ namespace ShooterPrototype.UI
             if (open)
             {
                 RefreshTable();
+                lastRenderedRevision = MatchScoreboardTracker.DataRevision;
             }
         }
 

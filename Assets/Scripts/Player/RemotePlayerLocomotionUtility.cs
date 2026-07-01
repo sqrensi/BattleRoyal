@@ -21,7 +21,7 @@ namespace ShooterPrototype.Player
             ConfigureLocomotionRig(root);
             EnsureSyntyLocomotionDriver(root);
             EnsureRemoteAudio(root);
-            EnsureAlwaysAnimate(root);
+            EnemyPresentationVisibilityUtility.ConfigureEnemyPresentation(root);
 
             if (root.GetComponent<TrainingBotLocomotionPresenter>() == null)
             {
@@ -43,7 +43,7 @@ namespace ShooterPrototype.Player
             ConfigureLocomotionRig(root);
             EnsureSyntyLocomotionDriver(root);
             EnsureRemoteAudio(root);
-            EnsureAlwaysAnimate(root);
+            EnemyPresentationVisibilityUtility.ConfigureEnemyPresentation(root);
         }
 
         public static void ConfigureLocomotionRig(GameObject root)
@@ -55,7 +55,7 @@ namespace ShooterPrototype.Player
             }
 
             locomotionRig.SetNetworkMode(true);
-            locomotionRig.SetProceduralVisualsEnabled(true);
+            locomotionRig.SetProceduralVisualsEnabled(GameplayPerformanceOptions.UseProceduralRemoteLocomotion);
         }
 
         public static SyntyLocomotionDriver EnsureSyntyLocomotionDriver(GameObject root)
@@ -99,8 +99,7 @@ namespace ShooterPrototype.Player
 
             remoteAudio.enabled = true;
 
-            var localMarker = Object.FindFirstObjectByType<LocalPlayerMarker>();
-            var localAudio = localMarker != null ? localMarker.GetComponent<PlayerAudioController>() : null;
+            var localAudio = GameplayRuntimeCache.LocalPlayerAudio;
             if (localAudio != null)
             {
                 remoteAudio.InheritFrom(localAudio);
@@ -135,7 +134,7 @@ namespace ShooterPrototype.Player
             }
 
             EnsureRemoteAudio(root);
-            EnsureAlwaysAnimate(root);
+            EnemyPresentationVisibilityUtility.ConfigureEnemyPresentation(root);
         }
 
         public static void StopLocomotionOnDeath(GameObject root)
@@ -191,7 +190,7 @@ namespace ShooterPrototype.Player
 
             ConfigureLocomotionRig(root);
             EnsureSyntyLocomotionDriver(root);
-            EnsureAlwaysAnimate(root);
+            EnemyPresentationVisibilityUtility.ConfigureEnemyPresentation(root);
 
             var presenter = root.GetComponent<TrainingBotLocomotionPresenter>();
             if (presenter != null)
@@ -200,21 +199,5 @@ namespace ShooterPrototype.Player
             }
         }
 
-        private static void EnsureAlwaysAnimate(GameObject root)
-        {
-            var animators = root.GetComponentsInChildren<Animator>(true);
-            for (var i = 0; i < animators.Length; i++)
-            {
-                var animator = animators[i];
-                if (animator == null)
-                {
-                    continue;
-                }
-
-                animator.enabled = true;
-                animator.applyRootMotion = false;
-                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
-            }
-        }
     }
 }

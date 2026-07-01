@@ -44,6 +44,7 @@ namespace ShooterPrototype.Player
             WireRemoteLookPitchPosture(thirdPersonBody);
             EnsureBoneHitboxes(thirdPersonBody);
             EnsureRemoteShotEffects();
+            EnemyPresentationVisibilityUtility.ConfigureEnemyPresentation(gameObject);
         }
 
         private void WireRemoteWeapon(Transform thirdPersonBody)
@@ -125,7 +126,7 @@ namespace ShooterPrototype.Player
 
                 animator.enabled = true;
                 animator.applyRootMotion = false;
-                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                animator.cullingMode = AnimatorCullingMode.CullCompletely;
 
                 var holsterPresentation = GetComponent<RemoteAnimatorHolsterPresentation>();
                 if (holsterPresentation == null)

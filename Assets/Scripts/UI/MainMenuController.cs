@@ -1031,6 +1031,7 @@ namespace ShooterPrototype.UI
 
         private IEnumerator LoadGameSceneRoutine()
         {
+            ActiveMatchContext.PrepareRandomMapForCurrentMode(duelSceneName, deathmatchSceneName);
             var targetScene = ActiveMatchContext.ResolveGameSceneName(
                 gameSceneName,
                 duelSceneName,

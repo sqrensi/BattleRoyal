@@ -18,6 +18,39 @@ namespace ShooterPrototype.Player
             spawnRoot = null;
         }
 
+        public static int GetSpawnPointCount()
+        {
+            var root = ResolveSpawnRoot();
+            return root == null ? 0 : CollectChildPoints(root).Count;
+        }
+
+        public static int RollRandomSpawnSlot(int avoidSlot = -1)
+        {
+            var count = GetSpawnPointCount();
+            if (count <= 0)
+            {
+                return 0;
+            }
+
+            if (count == 1)
+            {
+                return 0;
+            }
+
+            var slot = Random.Range(0, count);
+            if (avoidSlot >= 0 && avoidSlot < count && slot == avoidSlot)
+            {
+                slot = (slot + 1 + Random.Range(0, count - 1)) % count;
+            }
+
+            return slot;
+        }
+
+        public static bool TryResolveRandomSpawnPose(out Vector3 position, out Quaternion rotation, int avoidSlot = -1)
+        {
+            return TryResolveSpawnPose(RollRandomSpawnSlot(avoidSlot), out position, out rotation);
+        }
+
         public static bool TryResolveSpawnPose(int slotIndex, out Vector3 position, out Quaternion rotation)
         {
             position = Vector3.zero;
@@ -136,8 +169,7 @@ namespace ShooterPrototype.Player
 
         public static bool IsDeathmatchScene(Scene scene)
         {
-            return scene.IsValid() &&
-                   string.Equals(scene.name, "dm", System.StringComparison.OrdinalIgnoreCase);
+            return ShooterPrototype.Matchmaking.MatchMapPool.IsDeathmatchScene(scene);
         }
     }
 }

@@ -60,6 +60,14 @@ namespace ShooterPrototype.Player
         [SerializeField] private float defaultMaxDistance = 16f;
         [SerializeField] private float shotMaxDistance = 38f;
 
+        [Header("Wall occlusion")]
+        [SerializeField] private bool enableWallOcclusion = true;
+        [Range(0f, 1f)]
+        [SerializeField] private float occludedVolumeMultiplier = 0.35f;
+        [Range(0.5f, 1f)]
+        [SerializeField] private float occludedPitchMultiplier = 0.86f;
+        [SerializeField] private float occludedLowPassCutoffHz = 900f;
+
         private AudioSource nearSource;
         private AudioSource shotSource;
         private AudioSource reloadSource;
@@ -222,10 +230,18 @@ namespace ShooterPrototype.Player
 
         public void PlayShot(bool isLocal, in WeaponAudioOverrides overrides = default)
         {
+            PlayShot(isLocal, transform.position + Vector3.up * 1.35f, overrides);
+        }
+
+        public void PlayShot(
+            bool isLocal,
+            Vector3 soundWorldPosition,
+            in WeaponAudioOverrides overrides = default)
+        {
             var clip = overrides.HasShotClip ? overrides.ShotClip : shotClip;
             var volume = overrides.ShotVolume > 0f ? overrides.ShotVolume : shotVolume;
             volume *= isLocal ? 1f : Mathf.Clamp01(remoteShotVolumeMultiplier);
-            PlayClip(shotSource, clip, volume, isLocal, shotMaxDistance);
+            PlayClip(shotSource, clip, volume, isLocal, shotMaxDistance, soundWorldPosition);
         }
 
         public void PlayReload(bool isLocal)
@@ -306,6 +322,10 @@ namespace ShooterPrototype.Player
             defaultMinDistance = source.defaultMinDistance;
             defaultMaxDistance = source.defaultMaxDistance;
             shotMaxDistance = source.shotMaxDistance;
+            enableWallOcclusion = source.enableWallOcclusion;
+            occludedVolumeMultiplier = source.occludedVolumeMultiplier;
+            occludedPitchMultiplier = source.occludedPitchMultiplier;
+            occludedLowPassCutoffHz = source.occludedLowPassCutoffHz;
         }
 
         private AudioSource CreateSource(string name, float maxDistance)
@@ -325,6 +345,17 @@ namespace ShooterPrototype.Player
 
         private void PlayClip(AudioSource source, AudioClip clip, float volume, bool isLocal, float maxDistance)
         {
+            PlayClip(source, clip, volume, isLocal, maxDistance, transform.position + Vector3.up * 1.35f);
+        }
+
+        private void PlayClip(
+            AudioSource source,
+            AudioClip clip,
+            float volume,
+            bool isLocal,
+            float maxDistance,
+            Vector3 soundWorldPosition)
+        {
             if (source == null || clip == null)
             {
                 return;
@@ -333,7 +364,64 @@ namespace ShooterPrototype.Player
             source.spatialBlend = isLocal ? 0f : 1f;
             source.minDistance = Mathf.Max(0.1f, defaultMinDistance);
             source.maxDistance = Mathf.Max(source.minDistance + 0.1f, maxDistance);
-            source.PlayOneShot(clip, Mathf.Clamp01(volume) * Mathf.Clamp01(masterVolume));
+
+            var finalVolume = Mathf.Clamp01(volume) * Mathf.Clamp01(masterVolume);
+            source.pitch = 1f;
+            ApplyWallOcclusion(source, isLocal, soundWorldPosition, ref finalVolume);
+
+            source.PlayOneShot(clip, finalVolume);
+        }
+
+        private void ApplyWallOcclusion(
+            AudioSource source,
+            bool isLocal,
+            Vector3 soundWorldPosition,
+            ref float volume)
+        {
+            if (isLocal || !enableWallOcclusion || source == null)
+            {
+                DisableLowPass(source);
+                return;
+            }
+
+            var settings = new CombatAudioOcclusion.Settings
+            {
+                OccludedVolumeMultiplier = occludedVolumeMultiplier,
+                OccludedPitchMultiplier = occludedPitchMultiplier,
+                OccludedLowPassCutoffHz = occludedLowPassCutoffHz,
+            };
+            var occlusion = CombatAudioOcclusion.Evaluate(soundWorldPosition, transform, settings);
+            if (!occlusion.IsOccluded)
+            {
+                DisableLowPass(source);
+                return;
+            }
+
+            volume *= occlusion.VolumeMultiplier;
+            source.pitch = occlusion.PitchMultiplier;
+
+            var lowPass = source.GetComponent<AudioLowPassFilter>();
+            if (lowPass == null)
+            {
+                lowPass = source.gameObject.AddComponent<AudioLowPassFilter>();
+            }
+
+            lowPass.enabled = true;
+            lowPass.cutoffFrequency = occlusion.LowPassCutoffHz;
+        }
+
+        private static void DisableLowPass(AudioSource source)
+        {
+            if (source == null)
+            {
+                return;
+            }
+
+            var lowPass = source.GetComponent<AudioLowPassFilter>();
+            if (lowPass != null)
+            {
+                lowPass.enabled = false;
+            }
         }
 
         private AudioClip GetNextFootstepClip(bool isLocal, bool isSprinting)

@@ -87,6 +87,11 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            if (useNetworkState && !EnemyPresentationVisibilityUtility.IsPresentationActive(gameObject))
+            {
+                return;
+            }
+
             var dt = Mathf.Max(0.0001f, Time.deltaTime);
             ResolveAnimationState(
                 out var targetSpeed,

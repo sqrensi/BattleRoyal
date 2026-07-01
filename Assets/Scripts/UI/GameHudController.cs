@@ -116,6 +116,8 @@ namespace ShooterPrototype.UI
         private Image perfButtonImage;
         private Coroutine pingRefreshCoroutine;
         private float fpsSmoothed;
+        private float cornerStatsNextRefreshAt;
+        private string lastCornerStatsText = string.Empty;
 
         public static bool IsPauseMenuOpen { get; private set; }
 
@@ -173,7 +175,6 @@ namespace ShooterPrototype.UI
             }
 
             RefreshCornerStats();
-            RefreshMatchCornerStatsText();
         }
 
         private static bool ReadEscapePressed()
@@ -3054,16 +3055,33 @@ namespace ShooterPrototype.UI
                     : Mathf.Lerp(fpsSmoothed, currentFps, 0.15f);
             }
 
-            if (!Application.isFocused)
+            if (Time.unscaledTime < cornerStatsNextRefreshAt)
             {
-                cornerStatsText.text = $"FPS: {Mathf.RoundToInt(fpsSmoothed)}\nPing: paused";
                 return;
             }
 
-            var pingLine = displayPingMs > 0
-                ? $"Ping: {displayPingMs} ms"
-                : "Ping: -- ms";
-            cornerStatsText.text = $"FPS: {Mathf.RoundToInt(fpsSmoothed)}\n{pingLine}";
+            cornerStatsNextRefreshAt = Time.unscaledTime + GameplayPerformanceOptions.CornerStatsTextRefreshSeconds;
+
+            string nextText;
+            if (!Application.isFocused)
+            {
+                nextText = $"FPS: {Mathf.RoundToInt(fpsSmoothed)}\nPing: paused";
+            }
+            else
+            {
+                var pingLine = displayPingMs > 0
+                    ? $"Ping: {displayPingMs} ms"
+                    : "Ping: -- ms";
+                nextText = $"FPS: {Mathf.RoundToInt(fpsSmoothed)}\n{pingLine}";
+            }
+
+            if (string.Equals(lastCornerStatsText, nextText, System.StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            lastCornerStatsText = nextText;
+            cornerStatsText.text = nextText;
         }
 
         private void EnsurePingRefreshRunning()

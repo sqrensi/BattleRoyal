@@ -28,6 +28,7 @@ namespace ShooterPrototype.Player
         private PlayerHealth health;
         private DuelNavBotController duelBot;
         private PlayerAudioController audioController;
+        private bool remoteAudioConfigured;
         private float smoothedAnimSpeed;
         private float animSpeedVelocity;
         private float smoothedMoveInputX;
@@ -58,6 +59,11 @@ namespace ShooterPrototype.Player
         private void Update()
         {
             if (locomotionRig == null || health != null && health.IsDead)
+            {
+                return;
+            }
+
+            if (!EnemyPresentationVisibilityUtility.IsPresentationActive(gameObject))
             {
                 return;
             }
@@ -180,6 +186,11 @@ namespace ShooterPrototype.Player
 
         private bool TryConfigureRemoteAudio()
         {
+            if (remoteAudioConfigured)
+            {
+                return audioController != null && audioController.enabled;
+            }
+
             if (audioController == null)
             {
                 audioController = GetComponent<PlayerAudioController>();
@@ -190,14 +201,14 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            var localMarker = FindFirstObjectByType<LocalPlayerMarker>();
-            var localAudio = localMarker != null ? localMarker.GetComponent<PlayerAudioController>() : null;
+            var localAudio = GameplayRuntimeCache.LocalPlayerAudio;
             if (localAudio == null)
             {
                 return false;
             }
 
             audioController.InheritFrom(localAudio);
+            remoteAudioConfigured = true;
             return true;
         }
 
