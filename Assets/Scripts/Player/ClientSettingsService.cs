@@ -17,7 +17,7 @@ namespace ShooterPrototype.Player
         private const string MsaaKey = "client_settings_msaa";
         private const string TextureMipmapLimitKey = "client_settings_texture_mipmap";
         private const string GlobalAdsSensitivityKey = "client_settings_global_ads_sensitivity";
-        private const string MaxPerformanceKey = "client_max_performance";
+        private const string LegacyMaxPerformanceKey = "client_max_performance";
         private const string AllowBotMatchmakingKey = "client_settings_allow_bot_matchmaking";
         private const string TargetFpsKey = "client_settings_target_fps";
         private const string LegacyMuteKey = "client_audio_muted";
@@ -50,7 +50,6 @@ namespace ShooterPrototype.Player
         public static int MsaaSampleCount { get; private set; } = 4;
         public static int TextureMipmapLimit { get; private set; }
         public static float GlobalAdsSensitivityMultiplier { get; private set; } = DefaultGlobalAdsSensitivity;
-        public static bool MaxPerformanceEnabled { get; private set; }
         public static bool AllowBotMatchmaking { get; private set; } = true;
         public static int TargetFps { get; private set; } = DefaultTargetFps;
 
@@ -90,7 +89,6 @@ namespace ShooterPrototype.Player
             GlobalAdsSensitivityMultiplier = UserScopedPlayerPrefs.GetFloat(
                 GlobalAdsSensitivityKey,
                 DefaultGlobalAdsSensitivity);
-            MaxPerformanceEnabled = UserScopedPlayerPrefs.GetInt(MaxPerformanceKey, 0) == 1;
             AllowBotMatchmaking = UserScopedPlayerPrefs.GetInt(AllowBotMatchmakingKey, 1) == 1;
             TargetFps = NormalizeTargetFps(UserScopedPlayerPrefs.GetInt(TargetFpsKey, DefaultTargetFps));
 
@@ -101,14 +99,16 @@ namespace ShooterPrototype.Player
                 MsaaSampleCount = NormalizeMsaa(UserScopedPlayerPrefs.GetInt(MsaaKey, 4));
                 TextureMipmapLimit = Mathf.Clamp(UserScopedPlayerPrefs.GetInt(TextureMipmapLimitKey, 0), 0, 2);
             }
-            else if (MaxPerformanceEnabled)
+            else if (UserScopedPlayerPrefs.GetInt(LegacyMaxPerformanceKey, 0) == 1)
             {
-                ApplyLowQualityBundle(save: false);
+                ApplyLowQualityBundle(save: true);
             }
             else
             {
                 ApplyHighQualityBundle(save: false);
             }
+
+            UserScopedPlayerPrefs.DeleteKey(LegacyMaxPerformanceKey);
 
             MasterVolume = Mathf.Clamp01(MasterVolume);
             MusicVolume = Mathf.Clamp01(MusicVolume);
@@ -233,8 +233,6 @@ namespace ShooterPrototype.Player
             EnsureLoaded();
             RenderScale = Mathf.Clamp(value, 0.65f, 1f);
             UserScopedPlayerPrefs.SetFloat(RenderScaleKey, RenderScale);
-            MaxPerformanceEnabled = false;
-            UserScopedPlayerPrefs.SetInt(MaxPerformanceKey, 0);
             SaveAndNotify();
             ApplyGraphicsPreset();
         }
@@ -244,8 +242,6 @@ namespace ShooterPrototype.Player
             EnsureLoaded();
             ShadowsEnabled = enabled;
             UserScopedPlayerPrefs.SetInt(ShadowsEnabledKey, enabled ? 1 : 0);
-            MaxPerformanceEnabled = false;
-            UserScopedPlayerPrefs.SetInt(MaxPerformanceKey, 0);
             SaveAndNotify();
             ApplyGraphicsPreset();
         }
@@ -255,8 +251,6 @@ namespace ShooterPrototype.Player
             EnsureLoaded();
             PostProcessingEnabled = enabled;
             UserScopedPlayerPrefs.SetInt(PostProcessingKey, enabled ? 1 : 0);
-            MaxPerformanceEnabled = false;
-            UserScopedPlayerPrefs.SetInt(MaxPerformanceKey, 0);
             SaveAndNotify();
             ApplyGraphicsPreset();
         }
@@ -266,8 +260,6 @@ namespace ShooterPrototype.Player
             EnsureLoaded();
             MsaaSampleCount = NormalizeMsaa(sampleCount);
             UserScopedPlayerPrefs.SetInt(MsaaKey, MsaaSampleCount);
-            MaxPerformanceEnabled = false;
-            UserScopedPlayerPrefs.SetInt(MaxPerformanceKey, 0);
             SaveAndNotify();
             ApplyGraphicsPreset();
         }
@@ -277,8 +269,6 @@ namespace ShooterPrototype.Player
             EnsureLoaded();
             TextureMipmapLimit = Mathf.Clamp(limit, 0, 2);
             UserScopedPlayerPrefs.SetInt(TextureMipmapLimitKey, TextureMipmapLimit);
-            MaxPerformanceEnabled = false;
-            UserScopedPlayerPrefs.SetInt(MaxPerformanceKey, 0);
             SaveAndNotify();
             ApplyGraphicsPreset();
         }
@@ -345,29 +335,6 @@ namespace ShooterPrototype.Player
             EnsureLoaded();
             QualitySettings.vSyncCount = 0;
             Application.targetFrameRate = TargetFps;
-        }
-
-        public static void SetMaxPerformanceEnabled(bool enabled)
-        {
-            EnsureLoaded();
-            MaxPerformanceEnabled = enabled;
-            UserScopedPlayerPrefs.SetInt(MaxPerformanceKey, enabled ? 1 : 0);
-            if (enabled)
-            {
-                ApplyLowQualityBundle(save: true);
-            }
-            else
-            {
-                ApplyHighQualityBundle(save: true);
-            }
-
-            SaveAndNotify();
-            ApplyGraphicsPreset();
-        }
-
-        public static void ToggleMaxPerformance()
-        {
-            SetMaxPerformanceEnabled(!MaxPerformanceEnabled);
         }
 
         public static void ApplyGraphicsPreset()

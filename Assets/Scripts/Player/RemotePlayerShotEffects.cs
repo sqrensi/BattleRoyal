@@ -36,6 +36,9 @@ namespace ShooterPrototype.Player
         private WeaponAudioOverrides activeAudioOverrides;
         private float activeReloadDurationSeconds = 1.8f;
         private readonly RaycastHit[] hitQueryBuffer = new RaycastHit[32];
+        private DuelNavBotController duelNavBot;
+        private TrainingBotController trainingBot;
+        private bool shooterKindCacheResolved;
 
         public float ReloadDurationSeconds => activeReloadDurationSeconds;
 
@@ -117,6 +120,11 @@ namespace ShooterPrototype.Player
             float lookPitch)
         {
             EnsureAudioSources();
+            EnsureShooterKindCache();
+
+            var isBotShooter = duelNavBot != null || trainingBot != null;
+            var playParticleVfx = !isBotShooter ||
+                Random.value <= GameplayPerformanceOptions.DmBotShotVfxChance;
 
             var hasNetworkDirection = networkDirection.sqrMagnitude > 0.0001f;
             var direction = hasNetworkDirection
@@ -124,30 +132,48 @@ namespace ShooterPrototype.Player
                 : ResolveFallbackDirection(lookPitch);
 
             var visualOrigin = ResolveThirdPersonMuzzlePosition(lookPitch);
-            SpawnVfx(muzzleFlashVfx, visualOrigin, Quaternion.LookRotation(direction, Vector3.up));
-
             var endPoint = visualOrigin + direction * maxDistance;
-            if (TryResolveImpactPoint(
-                    networkOrigin,
-                    networkEndPoint,
-                    hasNetworkEndPoint,
-                    lookPitch,
-                    direction,
-                    out var impactPoint,
-                    out var impactNormal,
-                    out var usePlayerHitVfx))
+
+            if (playParticleVfx)
             {
-                endPoint = impactPoint;
-                var hitPrefab = usePlayerHitVfx ? playerHitVfx : worldHitVfx;
-                SpawnVfx(hitPrefab, impactPoint, Quaternion.LookRotation(impactNormal, Vector3.up));
+                SpawnVfx(muzzleFlashVfx, visualOrigin, Quaternion.LookRotation(direction, Vector3.up));
+
+                if (TryResolveImpactPoint(
+                        networkOrigin,
+                        networkEndPoint,
+                        hasNetworkEndPoint,
+                        lookPitch,
+                        direction,
+                        out var impactPoint,
+                        out var impactNormal,
+                        out var usePlayerHitVfx))
+                {
+                    endPoint = impactPoint;
+                    var hitPrefab = usePlayerHitVfx ? playerHitVfx : worldHitVfx;
+                    SpawnVfx(hitPrefab, impactPoint, Quaternion.LookRotation(impactNormal, Vector3.up));
+                }
             }
 
-            if (showTracer)
+            var playTracer = showTracer &&
+                (!isBotShooter || GameplayPerformanceOptions.DmBotShotTracersEnabled);
+            if (playTracer)
             {
                 StartCoroutine(SpawnTracer(visualOrigin, endPoint));
             }
 
             audioController?.PlayShot(false, visualOrigin, activeAudioOverrides);
+        }
+
+        private void EnsureShooterKindCache()
+        {
+            if (shooterKindCacheResolved)
+            {
+                return;
+            }
+
+            duelNavBot = GetComponent<DuelNavBotController>();
+            trainingBot = GetComponent<TrainingBotController>();
+            shooterKindCacheResolved = true;
         }
 
         private Vector3 ResolveThirdPersonMuzzlePosition(float lookPitch)
@@ -340,6 +366,11 @@ namespace ShooterPrototype.Player
         private void SpawnVfx(GameObject prefab, Vector3 position, Quaternion rotation)
         {
             if (prefab == null)
+            {
+                return;
+            }
+
+            if (GameplayVfxPool.TrySpawn(this, prefab, position, rotation, vfxAutoDestroySeconds))
             {
                 return;
             }

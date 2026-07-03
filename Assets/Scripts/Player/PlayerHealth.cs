@@ -372,8 +372,14 @@ namespace ShooterPrototype.Player
         {
             trainingBotMode = true;
             SetNetworkMode(false);
-            SetEliminationMode(false);
+            SetEliminationMode(true);
             enableDeathFall = true;
+        }
+
+        public void ConfigureOfflineDmLocalPlayer()
+        {
+            SetNetworkMode(false);
+            SetEliminationMode(true);
         }
 
         public void ApplyLocalShooterDamage(

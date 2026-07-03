@@ -72,6 +72,7 @@ namespace ShooterPrototype.Player
         private float postureLeanCompensationVelocity;
         private RemoteLookPitchPosture lookPitchPosture;
         private RemoteAnimatorHolsterPresentation holsterAnimation;
+        private RemoteThirdPersonPlayerBootstrap remoteBootstrap;
         private bool networkHolstered;
         private bool networkHasWeapon;
         private bool networkMedkitActive;
@@ -95,6 +96,27 @@ namespace ShooterPrototype.Player
         private bool hasNetworkWeaponSkins;
         private PlayerSkinNetworkState networkWeaponSkinState;
         private bool suppressNetworkDisarm;
+        private int lastHandIkWeaponRootId = -1;
+        private int presentationFrameOffset = -1;
+        private bool hasCachedAttachPose;
+        private Vector3 cachedAttachLocalPosition;
+        private Quaternion cachedAttachLocalRotation;
+
+        private static void DisableRemoteHandIk(MonoBehaviour host)
+        {
+            if (host == null)
+            {
+                return;
+            }
+
+            var handBinder = host.GetComponent<RemoteLeftHandIkBinder>();
+            if (handBinder == null)
+            {
+                return;
+            }
+
+            handBinder.SetHandIkEnabled(false);
+        }
 
         public Transform WeaponRoot => weaponRoot;
         public Transform AttachTarget => attachTarget;
@@ -223,7 +245,7 @@ namespace ShooterPrototype.Player
         private IEnumerator RemoteWeaponSwapRoutine()
         {
             SetWeaponRenderersEnabled(false);
-            GetComponent<RemoteLeftHandIkBinder>()?.SetHandIkEnabled(false);
+            DisableRemoteHandIk(this);
             ResolveHolsterAnimation()?.SetHolstered(true);
 
             var delay = Mathf.Max(0f, weaponSwapIdleSeconds);
@@ -627,28 +649,86 @@ namespace ShooterPrototype.Player
                 SetWeaponRenderersEnabled(false);
             }
 
-            var handBinder = GetComponent<RemoteLeftHandIkBinder>();
-            handBinder?.SetHandIkEnabled(false);
+            DisableRemoteHandIk(this);
         }
 
         private void LateUpdate()
         {
             if (networkMedkitActive || networkHolstered)
             {
+                hasCachedAttachPose = false;
                 return;
             }
 
-            if (lookPitchPosture == null)
+            if (!ShouldUpdateHandPresentationThisFrame())
             {
-                lookPitchPosture = GetComponent<RemoteLookPitchPosture>();
+                return;
+            }
+
+            if (!ShouldRunFullPresentationSolveThisFrame())
+            {
+                if (hasCachedAttachPose)
+                {
+                    ApplyCachedAttachTargetPose();
+                }
+
+                return;
             }
 
             ApplyAttachTargetLookPitchTilt();
+            CacheAttachTargetPose();
+        }
+
+        private bool ShouldRunFullPresentationSolveThisFrame()
+        {
+            if (presentationFrameOffset < 0)
+            {
+                presentationFrameOffset = GetInstanceID() & 3;
+            }
+
+            var interval = Mathf.Max(1, GameplayPerformanceOptions.BotPresentationSolveIntervalFrames);
+            return (Time.frameCount + presentationFrameOffset) % interval == 0;
+        }
+
+        private void CacheAttachTargetPose()
+        {
+            if (attachTarget == null)
+            {
+                hasCachedAttachPose = false;
+                return;
+            }
+
+            cachedAttachLocalPosition = attachTarget.localPosition;
+            cachedAttachLocalRotation = attachTarget.localRotation;
+            hasCachedAttachPose = true;
+        }
+
+        private void ApplyCachedAttachTargetPose()
+        {
+            if (!hasCachedAttachPose || attachTarget == null)
+            {
+                return;
+            }
+
+            attachTarget.localPosition = cachedAttachLocalPosition;
+            attachTarget.localRotation = cachedAttachLocalRotation;
+        }
+
+        private bool ShouldUpdateHandPresentationThisFrame()
+        {
+            return EnemyPresentationVisibilityUtility.IsPresentationActive(gameObject);
+        }
+
+        private void Awake()
+        {
+            lookPitchPosture = GetComponent<RemoteLookPitchPosture>();
+            holsterAnimation = GetComponent<RemoteAnimatorHolsterPresentation>();
+            remoteBootstrap = GetComponent<RemoteThirdPersonPlayerBootstrap>();
         }
 
         private void OnEnable()
         {
-            if (GetComponent<RemoteThirdPersonPlayerBootstrap>() == null)
+            if (remoteBootstrap == null)
             {
                 return;
             }
@@ -806,6 +886,28 @@ namespace ShooterPrototype.Player
 
             weaponRoot = null;
             hasHandPoseSnapshot = false;
+            lastHandIkWeaponRootId = -1;
+        }
+
+        public void RefreshHandGripIk()
+        {
+            if (!networkHasWeapon || networkHolstered)
+            {
+                return;
+            }
+
+            EnsureAttached();
+            if (weaponRoot != null && weaponRoot.GetInstanceID() == lastHandIkWeaponRootId)
+            {
+                var existingBinder = GetComponent<RemoteLeftHandIkBinder>();
+                if (existingBinder != null && existingBinder.enabled)
+                {
+                    return;
+                }
+            }
+
+            WireRemoteLeftHandIk();
+            lastHandIkWeaponRootId = weaponRoot != null ? weaponRoot.GetInstanceID() : -1;
         }
 
         public void EnsureAttached()
@@ -955,8 +1057,7 @@ namespace ShooterPrototype.Player
             if (backHolsterTarget != null && weaponRoot.parent == backHolsterTarget)
             {
                 SetWeaponRenderersEnabled(true);
-                var existingBinder = GetComponent<RemoteLeftHandIkBinder>();
-                existingBinder?.SetHandIkEnabled(false);
+                DisableRemoteHandIk(this);
                 return;
             }
 
@@ -1402,11 +1503,6 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (lookPitchPosture == null)
-            {
-                lookPitchPosture = GetComponent<RemoteLookPitchPosture>();
-            }
-
             EnsureBaseAttachPose();
             if (!hasBaseAttachPose)
             {
@@ -1577,8 +1673,7 @@ namespace ShooterPrototype.Player
 
             ResolveHolsterAnimation()?.SetHolstered(true);
 
-            var handBinder = GetComponent<RemoteLeftHandIkBinder>();
-            handBinder?.SetHandIkEnabled(false);
+            DisableRemoteHandIk(this);
         }
 
         private static void SanitizeRemoteWeaponColliders(Transform root)

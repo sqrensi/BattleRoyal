@@ -339,6 +339,16 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            if (fpsController == null)
+            {
+                fpsController = GetComponent<FpsCharacterController>();
+            }
+
+            if (fpsController != null && fpsController.IsWeaponPickUiMode)
+            {
+                return;
+            }
+
             if (ReadReloadPressed())
             {
                 TryStartReload();
@@ -1108,12 +1118,6 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var identity = targetCollider.GetComponentInParent<PlayerNetworkIdentity>();
-            if (identity == null || identity.IsLocalPlayer)
-            {
-                return;
-            }
-
             var trainingBot = targetCollider.GetComponentInParent<TrainingBotController>();
             var duelBot = targetCollider.GetComponentInParent<DuelNavBotController>();
             var damage = ResolveDamage(hitZone);
@@ -1149,6 +1153,12 @@ namespace ShooterPrototype.Player
 
                 MatchStatsTracker.AddDamageDealt(damage);
                 trainingBot.ApplyHit(damage, shotDirection);
+                return;
+            }
+
+            var identity = targetCollider.GetComponentInParent<PlayerNetworkIdentity>();
+            if (identity == null || identity.IsLocalPlayer)
+            {
                 return;
             }
 

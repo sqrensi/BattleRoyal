@@ -126,7 +126,11 @@ namespace ShooterPrototype.Player
 
                 animator.enabled = true;
                 animator.applyRootMotion = false;
-                animator.cullingMode = AnimatorCullingMode.CullCompletely;
+                var isOfflineBot = GetComponent<DuelNavBotController>() != null ||
+                                   GetComponent<TrainingBotController>() != null;
+                animator.cullingMode = isOfflineBot
+                    ? AnimatorCullingMode.CullUpdateTransforms
+                    : AnimatorCullingMode.CullCompletely;
 
                 var holsterPresentation = GetComponent<RemoteAnimatorHolsterPresentation>();
                 if (holsterPresentation == null)

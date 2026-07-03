@@ -431,8 +431,8 @@ namespace ShooterPrototype.Player
 
             var rootTransform = avatar.Root.transform;
             var currentPosition = rootTransform.position;
-            var distance = Vector3.Distance(currentPosition, targetPosition);
-            if (distance >= deliberateTeleportSnapDistance)
+            var delta = targetPosition - currentPosition;
+            if (delta.sqrMagnitude >= deliberateTeleportSnapDistance * deliberateTeleportSnapDistance)
             {
                 rootTransform.SetPositionAndRotation(
                     targetPosition,

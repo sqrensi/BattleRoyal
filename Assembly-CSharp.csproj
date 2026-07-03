@@ -115,10 +115,10 @@
     <Compile Include="Assets\Scripts\Player\PlayerCurrencyService.cs" />
     <Compile Include="Assets\Scripts\Player\TrainingBotLocomotionPresenter.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponBlockLayers.cs" />
+    <Compile Include="Assets\Scripts\Matchmaking\MatchMapPool.cs" />
     <Compile Include="Assets\Scripts\Platform\YandexGamesIntegrationService.cs" />
     <Compile Include="Assets\Scripts\Player\ShotTracerSpawner.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\Authorization\Scripts\Auth_yandexPlatform.cs" />
-    <Compile Include="Assets\Scripts\Matchmaking\MatchMapPool.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuNavNotificationBadges.cs" />
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_SimpleTranslate.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyFirstPersonArmsPresenter.cs" />
@@ -327,6 +327,7 @@
     <Compile Include="Assets\Scripts\Player\ChallengeTarget.cs" />
     <Compile Include="Assets\PluginYourGames\Example\Scripts\DemoTextTranslateRU.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Platform\ProjectSettings.cs" />
+    <Compile Include="Assets\Scripts\Player\GameplayVfxPool.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_Demo_Translate.cs" />
     <Compile Include="Assets\Scripts\Player\LocalPlayerMarker.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\Authorization\Scripts\Auth_lang.cs" />

@@ -146,7 +146,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            fpsController?.SetWeaponPickUiMode(true);
+            fpsController?.SetWeaponPickUiMode(true, allowMovementWhileOpen: true);
             fpsController?.MaintainWeaponPickCursor();
             gameHud.ShowDuelWeaponPickPanel(HandleInitialWeaponPicked);
         }
@@ -171,7 +171,8 @@ namespace ShooterPrototype.Player
             }
 
             manualWeaponPickOpen = true;
-            fpsController.SetWeaponPickUiMode(true);
+            fpsController.SetWeaponPickUiMode(true, allowMovementWhileOpen: true);
+            weaponController?.SetDuelFireBlocked(true);
             gameHud.ShowDuelWeaponPickPanel(HandleManualWeaponPicked);
         }
 

@@ -10,11 +10,13 @@ namespace ShooterPrototype.Player
     [DefaultExecutionOrder(-50)]
     public sealed class EnemyPresentationVisibilityGate : MonoBehaviour
     {
-        private const int VisibilityCheckIntervalFrames = 3;
-
         private Renderer[] renderers;
+        private Animator[] animators;
         private SyntyLocomotionDriver locomotionDriver;
         private ProceduralLocomotionRig locomotionRig;
+        private RemoteLeftHandIkBinder handIkBinder;
+        private RemoteLookPitchPosture lookPitchPosture;
+        private RemoteWeaponPresentation weaponPresentation;
         private bool presentationActive = true;
         private int frameOffset;
         private Camera cachedCamera;
@@ -30,7 +32,13 @@ namespace ShooterPrototype.Player
         private void OnEnable()
         {
             CacheComponents();
+            EnemyPresentationVisibilityUtility.RegisterPresentationGate(this);
             SetPresentationActive(true);
+        }
+
+        private void OnDisable()
+        {
+            EnemyPresentationVisibilityUtility.UnregisterPresentationGate(this);
         }
 
         private void Update()
@@ -40,7 +48,8 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if ((Time.frameCount + frameOffset) % VisibilityCheckIntervalFrames != 0)
+            var interval = Mathf.Max(1, GameplayPerformanceOptions.EnemyVisibilityCheckIntervalFrames);
+            if ((Time.frameCount + frameOffset) % interval != 0)
             {
                 return;
             }
@@ -50,7 +59,10 @@ namespace ShooterPrototype.Player
                 cachedCamera = EnemyPresentationVisibilityUtility.ResolveLocalPlayerCamera();
             }
 
-            var visible = EnemyPresentationVisibilityUtility.IsVisibleToCamera(cachedCamera, renderers);
+            var visible = EnemyPresentationVisibilityUtility.IsVisibleToCamera(
+                cachedCamera,
+                renderers,
+                transform.position);
             if (visible == presentationActive)
             {
                 return;
@@ -62,6 +74,7 @@ namespace ShooterPrototype.Player
         private void CacheComponents()
         {
             renderers = GetComponentsInChildren<Renderer>(true);
+            animators = GetComponentsInChildren<Animator>(true);
             locomotionDriver = GetComponent<SyntyLocomotionDriver>();
             if (locomotionDriver == null)
             {
@@ -69,11 +82,16 @@ namespace ShooterPrototype.Player
             }
 
             locomotionRig = GetComponentInChildren<ProceduralLocomotionRig>(true);
+            handIkBinder = GetComponent<RemoteLeftHandIkBinder>();
+            lookPitchPosture = GetComponent<RemoteLookPitchPosture>();
+            weaponPresentation = GetComponent<RemoteWeaponPresentation>();
         }
 
         private void SetPresentationActive(bool active)
         {
             presentationActive = active;
+
+            SetAnimatorsEnabled(active);
 
             if (locomotionDriver != null)
             {
@@ -84,6 +102,38 @@ namespace ShooterPrototype.Player
             {
                 locomotionRig.SetProceduralVisualsEnabled(
                     active && GameplayPerformanceOptions.UseProceduralRemoteLocomotion);
+            }
+
+            if (handIkBinder != null)
+            {
+                handIkBinder.enabled = active;
+            }
+
+            if (lookPitchPosture != null)
+            {
+                lookPitchPosture.enabled = active;
+            }
+
+            if (weaponPresentation != null)
+            {
+                weaponPresentation.enabled = active;
+            }
+        }
+
+        private void SetAnimatorsEnabled(bool enabled)
+        {
+            if (animators == null)
+            {
+                return;
+            }
+
+            for (var i = 0; i < animators.Length; i++)
+            {
+                var animator = animators[i];
+                if (animator != null)
+                {
+                    animator.enabled = enabled;
+                }
             }
         }
     }

@@ -53,6 +53,17 @@ namespace ShooterPrototype.Player
         private Quaternion shoulderLeftAnimatedBase = Quaternion.identity;
         private Quaternion shoulderRightAnimatedBase = Quaternion.identity;
 
+        private int presentationFrameOffset = -1;
+        private bool hasCachedPosturePose;
+        private RemoteThirdPersonPlayerBootstrap remoteBootstrap;
+        private bool bonesResolved;
+        private Quaternion cachedHipsLocalRotation;
+        private readonly Quaternion[] cachedSpineLocalRotations = new Quaternion[3];
+        private Quaternion cachedClavicleLeftLocalRotation;
+        private Quaternion cachedClavicleRightLocalRotation;
+        private Quaternion cachedShoulderLeftLocalRotation;
+        private Quaternion cachedShoulderRightLocalRotation;
+
         public float CurrentPostureLeanPitch => smoothedCrouchPitch + smoothedSprintPitch;
 
         public void SetNetworkLookPitch(float lookPitch)
@@ -65,7 +76,9 @@ namespace ShooterPrototype.Player
             locomotionRig = rig;
             syntyRoot = thirdPersonBody != null ? thirdPersonBody.Find("SyntyVisual") : null;
             enabled = syntyRoot != null && locomotionRig != null;
+            bonesResolved = false;
             ResolveBones();
+            bonesResolved = hipsBone != null;
         }
 
         private void Awake()
@@ -82,22 +95,43 @@ namespace ShooterPrototype.Player
             }
 
             ResolveBones();
+            presentationFrameOffset = GetInstanceID() & 3;
+            remoteBootstrap = GetComponent<RemoteThirdPersonPlayerBootstrap>();
+            bonesResolved = hipsBone != null;
         }
 
         private void LateUpdate()
         {
-            if (!ShouldApply() || syntyRoot == null)
+            if (remoteBootstrap == null || syntyRoot == null)
+            {
+                return;
+            }
+
+            if (!ShouldUpdatePostureThisFrame())
             {
                 return;
             }
 
             if (locomotionRig == null)
             {
-                locomotionRig = GetComponentInChildren<ProceduralLocomotionRig>(true);
+                return;
             }
 
-            ResolveSyntyRoot();
-            ResolveBones();
+            if (!bonesResolved)
+            {
+                ResolveBones();
+                bonesResolved = hipsBone != null;
+            }
+
+            if (!ShouldRunFullPresentationSolveThisFrame())
+            {
+                if (hasCachedPosturePose)
+                {
+                    ApplyCachedPosturePose();
+                }
+
+                return;
+            }
 
             var clampedPitch = Mathf.Clamp(ResolveNetworkLookPitch(), -lookPitchMax, lookPitchMax);
             smoothedPitch = Mathf.SmoothDamp(
@@ -123,12 +157,117 @@ namespace ShooterPrototype.Player
             var totalPitch = smoothedPitch + smoothedCrouchPitch + smoothedSprintPitch;
             if (Mathf.Abs(totalPitch) <= 0.01f)
             {
+                hasCachedPosturePose = false;
                 return;
             }
 
             CaptureAnimatedBaseRotations();
             ApplySpinePitch(totalPitch);
             ApplyArmPitch(totalPitch);
+            CachePosturePose();
+        }
+
+        private bool ShouldUpdatePostureThisFrame()
+        {
+            return EnemyPresentationVisibilityUtility.IsPresentationActive(gameObject);
+        }
+
+        private bool ShouldRunFullPresentationSolveThisFrame()
+        {
+            if (presentationFrameOffset < 0)
+            {
+                presentationFrameOffset = GetInstanceID() & 3;
+            }
+
+            var interval = Mathf.Max(1, GameplayPerformanceOptions.BotPresentationSolveIntervalFrames);
+            return (Time.frameCount + presentationFrameOffset) % interval == 0;
+        }
+
+        private void CachePosturePose()
+        {
+            if (hipsBone != null)
+            {
+                cachedHipsLocalRotation = hipsBone.localRotation;
+            }
+
+            if (spineBones != null)
+            {
+                for (var i = 0; i < spineBones.Length && i < cachedSpineLocalRotations.Length; i++)
+                {
+                    var bone = spineBones[i];
+                    if (bone != null)
+                    {
+                        cachedSpineLocalRotations[i] = bone.localRotation;
+                    }
+                }
+            }
+
+            if (clavicleLeft != null)
+            {
+                cachedClavicleLeftLocalRotation = clavicleLeft.localRotation;
+            }
+
+            if (clavicleRight != null)
+            {
+                cachedClavicleRightLocalRotation = clavicleRight.localRotation;
+            }
+
+            if (shoulderLeft != null)
+            {
+                cachedShoulderLeftLocalRotation = shoulderLeft.localRotation;
+            }
+
+            if (shoulderRight != null)
+            {
+                cachedShoulderRightLocalRotation = shoulderRight.localRotation;
+            }
+
+            hasCachedPosturePose = true;
+        }
+
+        private void ApplyCachedPosturePose()
+        {
+            if (!hasCachedPosturePose)
+            {
+                return;
+            }
+
+            if (hipsBone != null)
+            {
+                hipsBone.localRotation = cachedHipsLocalRotation;
+            }
+
+            if (spineBones != null)
+            {
+                for (var i = 0; i < spineBones.Length && i < cachedSpineLocalRotations.Length; i++)
+                {
+                    var bone = spineBones[i];
+                    if (bone != null)
+                    {
+                        bone.localRotation = cachedSpineLocalRotations[i];
+                    }
+                }
+            }
+
+            if (clavicleLeft != null)
+            {
+                clavicleLeft.localRotation = cachedClavicleLeftLocalRotation;
+            }
+
+            if (clavicleRight != null)
+            {
+                clavicleRight.localRotation = cachedClavicleRightLocalRotation;
+            }
+
+            if (shoulderLeft != null)
+            {
+                shoulderLeft.localRotation = cachedShoulderLeftLocalRotation;
+            }
+
+            if (shoulderRight != null)
+            {
+                shoulderRight.localRotation = cachedShoulderRightLocalRotation;
+            }
         }
 
         private float ResolveTargetCrouchPitch()
@@ -182,11 +321,6 @@ namespace ShooterPrototype.Player
         private bool IsCrouchMoving()
         {
             return IsLocomoting();
-        }
-
-        private bool ShouldApply()
-        {
-            return GetComponent<RemoteThirdPersonPlayerBootstrap>() != null;
         }
 
         private float ResolveNetworkLookPitch()

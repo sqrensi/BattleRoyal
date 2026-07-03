@@ -9,6 +9,11 @@ namespace ShooterPrototype.Player
 
         public static bool HasCharacterBody(GameObject playerRoot)
         {
+            return HasRenderableCharacterBody(playerRoot);
+        }
+
+        public static bool HasRenderableCharacterBody(GameObject playerRoot)
+        {
             if (playerRoot == null)
             {
                 return false;
@@ -16,7 +21,10 @@ namespace ShooterPrototype.Player
 
             var thirdPersonBody = playerRoot.transform.Find("ThirdPersonBody");
             var syntyVisual = thirdPersonBody != null ? thirdPersonBody.Find("SyntyVisual") : null;
-            return FindPrimaryBodyRenderer(syntyVisual) != null;
+            var bodyRenderer = FindPrimaryBodyRenderer(syntyVisual);
+            return bodyRenderer != null &&
+                   bodyRenderer.sharedMesh != null &&
+                   bodyRenderer.sharedMesh.vertexCount > 64;
         }
 
         public static bool TryApplyToPlayer(GameObject playerRoot, GameObject modelAsset)

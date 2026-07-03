@@ -79,6 +79,20 @@ namespace ShooterPrototype.Player
             PlayerPrefs.SetString(BuildKey(baseKey), value ?? string.Empty);
         }
 
+        public static void DeleteKey(string baseKey)
+        {
+            var scopedKey = BuildKey(baseKey);
+            if (PlayerPrefs.HasKey(scopedKey))
+            {
+                PlayerPrefs.DeleteKey(scopedKey);
+            }
+
+            if (PlayerPrefs.HasKey(baseKey))
+            {
+                PlayerPrefs.DeleteKey(baseKey);
+            }
+        }
+
         private static string NormalizePlayerId(string playerId)
         {
             if (string.IsNullOrWhiteSpace(playerId))

@@ -54,7 +54,7 @@ namespace ShooterPrototype.Player
 
         [Header("State")]
         [SerializeField] private bool lockCursorOnEnable = true;
-        [SerializeField] private bool toggleCursorWithTab = true;
+        [SerializeField] private bool toggleCursorWithTab = false;
         [SerializeField] private bool pauseControlsWhenCursorUnlocked = true;
 
         public static bool SuppressTabCursorToggle { get; set; }
@@ -111,6 +111,7 @@ namespace ShooterPrototype.Player
         private PlayerWeaponHolsterController weaponHolster;
         private PlayerWeaponMount weaponMount;
         private PlayerMedkitController medkitController;
+        private PlayerHealth playerHealth;
         [Header("Audio")]
         [SerializeField] private float footstepIntervalSlow = 0.8f;
         [SerializeField] private float footstepIntervalFast = 0.42f;
@@ -135,6 +136,7 @@ namespace ShooterPrototype.Player
         private float defaultAdsMaxLookAngle;
         private float adsLookSensitivityMultiplier = 1f;
         private bool weaponPickUiMode;
+        private bool weaponPickAllowsMovement;
 
         public bool IsWeaponPickUiMode => weaponPickUiMode;
 
@@ -201,9 +203,10 @@ namespace ShooterPrototype.Player
             externalHorizontalVelocity = Vector2.zero;
         }
 
-        public void SetWeaponPickUiMode(bool enabled)
+        public void SetWeaponPickUiMode(bool enabled, bool allowMovementWhileOpen = false)
         {
             weaponPickUiMode = enabled;
+            weaponPickAllowsMovement = enabled && allowMovementWhileOpen;
             ApplyWeaponPickCursorState();
         }
 
@@ -457,6 +460,7 @@ namespace ShooterPrototype.Player
             weaponHolster = GetComponent<PlayerWeaponHolsterController>();
             weaponMount = GetComponent<PlayerWeaponMount>();
             medkitController = GetComponent<PlayerMedkitController>();
+            playerHealth = GetComponent<PlayerHealth>();
 
             standingHeight = characterController != null ? characterController.height : 1.8f;
             standingCenterY = characterController != null ? characterController.center.y : standingHeight * 0.5f;
@@ -478,7 +482,6 @@ namespace ShooterPrototype.Player
             ClientSettingsService.EnsureLoaded();
             mouseSensitivity = ClientSettingsService.MouseSensitivity;
 
-            var weaponMount = GetComponent<PlayerWeaponMount>();
             var profile = weaponMount != null ? weaponMount.ActiveWeaponProfile : null;
             if (profile != null)
             {
@@ -531,6 +534,12 @@ namespace ShooterPrototype.Player
             ClientSettingsService.SettingsChanged -= ApplySettingsFromService;
 
             if (!lockCursorOnEnable)
+            {
+                return;
+            }
+
+            var health = playerHealth;
+            if (health != null && health.IsDead)
             {
                 return;
             }
@@ -592,7 +601,7 @@ namespace ShooterPrototype.Player
             if (hasFocus)
             {
                 reconciliationGraceUntilRealtime = Time.realtimeSinceStartup + 0.75f;
-                var health = GetComponent<PlayerHealth>();
+                var health = playerHealth;
                 if (health != null && health.IsDead)
                 {
                     return;
@@ -732,6 +741,11 @@ namespace ShooterPrototype.Player
             }
 
             if (PlayerInventoryPanelController.IsOpen)
+            {
+                return false;
+            }
+
+            if (weaponPickUiMode && weaponPickAllowsMovement)
             {
                 return false;
             }
@@ -1426,9 +1440,9 @@ namespace ShooterPrototype.Player
         private static bool ReadCrouchPressed()
         {
 #if ENABLE_INPUT_SYSTEM
-            return Keyboard.current != null && Keyboard.current.leftCtrlKey.isPressed;
+            return Keyboard.current != null && Keyboard.current.cKey.isPressed;
 #else
-            return Input.GetKey(KeyCode.LeftControl);
+            return Input.GetKey(KeyCode.C);
 #endif
         }
 

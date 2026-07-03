@@ -73,9 +73,45 @@ namespace ShooterPrototype.Player
             EnableDuelBotPresentation(root);
         }
 
-        private static void EnsureCh36Appearance(GameObject root)
+        public static void RefreshDuelBotVisual(GameObject root, in PlayerSkinNetworkState skinState)
         {
-            if (CharacterModelApplier.HasCharacterBody(root))
+            if (root == null)
+            {
+                return;
+            }
+
+            EnsureDuelBotBody(root);
+
+            var bootstrap = root.GetComponent<RemoteThirdPersonPlayerBootstrap>();
+            if (bootstrap == null)
+            {
+                bootstrap = root.AddComponent<RemoteThirdPersonPlayerBootstrap>();
+            }
+
+            bootstrap.ApplyRemoteThirdPersonMode();
+            PlayerSkinSelectionService.ApplyNetworkStateToPlayer(root, skinState, forceReapply: true);
+
+            var syntyVisual = root.transform.Find("ThirdPersonBody/SyntyVisual");
+            if (syntyVisual != null)
+            {
+                var boneRig = root.GetComponent<PlayerBoneHitboxRig>();
+                var needsRebuild = boneRig == null || !boneRig.HasActiveHitboxes();
+                CharacterModelApplier.RefreshRemoteHitboxes(root, syntyVisual, forceRebuild: needsRebuild);
+
+                boneRig = root.GetComponent<PlayerBoneHitboxRig>();
+                if (boneRig != null && !boneRig.HasActiveHitboxes())
+                {
+                    boneRig.BuildOrRefreshHitboxes(forceRebuild: true);
+                }
+            }
+
+            RefreshDuelBotPresentation(root);
+            root.GetComponent<DuelNavBotController>()?.SyncWeaponPresentationAfterVisualRefresh();
+        }
+
+        private static void EnsureDuelBotBody(GameObject root)
+        {
+            if (CharacterModelApplier.HasRenderableCharacterBody(root))
             {
                 return;
             }
@@ -85,6 +121,11 @@ namespace ShooterPrototype.Player
             {
                 CharacterModelApplier.TryApplyToPlayer(root, modelAsset);
             }
+        }
+
+        private static void EnsureCh36Appearance(GameObject root)
+        {
+            EnsureDuelBotBody(root);
         }
 
         private static void SetupTrainingBotRemotePresentation(GameObject root)
@@ -362,9 +403,6 @@ namespace ShooterPrototype.Player
             Object.Destroy(root.GetComponent<TrainingBotController>());
 
             var skinState = PlayerSkinSelectionService.RollRandomBotNetworkState();
-            PlayerSkinSelectionService.ApplyNetworkStateToPlayer(root, skinState, forceReapply: true);
-            RefreshDuelBotPresentation(root);
-
             var bot = root.GetComponent<DuelNavBotController>();
             if (bot == null)
             {
@@ -377,16 +415,29 @@ namespace ShooterPrototype.Player
                 root.GetComponent<PlayerHealth>()?.ConfigureOfflineDmBot();
             }
 
+            RefreshDuelBotVisual(root, skinState);
             return bot;
         }
 
         private static void StripHeavyVisualComponentsForDuel(GameObject root)
         {
-            DestroyAll<SyntyFirstPersonArmsPresenter>(root);
-            DestroyAll<SyntyWeaponHandBinder>(root);
-            DestroyAll<RemoteLeftHandIkBinder>(root);
-            DestroyAll<SyntySplitBodyPresentation>(root);
-            DestroyAll<SyntyFirstPersonArmLocomotionGate>(root);
+            DestroyAllImmediate<SyntyFirstPersonArmsPresenter>(root);
+            DestroyAllImmediate<SyntyWeaponHandBinder>(root);
+            DestroyAllImmediate<SyntySplitBodyPresentation>(root);
+            DestroyAllImmediate<SyntyFirstPersonArmLocomotionGate>(root);
+            DestroyAllImmediate<PlayerViewPresentation>(root);
+        }
+
+        private static void DestroyAllImmediate<T>(GameObject root) where T : Component
+        {
+            var components = root.GetComponentsInChildren<T>(true);
+            for (var i = components.Length - 1; i >= 0; i--)
+            {
+                if (components[i] != null)
+                {
+                    Object.DestroyImmediate(components[i]);
+                }
+            }
         }
 
         private static void PrepareDuelCharacterBot(GameObject root, int botNumber)
@@ -424,9 +475,6 @@ namespace ShooterPrototype.Player
             SetEnabled<PlayerAudioController>(root, true);
             SetEnabled<RemoteLookPitchPosture>(root, true);
             SetEnabled<RemoteAnimatorHolsterPresentation>(root, true);
-
-            var holsterPresentation = root.GetComponent<RemoteAnimatorHolsterPresentation>();
-            holsterPresentation?.SetWeaponEquipped(false);
         }
 
         private static void ConfigureDuelNavMeshAgent(GameObject root)

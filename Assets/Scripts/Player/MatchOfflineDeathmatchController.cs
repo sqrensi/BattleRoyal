@@ -27,6 +27,7 @@ namespace ShooterPrototype.Player
 
         private readonly List<DmBotEntry> bots = new List<DmBotEntry>(BotCount);
         private readonly List<PlayerHealth> combatants = new List<PlayerHealth>(BotCount + 1);
+        private readonly List<int> botSpawnSlotScratch = new List<int>(BotCount);
 
         private GameHudController gameHud;
         private CombatHudController combatHud;
@@ -46,6 +47,9 @@ namespace ShooterPrototype.Player
         private bool combatPhaseActive;
         private bool initialWeaponPickDone;
         private bool manualWeaponPickOpen;
+        private Coroutine localPlayerRespawnRoutine;
+        private readonly Dictionary<DuelNavBotController, Coroutine> botRespawnRoutines =
+            new Dictionary<DuelNavBotController, Coroutine>(BotCount);
 
         public static MatchOfflineDeathmatchController Active { get; private set; }
 
@@ -78,6 +82,7 @@ namespace ShooterPrototype.Player
 
         private void OnDisable()
         {
+            CancelAllRespawnRoutines();
             CloseWeaponPickUi();
         }
 
@@ -165,6 +170,7 @@ namespace ShooterPrototype.Player
             }
 
             BindLocalPlayer();
+            playerHealth?.ConfigureOfflineDmLocalPlayer();
             RegisterCombatant(playerHealth);
             yield return EnsureNavMeshReadyRoutine();
             WeaponBlockUtility.RemoveSceneBotOccluderProxies(gameObject.scene);
@@ -209,6 +215,11 @@ namespace ShooterPrototype.Player
             combatPhaseActive = true;
             EnableLocalPlayerCombat();
 
+            if (bots.Count > 0 && bots[0].Bot != null)
+            {
+                DuelBotLineOfSight.PrepareScene(bots[0].Bot.gameObject.scene);
+            }
+
             for (var i = 0; i < bots.Count; i++)
             {
                 bots[i].Bot?.SetCombatEnabled(true);
@@ -233,7 +244,7 @@ namespace ShooterPrototype.Player
             if (victimHealth.GetComponent<LocalPlayerMarker>() != null)
             {
                 combatHud?.ShowDuelDeathBanner(killerNick);
-                StartCoroutine(RespawnLocalPlayerRoutine());
+                StartLocalPlayerRespawn();
             }
             else if (string.Equals(killerTicket, "offline-local", System.StringComparison.Ordinal))
             {
@@ -244,8 +255,52 @@ namespace ShooterPrototype.Player
 
             if (victimHealth.GetComponent<DuelNavBotController>() is DuelNavBotController victimBot)
             {
-                StartCoroutine(RespawnBotRoutine(victimBot));
+                StartBotRespawn(victimBot);
             }
+        }
+
+        private void StartLocalPlayerRespawn()
+        {
+            if (localPlayerRespawnRoutine != null)
+            {
+                StopCoroutine(localPlayerRespawnRoutine);
+            }
+
+            localPlayerRespawnRoutine = StartCoroutine(RespawnLocalPlayerRoutine());
+        }
+
+        private void StartBotRespawn(DuelNavBotController bot)
+        {
+            if (bot == null)
+            {
+                return;
+            }
+
+            if (botRespawnRoutines.TryGetValue(bot, out var existing) && existing != null)
+            {
+                StopCoroutine(existing);
+            }
+
+            botRespawnRoutines[bot] = StartCoroutine(RespawnBotRoutine(bot));
+        }
+
+        private void CancelAllRespawnRoutines()
+        {
+            if (localPlayerRespawnRoutine != null)
+            {
+                StopCoroutine(localPlayerRespawnRoutine);
+                localPlayerRespawnRoutine = null;
+            }
+
+            foreach (var pair in botRespawnRoutines)
+            {
+                if (pair.Value != null)
+                {
+                    StopCoroutine(pair.Value);
+                }
+            }
+
+            botRespawnRoutines.Clear();
         }
 
         public void EnsureScoreboardParticipants()
@@ -284,6 +339,7 @@ namespace ShooterPrototype.Player
             manualWeaponPickOpen = false;
             fpsController?.SetWeaponPickUiMode(false);
             gameHud?.HideDuelWeaponPickPanel();
+            localPlayerRespawnRoutine = null;
         }
 
         private IEnumerator RespawnBotRoutine(DuelNavBotController bot)
@@ -301,16 +357,19 @@ namespace ShooterPrototype.Player
             }
 
             var spawnSlot = 0;
+            botSpawnSlotScratch.Clear();
             for (var i = 0; i < bots.Count; i++)
             {
                 if (bots[i].Bot == bot)
                 {
-                    spawnSlot = DmSpawnUtility.RollRandomSpawnSlot(bots[i].SpawnSlot);
+                    spawnSlot = DmSpawnUtility.RollRandomSpawnSlot(bots[i].SpawnSlot, botSpawnSlotScratch);
                     var entry = bots[i];
                     entry.SpawnSlot = spawnSlot;
                     bots[i] = entry;
                     break;
                 }
+
+                botSpawnSlotScratch.Add(bots[i].SpawnSlot);
             }
 
             if (!DmSpawnUtility.TryResolveSpawnPose(spawnSlot, out var position, out var rotation))
@@ -321,9 +380,9 @@ namespace ShooterPrototype.Player
 
             bot.PrepareCombatRound();
             bot.WarpTo(position, rotation);
-            RemotePlayerLocomotionUtility.FinalizeDuelBotPresentation(bot.gameObject);
             bot.SetFreeTargetMode(true);
             bot.SetCombatEnabled(true);
+            botRespawnRoutines.Remove(bot);
         }
 
         private IEnumerator SpawnBotsRoutine()
@@ -331,9 +390,10 @@ namespace ShooterPrototype.Player
             ClearBots();
 
             var nicknames = PickUniqueBotNicknames(BotCount);
+            DmSpawnUtility.TryRollUniqueSpawnSlots(BotCount, botSpawnSlotScratch);
             for (var i = 0; i < BotCount; i++)
             {
-                var spawnSlot = DmSpawnUtility.RollRandomSpawnSlot();
+                var spawnSlot = i < botSpawnSlotScratch.Count ? botSpawnSlotScratch[i] : DmSpawnUtility.RollRandomSpawnSlot(-1, botSpawnSlotScratch);
                 if (!DmSpawnUtility.TryResolveSpawnPose(spawnSlot, out var position, out var rotation))
                 {
                     position = Vector3.zero;
@@ -344,9 +404,11 @@ namespace ShooterPrototype.Player
                 var skill = Random.Range(0.35f, 0.68f);
                 var ticketId = $"offline-dm-bot-{i + 1}";
                 var bot = TrainingBotFactory.CreateDuelBot(position, rotation, nickname, skill, offlineDmMode: true);
+                bot.WarpTo(position, rotation);
                 bot.SetScoreboardTicketId(ticketId);
                 bot.SetFreeTargetMode(true);
                 bot.PrepareCombatRound();
+                bot.RefreshVisualPresentationDeferred();
                 bot.SetCombatEnabled(false);
                 RegisterCombatant(bot.GetComponent<PlayerHealth>());
 
@@ -366,6 +428,8 @@ namespace ShooterPrototype.Player
 
         private void ClearBots()
         {
+            CancelAllRespawnRoutines();
+
             for (var i = 0; i < bots.Count; i++)
             {
                 if (bots[i].Bot != null)
@@ -497,7 +561,8 @@ namespace ShooterPrototype.Player
             }
 
             manualWeaponPickOpen = true;
-            fpsController.SetWeaponPickUiMode(true);
+            fpsController.SetWeaponPickUiMode(true, allowMovementWhileOpen: true);
+            weaponController?.SetDuelFireBlocked(true);
             gameHud.ShowDuelWeaponPickPanel(HandleManualWeaponPicked);
         }
 

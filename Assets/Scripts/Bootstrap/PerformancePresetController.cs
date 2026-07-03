@@ -11,42 +11,16 @@ namespace ShooterPrototype.Bootstrap
     [DefaultExecutionOrder(-100)]
     public sealed class PerformancePresetController : MonoBehaviour
     {
-        private const string PrefKey = "client_max_performance";
         private const string GameSceneName = "Game";
+        private const int ShadowsDisabledMaximumLodLevel = 1;
+        private const float ShadowsDisabledLodBias = 0.5f;
 
-        [Header("Mode")]
-        [SerializeField] private bool maxPerformanceEnabled;
-
-        [Header("Max performance — QualitySettings")]
-        [SerializeField] private int maxPerformanceAntiAliasing = 0;
-        [SerializeField] private QualityShadowResolution maxPerformanceShadowResolution = QualityShadowResolution.Low;
-        [SerializeField] private float maxPerformanceShadowDistance = 0f;
-        [SerializeField] private int maxPerformanceShadowCascades = 1;
-        [SerializeField] private int maxPerformancePixelLightCount = 0;
-        [SerializeField] private float maxPerformanceLodBias = 0.25f;
-        [SerializeField] private int maxPerformanceGlobalTextureMipmapLimit = 2;
-        [SerializeField] private int maxPerformanceMaximumLodLevel = 2;
-        [SerializeField] private QualityShadowsMode maxPerformanceShadowsMode = QualityShadowsMode.Disable;
-
-        [Header("Max performance — URP")]
-        [SerializeField] private float maxPerformanceRenderScale = 0.65f;
-        [SerializeField] private int maxPerformanceUrpMsaa = 1;
-        [SerializeField] private bool maxPerformanceSupportsHdr = false;
-        [SerializeField] private bool maxPerformanceRequireDepthTexture = false;
-        [SerializeField] private bool maxPerformanceRequireOpaqueTexture = false;
-        [SerializeField] private float maxPerformanceUrpShadowDistance = 0f;
-        [SerializeField] private int maxPerformanceMainLightShadowResolution = 256;
-        [SerializeField] private int maxPerformanceShadowCascadeCount = 1;
-
-        [Header("Visual quality (when max performance is off)")]
-        [SerializeField] private int visualQualityAntiAliasing = 4;
+        [Header("Graphics defaults")]
         [SerializeField] private QualityShadowResolution visualQualityShadowResolution = QualityShadowResolution.VeryHigh;
         [SerializeField] private float visualQualityShadowDistance = 120f;
         [SerializeField] private int visualQualityShadowCascades = 4;
         [SerializeField] private int visualQualityPixelLightCount = 4;
         [SerializeField] private float visualQualityLodBias = 2f;
-        [SerializeField] private int visualQualityUrpMsaa = 4;
-        [SerializeField] private float visualQualityRenderScale = 1f;
         [SerializeField] private int visualQualityMainLightShadowResolution = 2048;
         [SerializeField] private int visualQualityShadowCascadeCount = 4;
         [SerializeField] private bool visualQualityRequireDepthTexture = true;
@@ -61,8 +35,6 @@ namespace ShooterPrototype.Bootstrap
         private UrpPresetState projectUrpState;
         private QualityShadowsMode projectShadowsMode;
         private int projectMaximumLodLevel;
-
-        public bool MaxPerformanceEnabled => maxPerformanceEnabled;
 
         private struct UrpPresetState
         {
@@ -89,15 +61,6 @@ namespace ShooterPrototype.Bootstrap
             projectMaximumLodLevel = QualitySettings.maximumLODLevel;
             CaptureProjectUrpIfNeeded();
 
-            if (ShouldUseDirectLocalPlayQuality())
-            {
-                maxPerformanceEnabled = false;
-            }
-            else if (PlayerPrefs.HasKey(PrefKey))
-            {
-                maxPerformanceEnabled = PlayerPrefs.GetInt(PrefKey, 0) == 1;
-            }
-
             ClientSettingsService.EnsureLoaded();
             renderScaleOverride = ClientSettingsService.RenderScale;
 
@@ -123,7 +86,6 @@ namespace ShooterPrototype.Bootstrap
             }
 
             renderScaleOverride = Mathf.Clamp(renderScale, 0.65f, 1f);
-            maxPerformanceEnabled = !postProcessingEnabled;
 
             QualitySettings.globalTextureMipmapLimit = Mathf.Clamp(textureMipmapLimit, 0, 2);
             QualitySettings.anisotropicFiltering = textureMipmapLimit > 0
@@ -132,18 +94,16 @@ namespace ShooterPrototype.Bootstrap
             QualitySettings.antiAliasing = msaaSampleCount > 1 ? msaaSampleCount : 0;
             QualitySettings.shadows = shadowsEnabled ? projectShadowsMode : QualityShadowsMode.Disable;
             QualitySettings.shadowDistance = shadowsEnabled ? visualQualityShadowDistance : 0f;
-            QualitySettings.shadowResolution = shadowsEnabled
-                ? visualQualityShadowResolution
-                : maxPerformanceShadowResolution;
+            QualitySettings.shadowResolution = visualQualityShadowResolution;
             QualitySettings.shadowCascades = shadowsEnabled ? visualQualityShadowCascades : 1;
             QualitySettings.pixelLightCount = shadowsEnabled ? visualQualityPixelLightCount : 0;
-            QualitySettings.lodBias = shadowsEnabled ? visualQualityLodBias : maxPerformanceLodBias;
+            QualitySettings.lodBias = shadowsEnabled ? visualQualityLodBias : ShadowsDisabledLodBias;
             QualitySettings.maximumLODLevel = shadowsEnabled
                 ? projectMaximumLodLevel
-                : maxPerformanceMaximumLodLevel;
+                : ShadowsDisabledMaximumLodLevel;
             QualitySettings.realtimeReflectionProbes = postProcessingEnabled;
             QualitySettings.softParticles = postProcessingEnabled;
-            QualitySettings.skinWeights = postProcessingEnabled ? SkinWeights.FourBones : SkinWeights.TwoBones;
+            QualitySettings.skinWeights = SkinWeights.TwoBones;
             QualitySettings.vSyncCount = 0;
 
             ApplyUrpSettings(new UrpPresetState
@@ -158,22 +118,25 @@ namespace ShooterPrototype.Bootstrap
                     : 0f,
                 MainLightShadowResolution = shadowsEnabled
                     ? visualQualityMainLightShadowResolution
-                    : maxPerformanceMainLightShadowResolution,
+                    : 256,
                 ShadowCascadeCount = shadowsEnabled
                     ? visualQualityShadowCascadeCount
-                    : maxPerformanceShadowCascadeCount
+                    : 1
             });
 
-            ApplyVolumeAndCameraSettings(!postProcessingEnabled);
+            ApplyVolumeAndCameraSettings(postProcessingEnabled, shadowsEnabled);
         }
 
         public void SetRenderScaleOverride(float value)
         {
             renderScaleOverride = Mathf.Clamp(value, 0.65f, 1f);
-            if (!maxPerformanceEnabled)
-            {
-                ApplyVisualQualityPreset();
-            }
+            ClientSettingsService.EnsureLoaded();
+            ApplyClientGraphicsSettings(
+                renderScaleOverride,
+                ClientSettingsService.ShadowsEnabled,
+                ClientSettingsService.PostProcessingEnabled,
+                ClientSettingsService.MsaaSampleCount,
+                ClientSettingsService.TextureMipmapLimit);
         }
 
         private static bool ShouldUseDirectLocalPlayQuality()
@@ -235,19 +198,6 @@ namespace ShooterPrototype.Bootstrap
                 ClientSettingsService.TextureMipmapLimit);
         }
 
-        public void SetMaxPerformanceEnabled(bool enabled)
-        {
-            maxPerformanceEnabled = enabled;
-            PlayerPrefs.SetInt(PrefKey, enabled ? 1 : 0);
-            PlayerPrefs.Save();
-            ClientSettingsService.SetMaxPerformanceEnabled(enabled);
-        }
-
-        public void ToggleMaxPerformance()
-        {
-            ClientSettingsService.ToggleMaxPerformance();
-        }
-
         private void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
         {
             if (Application.isBatchMode)
@@ -258,11 +208,6 @@ namespace ShooterPrototype.Bootstrap
             hasCachedVolumeWeights = false;
             CacheVolumeWeightsIfNeeded();
 
-            if (ShouldUseDirectLocalPlayQuality())
-            {
-                maxPerformanceEnabled = false;
-            }
-
             ClientSettingsService.EnsureLoaded();
             ApplyClientGraphicsSettings(
                 ClientSettingsService.RenderScale,
@@ -270,25 +215,6 @@ namespace ShooterPrototype.Bootstrap
                 ClientSettingsService.PostProcessingEnabled,
                 ClientSettingsService.MsaaSampleCount,
                 ClientSettingsService.TextureMipmapLimit);
-        }
-
-        private void ApplyCurrentPreset()
-        {
-            if (Application.isBatchMode)
-            {
-                return;
-            }
-
-            if (maxPerformanceEnabled)
-            {
-                ApplyMaxPerformancePreset();
-            }
-            else
-            {
-                ApplyVisualQualityPreset();
-            }
-
-            ApplyVolumeAndCameraSettings(maxPerformanceEnabled);
         }
 
         private void CaptureProjectUrpIfNeeded()
@@ -306,67 +232,6 @@ namespace ShooterPrototype.Bootstrap
 
             projectUrpState = ReadUrpState(urp);
             hasCapturedProjectUrp = true;
-        }
-
-        private void ApplyMaxPerformancePreset()
-        {
-            QualitySettings.antiAliasing = maxPerformanceAntiAliasing;
-            QualitySettings.anisotropicFiltering = AnisotropicFiltering.Disable;
-            QualitySettings.globalTextureMipmapLimit = maxPerformanceGlobalTextureMipmapLimit;
-            QualitySettings.maximumLODLevel = maxPerformanceMaximumLodLevel;
-            QualitySettings.streamingMipmapsActive = false;
-            QualitySettings.shadowResolution = maxPerformanceShadowResolution;
-            QualitySettings.shadowDistance = maxPerformanceShadowDistance;
-            QualitySettings.shadowCascades = maxPerformanceShadowCascades;
-            QualitySettings.pixelLightCount = maxPerformancePixelLightCount;
-            QualitySettings.lodBias = maxPerformanceLodBias;
-            QualitySettings.realtimeReflectionProbes = false;
-            QualitySettings.softParticles = false;
-            QualitySettings.shadows = maxPerformanceShadowsMode;
-            QualitySettings.skinWeights = SkinWeights.OneBone;
-            QualitySettings.particleRaycastBudget = 4;
-            QualitySettings.vSyncCount = 0;
-
-            ApplyUrpSettings(new UrpPresetState
-            {
-                RenderScale = maxPerformanceRenderScale,
-                MsaaSampleCount = maxPerformanceUrpMsaa,
-                SupportsHdr = maxPerformanceSupportsHdr,
-                RequireDepthTexture = maxPerformanceRequireDepthTexture,
-                RequireOpaqueTexture = maxPerformanceRequireOpaqueTexture,
-                ShadowDistance = maxPerformanceUrpShadowDistance,
-                MainLightShadowResolution = maxPerformanceMainLightShadowResolution,
-                ShadowCascadeCount = maxPerformanceShadowCascadeCount
-            });
-        }
-
-        private void ApplyVisualQualityPreset()
-        {
-            QualitySettings.antiAliasing = visualQualityAntiAliasing;
-            QualitySettings.anisotropicFiltering = AnisotropicFiltering.ForceEnable;
-            QualitySettings.globalTextureMipmapLimit = 0;
-            QualitySettings.maximumLODLevel = projectMaximumLodLevel;
-            QualitySettings.streamingMipmapsActive = false;
-            QualitySettings.shadowResolution = visualQualityShadowResolution;
-            QualitySettings.shadowDistance = visualQualityShadowDistance;
-            QualitySettings.shadowCascades = visualQualityShadowCascades;
-            QualitySettings.pixelLightCount = visualQualityPixelLightCount;
-            QualitySettings.lodBias = visualQualityLodBias;
-            QualitySettings.shadows = projectShadowsMode;
-            QualitySettings.skinWeights = SkinWeights.FourBones;
-            QualitySettings.vSyncCount = 0;
-
-            ApplyUrpSettings(new UrpPresetState
-            {
-                RenderScale = renderScaleOverride,
-                MsaaSampleCount = visualQualityUrpMsaa,
-                SupportsHdr = visualQualitySupportsHdr,
-                RequireDepthTexture = visualQualityRequireDepthTexture,
-                RequireOpaqueTexture = visualQualityRequireOpaqueTexture,
-                ShadowDistance = hasCapturedProjectUrp ? projectUrpState.ShadowDistance : visualQualityShadowDistance,
-                MainLightShadowResolution = visualQualityMainLightShadowResolution,
-                ShadowCascadeCount = visualQualityShadowCascadeCount
-            });
         }
 
         private static UrpPresetState ReadUrpState(UniversalRenderPipelineAsset urp)
@@ -402,9 +267,9 @@ namespace ShooterPrototype.Bootstrap
             urp.shadowCascadeCount = Mathf.Clamp(state.ShadowCascadeCount, 1, 4);
         }
 
-        private void ApplyVolumeAndCameraSettings(bool maxPerformance)
+        private void ApplyVolumeAndCameraSettings(bool postProcessingEnabled, bool shadowsEnabled)
         {
-            if (maxPerformance)
+            if (!postProcessingEnabled)
             {
                 CacheVolumeWeightsIfNeeded();
                 if (cachedVolumes != null)
@@ -424,10 +289,10 @@ namespace ShooterPrototype.Bootstrap
                 RestoreVolumeWeights();
             }
 
-            ApplyCameraRenderSettings(maxPerformance);
+            ApplyCameraRenderSettings(postProcessingEnabled, shadowsEnabled);
         }
 
-        private static void ApplyCameraRenderSettings(bool maxPerformance)
+        private static void ApplyCameraRenderSettings(bool postProcessingEnabled, bool shadowsEnabled)
         {
             var cameras = FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             for (var i = 0; i < cameras.Length; i++)
@@ -444,14 +309,14 @@ namespace ShooterPrototype.Bootstrap
                     continue;
                 }
 
-                cameraData.renderPostProcessing = !maxPerformance;
-                cameraData.renderShadows = !maxPerformance;
-                cameraData.antialiasing = maxPerformance
-                    ? AntialiasingMode.None
-                    : AntialiasingMode.FastApproximateAntialiasing;
-                cameraData.antialiasingQuality = maxPerformance
-                    ? AntialiasingQuality.Low
-                    : AntialiasingQuality.High;
+                cameraData.renderPostProcessing = postProcessingEnabled;
+                cameraData.renderShadows = shadowsEnabled;
+                cameraData.antialiasing = postProcessingEnabled
+                    ? AntialiasingMode.FastApproximateAntialiasing
+                    : AntialiasingMode.None;
+                cameraData.antialiasingQuality = postProcessingEnabled
+                    ? AntialiasingQuality.High
+                    : AntialiasingQuality.Low;
             }
         }
 

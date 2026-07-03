@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.AI;
 
@@ -8,7 +9,6 @@ namespace ShooterPrototype.Player
     public sealed class DuelNavBotController : MonoBehaviour
     {
         private const float ThinkIntervalSeconds = 0.11f;
-        private const float DmThinkIntervalSeconds = 0.18f;
         private const float DmTargetRefreshSeconds = 0.72f;
         private const float AimEyeHeight = 1.55f;
         private const float BodyYawTurnSpeed = 18f;
@@ -35,6 +35,11 @@ namespace ShooterPrototype.Player
         private bool freeTargetMode;
         private float currentLookPitch;
         private float nextTargetRefreshAt;
+        private Coroutine handPresentationRefreshRoutine;
+        private Coroutine visualPresentationRefreshRoutine;
+        private int presentationFrameOffset;
+
+        private RemoteAnimatorHolsterPresentation holsterPresentation;
 
         public string Nickname { get; private set; } = "Бот";
         public string ScoreboardTicketId { get; private set; } = "offline-bot";
@@ -55,6 +60,7 @@ namespace ShooterPrototype.Player
             shotEffects = GetComponent<RemotePlayerShotEffects>();
             lookPitchPosture = GetComponent<RemoteLookPitchPosture>();
             locomotionRig = GetComponentInChildren<ProceduralLocomotionRig>(true);
+            holsterPresentation = GetComponent<RemoteAnimatorHolsterPresentation>();
 
             if (CanControlAgent(agent))
             {
@@ -70,8 +76,68 @@ namespace ShooterPrototype.Player
             }
 
             configured = CanControlAgent(agent);
-            DuelBotLineOfSight.PrepareScene(gameObject.scene);
+            presentationFrameOffset = GetInstanceID() & 3;
             DisarmWeaponPresentation();
+        }
+
+        public void RefreshVisualPresentation()
+        {
+            TrainingBotFactory.RefreshDuelBotVisual(gameObject, botSkinState);
+        }
+
+        public void RefreshVisualPresentationDeferred()
+        {
+            if (visualPresentationRefreshRoutine != null)
+            {
+                StopCoroutine(visualPresentationRefreshRoutine);
+            }
+
+            visualPresentationRefreshRoutine = StartCoroutine(RefreshVisualPresentationRoutine());
+        }
+
+        public void SyncWeaponPresentationAfterVisualRefresh()
+        {
+            if (!combatEnabled || health == null || health.IsDead)
+            {
+                return;
+            }
+
+            EquipWeaponPresentation();
+        }
+
+        public void RefreshWeaponHandPresentationDeferred()
+        {
+            RefreshWeaponHandPresentationImmediate();
+            if (handPresentationRefreshRoutine != null)
+            {
+                StopCoroutine(handPresentationRefreshRoutine);
+            }
+
+            handPresentationRefreshRoutine = StartCoroutine(RefreshWeaponHandPresentationRoutine());
+        }
+
+        public void RefreshWeaponHandPresentationImmediate()
+        {
+            weaponPresentation ??= GetComponent<RemoteWeaponPresentation>();
+            weaponPresentation?.RefreshHandGripIk();
+        }
+
+        private IEnumerator RefreshVisualPresentationRoutine()
+        {
+            yield return null;
+            yield return null;
+            RefreshVisualPresentation();
+            SyncWeaponPresentationAfterVisualRefresh();
+            RefreshWeaponHandPresentationImmediate();
+            visualPresentationRefreshRoutine = null;
+        }
+
+        private IEnumerator RefreshWeaponHandPresentationRoutine()
+        {
+            yield return null;
+            yield return null;
+            RefreshWeaponHandPresentationImmediate();
+            handPresentationRefreshRoutine = null;
         }
 
         public void SetCombatTarget(Transform target)
@@ -112,8 +178,8 @@ namespace ShooterPrototype.Player
             }
             else
             {
-                DuelBotLineOfSight.PrepareScene(gameObject.scene);
                 EquipWeaponPresentation();
+                RefreshWeaponHandPresentationDeferred();
                 RestoreNavMeshLocomotion(stopped: false);
             }
         }
@@ -185,7 +251,11 @@ namespace ShooterPrototype.Player
 
             if (EnemyPresentationVisibilityUtility.IsPresentationActive(gameObject))
             {
-                UpdateAimPresentation(combatTarget.position);
+                UpdateBodyYawPresentation(combatTarget.position);
+                if (ShouldRunFullPresentationSolveThisFrame())
+                {
+                    UpdateLookPitchPresentation(combatTarget.position);
+                }
             }
 
             if (Time.time < nextThinkAt)
@@ -193,7 +263,9 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            nextThinkAt = Time.time + (freeTargetMode ? DmThinkIntervalSeconds : ThinkIntervalSeconds);
+            nextThinkAt = Time.time + (freeTargetMode
+                ? GameplayPerformanceOptions.DmBotThinkIntervalSeconds
+                : ThinkIntervalSeconds);
             TickCombat();
         }
 
@@ -253,7 +325,7 @@ namespace ShooterPrototype.Player
             }
         }
 
-        private void UpdateAimPresentation(Vector3 targetPos)
+        private void UpdateBodyYawPresentation(Vector3 targetPos)
         {
             var aimOrigin = transform.position + Vector3.up * AimEyeHeight;
             var look = targetPos + Vector3.up * 1.35f - aimOrigin;
@@ -271,12 +343,35 @@ namespace ShooterPrototype.Player
                     targetRotation,
                     Time.deltaTime * BodyYawTurnSpeed);
             }
+        }
 
+        private void UpdateLookPitchPresentation(Vector3 targetPos)
+        {
+            var aimOrigin = transform.position + Vector3.up * AimEyeHeight;
+            var look = targetPos + Vector3.up * 1.35f - aimOrigin;
+            if (look.sqrMagnitude <= 0.0001f)
+            {
+                return;
+            }
+
+            var horizontal = new Vector3(look.x, 0f, look.z);
             var pitch = -Mathf.Atan2(look.y, horizontal.magnitude) * Mathf.Rad2Deg;
             currentLookPitch = Mathf.Clamp(pitch, -55f, 55f);
             lookPitchPosture?.SetNetworkLookPitch(currentLookPitch);
             weaponPresentation?.SetNetworkLookPitch(currentLookPitch);
             locomotionRig?.SetNetworkLookPitch(currentLookPitch);
+        }
+
+        private void UpdateAimPresentation(Vector3 targetPos)
+        {
+            UpdateBodyYawPresentation(targetPos);
+            UpdateLookPitchPresentation(targetPos);
+        }
+
+        private bool ShouldRunFullPresentationSolveThisFrame()
+        {
+            var interval = Mathf.Max(1, GameplayPerformanceOptions.BotPresentationSolveIntervalFrames);
+            return (Time.frameCount + presentationFrameOffset) % interval == 0;
         }
 
         private void TryShoot(Vector3 targetPos)
@@ -419,15 +514,19 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            weaponPresentation.SetWeaponKind(equippedWeaponKind);
+            var kindByte = (byte)equippedWeaponKind;
             weaponPresentation.SetNetworkWeaponSkins(in botSkinState);
-            weaponPresentation.SetHolstered(false);
-            weaponPresentation.SetWeaponEquipped(true);
+            weaponPresentation.SetWeaponLoadout(
+                kindByte,
+                PlayerWeaponLoadout.EmptySlotKind,
+                0,
+                holstered: false,
+                hasWeapon: true,
+                activeWeaponKind: kindByte);
             shotEffects?.ApplyForWeaponKind(equippedWeaponKind);
 
-            var holsterPresentation = GetComponent<RemoteAnimatorHolsterPresentation>();
-            holsterPresentation?.SetWeaponEquipped(true);
-            holsterPresentation?.SetHolstered(false);
+            holsterPresentation?.ApplyArmedLayerWeightsImmediate();
+            weaponPresentation.RefreshHandGripIk();
         }
 
         private void DisarmWeaponPresentation()
@@ -441,7 +540,7 @@ namespace ShooterPrototype.Player
             weaponPresentation.SetHolstered(true);
             weaponPresentation.SetWeaponEquipped(false);
 
-            var holsterPresentation = GetComponent<RemoteAnimatorHolsterPresentation>();
+            holsterPresentation ??= GetComponent<RemoteAnimatorHolsterPresentation>();
             holsterPresentation?.SetHolstered(true);
             holsterPresentation?.SetWeaponEquipped(false);
         }

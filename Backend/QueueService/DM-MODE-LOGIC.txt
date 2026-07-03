@@ -43,6 +43,7 @@ DM — free-for-all deathmatch на карте dm:
 ================================================================================
 2. ФАЙЛЫ
 ================================================================================
+Assets\Scripts\Player\ClientSettingsService.cs(111,35): error CS0117: 'UserScopedPlayerPrefs' does not contain a definition for 'DeleteKey'
 
 СЕРВЕР (Backend/QueueService/workers/)
   deathmatch.js      — класс Deathmatch: фазы, киллы, респавн, tick

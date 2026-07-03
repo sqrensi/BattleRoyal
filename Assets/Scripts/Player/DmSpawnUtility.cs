@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using ShooterPrototype.Matchmaking;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -24,7 +25,7 @@ namespace ShooterPrototype.Player
             return root == null ? 0 : CollectChildPoints(root).Count;
         }
 
-        public static int RollRandomSpawnSlot(int avoidSlot = -1)
+        public static int RollRandomSpawnSlot(int avoidSlot = -1, ICollection<int> reservedSlots = null)
         {
             var count = GetSpawnPointCount();
             if (count <= 0)
@@ -32,18 +33,77 @@ namespace ShooterPrototype.Player
                 return 0;
             }
 
-            if (count == 1)
+            var candidates = new List<int>(count);
+            for (var i = 0; i < count; i++)
             {
-                return 0;
+                if (reservedSlots != null && reservedSlots.Contains(i))
+                {
+                    continue;
+                }
+
+                candidates.Add(i);
             }
 
-            var slot = Random.Range(0, count);
-            if (avoidSlot >= 0 && avoidSlot < count && slot == avoidSlot)
+            if (candidates.Count == 0)
             {
-                slot = (slot + 1 + Random.Range(0, count - 1)) % count;
+                for (var i = 0; i < count; i++)
+                {
+                    if (i != avoidSlot)
+                    {
+                        candidates.Add(i);
+                    }
+                }
+            }
+
+            if (candidates.Count == 0)
+            {
+                return Mathf.Clamp(avoidSlot, 0, count - 1);
+            }
+
+            var slot = candidates[Random.Range(0, candidates.Count)];
+            if (avoidSlot >= 0 && avoidSlot < count && slot == avoidSlot && candidates.Count > 1)
+            {
+                candidates.Remove(avoidSlot);
+                slot = candidates[Random.Range(0, candidates.Count)];
             }
 
             return slot;
+        }
+
+        public static bool TryRollUniqueSpawnSlots(int count, List<int> slots)
+        {
+            slots?.Clear();
+            if (slots == null || count <= 0)
+            {
+                return false;
+            }
+
+            var total = GetSpawnPointCount();
+            if (total <= 0)
+            {
+                return false;
+            }
+
+            var available = new List<int>(total);
+            for (var i = 0; i < total; i++)
+            {
+                available.Add(i);
+            }
+
+            var picks = Mathf.Min(count, available.Count);
+            for (var i = 0; i < picks; i++)
+            {
+                var index = Random.Range(0, available.Count);
+                slots.Add(available[index]);
+                available.RemoveAt(index);
+            }
+
+            while (slots.Count < count)
+            {
+                slots.Add(RollRandomSpawnSlot(slots[slots.Count - 1], slots));
+            }
+
+            return slots.Count > 0;
         }
 
         public static bool TryResolveRandomSpawnPose(out Vector3 position, out Quaternion rotation, int avoidSlot = -1)

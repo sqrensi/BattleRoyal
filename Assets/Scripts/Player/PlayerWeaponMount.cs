@@ -168,6 +168,10 @@ namespace ShooterPrototype.Player
         private const float WallCheckCameraMoveEpsilon = 0.02f;
         private const float WallCheckCameraRotateEpsilon = 0.5f;
         private const float WallCheckSettleBlendEpsilon = 0.02f;
+        private static readonly RaycastHit[] WallRaycastHitBuffer = new RaycastHit[GameplayPerformanceOptions.WallRaycastHitBufferSize];
+        private static readonly RaycastHit[] WallCapsuleCastHitBuffer = new RaycastHit[GameplayPerformanceOptions.WallCapsuleCastHitBufferSize];
+        private static readonly Collider[] WallOverlapCapsuleBuffer = new Collider[GameplayPerformanceOptions.WallOverlapCapsuleBufferSize];
+        private int lastWallAvoidQueryFrame = -1;
         private FpsCharacterController fpsController;
         private Camera localPlayerCamera;
         private float baseCameraFov = -1f;
@@ -1797,6 +1801,15 @@ namespace ShooterPrototype.Player
                 return cachedWallAvoidTargetBlend;
             }
 
+            var interval = Mathf.Max(1, GameplayPerformanceOptions.WallCheckIntervalFrames);
+            if (!localAimHeld &&
+                cachedWallAvoidTargetBlend <= WallCheckSettleBlendEpsilon &&
+                wallAvoidBlend <= WallCheckSettleBlendEpsilon &&
+                Time.frameCount - lastWallAvoidQueryFrame < interval)
+            {
+                return cachedWallAvoidTargetBlend;
+            }
+
             cachedWallAvoidTargetBlend = wallCheckMode == WeaponWallCheckMode.CameraRay
                 ? ComputeCameraRayWallAvoidBlend()
                 : ComputeWeaponCapsuleWallAvoidBlend();
@@ -1806,6 +1819,7 @@ namespace ShooterPrototype.Player
             lastWallAvoidHolstered = localHolstered;
             lastWallAvoidWeaponMounted = weaponMounted;
             wallAvoidCheckDirty = false;
+            lastWallAvoidQueryFrame = Time.frameCount;
             return cachedWallAvoidTargetBlend;
         }
 
@@ -1857,16 +1871,17 @@ namespace ShooterPrototype.Player
             }
 
             var origin = cameraPivot.position;
-            var hits = Physics.RaycastAll(
+            var hitCount = Physics.RaycastNonAlloc(
                 origin,
                 direction,
+                WallRaycastHitBuffer,
                 distance,
                 layerMask,
                 QueryTriggerInteraction.Ignore);
             var bestBlend = 0f;
-            for (var i = 0; i < hits.Length; i++)
+            for (var i = 0; i < hitCount; i++)
             {
-                var hit = hits[i];
+                var hit = WallRaycastHitBuffer[i];
                 if (!IsValidCameraRayWallHit(hit.collider))
                 {
                     continue;
@@ -1893,17 +1908,18 @@ namespace ShooterPrototype.Player
             var castDistance = distance + radius;
             var bestBlend = 0f;
 
-            var castHits = Physics.CapsuleCastAll(
+            var castHits = Physics.CapsuleCastNonAlloc(
                 capsuleStart,
                 capsuleEnd,
                 radius,
                 direction,
+                WallCapsuleCastHitBuffer,
                 castDistance,
                 layerMask,
                 QueryTriggerInteraction.Ignore);
-            for (var i = 0; i < castHits.Length; i++)
+            for (var i = 0; i < castHits; i++)
             {
-                var hit = castHits[i];
+                var hit = WallCapsuleCastHitBuffer[i];
                 if (!IsValidWeaponTraceHit(hit.collider))
                 {
                     continue;
@@ -1980,18 +1996,19 @@ namespace ShooterPrototype.Player
                 return 0f;
             }
 
-            var hits = Physics.OverlapCapsule(
+            var hitCount = Physics.OverlapCapsuleNonAlloc(
                 capsuleStart,
                 capsuleEnd,
                 radius,
+                WallOverlapCapsuleBuffer,
                 layerMask,
                 QueryTriggerInteraction.Ignore);
             var bestBlend = 0f;
             var probeCenter = (capsuleStart + capsuleEnd) * 0.5f;
 
-            for (var i = 0; i < hits.Length; i++)
+            for (var i = 0; i < hitCount; i++)
             {
-                var hitCollider = hits[i];
+                var hitCollider = WallOverlapCapsuleBuffer[i];
                 if (!IsValidWeaponTraceHit(hitCollider))
                 {
                     continue;

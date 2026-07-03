@@ -110,14 +110,14 @@ namespace ShooterPrototype.UI
         private bool pauseSettingsOpen;
         private Button backButton;
         private Button muteButton;
-        private Button perfButton;
         private TMP_Text muteButtonLabel;
-        private TMP_Text perfButtonLabel;
-        private Image perfButtonImage;
         private Coroutine pingRefreshCoroutine;
         private float fpsSmoothed;
         private float cornerStatsNextRefreshAt;
         private string lastCornerStatsText = string.Empty;
+        private int lastCornerStatsDisplayedFps = -1;
+        private int lastCornerStatsDisplayedPing = int.MinValue;
+        private bool lastCornerStatsDisplayedPaused;
 
         public static bool IsPauseMenuOpen { get; private set; }
 
@@ -156,7 +156,6 @@ namespace ShooterPrototype.UI
             ClientSettingsService.ApplyMasterVolume();
             ClientSettingsService.ApplyGraphicsPreset();
             LoadMuteState();
-            RefreshPerfButtonVisuals();
             RefreshConnectionText();
             SetTopBarVisible(false);
             SetActiveForScene(false);
@@ -169,26 +168,33 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            if (ReadEscapePressed())
+            if (ReadPauseMenuPressed())
             {
-                HandleEscapePressed();
+                HandlePauseMenuPressed();
             }
 
             RefreshCornerStats();
         }
 
-        private static bool ReadEscapePressed()
+        private static bool ReadPauseMenuPressed()
         {
 #if ENABLE_INPUT_SYSTEM
-            return Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame;
+            return Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame;
 #else
-            return Input.GetKeyDown(KeyCode.Escape);
+            return Input.GetKeyDown(KeyCode.E);
 #endif
         }
 
-        private void HandleEscapePressed()
+        private void HandlePauseMenuPressed()
         {
             if (returnToMenuRequested || gameOverPanelVisible || gameOverFlowStarted)
+            {
+                return;
+            }
+
+            var fps = FindFirstObjectByType<FpsCharacterController>();
+            var health = fps != null ? fps.GetComponent<PlayerHealth>() : null;
+            if (health != null && health.IsDead)
             {
                 return;
             }
@@ -285,7 +291,18 @@ namespace ShooterPrototype.UI
             }
 
             var fps = FindFirstObjectByType<FpsCharacterController>();
-            if (fps != null && fps.isActiveAndEnabled && !fps.IsWeaponPickUiMode)
+            var health = fps != null ? fps.GetComponent<PlayerHealth>() : null;
+            if (fps != null &&
+                fps.isActiveAndEnabled &&
+                !fps.IsWeaponPickUiMode &&
+                (health == null || !health.IsDead))
+            {
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+                return;
+            }
+
+            if (health != null && health.IsDead)
             {
                 Cursor.lockState = CursorLockMode.Locked;
                 Cursor.visible = false;
@@ -409,7 +426,6 @@ namespace ShooterPrototype.UI
         private void HandleClientSettingsChanged()
         {
             RefreshMuteButtonText();
-            RefreshPerfButtonVisuals();
         }
 
         private void HandleNetworkStatusChanged(string status)
@@ -1648,12 +1664,6 @@ namespace ShooterPrototype.UI
                     ? ClientSettingsService.DefaultMasterVolume
                     : 0f);
             RefreshMuteButtonText();
-        }
-
-        private void HandlePerfPressed()
-        {
-            ClientSettingsService.ToggleMaxPerformance();
-            RefreshPerfButtonVisuals();
         }
 
         private void LoadMuteState()
@@ -2942,15 +2952,6 @@ namespace ShooterPrototype.UI
             return buttonLabel;
         }
 
-        private void EnsurePerformancePresetButton()
-        {
-            if (perfButton != null)
-            {
-                perfButton.gameObject.SetActive(false);
-                return;
-            }
-        }
-
         private static void ApplyBoldHudText(TMP_Text text)
         {
             if (text == null)
@@ -3062,17 +3063,32 @@ namespace ShooterPrototype.UI
 
             cornerStatsNextRefreshAt = Time.unscaledTime + GameplayPerformanceOptions.CornerStatsTextRefreshSeconds;
 
-            string nextText;
-            if (!Application.isFocused)
+            var fpsInt = Mathf.RoundToInt(fpsSmoothed);
+            var isPaused = !Application.isFocused;
+            var pingInt = isPaused ? -1 : displayPingMs;
+            if (fpsInt == lastCornerStatsDisplayedFps &&
+                pingInt == lastCornerStatsDisplayedPing &&
+                isPaused == lastCornerStatsDisplayedPaused)
             {
-                nextText = $"FPS: {Mathf.RoundToInt(fpsSmoothed)}\nPing: paused";
+                return;
+            }
+
+            lastCornerStatsDisplayedFps = fpsInt;
+            lastCornerStatsDisplayedPing = pingInt;
+            lastCornerStatsDisplayedPaused = isPaused;
+
+            string nextText;
+            if (isPaused)
+            {
+                nextText = "FPS: " + fpsInt + "\nPing: paused";
+            }
+            else if (displayPingMs > 0)
+            {
+                nextText = "FPS: " + fpsInt + "\nPing: " + displayPingMs + " ms";
             }
             else
             {
-                var pingLine = displayPingMs > 0
-                    ? $"Ping: {displayPingMs} ms"
-                    : "Ping: -- ms";
-                nextText = $"FPS: {Mathf.RoundToInt(fpsSmoothed)}\n{pingLine}";
+                nextText = "FPS: " + fpsInt + "\nPing: -- ms";
             }
 
             if (string.Equals(lastCornerStatsText, nextText, System.StringComparison.Ordinal))
@@ -3446,24 +3462,6 @@ namespace ShooterPrototype.UI
             }
 
             muteButtonLabel.text = ClientSettingsService.IsEffectivelyMuted() ? "Sound: OFF" : "Sound: ON";
-        }
-
-        private void RefreshPerfButtonVisuals()
-        {
-            if (perfButtonLabel == null)
-            {
-                return;
-            }
-
-            var maxPerformance = ClientSettingsService.MaxPerformanceEnabled;
-            perfButtonLabel.text = maxPerformance ? "Perf: MAX" : "Perf: QUALITY";
-
-            if (perfButtonImage != null)
-            {
-                UiTheme.ApplyFlatFill(
-                    perfButtonImage,
-                    maxPerformance ? UiTheme.Success : UiTheme.ButtonNormal);
-            }
         }
 
         private static void EnsureEventSystemExists()

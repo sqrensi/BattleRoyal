@@ -25,16 +25,24 @@ namespace ShooterPrototype.Player
         [Header("IK")]
         [SerializeField] private float handIkWeight = 1f;
         [SerializeField] private bool rotateShoulder = true;
-        [SerializeField] private int positionSolveIterations = 6;
+        [SerializeField] private int positionSolveIterations = 4;
         [SerializeField] private float maxReachRotationWeight = 0.05f;
         [SerializeField] private bool applyIkBeforeRender = false;
 
         private RemoteWeaponPresentation weaponPresentation;
+        private RemoteThirdPersonPlayerBootstrap remoteBootstrap;
         private bool hasValidatedArmChain;
         private bool hasBindSegmentLengths;
         private int lastIkAppliedFrame = -1;
         private readonly List<Transform> ikChain = new List<Transform>(4);
         private readonly float[] segmentLengths = new float[3];
+        private readonly Vector3[] fabrikPositionScratch = new Vector3[4];
+        private readonly Quaternion[] chainRotationScratch = new Quaternion[4];
+        private bool hasCachedHandIkPose;
+        private Quaternion cachedShoulderRotation;
+        private Quaternion cachedUpperArmRotation;
+        private Quaternion cachedLowerArmRotation;
+        private Quaternion cachedHandRotation;
 
         public void Configure(Transform syntyVisualRoot, Transform leftTarget)
         {
@@ -51,7 +59,7 @@ namespace ShooterPrototype.Player
             this.enabled = enabled;
             if (!enabled)
             {
-                leftGripTarget = null;
+                hasCachedHandIkPose = false;
             }
         }
 
@@ -72,9 +80,13 @@ namespace ShooterPrototype.Player
             hasValidatedArmChain = IsValidArmChain(leftUpperArm, leftLowerArm, leftHand);
         }
 
+        private int ikFrameOffset;
+
         private void Awake()
         {
             weaponPresentation = GetComponent<RemoteWeaponPresentation>();
+            remoteBootstrap = GetComponent<RemoteThirdPersonPlayerBootstrap>();
+            ikFrameOffset = GetInstanceID() & 3;
         }
 
         private void OnEnable()
@@ -86,6 +98,12 @@ namespace ShooterPrototype.Player
             }
         }
 
+        private bool ShouldRunFullIkSolveThisFrame()
+        {
+            var interval = Mathf.Max(1, GameplayPerformanceOptions.BotPresentationSolveIntervalFrames);
+            return (Time.frameCount + ikFrameOffset) % interval == 0;
+        }
+
         private void OnDisable()
         {
             Application.onBeforeRender -= HandleBeforeRender;
@@ -93,7 +111,7 @@ namespace ShooterPrototype.Player
 
         private void LateUpdate()
         {
-            if (GetComponent<RemoteThirdPersonPlayerBootstrap>() == null)
+            if (remoteBootstrap == null)
             {
                 return;
             }
@@ -113,7 +131,12 @@ namespace ShooterPrototype.Player
 
         private void ApplyLeftHandIkIfNeeded()
         {
-            if (GetComponent<RemoteThirdPersonPlayerBootstrap>() == null)
+            if (remoteBootstrap == null)
+            {
+                return;
+            }
+
+            if (!ShouldApplyHandIkThisFrame())
             {
                 return;
             }
@@ -124,14 +147,31 @@ namespace ShooterPrototype.Player
             }
 
             lastIkAppliedFrame = Time.frameCount;
-            ApplyLeftHandIk();
+
+            if (!PrepareHandIkContext())
+            {
+                hasCachedHandIkPose = false;
+                return;
+            }
+
+            if (ShouldRunFullIkSolveThisFrame())
+            {
+                ApplyLeftHandIk();
+                CacheHandIkPose();
+                return;
+            }
+
+            if (hasCachedHandIkPose)
+            {
+                ApplyCachedHandIkPose();
+            }
         }
 
-        private void ApplyLeftHandIk()
+        private bool PrepareHandIkContext()
         {
             if (handIkWeight <= 0.0001f)
             {
-                return;
+                return false;
             }
 
             if (weaponPresentation == null)
@@ -142,21 +182,79 @@ namespace ShooterPrototype.Player
             if (weaponPresentation != null &&
                 (!weaponPresentation.HasWeapon || weaponPresentation.IsHolstered))
             {
-                return;
+                return false;
             }
 
             EnsureArmChain();
             if (leftUpperArm == null || leftLowerArm == null || leftHand == null || ikChain.Count < 3)
             {
-                return;
+                return false;
             }
 
             ResolveLeftGripTarget();
-            if (leftGripTarget == null)
+            return leftGripTarget != null;
+        }
+
+        private void CacheHandIkPose()
+        {
+            if (rotateShoulder && leftShoulder != null)
+            {
+                cachedShoulderRotation = leftShoulder.rotation;
+            }
+
+            if (leftUpperArm != null)
+            {
+                cachedUpperArmRotation = leftUpperArm.rotation;
+            }
+
+            if (leftLowerArm != null)
+            {
+                cachedLowerArmRotation = leftLowerArm.rotation;
+            }
+
+            if (leftHand != null)
+            {
+                cachedHandRotation = leftHand.rotation;
+            }
+
+            hasCachedHandIkPose = true;
+        }
+
+        private void ApplyCachedHandIkPose()
+        {
+            if (!hasCachedHandIkPose)
             {
                 return;
             }
 
+            if (rotateShoulder && leftShoulder != null)
+            {
+                leftShoulder.rotation = cachedShoulderRotation;
+            }
+
+            if (leftUpperArm != null)
+            {
+                leftUpperArm.rotation = cachedUpperArmRotation;
+            }
+
+            if (leftLowerArm != null)
+            {
+                leftLowerArm.rotation = cachedLowerArmRotation;
+            }
+
+            if (leftHand != null)
+            {
+                leftHand.rotation = cachedHandRotation;
+            }
+        }
+
+        private bool ShouldApplyHandIkThisFrame()
+        {
+            return EnemyPresentationVisibilityUtility.IsPresentationActive(gameObject);
+        }
+
+        private void ApplyLeftHandIk()
+        {
             EnsureFacingRoot();
             RebuildIkChain();
             CacheSegmentLengths(forceRecache: !hasBindSegmentLengths);
@@ -164,7 +262,7 @@ namespace ShooterPrototype.Player
             var targetPosition = leftGripTarget.position;
             var weight = Mathf.Clamp01(handIkWeight);
             var oldHandRot = leftHand.rotation;
-            var oldRotations = CaptureChainRotations();
+            CaptureChainRotations();
 
             SolveHandPositionIk(targetPosition);
 
@@ -177,7 +275,7 @@ namespace ShooterPrototype.Player
 
             if (weight < 0.999f)
             {
-                RestoreChainRotations(oldRotations, weight);
+                RestoreChainRotations(weight);
                 leftHand.rotation = Quaternion.Slerp(oldHandRot, leftHand.rotation, weight);
             }
         }
@@ -189,7 +287,10 @@ namespace ShooterPrototype.Player
                 RotateShoulderTowardTarget(targetPosition);
             }
 
-            var iterations = Mathf.Clamp(positionSolveIterations, 1, 12);
+            var iterations = Mathf.Clamp(
+                Mathf.Min(positionSolveIterations, GameplayPerformanceOptions.EnemyHandIkPositionSolveIterations),
+                1,
+                12);
             var poleHint = ComputeElbowPoleHint(targetPosition);
             SolveFabrikChain(targetPosition, poleHint, iterations);
         }
@@ -222,7 +323,7 @@ namespace ShooterPrototype.Player
 
             var segmentCount = jointCount - 1;
             var rootPos = ikChain[0].position;
-            var positions = new Vector3[jointCount];
+            var positions = fabrikPositionScratch;
             for (var i = 0; i < jointCount; i++)
             {
                 positions[i] = ikChain[i].position;
@@ -349,22 +450,19 @@ namespace ShooterPrototype.Player
             }
         }
 
-        private Quaternion[] CaptureChainRotations()
+        private void CaptureChainRotations()
         {
-            var rotations = new Quaternion[ikChain.Count];
             for (var i = 0; i < ikChain.Count; i++)
             {
-                rotations[i] = ikChain[i].rotation;
+                chainRotationScratch[i] = ikChain[i].rotation;
             }
-
-            return rotations;
         }
 
-        private void RestoreChainRotations(Quaternion[] rotations, float weight)
+        private void RestoreChainRotations(float weight)
         {
             for (var i = 0; i < ikChain.Count; i++)
             {
-                ikChain[i].rotation = Quaternion.Slerp(rotations[i], ikChain[i].rotation, weight);
+                ikChain[i].rotation = Quaternion.Slerp(chainRotationScratch[i], ikChain[i].rotation, weight);
             }
         }
 

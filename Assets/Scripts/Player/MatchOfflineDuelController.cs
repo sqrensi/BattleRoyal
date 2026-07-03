@@ -324,6 +324,11 @@ namespace ShooterPrototype.Player
             bot?.WarpTo(GetSpawnPosition(botTeamIndex, botSpawnSlot), GetSpawnRotation(botTeamIndex, botSpawnSlot));
             bot?.PrepareCombatRound();
             bot?.SetCombatTarget(localPlayer.transform);
+            if (bot != null)
+            {
+                DuelBotLineOfSight.PrepareScene(bot.gameObject.scene);
+            }
+
             bot?.SetCombatEnabled(true);
 
             SetMovementLocked(false);
