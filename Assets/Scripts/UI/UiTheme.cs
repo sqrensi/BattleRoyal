@@ -100,8 +100,8 @@ namespace ShooterPrototype.UI
         public static readonly Color CurrencyAccent = new Color(0.92f, 0.76f, 0.28f, 0.98f);
         public static readonly Color PriceBadgeFill = new Color(0.06f, 0.055f, 0.048f, 0.88f);
         public static readonly Color PriceBadgeFillMuted = new Color(0.05f, 0.048f, 0.044f, 0.78f);
-        public static readonly Color PriceBadgeAffordableFill = new Color(0.11f, 0.10f, 0.08f, 0.9f);
-        public static readonly Color PriceBadgeAffordableBorder = new Color(0.48f, 0.38f, 0.14f, 0.55f);
+        public static readonly Color PriceBadgeAffordableFill = new Color(0.10f, 0.095f, 0.085f, 0.9f);
+        public static readonly Color PriceBadgeAffordableBorder = new Color(0.36f, 0.30f, 0.14f, 0.42f);
 
         public static readonly Color EquippedBorder = new Color(0.98f, 0.82f, 0.24f, 1f);
         public static readonly Color EquippedBorderBright = new Color(1f, 0.92f, 0.42f, 1f);

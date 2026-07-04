@@ -36,6 +36,8 @@ namespace ShooterPrototype.Player
         private WeaponKind? pinnedLobbyWeaponKind;
         private Coroutine equipWeaponCoroutine;
         private Coroutine spawnPreviewCoroutine;
+        private Coroutine revealPreviewCoroutine;
+        private Transform cachedSpawnPoint;
 
         private bool allowPreview;
         private bool previewCharacterRevealed;
@@ -169,6 +171,15 @@ namespace ShooterPrototype.Player
             }
         }
 
+        private void CancelRevealPreviewCoroutine()
+        {
+            if (revealPreviewCoroutine != null)
+            {
+                StopCoroutine(revealPreviewCoroutine);
+                revealPreviewCoroutine = null;
+            }
+        }
+
         private IEnumerator SpawnPreviewWhenReady()
         {
             for (var attempt = 0; attempt < 90; attempt++)
@@ -201,27 +212,23 @@ namespace ShooterPrototype.Player
                 yield return null;
             }
 
-            if (previewInstance != null && previewCharacterRevealed)
+            if (previewInstance != null)
             {
-                ApplyPreviewAppearance(previewInstance, keepVisible: true);
-                spawnPreviewCoroutine = null;
-                yield break;
+                DestroyPreviewInstance();
             }
 
-            if (previewInstance == null)
-            {
-                SpawnPreviewInternal();
-            }
-            else
-            {
-                RefreshSkins();
-            }
+            CleanupSpawnPointOrphans();
+            SpawnPreviewInternal();
         }
 
         private void OnEnable()
         {
             PlayerProfileService.ProfileSynced += HandleProfileSynced;
             PlayerSkinOwnershipService.EquipmentChanged += HandleEquipmentChanged;
+            if (isActiveAndEnabled)
+            {
+                CleanupSpawnPointOrphans();
+            }
         }
 
         private void OnDisable()
@@ -229,13 +236,21 @@ namespace ShooterPrototype.Player
             PlayerProfileService.ProfileSynced -= HandleProfileSynced;
             PlayerSkinOwnershipService.EquipmentChanged -= HandleEquipmentChanged;
             CancelSpawnPreviewCoroutine();
+            CancelRevealPreviewCoroutine();
             if (equipWeaponCoroutine != null)
             {
                 StopCoroutine(equipWeaponCoroutine);
                 equipWeaponCoroutine = null;
             }
 
-            DestroyPreviewInstance();
+            if (previewInstance != null)
+            {
+                Destroy(previewInstance);
+                previewInstance = null;
+                previewCharacterRevealed = false;
+            }
+
+            cachedSpawnPoint = null;
         }
 
         private void HandleProfileSynced()
@@ -314,9 +329,8 @@ namespace ShooterPrototype.Player
                 previewInstance.name = PreviewObjectName;
                 previewInstance.transform.SetParent(spawnPoint, true);
 
-                SetPreviewBodyHidden(previewInstance, hidden: true);
                 WireAsMenuPreview(previewInstance);
-                ApplyPreviewAppearance(previewInstance, keepVisible: false);
+                ApplyPreviewAppearance(previewInstance);
                 ApplyIdlePose(previewInstance);
                 if (pinnedLobbyWeaponKind.HasValue)
                 {
@@ -482,16 +496,67 @@ namespace ShooterPrototype.Player
 
         private Transform ResolveSpawnPoint()
         {
+            if (cachedSpawnPoint != null)
+            {
+                return cachedSpawnPoint;
+            }
+
             if (!string.IsNullOrWhiteSpace(spawnPointName))
             {
-                var named = GameObject.Find(spawnPointName);
-                if (named != null)
+                var found = FindTransformByNameIncludingInactive(spawnPointName);
+                if (found != null)
                 {
-                    return named.transform;
+                    cachedSpawnPoint = found;
+                    return cachedSpawnPoint;
                 }
             }
 
             return transform;
+        }
+
+        private Transform FindTransformByNameIncludingInactive(string targetName)
+        {
+            var scene = gameObject.scene;
+            if (!scene.IsValid())
+            {
+                return null;
+            }
+
+            var roots = scene.GetRootGameObjects();
+            for (var i = 0; i < roots.Length; i++)
+            {
+                var found = FindTransformRecursive(roots[i].transform, targetName);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+
+        private static Transform FindTransformRecursive(Transform current, string targetName)
+        {
+            if (current == null)
+            {
+                return null;
+            }
+
+            if (string.Equals(current.name, targetName, System.StringComparison.Ordinal))
+            {
+                return current;
+            }
+
+            for (var i = 0; i < current.childCount; i++)
+            {
+                var found = FindTransformRecursive(current.GetChild(i), targetName);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+
+            return null;
         }
 
         private void ApplyPreviewAppearance(GameObject root, bool keepVisible = false)
@@ -501,28 +566,47 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (!keepVisible)
-            {
-                SetPreviewBodyHidden(root, hidden: true);
-            }
+            CancelRevealPreviewCoroutine();
+            SetPreviewRenderersHidden(root, hidden: true);
+            SetPreviewBodyHidden(root, hidden: false);
 
             ApplyMenuPreviewBootstrap(root, activateBody: false);
             ApplyCharacterModelAndSkins(root);
             ApplyMenuPreviewWeaponSetup(root);
+            SetPreviewRenderersHidden(root, hidden: true);
 
             if (!IsPreviewAssemblyComplete(root))
             {
-                return;
-            }
-
-            if (keepVisible)
-            {
-                EnsurePreviewBodyShown(root);
+                revealPreviewCoroutine = StartCoroutine(RevealPreviewWhenAssemblyReady(root));
                 return;
             }
 
             RevealPreviewCharacter(root);
             previewCharacterRevealed = true;
+        }
+
+        private IEnumerator RevealPreviewWhenAssemblyReady(GameObject root)
+        {
+            for (var attempt = 0; attempt < 60; attempt++)
+            {
+                if (!allowPreview || root == null)
+                {
+                    revealPreviewCoroutine = null;
+                    yield break;
+                }
+
+                if (IsPreviewAssemblyComplete(root))
+                {
+                    RevealPreviewCharacter(root);
+                    previewCharacterRevealed = true;
+                    revealPreviewCoroutine = null;
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            revealPreviewCoroutine = null;
         }
 
         private void ApplyCharacterModelAndSkins(GameObject root)
@@ -583,7 +667,28 @@ namespace ShooterPrototype.Player
 
         private static void RevealPreviewCharacter(GameObject root)
         {
+            SetPreviewBodyHidden(root, hidden: false);
             EnsurePreviewBodyShown(root);
+        }
+
+        private static void SetPreviewRenderersHidden(GameObject root, bool hidden)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            for (var i = 0; i < renderers.Length; i++)
+            {
+                var renderer = renderers[i];
+                if (renderer == null)
+                {
+                    continue;
+                }
+
+                renderer.enabled = !hidden;
+            }
         }
 
         private static void EnsurePreviewBodyShown(GameObject root)
@@ -794,14 +899,76 @@ namespace ShooterPrototype.Player
 
         private void DestroyPreviewInstance()
         {
+            CancelRevealPreviewCoroutine();
+
             if (previewInstance == null)
             {
+                if (isActiveAndEnabled)
+                {
+                    CleanupSpawnPointOrphans();
+                }
+
                 return;
             }
 
             Destroy(previewInstance);
             previewInstance = null;
             previewCharacterRevealed = false;
+
+            if (isActiveAndEnabled)
+            {
+                CleanupSpawnPointOrphans();
+            }
+        }
+
+        private void CleanupSpawnPointOrphans()
+        {
+            if (!isActiveAndEnabled)
+            {
+                return;
+            }
+
+            var spawnPoint = ResolveSpawnPoint();
+            if (spawnPoint == null)
+            {
+                return;
+            }
+
+            for (var i = spawnPoint.childCount - 1; i >= 0; i--)
+            {
+                var child = spawnPoint.GetChild(i);
+                if (child == null)
+                {
+                    continue;
+                }
+
+                if (previewInstance != null && child.gameObject == previewInstance)
+                {
+                    continue;
+                }
+
+                if (IsMenuPreviewInstance(child.gameObject) ||
+                    IsOrphanedAttachmentRoot(child))
+                {
+                    Destroy(child.gameObject);
+                }
+            }
+        }
+
+        private static bool IsOrphanedAttachmentRoot(Transform child)
+        {
+            if (child == null)
+            {
+                return false;
+            }
+
+            if (string.Equals(child.name, "face", System.StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(child.name, "hair", System.StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return child.name.IndexOf("Attach", System.StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 }

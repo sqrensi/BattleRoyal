@@ -572,15 +572,22 @@ namespace ShooterPrototype.UI
 
             var rect = statusText.rectTransform;
             rect.SetParent(canvasRect, false);
-            rect.anchorMin = new Vector2(0.5f, 0.5f);
-            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.anchorMin = new Vector2(0.5f, 0f);
+            rect.anchorMax = new Vector2(0.5f, 0f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = Vector2.zero;
+
+            var buttonCenterY = edgeMargin + startButtonHeight * 0.5f;
+            if (startButtonRect != null)
+            {
+                buttonCenterY = startButtonRect.anchoredPosition.y + startButtonRect.sizeDelta.y * 0.5f;
+            }
+
+            rect.anchoredPosition = new Vector2(0f, buttonCenterY);
             rect.sizeDelta = new Vector2(760f, statusHeight + 12f);
 
             statusText.alignment = TextAlignmentOptions.Center;
             statusText.fontSize = statusFontSize;
-            UiTheme.ApplyTmp(statusText, UiTextRole.Body);
+            UiTheme.ApplyTmp(statusText, UiTextRole.Accent);
             statusText.enableWordWrapping = true;
             statusText.overflowMode = TextOverflowModes.Ellipsis;
             statusText.raycastTarget = false;

@@ -127,10 +127,7 @@ namespace ShooterPrototype.UI
             SetStartButtonState(isQueueing: false, interactable: true);
             RefreshSelectedCharacterLabel();
             RefreshServerSyncUiState();
-            if (PlayerProfileService.IsServerSynced)
-            {
-                RefreshPlayerPreview(true);
-            }
+            RefreshPlayerPreview(true);
         }
 
         private void OnDisable()
@@ -313,6 +310,10 @@ namespace ShooterPrototype.UI
             }
 
             statusText.text = message;
+            var isSearchingStatus = isQueueing ||
+                                    (!string.IsNullOrWhiteSpace(message) &&
+                                     message.IndexOf("Поиск матча", System.StringComparison.OrdinalIgnoreCase) >= 0);
+            UiTheme.ApplyTmp(statusText, isSearchingStatus ? UiTextRole.Accent : UiTextRole.Body);
             statusText.gameObject.SetActive(true);
         }
 
@@ -997,11 +998,10 @@ namespace ShooterPrototype.UI
             if (!preview.IsPreviewActive)
             {
                 preview.SetAllowPreview(true);
+                return;
             }
-            else if (applyServerProfile)
-            {
-                preview.RefreshSkins();
-            }
+
+            preview.Refresh();
         }
 
         private void EnsureAmbience()
