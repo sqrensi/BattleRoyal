@@ -13,7 +13,8 @@ namespace ShooterPrototype.UI
         Shop = 2,
         Achievements = 3,
         Stats = 4,
-        Settings = 5
+        Settings = 5,
+        DailyRewards = 6
     }
 
     [DisallowMultipleComponent]
@@ -22,6 +23,7 @@ namespace ShooterPrototype.UI
         [SerializeField] private float fadeDuration = 0.38f;
 
         private readonly List<CanvasGroup> mainMenuGroups = new List<CanvasGroup>();
+        private MainMenuController menuController;
         private MainMenuCameraMotion cameraMotion;
         private MainMenuUiSoundController uiSound;
         private CanvasGroup backButtonGroup;
@@ -31,9 +33,11 @@ namespace ShooterPrototype.UI
         private MainMenuAchievementsPanel achievementsPanel;
         private MainMenuStatsPanel statsPanel;
         private MainMenuSettingsPanel settingsPanel;
+        private MainMenuDailyRewardsPanel dailyRewardsPanel;
         private Button inventoryButton;
         private Button shopButton;
         private Button achievementsButton;
+        private Button dailyRewardsButton;
         private Button statsButton;
         private Button settingsButton;
         private MainMenuPanelMode activePanel = MainMenuPanelMode.None;
@@ -45,8 +49,10 @@ namespace ShooterPrototype.UI
         public bool IsAchievementsOpen => activePanel == MainMenuPanelMode.Achievements;
         public bool IsStatsOpen => activePanel == MainMenuPanelMode.Stats;
         public bool IsSettingsOpen => activePanel == MainMenuPanelMode.Settings;
+        public bool IsDailyRewardsOpen => activePanel == MainMenuPanelMode.DailyRewards;
 
         public void Configure(
+            MainMenuController menu,
             MainMenuCameraMotion camera,
             MainMenuUiSoundController sound,
             CanvasGroup topNavGroup,
@@ -56,6 +62,7 @@ namespace ShooterPrototype.UI
             Button inventoryButton,
             Button shopButton,
             Button achievementsButton,
+            Button dailyRewardsButton,
             Button statsButton,
             Button settingsButton,
             Button back,
@@ -65,8 +72,10 @@ namespace ShooterPrototype.UI
             MainMenuAchievementsPanel achievements,
             MainMenuStatsPanel stats,
             MainMenuSettingsPanel settings,
+            MainMenuDailyRewardsPanel dailyRewards,
             CanvasGroup nicknameGroup = null)
         {
+            menuController = menu;
             cameraMotion = camera;
             uiSound = sound;
             backButton = back;
@@ -76,9 +85,11 @@ namespace ShooterPrototype.UI
             achievementsPanel = achievements;
             statsPanel = stats;
             settingsPanel = settings;
+            dailyRewardsPanel = dailyRewards;
             this.inventoryButton = inventoryButton;
             this.shopButton = shopButton;
             this.achievementsButton = achievementsButton;
+            this.dailyRewardsButton = dailyRewardsButton;
             this.statsButton = statsButton;
             this.settingsButton = settingsButton;
 
@@ -123,6 +134,11 @@ namespace ShooterPrototype.UI
                 achievementsButton.onClick.AddListener(EnterAchievements);
             }
 
+            if (dailyRewardsButton != null)
+            {
+                dailyRewardsButton.onClick.AddListener(EnterDailyRewards);
+            }
+
             if (statsButton != null)
             {
                 statsButton.onClick.AddListener(EnterStats);
@@ -149,7 +165,7 @@ namespace ShooterPrototype.UI
 
         public void EnterShop()
         {
-            if (!PlayerProfileService.IsServerSynced)
+            if (!TryOpenServerSyncedPanel(MainMenuPanelMode.Shop))
             {
                 return;
             }
@@ -159,7 +175,7 @@ namespace ShooterPrototype.UI
 
         public void EnterInventory()
         {
-            if (!PlayerProfileService.IsServerSynced)
+            if (!TryOpenServerSyncedPanel(MainMenuPanelMode.Inventory))
             {
                 return;
             }
@@ -172,27 +188,40 @@ namespace ShooterPrototype.UI
             OpenPanel(MainMenuPanelMode.Achievements);
         }
 
+        public void EnterDailyRewards()
+        {
+            OpenPanel(MainMenuPanelMode.DailyRewards);
+        }
+
         public void EnterStats()
         {
+            if (!TryOpenServerSyncedPanel(MainMenuPanelMode.Stats))
+            {
+                return;
+            }
+
             OpenPanel(MainMenuPanelMode.Stats);
         }
 
         public void SetServerSyncRestrictions(bool serverSynced)
         {
-            if (shopButton != null)
+            // Кнопки остаются кликабельными — при отсутствии синка показывается запрос авторизации.
+        }
+
+        public void OpenPanelDirect(MainMenuPanelMode panelMode)
+        {
+            OpenPanel(panelMode);
+        }
+
+        private bool TryOpenServerSyncedPanel(MainMenuPanelMode panelMode)
+        {
+            if (PlayerProfileService.IsServerSynced)
             {
-                shopButton.interactable = serverSynced;
+                return true;
             }
 
-            if (inventoryButton != null)
-            {
-                inventoryButton.interactable = serverSynced;
-            }
-
-            if (statsButton != null)
-            {
-                statsButton.interactable = serverSynced;
-            }
+            menuController?.RequestServerSyncedPanel(panelMode);
+            return false;
         }
 
         public void EnterSettings()
@@ -236,6 +265,10 @@ namespace ShooterPrototype.UI
             else if (activePanel == MainMenuPanelMode.Settings)
             {
                 settingsPanel?.Hide();
+            }
+            else if (activePanel == MainMenuPanelMode.DailyRewards)
+            {
+                dailyRewardsPanel?.Hide();
             }
 
             activePanel = MainMenuPanelMode.None;
@@ -317,6 +350,10 @@ namespace ShooterPrototype.UI
                 {
                     settingsPanel?.Show();
                 }
+                else if (panelMode == MainMenuPanelMode.DailyRewards)
+                {
+                    dailyRewardsPanel?.Show();
+                }
 
                 return;
             }
@@ -342,6 +379,10 @@ namespace ShooterPrototype.UI
             else if (activePanel == MainMenuPanelMode.Settings)
             {
                 settingsPanel?.Hide();
+            }
+            else if (activePanel == MainMenuPanelMode.DailyRewards)
+            {
+                dailyRewardsPanel?.Hide();
             }
 
             if (wasInventory && panelMode != MainMenuPanelMode.Inventory)
@@ -372,6 +413,10 @@ namespace ShooterPrototype.UI
             {
                 settingsPanel?.Show();
             }
+            else if (panelMode == MainMenuPanelMode.DailyRewards)
+            {
+                dailyRewardsPanel?.Show();
+            }
 
             StartTransition(showBackButton: true);
         }
@@ -388,9 +433,9 @@ namespace ShooterPrototype.UI
 
         private IEnumerator TransitionRoutine(bool showBackButton)
         {
-            var fromMain = showBackButton ? 1f : 0f;
+            var fromMain = GetGroupsAlpha(mainMenuGroups);
             var toMain = showBackButton ? 0f : 1f;
-            var fromBack = showBackButton ? 0f : 1f;
+            var fromBack = backButtonGroup != null ? backButtonGroup.alpha : 0f;
             var toBack = showBackButton ? 1f : 0f;
 
             if (showBackButton)
@@ -457,6 +502,24 @@ namespace ShooterPrototype.UI
             {
                 group.alpha = alpha;
             }
+        }
+
+        private static float GetGroupsAlpha(List<CanvasGroup> groups)
+        {
+            if (groups == null)
+            {
+                return 1f;
+            }
+
+            for (var i = 0; i < groups.Count; i++)
+            {
+                if (groups[i] != null)
+                {
+                    return groups[i].alpha;
+                }
+            }
+
+            return 1f;
         }
 
         private static void SetGroupsInteractable(List<CanvasGroup> groups, bool interactable)

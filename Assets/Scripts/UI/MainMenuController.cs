@@ -52,6 +52,7 @@ namespace ShooterPrototype.UI
 
         private Coroutine queuePollingCoroutine;
         private Coroutine profileSyncCoroutine;
+        private Coroutine serverSyncedPanelCoroutine;
         private bool isQueueing;
         private string currentTicketId = string.Empty;
         private float queueSearchStartedAtUnscaled;
@@ -64,6 +65,7 @@ namespace ShooterPrototype.UI
 
         public Button StartButton => startButton;
         public TMP_Text StatusText => statusText;
+        public bool IsProfileSyncInProgress => profileSyncCoroutine != null;
 
         private void Awake()
         {
@@ -88,7 +90,6 @@ namespace ShooterPrototype.UI
             SetStatus(idleStatusText);
             SetStartButtonState(isQueueing: false, interactable: true);
             RefreshSelectedCharacterLabel();
-            EnsurePlayerPreview();
             EnsureAmbience();
             EnsureCameraMotion();
             EnsureSections();
@@ -162,8 +163,11 @@ namespace ShooterPrototype.UI
         private void HandleProfileSynced()
         {
             RefreshServerSyncUiState();
+            GetComponent<MainMenuUiLayout>()?.TryShowDailyRewardLoginPrompt();
+
             if (!PlayerProfileService.IsServerSynced)
             {
+                RefreshPlayerPreview(true);
                 return;
             }
 
@@ -244,7 +248,7 @@ namespace ShooterPrototype.UI
             if (selectedMode != MainMenuGameMode.Duel1v1 &&
                 selectedMode != MainMenuGameMode.Deathmatch)
             {
-                SetStatus("Онлайн доступны режимы «1 на 1» и «Дэзматч».");
+                SetStatus("Онлайн доступны режимы «1 на 1» и «Бой насмерть».", showInUi: false);
                 return;
             }
 
@@ -355,6 +359,25 @@ namespace ShooterPrototype.UI
             isQueueing = true;
             SetStartButtonState(isQueueing: true, interactable: true);
             SetStatus(searchingStatusText);
+
+            var authGranted = false;
+            yield return YandexGamesIntegrationService.RequestAuthorizationIfNeeded(
+                this,
+                YandexGamesIntegrationService.OnlinePlayAuthReason,
+                granted => authGranted = granted);
+            if (!authGranted)
+            {
+                isQueueing = false;
+                currentTicketId = string.Empty;
+                SetStatus("Онлайн-матч доступен после авторизации через Яндекс.");
+                SetStartButtonState(isQueueing: false, interactable: true);
+                yield break;
+            }
+
+            yield return YandexGamesIntegrationService.PrepareAccountAndBindProfile(
+                this,
+                playerId => localPlayerId = playerId);
+            localPlayerId = PlayerIdentityService.GetOrCreatePlayerId();
 
             if (profileApiClient != null)
             {
@@ -556,15 +579,25 @@ namespace ShooterPrototype.UI
 
             if (startButtonText != null)
             {
-                startButtonText.text = isQueueing ? "Отмена" : "Играть";
+                startButtonText.text = isQueueing ? "Отмена" : "Поиск матча";
             }
             else if (startButton != null)
             {
                 var label = startButton.GetComponentInChildren<TMP_Text>(true);
                 if (label != null)
                 {
-                    label.text = isQueueing ? "Отмена" : "Играть";
+                    label.text = isQueueing ? "Отмена" : "Поиск матча";
                 }
+            }
+
+            if (isQueueing)
+            {
+                SetStatus(searchingStatusText);
+            }
+            else if (statusText != null &&
+                     string.Equals(statusText.text, searchingStatusText, System.StringComparison.Ordinal))
+            {
+                SetStatus(idleStatusText);
             }
         }
 
@@ -586,6 +619,58 @@ namespace ShooterPrototype.UI
         public void RetryServerConnection()
         {
             BeginProfileSync(isManualRetry: true);
+        }
+
+        public void RequestServerSyncedPanel(MainMenuPanelMode panelMode)
+        {
+            if (PlayerProfileService.IsServerSynced)
+            {
+                GetComponent<MainMenuSectionController>()?.OpenPanelDirect(panelMode);
+                return;
+            }
+
+            if (serverSyncedPanelCoroutine != null)
+            {
+                StopCoroutine(serverSyncedPanelCoroutine);
+            }
+
+            serverSyncedPanelCoroutine = StartCoroutine(RequestServerSyncedPanelRoutine(panelMode));
+        }
+
+        private IEnumerator RequestServerSyncedPanelRoutine(MainMenuPanelMode panelMode)
+        {
+            EnsureDependencies();
+
+            var authGranted = false;
+            yield return YandexGamesIntegrationService.RequestAuthorizationIfNeeded(
+                this,
+                YandexGamesIntegrationService.ProfileSyncAuthReason,
+                granted => authGranted = granted);
+
+            if (!authGranted)
+            {
+                serverSyncedPanelCoroutine = null;
+                yield break;
+            }
+
+            localPlayerId = PlayerIdentityService.GetOrCreatePlayerId();
+            ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Загрузка профиля...");
+            yield return SyncProfileWithRetry(4, 2f);
+            RefreshServerSyncUiState();
+
+            if (PlayerProfileService.IsServerSynced)
+            {
+                ApplyServerConnectionState(MainMenuServerConnectionState.Connected);
+                RefreshPlayerPreview(true);
+                RefreshNicknameEditor();
+                GetComponent<MainMenuSectionController>()?.OpenPanelDirect(panelMode);
+            }
+            else
+            {
+                HandleServerUnavailable(ResolveServerUnavailableMessage());
+            }
+
+            serverSyncedPanelCoroutine = null;
         }
 
         private void BeginProfileSync(bool isManualRetry)
@@ -635,10 +720,26 @@ namespace ShooterPrototype.UI
                     yield break;
                 }
 
-                ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Авторизация...");
                 yield return YandexGamesIntegrationService.PrepareAccountAndBindProfile(
                     this,
                     playerId => localPlayerId = playerId);
+
+                if (isManualRetry)
+                {
+                    var authGranted = false;
+                    yield return YandexGamesIntegrationService.RequestAuthorizationIfNeeded(
+                        this,
+                        YandexGamesIntegrationService.ProfileSyncAuthReason,
+                        granted => authGranted = granted);
+                    if (!authGranted)
+                    {
+                        HandleServerUnavailable("Синхронизация профиля отменена.");
+                        yield break;
+                    }
+
+                    localPlayerId = PlayerIdentityService.GetOrCreatePlayerId();
+                }
+
                 ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Загрузка профиля...");
                 yield return SyncProfileWithRetry(isManualRetry ? 4 : 2, isManualRetry ? 2f : 1f);
 
@@ -653,9 +754,9 @@ namespace ShooterPrototype.UI
                     yield break;
                 }
 
-                SetStatus("Сервер недоступен. Доступны тренировка и челлендж.");
+                SetStatus("Сервер недоступен. Доступны тренировка и челлендж.", showInUi: false);
                 HandleServerUnavailable(ResolveServerUnavailableMessage());
-                RefreshPlayerPreview(false);
+                RefreshPlayerPreview(true);
             }
             finally
             {
@@ -669,7 +770,7 @@ namespace ShooterPrototype.UI
             var displayMessage = string.IsNullOrWhiteSpace(message)
                 ? "Сервер недоступен"
                 : message;
-            SetStatus(displayMessage);
+            SetStatus(displayMessage, showInUi: false);
             ApplyServerConnectionState(MainMenuServerConnectionState.Unavailable, displayMessage);
         }
 
@@ -890,17 +991,16 @@ namespace ShooterPrototype.UI
             var preview = GetComponent<MainMenuPlayerPreview>();
             if (preview == null)
             {
-                return;
+                preview = gameObject.AddComponent<MainMenuPlayerPreview>();
             }
 
-            preview.SetAllowPreview(true);
-            if (applyServerProfile)
+            if (!preview.IsPreviewActive)
+            {
+                preview.SetAllowPreview(true);
+            }
+            else if (applyServerProfile)
             {
                 preview.RefreshSkins();
-            }
-            else
-            {
-                preview.Refresh();
             }
         }
 

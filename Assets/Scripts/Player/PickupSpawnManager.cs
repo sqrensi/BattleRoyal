@@ -746,9 +746,6 @@ namespace ShooterPrototype.Player
 
 
 
-            Debug.Log(
-                $"[PickupSpawnManager] Collected {zones.Length} zone(s), created {createdSlots} spawn slot(s).");
-
             RebuildSlotLookup();
 
         }
@@ -1172,13 +1169,8 @@ namespace ShooterPrototype.Player
             ApplyTrainingSpawnConfigurationIfNeeded();
 
             if (spawnSlots == null || spawnSlots.Count == 0)
-
             {
-
-                Debug.LogWarning("[PickupSpawnManager] SpawnAll skipped: no spawn slots.");
-
                 return;
-
             }
 
 
@@ -1236,14 +1228,6 @@ namespace ShooterPrototype.Player
                 }
 
             }
-
-
-
-            Debug.Log(
-
-                $"[PickupSpawnManager] SpawnAll finished: {spawnedCount} spawned, {skippedCount} skipped " +
-
-                $"(slots={spawnSlots.Count}).");
 
         }
 

@@ -1,3 +1,4 @@
+using ShooterPrototype.Platform;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -125,7 +126,7 @@ namespace ShooterPrototype.UI
             titleRect.anchoredPosition = new Vector2(0f, -28f);
             titleRect.sizeDelta = new Vector2(500f, 44f);
             var titleText = titleObject.AddComponent<TextMeshProUGUI>();
-            titleText.text = "Загрузка";
+            titleText.text = GameBranding.GameTitleUpper;
             titleText.fontSize = 32f;
             titleText.alignment = TextAlignmentOptions.Center;
             UiTheme.ApplyMilitaryHeader(titleText, UiTextRole.Title);

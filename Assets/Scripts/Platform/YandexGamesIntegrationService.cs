@@ -11,6 +11,12 @@ namespace ShooterPrototype.Platform
         private const float SdkTimeoutSeconds = 15f;
         private const float AuthTimeoutSeconds = 45f;
 
+        public const string OnlinePlayAuthReason =
+            "Для онлайн-матчей нужна авторизация через Яндекс: сохранение прогресса, рейтинга, инвентаря и синхронизация профиля между устройствами.";
+
+        public const string ProfileSyncAuthReason =
+            "Для синхронизации профиля с сервером нужна авторизация через Яндекс: загрузка покупок, скинов, рейтинга и сохранение прогресса в облаке.";
+
         private static bool gameReadySent;
 
         public static IEnumerator PrepareAccountAndBindProfile(MonoBehaviour runner, Action<string> onPlayerIdReady)
@@ -23,10 +29,67 @@ namespace ShooterPrototype.Platform
 
             if (ShouldUseYandexIntegration())
             {
-                yield return runner.StartCoroutine(AuthorizeAndBindPlayerIdRoutine());
+                yield return runner.StartCoroutine(EnsureSdkReadyRoutine());
+                TryApplySavedYandexPlayerId();
             }
 
             onPlayerIdReady?.Invoke(PlayerIdentityService.GetOrCreatePlayerId());
+        }
+
+        public static IEnumerator RequestAuthorizationIfNeeded(
+            MonoBehaviour runner,
+            string reason,
+            Action<bool> onComplete)
+        {
+            if (runner == null)
+            {
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            if (!ShouldUseYandexIntegration())
+            {
+                onComplete?.Invoke(true);
+                yield break;
+            }
+
+            yield return runner.StartCoroutine(EnsureSdkReadyRoutine());
+
+            if (HasValidYandexPlayerId())
+            {
+                TryApplyCurrentYandexPlayerId();
+                onComplete?.Invoke(true);
+                yield break;
+            }
+
+            if (PlayerIdentityService.TryGetSavedYandexUniqueId(out _))
+            {
+                TryApplySavedYandexPlayerId();
+                onComplete?.Invoke(true);
+                yield break;
+            }
+
+            var answered = false;
+            var accepted = false;
+            YandexGamesAuthPrompt.Show(reason, granted =>
+            {
+                accepted = granted;
+                answered = true;
+            });
+
+            while (!answered)
+            {
+                yield return null;
+            }
+
+            if (!accepted)
+            {
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            yield return runner.StartCoroutine(AuthorizeAndBindPlayerIdRoutine());
+            onComplete?.Invoke(HasValidYandexPlayerId() || PlayerIdentityService.TryGetSavedYandexUniqueId(out _));
         }
 
         public static void NotifyMainMenuLoadingComplete()
@@ -72,6 +135,11 @@ namespace ShooterPrototype.Platform
             }
 
             TryApplySavedYandexPlayerId();
+        }
+
+        private static IEnumerator EnsureSdkReadyRoutine()
+        {
+            yield return WaitForYandexSdkRoutine();
         }
 
         private static IEnumerator WaitForYandexSdkRoutine()

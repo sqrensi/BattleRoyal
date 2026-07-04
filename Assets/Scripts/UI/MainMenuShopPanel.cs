@@ -367,7 +367,9 @@ namespace ShooterPrototype.UI
                 if (slot.PriceLabel != null)
                 {
                     slot.PriceLabel.text = FormatPrice(price);
-                    slot.PriceLabel.color = canAfford ? UiTheme.CurrencyAccent : UiTheme.TextMuted;
+                    slot.PriceLabel.color = canAfford
+                        ? new Color(0.78f, 0.64f, 0.26f, 0.96f)
+                        : UiTheme.TextMuted;
                 }
 
                 if (slot.PriceBadge != null)
@@ -408,7 +410,9 @@ namespace ShooterPrototype.UI
                 if (slot.PriceLabel != null)
                 {
                     slot.PriceLabel.text = FormatPrice(price);
-                    slot.PriceLabel.color = canAfford ? UiTheme.CurrencyAccent : UiTheme.TextMuted;
+                    slot.PriceLabel.color = canAfford
+                        ? new Color(0.78f, 0.64f, 0.26f, 0.96f)
+                        : UiTheme.TextMuted;
                 }
 
                 if (slot.PriceBadge != null)

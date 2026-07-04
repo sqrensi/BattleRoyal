@@ -442,6 +442,13 @@ namespace ShooterPrototype.Player
                 case "prep":
                     if (phaseEntered)
                     {
+                        if (string.Equals(previousPhase, "lobby", StringComparison.Ordinal))
+                        {
+                            gameHud?.ShowModeIntroBanner(
+                                MainMenuGameModeUtility.GetModeIntroDescription(MainMenuGameMode.Deathmatch),
+                                5f);
+                        }
+
                         ClearLocalLoadoutForWeaponPick();
                         initialWeaponPickDone = false;
                         TryApplySpawnTeleport(state, force: true);
@@ -480,6 +487,7 @@ namespace ShooterPrototype.Player
 
             if (phaseEntered)
             {
+                GameplayAudioPrewarm.PrewarmCombatClips();
                 ClearLocalLoadoutForWeaponPick();
                 initialWeaponPickDone = false;
                 presenceSync?.SetRemoteAvatarsVisible(true);
@@ -615,7 +623,6 @@ namespace ShooterPrototype.Player
                 ? state.dmMatchSecondsRemaining
                 : Mathf.Max(0, state.countdownRemainingSeconds);
             gameHud?.SetDeathmatchHud(state.localKillCount, state.aliveCount, countdown);
-            gameHud?.SetMatchStatusMessage(string.Empty);
             SyncScoreboardFromMatchStateWithPresence(state);
         }
 

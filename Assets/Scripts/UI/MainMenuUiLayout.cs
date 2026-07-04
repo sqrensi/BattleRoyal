@@ -1,4 +1,5 @@
 using ShooterPrototype.Player;
+using System.Collections;
 using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -27,6 +28,7 @@ namespace ShooterPrototype.UI
         private Button inventoryButton;
         private Button shopButton;
         private Button achievementsButton;
+        private Button dailyRewardsButton;
         private Button statsButton;
         private Button settingsButton;
         private Button backButton;
@@ -41,6 +43,18 @@ namespace ShooterPrototype.UI
         private MainMenuNavNotificationBadges navNotificationBadges;
         private MainMenuServerConnectionGate connectionGate;
         private MainMenuReconnectButton reconnectButton;
+        private MainMenuDailyRewardPrompt dailyRewardPrompt;
+        private RectTransform menuCanvasRect;
+
+        public void TryShowDailyRewardLoginPrompt()
+        {
+            if (dailyRewardPrompt == null || menuCanvasRect == null)
+            {
+                return;
+            }
+
+            dailyRewardPrompt.TryShow(menuCanvasRect);
+        }
 
         public void ApplyLayout(MainMenuController controller)
         {
@@ -128,15 +142,23 @@ namespace ShooterPrototype.UI
                 settingsPanel = controller.gameObject.AddComponent<MainMenuSettingsPanel>();
             }
 
+            var dailyRewardsPanel = controller.GetComponent<MainMenuDailyRewardsPanel>();
+            if (dailyRewardsPanel == null)
+            {
+                dailyRewardsPanel = controller.gameObject.AddComponent<MainMenuDailyRewardsPanel>();
+            }
+
             var canvas = ResolveMenuCanvas(controller);
             if (canvas != null)
             {
                 var canvasRect = canvas.GetComponent<RectTransform>();
+                menuCanvasRect = canvasRect;
                 inventoryPanel.Build(canvasRect);
                 shopPanel.Build(canvasRect);
                 achievementsPanel.Build(canvasRect);
                 statsPanel.Build(canvasRect);
                 settingsPanel.Build(canvasRect);
+                dailyRewardsPanel.Build(canvasRect);
                 currencyDisplay?.Build(canvasRect);
                 if (bottomRightStackRect != null)
                 {
@@ -152,18 +174,13 @@ namespace ShooterPrototype.UI
                 leaderboardPanel?.Configure(controller, controller.ProfileApiClient);
 
                 connectionGate = EnsureConnectionGate(controller);
-                connectionGate.Configure(controller, controller.StatusText);
+                connectionGate.Configure(controller, controller.StatusText, sectionController);
                 connectionGate.Build(canvasRect, EnsureUiSound(controller));
 
                 reconnectButton = EnsureReconnectButton(controller);
                 reconnectButton.Configure(controller, EnsureUiSound(controller));
                 reconnectButton.Build(canvasRect);
 
-                connectionGate.RegisterMenuGroup(topNavBarObject != null ? EnsureCanvasGroup(topNavBarObject) : null);
-                connectionGate.RegisterMenuGroup(startButtonGroup);
-                connectionGate.RegisterMenuGroup(bottomRightStackGroup != null
-                    ? bottomRightStackGroup
-                    : nicknameEditor != null ? nicknameEditor.CanvasGroup : null);
                 connectionGate.RegisterMenuGroup(currencyDisplay != null ? currencyDisplay.CanvasGroup : null);
                 controller.BindConnectionGate(connectionGate);
             }
@@ -181,6 +198,16 @@ namespace ShooterPrototype.UI
 
             statsPanel.Configure(controller.GetComponent<MainMenuUiSoundController>());
             settingsPanel.Configure(controller.GetComponent<MainMenuUiSoundController>());
+            dailyRewardsPanel.Configure(controller.GetComponent<MainMenuUiSoundController>());
+
+            dailyRewardPrompt = controller.GetComponent<MainMenuDailyRewardPrompt>();
+            if (dailyRewardPrompt == null)
+            {
+                dailyRewardPrompt = controller.gameObject.AddComponent<MainMenuDailyRewardPrompt>();
+            }
+
+            dailyRewardPrompt.Configure(controller.GetComponent<MainMenuUiSoundController>());
+            StartCoroutine(ShowDailyRewardPromptWhenReady());
 
             ClientSettingsService.EnsureLoaded();
             ClientSettingsService.ApplyMasterVolume();
@@ -190,10 +217,8 @@ namespace ShooterPrototype.UI
                 ? EnsureCanvasGroup(controller.ChangeCharacterButton.gameObject)
                 : null;
 
-            connectionGate?.RegisterMenuGroup(changeCharacterGroup);
-            connectionGate?.RegisterMenuGroup(gameModeSelector != null ? gameModeSelector.CanvasGroup : null);
-
             sectionController.Configure(
+                controller,
                 MainMenuCameraMotion.Resolve(),
                 controller.GetComponent<MainMenuUiSoundController>(),
                 topNavBarObject != null ? EnsureCanvasGroup(topNavBarObject) : null,
@@ -203,6 +228,7 @@ namespace ShooterPrototype.UI
                 inventoryButton,
                 shopButton,
                 achievementsButton,
+                dailyRewardsButton,
                 statsButton,
                 settingsButton,
                 backButton,
@@ -212,6 +238,7 @@ namespace ShooterPrototype.UI
                 achievementsPanel,
                 statsPanel,
                 settingsPanel,
+                dailyRewardsPanel,
                 bottomRightStackGroup != null
                     ? bottomRightStackGroup
                     : nicknameEditor != null ? nicknameEditor.CanvasGroup : null);
@@ -363,6 +390,7 @@ namespace ShooterPrototype.UI
             inventoryButton = CreateNavButton(topNavBarObject.transform, "Инвентарь", uiSound);
             shopButton = CreateNavButton(topNavBarObject.transform, "Магазин", uiSound);
             achievementsButton = CreateNavButton(topNavBarObject.transform, "Достижения", uiSound);
+            dailyRewardsButton = CreateNavButton(topNavBarObject.transform, "Награды", uiSound);
             statsButton = CreateNavButton(topNavBarObject.transform, "Статистика", uiSound);
             settingsButton = CreateNavButton(topNavBarObject.transform, "Настройки", uiSound);
 
@@ -505,7 +533,7 @@ namespace ShooterPrototype.UI
             }
 
             UiTheme.StyleButton(startButton, UiButtonStyle.Primary);
-            SetButtonLabel(startButton, "Играть");
+            SetButtonLabel(startButton, "Поиск матча");
             UiMotion.AttachButtonMotion(startButton, primary: true);
             startButtonGroup = EnsureCanvasGroup(startButton.gameObject);
         }
@@ -537,35 +565,22 @@ namespace ShooterPrototype.UI
 
         private void LayoutStatusText(TMP_Text statusText, RectTransform canvasRect, RectTransform startButtonRect)
         {
-            const float statusGap = 16f;
+            if (statusText == null || canvasRect == null)
+            {
+                return;
+            }
 
             var rect = statusText.rectTransform;
             rect.SetParent(canvasRect, false);
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = new Vector2(760f, statusHeight + 12f);
 
-            if (startButtonRect != null)
-            {
-                var left = startButtonRect.anchoredPosition.x + startButtonRect.sizeDelta.x + statusGap;
-                var bottom = startButtonRect.anchoredPosition.y +
-                             (startButtonRect.sizeDelta.y - statusHeight) * 0.5f;
-
-                rect.anchorMin = new Vector2(0f, 0f);
-                rect.anchorMax = new Vector2(0f, 0f);
-                rect.pivot = new Vector2(0f, 0.5f);
-                rect.anchoredPosition = new Vector2(left, bottom + statusHeight * 0.5f);
-                rect.sizeDelta = new Vector2(560f, statusHeight);
-            }
-            else
-            {
-                rect.anchorMin = new Vector2(0f, 0f);
-                rect.anchorMax = new Vector2(1f, 0f);
-                rect.pivot = new Vector2(0.5f, 0f);
-                rect.offsetMin = new Vector2(edgeMargin, edgeMargin);
-                rect.offsetMax = new Vector2(-edgeMargin, edgeMargin + statusHeight);
-            }
-
-            statusText.alignment = TextAlignmentOptions.MidlineLeft;
+            statusText.alignment = TextAlignmentOptions.Center;
             statusText.fontSize = statusFontSize;
-            UiTheme.ApplyTmp(statusText, UiTextRole.Muted);
+            UiTheme.ApplyTmp(statusText, UiTextRole.Body);
             statusText.enableWordWrapping = true;
             statusText.overflowMode = TextOverflowModes.Ellipsis;
             statusText.raycastTarget = false;
@@ -680,6 +695,13 @@ namespace ShooterPrototype.UI
             rect.anchorMax = Vector2.one;
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = Vector2.zero;
+        }
+
+        private IEnumerator ShowDailyRewardPromptWhenReady()
+        {
+            yield return null;
+            yield return null;
+            TryShowDailyRewardLoginPrompt();
         }
     }
 }

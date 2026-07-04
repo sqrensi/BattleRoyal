@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using ShooterPrototype.Matchmaking;
 using ShooterPrototype.UI;
 using UnityEngine;
 
@@ -12,12 +13,36 @@ namespace ShooterPrototype.Player
 
         public static void ReportEvent(MonoBehaviour runner, string eventType, int amount = 1)
         {
-            if (runner == null || string.IsNullOrWhiteSpace(eventType))
+            if (string.IsNullOrWhiteSpace(eventType))
+            {
+                return;
+            }
+
+            if (ShouldUseOfflineAchievementTracking())
+            {
+                PlayerProfileService.ReportOfflineAchievementEvent(eventType, amount);
+                return;
+            }
+
+            if (runner == null)
             {
                 return;
             }
 
             runner.StartCoroutine(ReportEventRoutine(runner, eventType, amount));
+        }
+
+        private static bool ShouldUseOfflineAchievementTracking()
+        {
+            if (!PlayerProfileService.IsServerSynced)
+            {
+                return true;
+            }
+
+            return ActiveMatchContext.IsOfflineDuelSession ||
+                   ActiveMatchContext.IsOfflineDeathmatchSession ||
+                   ActiveMatchContext.IsOfflineTrainingSession ||
+                   ActiveMatchContext.IsOfflineChallengeSession;
         }
 
         private static IEnumerator ReportEventRoutine(MonoBehaviour runner, string eventType, int amount)

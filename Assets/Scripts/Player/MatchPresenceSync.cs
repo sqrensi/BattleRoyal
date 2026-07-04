@@ -2598,6 +2598,7 @@ namespace ShooterPrototype.Player
                 }
                 else
                 {
+                    RefreshRemoteBodyClipping(avatar.Root);
                     LogRemoteSkinApply(avatar, player, skinState, "skip-unchanged");
                     return;
                 }
@@ -2635,7 +2636,30 @@ namespace ShooterPrototype.Player
 
             var thirdPersonBody = avatarRoot.transform.Find("ThirdPersonBody");
             var syntyVisual = thirdPersonBody != null ? thirdPersonBody.Find("SyntyVisual") : null;
-            return syntyVisual != null && syntyVisual.Find("RemoteResourceClothing") != null;
+            return syntyVisual != null && syntyVisual.Find(RemoteResourceClothingApplier.RemoteClothingRootName) != null;
+        }
+
+        private static void RefreshRemoteBodyClipping(GameObject avatarRoot)
+        {
+            if (avatarRoot == null || MainMenuPlayerPreview.IsMenuPreviewInstance(avatarRoot))
+            {
+                return;
+            }
+
+            var thirdPersonBody = avatarRoot.transform.Find("ThirdPersonBody");
+            var syntyVisual = thirdPersonBody != null ? thirdPersonBody.Find("SyntyVisual") : null;
+            if (syntyVisual == null || syntyVisual.Find(RemoteResourceClothingApplier.RemoteClothingRootName) == null)
+            {
+                return;
+            }
+
+            var clothingApplier = avatarRoot.GetComponent<RemoteResourceClothingApplier>();
+            if (clothingApplier == null)
+            {
+                return;
+            }
+
+            clothingApplier.RefreshHiddenBodyForVisual(syntyVisual, hideHandsOnBody: true);
         }
 
         private void EnsureAvatarHasFallbackModel(GameObject avatarRoot)

@@ -18,7 +18,7 @@ namespace ShooterPrototype.Player
         {
             if (applyOnAwake)
             {
-                ApplyRemoteThirdPersonMode();
+                ApplyRemoteThirdPersonMode(activateThirdPersonBody: !MainMenuPlayerPreview.IsMenuPreviewSpawn);
             }
         }
 
@@ -27,17 +27,17 @@ namespace ShooterPrototype.Player
             ApplyRemoteThirdPersonMode();
         }
 
-        public void ApplyRemoteThirdPersonMode()
+        public void ApplyRemoteThirdPersonMode(bool activateThirdPersonBody = true)
         {
             DisableLocalOnlyComponents();
 
             var thirdPersonBody = transform.Find("ThirdPersonBody");
-            if (thirdPersonBody != null)
+            if (thirdPersonBody != null && activateThirdPersonBody)
             {
                 thirdPersonBody.gameObject.SetActive(true);
             }
 
-            EnableThirdPersonAnimator(thirdPersonBody);
+            EnableThirdPersonAnimator(thirdPersonBody, enableRenderers: activateThirdPersonBody);
             WireRemoteHolsterAnimation(thirdPersonBody);
             WireRemoteWeapon(thirdPersonBody);
             WireRemoteMedkit(thirdPersonBody);
@@ -103,7 +103,7 @@ namespace ShooterPrototype.Player
             }
         }
 
-        private void EnableThirdPersonAnimator(Transform thirdPersonBody)
+        private void EnableThirdPersonAnimator(Transform thirdPersonBody, bool enableRenderers = true)
         {
             if (thirdPersonBody == null)
             {
@@ -150,6 +150,11 @@ namespace ShooterPrototype.Player
                         }
                     }
                 }
+            }
+
+            if (!enableRenderers)
+            {
+                return;
             }
 
             var renderers = syntyVisual.GetComponentsInChildren<Renderer>(true);

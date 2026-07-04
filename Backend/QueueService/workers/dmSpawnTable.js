@@ -30,8 +30,55 @@ function resolveSpawnPose(slotIndex) {
   return DM_SPAWNS[slot];
 }
 
-function rollRandomSpawnSlot() {
-  return Math.floor(Math.random() * DM_SPAWNS.length);
+function rollRandomSpawnSlot(excludeSlots = null) {
+  if (!DM_SPAWNS.length) {
+    return 0;
+  }
+
+  const excluded = excludeSlots instanceof Set
+    ? excludeSlots
+    : new Set(Array.isArray(excludeSlots) ? excludeSlots : []);
+
+  const available = [];
+  for (let i = 0; i < DM_SPAWNS.length; i++) {
+    if (!excluded.has(i)) {
+      available.push(i);
+    }
+  }
+
+  if (available.length === 0) {
+    return Math.floor(Math.random() * DM_SPAWNS.length);
+  }
+
+  return available[Math.floor(Math.random() * available.length)];
+}
+
+function rollUniqueSpawnSlots(count, reservedSlots = null) {
+  const slots = [];
+  const reserved = reservedSlots instanceof Set
+    ? new Set(reservedSlots)
+    : new Set(Array.isArray(reservedSlots) ? reservedSlots : []);
+
+  const available = [];
+  for (let i = 0; i < DM_SPAWNS.length; i++) {
+    if (!reserved.has(i)) {
+      available.push(i);
+    }
+  }
+
+  const picks = Math.max(0, Math.min(count, available.length));
+  for (let i = 0; i < picks; i++) {
+    const index = Math.floor(Math.random() * available.length);
+    slots.push(available[index]);
+    available.splice(index, 1);
+  }
+
+  while (slots.length < count) {
+    const avoid = new Set(slots);
+    slots.push(rollRandomSpawnSlot(avoid));
+  }
+
+  return slots;
 }
 
 module.exports = {
@@ -39,4 +86,5 @@ module.exports = {
   getSpawnCount,
   resolveSpawnPose,
   rollRandomSpawnSlot,
+  rollUniqueSpawnSlots,
 };

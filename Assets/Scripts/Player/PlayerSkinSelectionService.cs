@@ -475,10 +475,18 @@ namespace ShooterPrototype.Player
             if (armsPresenter != null && playerRoot.GetComponent<RemoteThirdPersonPlayerBootstrap>() == null)
             {
                 clothingApplier.ApplyToLocalVisual(syntyVisual, armsPresenter, forceReapply);
-                return;
+            }
+            else
+            {
+                clothingApplier.ApplyToRemoteVisual(syntyVisual, forceReapply);
             }
 
-            clothingApplier.ApplyToRemoteVisual(syntyVisual, forceReapply);
+            if (syntyVisual.Find(RemoteResourceClothingApplier.RemoteClothingRootName) != null)
+            {
+                var hideHandsOnBody = armsPresenter == null ||
+                                      playerRoot.GetComponent<RemoteThirdPersonPlayerBootstrap>() != null;
+                clothingApplier.RefreshHiddenBodyForVisual(syntyVisual, hideHandsOnBody);
+            }
         }
 
         public static void ApplyTo(RemoteResourceClothingApplier applier, in PlayerSkinNetworkState state)

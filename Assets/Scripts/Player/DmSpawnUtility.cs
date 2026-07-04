@@ -70,7 +70,7 @@ namespace ShooterPrototype.Player
             return slot;
         }
 
-        public static bool TryRollUniqueSpawnSlots(int count, List<int> slots)
+        public static bool TryRollUniqueSpawnSlots(int count, List<int> slots, ICollection<int> reservedSlots = null)
         {
             slots?.Clear();
             if (slots == null || count <= 0)
@@ -87,6 +87,11 @@ namespace ShooterPrototype.Player
             var available = new List<int>(total);
             for (var i = 0; i < total; i++)
             {
+                if (reservedSlots != null && reservedSlots.Contains(i))
+                {
+                    continue;
+                }
+
                 available.Add(i);
             }
 
@@ -100,10 +105,15 @@ namespace ShooterPrototype.Player
 
             while (slots.Count < count)
             {
-                slots.Add(RollRandomSpawnSlot(slots[slots.Count - 1], slots));
+                slots.Add(RollRandomSpawnSlot(slots.Count > 0 ? slots[slots.Count - 1] : -1, slots));
             }
 
             return slots.Count > 0;
+        }
+
+        public static bool TryRollUniqueSpawnSlots(int count, List<int> slots)
+        {
+            return TryRollUniqueSpawnSlots(count, slots, null);
         }
 
         public static bool TryResolveRandomSpawnPose(out Vector3 position, out Quaternion rotation, int avoidSlot = -1)

@@ -75,8 +75,32 @@ namespace ShooterPrototype.Player
             handBinder?.ConfigureFromVisualRoot(syntyVisual);
 
             RefreshRemotePresentationAfterModelSwap(playerRoot, syntyVisual);
+            RefreshBodyClippingAfterModelSwap(playerRoot, syntyVisual);
 
             return true;
+        }
+
+        private static void RefreshBodyClippingAfterModelSwap(GameObject playerRoot, Transform syntyVisual)
+        {
+            if (playerRoot == null || syntyVisual == null)
+            {
+                return;
+            }
+
+            if (syntyVisual.Find(RemoteResourceClothingApplier.RemoteClothingRootName) == null)
+            {
+                return;
+            }
+
+            var clothingApplier = playerRoot.GetComponent<RemoteResourceClothingApplier>();
+            if (clothingApplier == null)
+            {
+                return;
+            }
+
+            var isLocalFirstPerson = playerRoot.GetComponent<SyntyFirstPersonArmsPresenter>() != null &&
+                                     playerRoot.GetComponent<RemoteThirdPersonPlayerBootstrap>() == null;
+            clothingApplier.RefreshHiddenBodyForVisual(syntyVisual, hideHandsOnBody: !isLocalFirstPerson);
         }
 
         private static void RefreshRemotePresentationAfterModelSwap(GameObject playerRoot, Transform syntyVisual)

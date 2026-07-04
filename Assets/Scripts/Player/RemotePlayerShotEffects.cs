@@ -271,7 +271,6 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            System.Array.Sort(hitQueryBuffer, 0, hitCount, RaycastHitDistanceComparer.Instance);
             return PlayerWeaponRaycastFilters.TrySelectClosestHit(
                 hitQueryBuffer,
                 hitCount,
@@ -370,7 +369,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (GameplayVfxPool.TrySpawn(this, prefab, position, rotation, vfxAutoDestroySeconds))
+            if (GameplayVfxPool.TrySpawn(prefab, position, rotation, vfxAutoDestroySeconds))
             {
                 return;
             }
@@ -444,12 +443,6 @@ namespace ShooterPrototype.Player
             }
 
             return null;
-        }
-
-        private sealed class RaycastHitDistanceComparer : System.Collections.Generic.IComparer<RaycastHit>
-        {
-            public static readonly RaycastHitDistanceComparer Instance = new RaycastHitDistanceComparer();
-            public int Compare(RaycastHit x, RaycastHit y) => x.distance.CompareTo(y.distance);
         }
     }
 }

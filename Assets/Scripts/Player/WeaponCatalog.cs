@@ -322,13 +322,11 @@ namespace ShooterPrototype.Player
                 equipPrefabsByKind[kindValue] = LoadEquipPrefab(kind);
             }
 
-            var loadedKinds = string.Empty;
             for (var kindValue = 0; kindValue <= WeaponKindUtility.MaxKindId; kindValue++)
             {
                 var kind = (WeaponKind)kindValue;
                 if (equipPrefabsByKind[kindValue] != null)
                 {
-                    loadedKinds += kind + "=" + equipPrefabsByKind[kindValue].name + "; ";
                     continue;
                 }
 
@@ -336,11 +334,6 @@ namespace ShooterPrototype.Player
                     $"[WeaponCatalog] Missing equip prefab for {kind}. " +
                     $"Run 'Shooter Prototype/Weapons/Setup Weapon Prefab Registry' or add " +
                     $"Resources/{EquipResourceRoot}/{GetDefaultItemId(kind)}.prefab");
-            }
-
-            if (!string.IsNullOrEmpty(loadedKinds))
-            {
-                Debug.Log($"[WeaponCatalog] Equip prefabs loaded: {loadedKinds}");
             }
         }
 

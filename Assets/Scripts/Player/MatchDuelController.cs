@@ -311,6 +311,13 @@ namespace ShooterPrototype.Player
                     gameHud?.HideDuelWeaponPickPanel();
                     if (phaseEntered)
                     {
+                        if (string.Equals(previousPhase, "lobby", StringComparison.Ordinal))
+                        {
+                            gameHud?.ShowModeIntroBanner(
+                                MainMenuGameModeUtility.GetModeIntroDescription(MainMenuGameMode.Duel1v1),
+                                5f);
+                        }
+
                         remotesRevealed = true;
                         presenceSync?.SetRemoteAvatarsVisible(true);
                     }
@@ -701,7 +708,7 @@ namespace ShooterPrototype.Player
                 case "countdown":
                     return $"Старт через {countdown} сек.";
                 case "prep":
-                    return $"Подготовка — {countdown} сек.";
+                    return string.Empty;
                 case "round_pick":
                     return $"Выбор оружия — {countdown} сек.";
                 case "round":

@@ -114,6 +114,7 @@
     <Compile Include="Assets\Scripts\Matchmaking\QueueServiceMock.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerCurrencyService.cs" />
     <Compile Include="Assets\Scripts\Player\TrainingBotLocomotionPresenter.cs" />
+    <Compile Include="Assets\Scripts\Player\MatchControlHintsController.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponBlockLayers.cs" />
     <Compile Include="Assets\Scripts\Matchmaking\MatchMapPool.cs" />
     <Compile Include="Assets\Scripts\Platform\YandexGamesIntegrationService.cs" />
@@ -134,6 +135,7 @@
     <Compile Include="Assets\PluginYourGames\Modules\Localization\Scripts\Lang_projectSettings.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\EditorScr\Translates\Langs.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuUiSoundController.cs" />
+    <Compile Include="Assets\Scripts\Platform\GameBranding.cs" />
     <Compile Include="Assets\Scripts\Player\MatchPickupSync.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\EditorScr\UnityPackagesManager.cs" />
     <Compile Include="Assets\Scripts\Player\WaterLayers.cs" />
@@ -141,6 +143,7 @@
     <Compile Include="Assets\PluginYourGames\Modules\Authorization\Scripts\GetPlayerYG.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_ExampleScript_01.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMPro_InstructionOverlay.cs" />
+    <Compile Include="Assets\Scripts\Player\DailyRewardService.cs" />
     <Compile Include="Assets\Scripts\Player\PickupItemDefinition.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexShakeB.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\CFX_LightIntensityFade.cs" />
@@ -149,10 +152,12 @@
     <Compile Include="Assets\PluginYourGames\Scripts\Basic\YGSendMessage.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\AutoTranslateLangs\Scripts\LanguageYG.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyBoneAnchorSync.cs" />
+    <Compile Include="Assets\Scripts\Player\GameplayAudioPrewarm.cs" />
     <Compile Include="Assets\Scripts\UI\UiPrefabLibrary.cs" />
     <Compile Include="Assets\Scripts\Player\MovementNetworkDiagnostics.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponPrefabRegistry.cs" />
     <Compile Include="Assets\Scripts\UI\InventoryTypes.cs" />
+    <Compile Include="Assets\Scripts\Player\DailyRewardCatalogService.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\AutoTranslateLangs\Scripts\LangYGAdditionalText.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Other\ImageLoadYG.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\Localization\Scripts\UtilsLang.cs" />
@@ -301,6 +306,7 @@
     <Compile Include="Assets\Scripts\Player\GameplayRuntimeCache.cs" />
     <Compile Include="Assets\PluginYourGames\Example\Scripts\Scenes\AllDemoScenes.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuStatsPanel.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuDailyRewardsPanel.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\DropdownSample.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexColorCycler.cs" />
     <Compile Include="Assets\Scripts\UI\LoadingScreenOverlay.cs" />
@@ -336,11 +342,14 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TeleType.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextEventCheck.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Platform\PlatformToggles.cs" />
+    <Compile Include="Assets\Scripts\Platform\YandexGamesAuthPrompt.cs" />
     <Compile Include="Assets\Scripts\UI\GameHudController.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerPickupController.cs" />
+    <Compile Include="Assets\Scripts\Player\GameplaySessionCleanup.cs" />
     <Compile Include="Assets\Scripts\Player\UserScopedPlayerPrefs.cs" />
     <Compile Include="Assets\Scripts\UI\MatchOutcomeSummary.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\InfoYG\InfoYG_lang.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuDailyRewardPrompt.cs" />
     <Compile Include="Assets\Scripts\Bootstrap\LaunchMode.cs" />
     <Compile Include="Assets\Scripts\UI\UiIconCatalog.cs" />
     <Compile Include="Assets\Scripts\UI\InventorySlotView.cs" />

@@ -4,7 +4,7 @@ const Player = require("./player");
 const { WEAPON_SLOT_EMPTY } = require("./player");
 const combat = require("./combat");
 const movement = require("./movement");
-const { getSpawnCount, resolveSpawnPose, rollRandomSpawnSlot } = require("./dmSpawnTable");
+const { getSpawnCount, resolveSpawnPose, rollRandomSpawnSlot, rollUniqueSpawnSlots } = require("./dmSpawnTable");
 const {
   buildMatchStateForTicket,
   buildSnapshotForViewer,
@@ -89,6 +89,23 @@ class Deathmatch {
     return 0;
   }
 
+  collectOccupiedSpawnSlots(excludeTicketId = null) {
+    const occupied = new Set();
+    for (const player of this.players) {
+      if (!player || !player.alive) {
+        continue;
+      }
+
+      if (excludeTicketId && player.ticketId === excludeTicketId) {
+        continue;
+      }
+
+      occupied.add(this.getSpawnSlot(player.ticketId));
+    }
+
+    return occupied;
+  }
+
   rollSpawnForTicket(ticketId) {
     const spawnCount = getSpawnCount();
     if (spawnCount <= 0) {
@@ -96,20 +113,19 @@ class Deathmatch {
       return 0;
     }
 
-    const previous = this.spawnSlotByTicket.get(ticketId);
-    let slot = rollRandomSpawnSlot();
-    if (spawnCount > 1 && previous !== undefined && slot === previous) {
-      slot = (slot + 1 + Math.floor(Math.random() * (spawnCount - 1))) % spawnCount;
-    }
-
+    const occupied = this.collectOccupiedSpawnSlots(ticketId);
+    const slot = rollRandomSpawnSlot(occupied);
     this.spawnSlotByTicket.set(ticketId, slot);
     return slot;
   }
 
   rollAllSpawns() {
     this.spawnSlotByTicket.clear();
-    for (const player of this.players) {
-      this.rollSpawnForTicket(player.ticketId);
+    const slots = rollUniqueSpawnSlots(this.players.length);
+    for (let i = 0; i < this.players.length; i++) {
+      const player = this.players[i];
+      const slot = slots[i] ?? rollRandomSpawnSlot();
+      this.spawnSlotByTicket.set(player.ticketId, slot);
     }
   }
 

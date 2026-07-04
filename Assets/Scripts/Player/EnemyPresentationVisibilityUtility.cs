@@ -19,7 +19,9 @@ namespace ShooterPrototype.Player
 
         public static void ConfigureEnemyPresentation(GameObject root)
         {
-            if (root == null || MainMenuPlayerPreview.IsMenuPreviewSpawn)
+            if (root == null ||
+                MainMenuPlayerPreview.IsMenuPreviewSpawn ||
+                MainMenuPlayerPreview.IsMenuPreviewInstance(root))
             {
                 return;
             }
@@ -32,7 +34,9 @@ namespace ShooterPrototype.Player
 
         public static void EnsureVisibilityGate(GameObject root)
         {
-            if (root == null || MainMenuPlayerPreview.IsMenuPreviewSpawn)
+            if (root == null ||
+                MainMenuPlayerPreview.IsMenuPreviewSpawn ||
+                MainMenuPlayerPreview.IsMenuPreviewInstance(root))
             {
                 return;
             }

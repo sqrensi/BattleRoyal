@@ -356,7 +356,7 @@ namespace ShooterPrototype.Player
             float maxDistance,
             Vector3 soundWorldPosition)
         {
-            if (source == null || clip == null)
+            if (source == null || clip == null || !GameplayAudioPrewarm.TryEnsureLoaded(clip))
             {
                 return;
             }

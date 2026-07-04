@@ -17,14 +17,19 @@ namespace ShooterPrototype.UI
         private readonly List<CanvasGroup> menuGroups = new List<CanvasGroup>();
 
         private TMP_Text statusText;
+        private MainMenuSectionController sectionController;
         private bool built;
         private MainMenuServerConnectionState currentState = MainMenuServerConnectionState.Loading;
 
         public MainMenuServerConnectionState CurrentState => currentState;
 
-        public void Configure(MainMenuController menuController, TMP_Text bottomStatusText)
+        public void Configure(
+            MainMenuController menuController,
+            TMP_Text bottomStatusText,
+            MainMenuSectionController sections = null)
         {
             statusText = bottomStatusText;
+            sectionController = sections;
         }
 
         public void RegisterMenuGroup(CanvasGroup group)
@@ -61,11 +66,15 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            if (sectionController != null && sectionController.IsPanelOpen)
+            {
+                return;
+            }
+
             for (var i = 0; i < menuGroups.Count; i++)
             {
                 SetGroupVisible(menuGroups[i], true);
             }
-
         }
 
         private static void SetGroupVisible(CanvasGroup group, bool visible)

@@ -553,6 +553,12 @@ namespace ShooterPrototype.Player
         private void HandleBotDied()
         {
             StopAgent();
+            DisarmWeaponPresentation();
+            if (GetComponent<RemoteLeftHandIkBinder>() is RemoteLeftHandIkBinder handIk)
+            {
+                handIk.SetHandIkEnabled(false);
+            }
+
             if (agent != null)
             {
                 agent.enabled = false;

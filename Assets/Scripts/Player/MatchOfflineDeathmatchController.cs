@@ -12,8 +12,8 @@ namespace ShooterPrototype.Player
 {
     public sealed class MatchOfflineDeathmatchController : MonoBehaviour
     {
-        public const float MatchDurationSeconds = 600f;
-        private const float PrepSeconds = 15f;
+        public const float MatchDurationSeconds = 300f;
+        private const float PrepSeconds = 10f;
 
         private const int BotCount = 3;
         private const int DmWeaponSpareAmmo = 999;
@@ -28,6 +28,7 @@ namespace ShooterPrototype.Player
         private readonly List<DmBotEntry> bots = new List<DmBotEntry>(BotCount);
         private readonly List<PlayerHealth> combatants = new List<PlayerHealth>(BotCount + 1);
         private readonly List<int> botSpawnSlotScratch = new List<int>(BotCount);
+        private int localPlayerSpawnSlot = -1;
 
         private GameHudController gameHud;
         private CombatHudController combatHud;
@@ -96,6 +97,7 @@ namespace ShooterPrototype.Player
             remainingSeconds = MatchDurationSeconds;
             initialWeaponPickDone = false;
             manualWeaponPickOpen = false;
+            localPlayerSpawnSlot = -1;
             combatants.Clear();
             ClearBots();
         }
@@ -169,9 +171,11 @@ namespace ShooterPrototype.Player
                 yield break;
             }
 
+            localPlayerSpawnSlot = -1;
             BindLocalPlayer();
             playerHealth?.ConfigureOfflineDmLocalPlayer();
             RegisterCombatant(playerHealth);
+            TeleportLocalPlayerToUniqueSpawn();
             yield return EnsureNavMeshReadyRoutine();
             WeaponBlockUtility.RemoveSceneBotOccluderProxies(gameObject.scene);
             PrepareLocalPlayerForPrep();
@@ -199,11 +203,13 @@ namespace ShooterPrototype.Player
 
         private IEnumerator RunPrepPhaseRoutine()
         {
+            gameHud?.ShowModeIntroBanner(
+                MainMenuGameModeUtility.GetModeIntroDescription(MainMenuGameMode.Deathmatch),
+                5f);
+
             var deadline = Time.unscaledTime + PrepSeconds;
             while (Time.unscaledTime < deadline)
             {
-                var remaining = Mathf.CeilToInt(Mathf.Max(0f, deadline - Time.unscaledTime));
-                gameHud?.SetMatchStatusMessage($"Подготовка — {remaining} сек.");
                 yield return null;
             }
 
@@ -214,6 +220,7 @@ namespace ShooterPrototype.Player
         {
             combatPhaseActive = true;
             EnableLocalPlayerCombat();
+            GameplayAudioPrewarm.PrewarmCombatClips();
 
             if (bots.Count > 0 && bots[0].Bot != null)
             {
@@ -249,6 +256,7 @@ namespace ShooterPrototype.Player
             else if (string.Equals(killerTicket, "offline-local", System.StringComparison.Ordinal))
             {
                 combatHud?.ShowDuelKillBanner(victimNick);
+                MatchAchievementReporter.ReportEvent(this, "kill_player", 1);
             }
 
             SyncHudFromTracker();
@@ -326,7 +334,7 @@ namespace ShooterPrototype.Player
                 yield break;
             }
 
-            if (!DmSpawnUtility.TryResolveRandomSpawnPose(out var position, out var rotation))
+            if (!DmSpawnUtility.TryResolveSpawnPose(ResolveLocalRespawnSlot(), out var position, out var rotation))
             {
                 position = localPlayer.transform.position;
                 rotation = localPlayer.transform.rotation;
@@ -358,18 +366,17 @@ namespace ShooterPrototype.Player
 
             var spawnSlot = 0;
             botSpawnSlotScratch.Clear();
+            CollectOccupiedSpawnSlots(botSpawnSlotScratch, excludeHealth: bot.GetComponent<PlayerHealth>());
+            spawnSlot = DmSpawnUtility.RollRandomSpawnSlot(-1, botSpawnSlotScratch);
             for (var i = 0; i < bots.Count; i++)
             {
                 if (bots[i].Bot == bot)
                 {
-                    spawnSlot = DmSpawnUtility.RollRandomSpawnSlot(bots[i].SpawnSlot, botSpawnSlotScratch);
                     var entry = bots[i];
                     entry.SpawnSlot = spawnSlot;
                     bots[i] = entry;
                     break;
                 }
-
-                botSpawnSlotScratch.Add(bots[i].SpawnSlot);
             }
 
             if (!DmSpawnUtility.TryResolveSpawnPose(spawnSlot, out var position, out var rotation))
@@ -381,6 +388,7 @@ namespace ShooterPrototype.Player
             bot.PrepareCombatRound();
             bot.WarpTo(position, rotation);
             bot.SetFreeTargetMode(true);
+            bot.GetComponent<RemoteLeftHandIkBinder>()?.SetHandIkEnabled(true);
             bot.SetCombatEnabled(true);
             botRespawnRoutines.Remove(bot);
         }
@@ -390,7 +398,10 @@ namespace ShooterPrototype.Player
             ClearBots();
 
             var nicknames = PickUniqueBotNicknames(BotCount);
-            DmSpawnUtility.TryRollUniqueSpawnSlots(BotCount, botSpawnSlotScratch);
+            var reservedSlots = new List<int>(BotCount + 1);
+            CollectOccupiedSpawnSlots(reservedSlots);
+            botSpawnSlotScratch.Clear();
+            DmSpawnUtility.TryRollUniqueSpawnSlots(BotCount, botSpawnSlotScratch, reservedSlots);
             for (var i = 0; i < BotCount; i++)
             {
                 var spawnSlot = i < botSpawnSlotScratch.Count ? botSpawnSlotScratch[i] : DmSpawnUtility.RollRandomSpawnSlot(-1, botSpawnSlotScratch);
@@ -449,10 +460,17 @@ namespace ShooterPrototype.Player
 
         private IEnumerator SessionTimerRoutine()
         {
+            var lastDisplayedSeconds = -1;
             while (remainingSeconds > 0f && !sessionEnded)
             {
                 remainingSeconds -= Time.deltaTime;
-                gameHud?.SetTrainingTimerSeconds(Mathf.CeilToInt(Mathf.Max(0f, remainingSeconds)));
+                var displaySeconds = Mathf.CeilToInt(Mathf.Max(0f, remainingSeconds));
+                if (displaySeconds != lastDisplayedSeconds)
+                {
+                    lastDisplayedSeconds = displaySeconds;
+                    gameHud?.SetTrainingTimerSeconds(displaySeconds);
+                }
+
                 yield return null;
             }
 
@@ -664,6 +682,76 @@ namespace ShooterPrototype.Player
             weaponController = localPlayer.GetComponent<PlayerWeaponController>();
             pickupController = localPlayer.GetComponent<PlayerPickupController>();
             playerHealth = localPlayer.GetComponent<PlayerHealth>();
+        }
+
+        private void TeleportLocalPlayerToUniqueSpawn()
+        {
+            if (localPlayer == null)
+            {
+                return;
+            }
+
+            var occupied = new List<int>(BotCount + 1);
+            CollectOccupiedSpawnSlots(occupied);
+            localPlayerSpawnSlot = DmSpawnUtility.RollRandomSpawnSlot(-1, occupied);
+            if (!DmSpawnUtility.TryResolveSpawnPose(localPlayerSpawnSlot, out var position, out var rotation))
+            {
+                return;
+            }
+
+            var characterController = localPlayer.GetComponent<CharacterController>();
+            if (characterController != null)
+            {
+                characterController.enabled = false;
+            }
+
+            localPlayer.transform.SetPositionAndRotation(position, rotation);
+            Physics.SyncTransforms();
+
+            if (characterController != null)
+            {
+                characterController.enabled = true;
+            }
+        }
+
+        private int ResolveLocalRespawnSlot()
+        {
+            var occupied = new List<int>(BotCount + 1);
+            CollectOccupiedSpawnSlots(occupied, excludeHealth: playerHealth);
+            localPlayerSpawnSlot = DmSpawnUtility.RollRandomSpawnSlot(localPlayerSpawnSlot, occupied);
+            return localPlayerSpawnSlot;
+        }
+
+        private void CollectOccupiedSpawnSlots(List<int> occupied, PlayerHealth excludeHealth = null)
+        {
+            occupied.Clear();
+            if (localPlayerSpawnSlot >= 0 &&
+                (excludeHealth == null || excludeHealth != playerHealth))
+            {
+                occupied.Add(localPlayerSpawnSlot);
+            }
+
+            for (var i = 0; i < bots.Count; i++)
+            {
+                var bot = bots[i].Bot;
+                if (bot == null)
+                {
+                    continue;
+                }
+
+                var health = bot.GetComponent<PlayerHealth>();
+                if (health != null && health.IsDead)
+                {
+                    continue;
+                }
+
+                if (excludeHealth != null && health == excludeHealth)
+                {
+                    continue;
+                }
+
+                occupied.Add(bots[i].SpawnSlot);
+            }
         }
 
         private void CacheReferences()

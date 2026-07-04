@@ -80,7 +80,8 @@ namespace ShooterPrototype.Player
 
             driver.Configure(animator, null, locomotionRig);
             driver.SetNetworkMode(true);
-            driver.enabled = animator != null;
+            var usesBotPresenter = root.GetComponent<TrainingBotLocomotionPresenter>() != null;
+            driver.enabled = animator != null && !usesBotPresenter;
             return driver;
         }
 
@@ -190,7 +191,6 @@ namespace ShooterPrototype.Player
 
             ConfigureLocomotionRig(root);
             EnsureSyntyLocomotionDriver(root);
-            EnemyPresentationVisibilityUtility.ConfigureEnemyPresentation(root);
 
             var presenter = root.GetComponent<TrainingBotLocomotionPresenter>();
             if (presenter != null)

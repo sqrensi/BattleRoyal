@@ -297,7 +297,7 @@ namespace ShooterPrototype.UI
                 MainMenuGameMode.Training => "Топ 25 (тренировка)",
                 MainMenuGameMode.Duel1v1 => "Топ 25 (1v1)",
                 MainMenuGameMode.Challenge => "Топ 25 (челлендж)",
-                MainMenuGameMode.Deathmatch => "Топ 25 (DM)",
+                MainMenuGameMode.Deathmatch => "Топ 25 (Бой насмерть)",
                 _ => "Топ 25 (BR)",
             };
         }

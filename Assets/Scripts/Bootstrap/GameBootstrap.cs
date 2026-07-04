@@ -32,6 +32,7 @@ namespace ShooterPrototype.Bootstrap
 
         private bool initialized;
         private Coroutine matchWarmupCoroutine;
+        private Coroutine postMatchCleanupCoroutine;
         private QueueApiClient queueApiClient;
         private RealtimeTransportClient realtimeTransportClient;
         private GameHudController gameHudController;
@@ -62,6 +63,10 @@ namespace ShooterPrototype.Bootstrap
             }
 
             initialized = true;
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+            Debug.unityLogger.logEnabled = false;
+#endif
 
             if (keepAliveAcrossScenes)
             {
@@ -275,6 +280,7 @@ namespace ShooterPrototype.Bootstrap
                 ActiveMatchContext.SetOfflineDuelSession(false);
                 ActiveMatchContext.SetOfflineDeathmatchSession(false);
                 LoadingScreenOverlay.Hide();
+                SchedulePostMatchCleanup();
             }
 
             if (isMatchScene && !Application.isBatchMode)
@@ -313,6 +319,8 @@ namespace ShooterPrototype.Bootstrap
             {
                 yield return null;
             }
+
+            GameplayAudioPrewarm.PrewarmCombatClips();
 
             if (ActiveMatchContext.IsTraining)
             {
@@ -447,6 +455,22 @@ namespace ShooterPrototype.Bootstrap
 
             var controllerObject = new GameObject("MatchOfflineDeathmatch");
             controllerObject.AddComponent<MatchOfflineDeathmatchController>();
+        }
+
+        private void SchedulePostMatchCleanup()
+        {
+            if (postMatchCleanupCoroutine != null)
+            {
+                StopCoroutine(postMatchCleanupCoroutine);
+            }
+
+            postMatchCleanupCoroutine = StartCoroutine(PostMatchCleanupRoutine());
+        }
+
+        private IEnumerator PostMatchCleanupRoutine()
+        {
+            yield return GameplaySessionCleanup.RunAfterMatchAndReleaseMemoryRoutine();
+            postMatchCleanupCoroutine = null;
         }
 
         private void EnsureDeathmatchController()

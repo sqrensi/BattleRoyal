@@ -19,17 +19,18 @@ namespace ShooterPrototype.Player
         private const string GlobalAdsSensitivityKey = "client_settings_global_ads_sensitivity";
         private const string LegacyMaxPerformanceKey = "client_max_performance";
         private const string AllowBotMatchmakingKey = "client_settings_allow_bot_matchmaking";
+        private const string ShowMatchControlHintsKey = "client_settings_show_match_control_hints";
         private const string TargetFpsKey = "client_settings_target_fps";
         private const string LegacyMuteKey = "client_audio_muted";
         private const string AdsSensitivityKeyPrefix = "client_settings_ads_sensitivity_";
 
-        public const float DefaultMasterVolume = 1f;
-        public const float DefaultMusicVolume = 0.2f;
-        public const float DefaultRainVolume = 0.42f;
+        public const float DefaultMasterVolume = 0.17f;
+        public const float DefaultMusicVolume = 0.21f;
+        public const float DefaultRainVolume = 0.30f;
         public const float DefaultSfxVolume = 0.75f;
         public const float DefaultMouseSensitivity = 2.2f;
         public const float DefaultRenderScale = 1f;
-        public const float DefaultGlobalAdsSensitivity = 1f;
+        public const float DefaultGlobalAdsSensitivity = 0.83f;
         public const int DefaultTargetFps = 60;
 
         private static readonly int[] TargetFpsOptions = { 30, 60, 144 };
@@ -51,6 +52,7 @@ namespace ShooterPrototype.Player
         public static int TextureMipmapLimit { get; private set; }
         public static float GlobalAdsSensitivityMultiplier { get; private set; } = DefaultGlobalAdsSensitivity;
         public static bool AllowBotMatchmaking { get; private set; } = true;
+        public static bool ShowMatchControlHints { get; private set; } = true;
         public static int TargetFps { get; private set; } = DefaultTargetFps;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -90,6 +92,7 @@ namespace ShooterPrototype.Player
                 GlobalAdsSensitivityKey,
                 DefaultGlobalAdsSensitivity);
             AllowBotMatchmaking = UserScopedPlayerPrefs.GetInt(AllowBotMatchmakingKey, 1) == 1;
+            ShowMatchControlHints = UserScopedPlayerPrefs.GetInt(ShowMatchControlHintsKey, 1) == 1;
             TargetFps = NormalizeTargetFps(UserScopedPlayerPrefs.GetInt(TargetFpsKey, DefaultTargetFps));
 
             if (UserScopedPlayerPrefs.HasKey(ShadowsEnabledKey))
@@ -128,7 +131,7 @@ namespace ShooterPrototype.Player
                 case WeaponKind.AssaultRifle:
                     return 1.85f;
                 case WeaponKind.SniperRifle:
-                    return 2.6f;
+                    return 2.07f;
                 case WeaponKind.Pistol:
                     return 1.4f;
                 case WeaponKind.Mp7:
@@ -293,6 +296,14 @@ namespace ShooterPrototype.Player
             SaveAndNotify();
         }
 
+        public static void SetShowMatchControlHints(bool enabled)
+        {
+            EnsureLoaded();
+            ShowMatchControlHints = enabled;
+            UserScopedPlayerPrefs.SetInt(ShowMatchControlHintsKey, enabled ? 1 : 0);
+            SaveAndNotify();
+        }
+
         public static bool CanToggleBotMatchmaking()
         {
             return PlayerProfileService.IsServerSynced;
@@ -449,8 +460,8 @@ namespace ShooterPrototype.Player
             RenderScale = DefaultRenderScale;
             ShadowsEnabled = true;
             PostProcessingEnabled = true;
-            MsaaSampleCount = 4;
-            TextureMipmapLimit = 0;
+            MsaaSampleCount = 2;
+            TextureMipmapLimit = 2;
 
             if (!save)
             {

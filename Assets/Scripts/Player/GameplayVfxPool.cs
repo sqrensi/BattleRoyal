@@ -6,34 +6,44 @@ namespace ShooterPrototype.Player
 {
     /// <summary>
     /// Lightweight prefab pool for short-lived gameplay VFX (muzzle flash, impacts).
+    /// Coroutines run on a persistent host so VFX always return to the pool.
     /// </summary>
     public static class GameplayVfxPool
     {
         private const int MaxPoolSizePerPrefab = 12;
+        private const int MaxActiveInstances = 32;
 
+        private static GameplayVfxPoolRunner runner;
         private static Transform poolRoot;
+        private static int activeInstances;
         private static readonly Dictionary<int, Stack<GameObject>> PoolsByPrefabId = new Dictionary<int, Stack<GameObject>>(8);
 
         public static bool TrySpawn(
-            MonoBehaviour host,
             GameObject prefab,
             Vector3 position,
             Quaternion rotation,
             float lifetimeSeconds)
         {
-            if (host == null || prefab == null)
+            if (prefab == null)
             {
                 return false;
             }
 
+            if (activeInstances >= MaxActiveInstances)
+            {
+                return false;
+            }
+
+            EnsureRunner();
             var instance = Acquire(prefab);
             instance.transform.SetPositionAndRotation(position, rotation);
             instance.SetActive(true);
+            activeInstances++;
             PlayParticleSystems(instance);
 
             if (lifetimeSeconds > 0f)
             {
-                host.StartCoroutine(ReleaseAfterSeconds(instance, prefab, lifetimeSeconds));
+                runner.StartCoroutine(ReleaseAfterSeconds(instance, prefab, lifetimeSeconds));
             }
 
             return true;
@@ -41,7 +51,7 @@ namespace ShooterPrototype.Player
 
         private static GameObject Acquire(GameObject prefab)
         {
-            EnsurePoolRoot();
+            EnsureRunner();
             var prefabId = prefab.GetInstanceID();
             if (PoolsByPrefabId.TryGetValue(prefabId, out var stack))
             {
@@ -57,6 +67,7 @@ namespace ShooterPrototype.Player
 
             var instance = Object.Instantiate(prefab, poolRoot);
             instance.name = prefab.name;
+            EnsureInstanceCache(instance);
             return instance;
         }
 
@@ -73,8 +84,9 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            EnsurePoolRoot();
+            EnsureRunner();
             instance.SetActive(false);
+            activeInstances = Mathf.Max(0, activeInstances - 1);
             instance.transform.SetParent(poolRoot, false);
 
             var prefabId = prefab.GetInstanceID();
@@ -100,7 +112,8 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var systems = root.GetComponentsInChildren<ParticleSystem>(true);
+            var cache = EnsureInstanceCache(root);
+            var systems = cache.Systems;
             for (var i = 0; i < systems.Length; i++)
             {
                 var ps = systems[i];
@@ -114,9 +127,20 @@ namespace ShooterPrototype.Player
             }
         }
 
-        private static void EnsurePoolRoot()
+        private static VfxPoolInstanceCache EnsureInstanceCache(GameObject root)
         {
-            if (poolRoot != null)
+            if (!root.TryGetComponent<VfxPoolInstanceCache>(out var cache))
+            {
+                cache = root.AddComponent<VfxPoolInstanceCache>();
+            }
+
+            cache.EnsureCached();
+            return cache;
+        }
+
+        private static void EnsureRunner()
+        {
+            if (runner != null)
             {
                 return;
             }
@@ -124,6 +148,53 @@ namespace ShooterPrototype.Player
             var rootObject = new GameObject("GameplayVfxPool");
             Object.DontDestroyOnLoad(rootObject);
             poolRoot = rootObject.transform;
+            runner = rootObject.AddComponent<GameplayVfxPoolRunner>();
+        }
+
+        /// <summary>
+        /// Destroys pooled VFX and stops pending releases. Call when leaving a match.
+        /// </summary>
+        public static void ResetSession()
+        {
+            if (runner != null)
+            {
+                runner.StopAllCoroutines();
+            }
+
+            activeInstances = 0;
+
+            if (poolRoot != null)
+            {
+                for (var i = poolRoot.childCount - 1; i >= 0; i--)
+                {
+                    var child = poolRoot.GetChild(i);
+                    if (child != null)
+                    {
+                        Object.Destroy(child.gameObject);
+                    }
+                }
+            }
+
+            PoolsByPrefabId.Clear();
+        }
+
+        private sealed class VfxPoolInstanceCache : MonoBehaviour
+        {
+            public ParticleSystem[] Systems;
+
+            public void EnsureCached()
+            {
+                if (Systems != null && Systems.Length > 0)
+                {
+                    return;
+                }
+
+                Systems = GetComponentsInChildren<ParticleSystem>(true);
+            }
+        }
+
+        private sealed class GameplayVfxPoolRunner : MonoBehaviour
+        {
         }
     }
 }

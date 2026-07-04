@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using ShooterPrototype.Matchmaking;
 using ShooterPrototype.UI;
 using UnityEngine;
@@ -11,8 +12,8 @@ namespace ShooterPrototype.Player
     {
         private const int RoundsToWin = 5;
         private const int DuelWeaponSpareAmmo = 60;
-        private const float PrepSeconds = 15f;
-        private const float WeaponPickSeconds = 10f;
+        private const float PrepSeconds = 10f;
+        private const float WeaponPickSeconds = 5f;
         private const float RoundSeconds = 60f;
         private const float RoundEndSeconds = 3f;
 
@@ -268,6 +269,10 @@ namespace ShooterPrototype.Player
             SetMovementLocked(false);
             SetLocalCombatEnabled(false);
 
+            gameHud?.ShowModeIntroBanner(
+                MainMenuGameModeUtility.GetModeIntroDescription(MainMenuGameMode.Duel1v1),
+                5f);
+
             var deadline = Time.unscaledTime + PrepSeconds;
             while (Time.unscaledTime < deadline)
             {
@@ -358,6 +363,7 @@ namespace ShooterPrototype.Player
                     localRoundWins++;
                     lastRoundWinner = RoundWinner.Local;
                     combatHud?.ShowDuelKillBanner(bot.Nickname);
+                    MatchAchievementReporter.ReportEvent(this, "kill_player", 1);
                     yield break;
                 }
 
@@ -503,7 +509,18 @@ namespace ShooterPrototype.Player
             localTeamIndex = 0;
             botTeamIndex = 1;
             localSpawnSlot = UnityEngine.Random.Range(0, 3);
-            botSpawnSlot = UnityEngine.Random.Range(0, 3);
+            var botCandidates = new List<int>(3);
+            for (var i = 0; i < 3; i++)
+            {
+                if (i != localSpawnSlot)
+                {
+                    botCandidates.Add(i);
+                }
+            }
+
+            botSpawnSlot = botCandidates.Count > 0
+                ? botCandidates[UnityEngine.Random.Range(0, botCandidates.Count)]
+                : localSpawnSlot;
         }
 
         private void TeleportLocalToSpawn(bool revive)
@@ -528,6 +545,14 @@ namespace ShooterPrototype.Player
                 playerHealth?.ForceReviveAt(position, rotation);
                 fpsController?.NotifyLocalRespawned(1.5f);
             }
+
+            if (characterController != null && (playerHealth == null || !playerHealth.IsDead))
+            {
+                characterController.enabled = true;
+            }
+
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
         }
 
         private static Vector3 GetSpawnPosition(int teamIndex, int slotIndex)
@@ -562,6 +587,8 @@ namespace ShooterPrototype.Player
             }
 
             weaponController?.SetDuelFireBlocked(true);
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
         }
 
         private void SetMovementLocked(bool locked)
@@ -643,7 +670,6 @@ namespace ShooterPrototype.Player
                 countdownRemainingSeconds,
                 BuildDuelPhaseLabel());
             RefreshDuelPlayersPanel();
-            gameHud?.SetMatchStatusMessage(string.Empty);
         }
 
         private void RefreshDuelPlayersPanel()
@@ -671,7 +697,7 @@ namespace ShooterPrototype.Player
             switch (currentPhase)
             {
                 case "prep":
-                    return $"Подготовка — {countdown} сек.";
+                    return string.Empty;
                 case "round_pick":
                     return $"Выбор оружия — {countdown} сек.";
                 case "round":

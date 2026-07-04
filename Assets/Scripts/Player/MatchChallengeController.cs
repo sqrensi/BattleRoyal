@@ -108,11 +108,21 @@ namespace ShooterPrototype.Player
 
             BindLocalPlayer();
             DisableCombatUntilPrepEnds();
+            gameHud?.ShowModeIntroBanner(
+                MainMenuGameModeUtility.GetModeIntroDescription(MainMenuGameMode.Challenge),
+                5f);
             gameHud?.SetChallengeTargetStats(0, targets.Count);
             gameHud?.SetChallengeElapsedSeconds(0f);
 
             yield return WeaponPickPhaseRoutine();
-            yield return StartRunRoutine();
+            EnableLocalPlayerCombat();
+            fpsController?.SetMovementLocked(false);
+            runActive = true;
+            runStartedAt = Time.time;
+            elapsedSeconds = 0f;
+            gameHud?.ClearChallengePrepCountdown();
+            gameHud?.ClearDuelRoundBanner();
+            gameHud?.SetChallengeElapsedSeconds(0f);
         }
 
         public void NotifyTargetDestroyed(ChallengeTarget target)
@@ -152,21 +162,8 @@ namespace ShooterPrototype.Player
             {
                 HandleWeaponPicked(WeaponKind.AssaultRifle);
             }
-        }
 
-        private IEnumerator StartRunRoutine()
-        {
-            gameHud?.ClearChallengePrepCountdown();
-            gameHud?.ShowChallengeStartedBanner();
-            yield return new WaitForSecondsRealtime(1.2f);
-            gameHud?.ClearDuelRoundBanner();
-
-            EnableLocalPlayerCombat();
             fpsController?.SetMovementLocked(false);
-            runActive = true;
-            runStartedAt = Time.time;
-            elapsedSeconds = 0f;
-            gameHud?.SetChallengeElapsedSeconds(0f);
         }
 
         private void HandleWeaponPicked(WeaponKind kind)

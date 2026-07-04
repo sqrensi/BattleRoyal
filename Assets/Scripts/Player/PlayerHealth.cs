@@ -223,7 +223,7 @@ namespace ShooterPrototype.Player
 
         private void OnEnable()
         {
-            if (!networkMode)
+            if (ShouldBindRealtimeClient())
             {
                 TryBindRealtimeClient();
             }
@@ -231,10 +231,15 @@ namespace ShooterPrototype.Player
 
         private void Update()
         {
-            if (!networkMode && realtimeClient == null)
+            if (ShouldBindRealtimeClient() && realtimeClient == null)
             {
                 TryBindRealtimeClient();
             }
+        }
+
+        private bool ShouldBindRealtimeClient()
+        {
+            return !networkMode && !eliminationMode;
         }
 
         private void OnDisable()
@@ -352,7 +357,8 @@ namespace ShooterPrototype.Player
 
             SetNetworkMode(true);
             SetEliminationMode(true);
-            enableDeathFall = false;
+            enableDeathFall = true;
+            useSimpleDeathFall = false;
         }
 
         public void SetDuelBotEliminationMode(bool enabled)
@@ -366,6 +372,7 @@ namespace ShooterPrototype.Player
             SetNetworkMode(true);
             SetEliminationMode(true);
             enableDeathFall = true;
+            useSimpleDeathFall = false;
         }
 
         public void ConfigureOfflineDmBot()
@@ -374,6 +381,9 @@ namespace ShooterPrototype.Player
             SetNetworkMode(false);
             SetEliminationMode(true);
             enableDeathFall = true;
+            useSimpleDeathFall = false;
+            simpleDeathPitch = 82f;
+            simpleDeathDropDistance = 0.38f;
         }
 
         public void ConfigureOfflineDmLocalPlayer()
@@ -446,6 +456,17 @@ namespace ShooterPrototype.Player
             }
 
             transform.SetPositionAndRotation(position, rotation);
+            if (!isDead)
+            {
+                if (characterController != null)
+                {
+                    characterController.enabled = true;
+                }
+
+                presenceSync?.FlushLocalPose();
+                return;
+            }
+
             ExitDeathState(restoreHealth: true);
             LocalHealthReplenished?.Invoke();
             presenceSync?.FlushLocalPose();
@@ -547,10 +568,17 @@ namespace ShooterPrototype.Player
 
             if (enableDeathFall)
             {
-                StartDeathFallPhysics();
-                if (eliminationMode && !networkMode)
+                if (useSimpleDeathFall && trainingBotMode && !networkMode)
                 {
-                    BeginDeathFallLandingMonitor();
+                    StartSimpleDeathFall();
+                }
+                else
+                {
+                    StartDeathFallPhysics();
+                    if (eliminationMode && networkMode)
+                    {
+                        BeginDeathFallLandingMonitor();
+                    }
                 }
             }
 
@@ -565,6 +593,8 @@ namespace ShooterPrototype.Player
             }
 
             presenceSync?.FlushLocalPose();
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
         }
 
         private void ExitDeathState(bool restoreHealth)
@@ -604,7 +634,7 @@ namespace ShooterPrototype.Player
             if (trainingBotMode && GetComponent<DuelNavBotController>() is DuelNavBotController duelBot)
             {
                 duelBot.RestoreAfterDeathRevival();
-                RemotePlayerLocomotionUtility.FinalizeDuelBotPresentation(gameObject);
+                RemotePlayerLocomotionUtility.RestoreTrainingBotLocomotion(gameObject);
             }
 
             RestoreDeathCombatPresentation(restoreLocalOnlyControls: !networkMode);
@@ -651,7 +681,7 @@ namespace ShooterPrototype.Player
                 weaponHolster.enabled = true;
             }
 
-            if (!restoreLocalOnlyControls)
+            if (!restoreLocalOnlyControls || trainingBotMode)
             {
                 return;
             }

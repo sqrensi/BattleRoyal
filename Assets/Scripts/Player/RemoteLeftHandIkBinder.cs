@@ -82,10 +82,13 @@ namespace ShooterPrototype.Player
 
         private int ikFrameOffset;
 
+        private PlayerHealth health;
+
         private void Awake()
         {
             weaponPresentation = GetComponent<RemoteWeaponPresentation>();
             remoteBootstrap = GetComponent<RemoteThirdPersonPlayerBootstrap>();
+            health = GetComponent<PlayerHealth>();
             ikFrameOffset = GetInstanceID() & 3;
         }
 
@@ -250,6 +253,16 @@ namespace ShooterPrototype.Player
 
         private bool ShouldApplyHandIkThisFrame()
         {
+            if (health == null)
+            {
+                health = GetComponent<PlayerHealth>();
+            }
+
+            if (health != null && health.IsDead)
+            {
+                return false;
+            }
+
             return EnemyPresentationVisibilityUtility.IsPresentationActive(gameObject);
         }
 

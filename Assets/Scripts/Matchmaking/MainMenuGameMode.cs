@@ -30,8 +30,20 @@ namespace ShooterPrototype.Matchmaking
                 MainMenuGameMode.Training => "Тренировка",
                 MainMenuGameMode.Duel1v1 => "1 на 1",
                 MainMenuGameMode.Challenge => "Челлендж",
-                MainMenuGameMode.Deathmatch => "Дэзматч",
+                MainMenuGameMode.Deathmatch => "Бой насмерть",
                 _ => "Королевская битва",
+            };
+        }
+
+        public static string GetModeIntroDescription(MainMenuGameMode mode)
+        {
+            return mode switch
+            {
+                MainMenuGameMode.Training => "Тренировка — отточите мастерство владения оружием.",
+                MainMenuGameMode.Challenge => "Челлендж — попадите по всем мишеням на карте за минимальное время.",
+                MainMenuGameMode.Duel1v1 => "Дуэль 1 на 1 — побеждает тот, кто первым выиграет 5 раундов.",
+                MainMenuGameMode.Deathmatch => "Бой насмерть — наберите больше всего убийств за 5 минут.",
+                _ => "Королевская битва — останься последним выжившим.",
             };
         }
 

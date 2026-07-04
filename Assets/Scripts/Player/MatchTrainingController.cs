@@ -103,6 +103,9 @@ namespace ShooterPrototype.Player
             SetupPickups();
             EnableLocalPlayerCombat();
             yield return SpawnBotsRoutine();
+            gameHud?.ShowModeIntroBanner(
+                MainMenuGameModeUtility.GetModeIntroDescription(MainMenuGameMode.Training),
+                5f);
             RefreshHud();
             StartCoroutine(SessionTimerRoutine());
 

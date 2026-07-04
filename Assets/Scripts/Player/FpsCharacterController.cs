@@ -410,16 +410,27 @@ namespace ShooterPrototype.Player
             {
                 MovementNetworkDiagnostics.LogReconcile(
                     localPos, authoritativePosition, horizontalError, serverTick, "snap", string.Empty);
-                characterController.enabled = false;
-                transform.position = new Vector3(
-                    authoritativePosition.x,
-                    authoritativePosition.y,
-                    authoritativePosition.z);
-                characterController.enabled = true;
+                if (CanUseCharacterController())
+                {
+                    characterController.enabled = false;
+                    transform.position = new Vector3(
+                        authoritativePosition.x,
+                        authoritativePosition.y,
+                        authoritativePosition.z);
+                    characterController.enabled = true;
+                }
+                else
+                {
+                    transform.position = new Vector3(
+                        authoritativePosition.x,
+                        authoritativePosition.y,
+                        authoritativePosition.z);
+                }
+
                 return;
             }
 
-            if (horizontalError > reconcileMinError)
+            if (horizontalError > reconcileMinError && CanUseCharacterController())
             {
                 MovementNetworkDiagnostics.LogReconcile(
                     localPos, authoritativePosition, horizontalError, serverTick, "blend", string.Empty);
@@ -541,6 +552,8 @@ namespace ShooterPrototype.Player
             var health = playerHealth;
             if (health != null && health.IsDead)
             {
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
                 return;
             }
 
@@ -604,6 +617,8 @@ namespace ShooterPrototype.Player
                 var health = playerHealth;
                 if (health != null && health.IsDead)
                 {
+                    Cursor.lockState = CursorLockMode.Locked;
+                    Cursor.visible = false;
                     return;
                 }
 
@@ -1001,8 +1016,21 @@ namespace ShooterPrototype.Player
             horizontalSpeed = new Vector2(ccVelocity.x, ccVelocity.z).magnitude;
         }
 
+        private bool CanUseCharacterController()
+        {
+            return characterController != null &&
+                   characterController.enabled &&
+                   characterController.gameObject.activeInHierarchy;
+        }
+
         private void ApplyLocalMovement()
         {
+            if (!CanUseCharacterController())
+            {
+                horizontalSpeed = 0f;
+                return;
+            }
+
             if (swimmingMode)
             {
                 ApplySwimmingMovement();
@@ -1072,6 +1100,12 @@ namespace ShooterPrototype.Player
 
         private void ApplySwimmingMovement()
         {
+            if (!CanUseCharacterController())
+            {
+                horizontalSpeed = 0f;
+                return;
+            }
+
             RestoreStandingPoseForSwimming();
 
             var inputX = networkMoveInputX;

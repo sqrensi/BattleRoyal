@@ -43,7 +43,8 @@ namespace ShooterPrototype.Player
 
         private void Update()
         {
-            if (MainMenuPlayerPreview.IsMenuPreviewSpawn)
+            if (MainMenuPlayerPreview.IsMenuPreviewSpawn ||
+                MainMenuPlayerPreview.IsMenuPreviewInstance(gameObject))
             {
                 return;
             }

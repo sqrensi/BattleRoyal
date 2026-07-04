@@ -100,6 +100,8 @@ namespace ShooterPrototype.UI
         public static readonly Color CurrencyAccent = new Color(0.92f, 0.76f, 0.28f, 0.98f);
         public static readonly Color PriceBadgeFill = new Color(0.06f, 0.055f, 0.048f, 0.88f);
         public static readonly Color PriceBadgeFillMuted = new Color(0.05f, 0.048f, 0.044f, 0.78f);
+        public static readonly Color PriceBadgeAffordableFill = new Color(0.11f, 0.10f, 0.08f, 0.9f);
+        public static readonly Color PriceBadgeAffordableBorder = new Color(0.48f, 0.38f, 0.14f, 0.55f);
 
         public static readonly Color EquippedBorder = new Color(0.98f, 0.82f, 0.24f, 1f);
         public static readonly Color EquippedBorderBright = new Color(1f, 0.92f, 0.42f, 1f);
@@ -135,6 +137,7 @@ namespace ShooterPrototype.UI
         private static Sprite navSelectedSprite;
         private static Sprite equippedFrameSprite;
         private static Sprite priceBadgeSprite;
+        private static Sprite priceBadgeAffordableSprite;
         private static TMP_FontAsset titleFont;
         private static TMP_FontAsset bodyFont;
         private static Font legacyFont;
@@ -170,6 +173,9 @@ namespace ShooterPrototype.UI
 
         public static Sprite PriceBadgeSprite => priceBadgeSprite ??= CreateBorderedSprite(
             PriceBadgeFill, BorderOuter, BorderInner, borderPixels: 1, shadowPixels: 4);
+
+        public static Sprite PriceBadgeAffordableSprite => priceBadgeAffordableSprite ??= CreateBorderedSprite(
+            PriceBadgeAffordableFill, PriceBadgeAffordableBorder, BorderInner, borderPixels: 1, shadowPixels: 3);
 
         public static TMP_FontAsset TitleFont => ResolveTitleFont();
         public static TMP_FontAsset BodyFont => ResolveBodyFont();
@@ -229,9 +235,9 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            image.sprite = PriceBadgeSprite;
+            image.sprite = canAfford ? PriceBadgeAffordableSprite : PriceBadgeSprite;
             image.type = Image.Type.Sliced;
-            image.color = canAfford ? Color.white : new Color(0.88f, 0.88f, 0.88f, 0.92f);
+            image.color = canAfford ? new Color(1f, 1f, 1f, 0.98f) : new Color(0.78f, 0.78f, 0.78f, 0.88f);
             image.raycastTarget = false;
         }
 

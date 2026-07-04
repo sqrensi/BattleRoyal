@@ -8,24 +8,17 @@
       "target": 1,
       "sortOrder": 1,
       "eventType": "kill_player",
-      "reward": {
-        "type": "currency",
-        "amount": 5000
-      }
+      "reward": { "type": "currency", "amount": 500 }
     },
     {
-      "achievementId": "ach_plane_landed",
-      "code": "plane_landed",
-      "title": "Высадка",
-      "description": "Высадитесь из самолёта",
-      "target": 1,
+      "achievementId": "ach_kill_player_3",
+      "code": "kill_player_3",
+      "title": "Тройка",
+      "description": "Убейте 3 игроков",
+      "target": 3,
       "sortOrder": 2,
-      "eventType": "plane_landed",
-      "reward": {
-        "type": "case",
-        "caseId": "case_001",
-        "amount": 1
-      }
+      "eventType": "kill_player",
+      "reward": { "type": "currency", "amount": 800 }
     },
     {
       "achievementId": "ach_kill_player_5",
@@ -35,10 +28,147 @@
       "target": 5,
       "sortOrder": 3,
       "eventType": "kill_player",
-      "reward": {
-        "type": "currency",
-        "amount": 10000
-      }
+      "reward": { "type": "currency", "amount": 1200 }
+    },
+    {
+      "achievementId": "ach_kill_player_10",
+      "code": "kill_player_10",
+      "title": "Десятка",
+      "description": "Убейте 10 игроков",
+      "target": 10,
+      "sortOrder": 4,
+      "eventType": "kill_player",
+      "reward": { "type": "currency", "amount": 1800 }
+    },
+    {
+      "achievementId": "ach_kill_player_25",
+      "code": "kill_player_25",
+      "title": "Охотник",
+      "description": "Убейте 25 игроков",
+      "target": 25,
+      "sortOrder": 5,
+      "eventType": "kill_player",
+      "reward": { "type": "currency", "amount": 2500 }
+    },
+    {
+      "achievementId": "ach_kill_player_50",
+      "code": "kill_player_50",
+      "title": "Истребитель",
+      "description": "Убейте 50 игроков",
+      "target": 50,
+      "sortOrder": 6,
+      "eventType": "kill_player",
+      "reward": { "type": "currency", "amount": 3500 }
+    },
+    {
+      "achievementId": "ach_kill_player_100",
+      "code": "kill_player_100",
+      "title": "Легенда арены",
+      "description": "Убейте 100 игроков",
+      "target": 100,
+      "sortOrder": 7,
+      "eventType": "kill_player",
+      "reward": { "type": "currency", "amount": 5000 }
+    },
+    {
+      "achievementId": "ach_dm_first_win",
+      "code": "dm_first_win",
+      "title": "Победитель боя",
+      "description": "Выиграйте матч «Бой насмерть»",
+      "target": 1,
+      "sortOrder": 8,
+      "eventType": "dm_match_win",
+      "reward": { "type": "currency", "amount": 2000 }
+    },
+    {
+      "achievementId": "ach_duel_first_win",
+      "code": "duel_first_win",
+      "title": "Дuelist",
+      "description": "Выиграйте матч 1 на 1",
+      "target": 1,
+      "sortOrder": 9,
+      "eventType": "duel_match_win",
+      "reward": { "type": "currency", "amount": 2200 }
+    },
+    {
+      "achievementId": "ach_matches_5",
+      "code": "matches_5",
+      "title": "Боец",
+      "description": "Сыграйте 5 матчей",
+      "target": 5,
+      "sortOrder": 10,
+      "eventType": "match_completed",
+      "reward": { "type": "currency", "amount": 900 }
+    },
+    {
+      "achievementId": "ach_matches_20",
+      "code": "matches_20",
+      "title": "Ветеран",
+      "description": "Сыграйте 20 матчей",
+      "target": 20,
+      "sortOrder": 11,
+      "eventType": "match_completed",
+      "reward": { "type": "currency", "amount": 2800 }
+    },
+    {
+      "achievementId": "ach_open_case",
+      "code": "open_case",
+      "title": "Открытие",
+      "description": "Откройте кейс",
+      "target": 1,
+      "sortOrder": 12,
+      "eventType": "case_opened",
+      "reward": { "type": "currency", "amount": 700 }
+    },
+    {
+      "achievementId": "ach_buy_skin",
+      "code": "buy_skin",
+      "title": "Шопоголик",
+      "description": "Купите скин в магазине",
+      "target": 1,
+      "sortOrder": 13,
+      "eventType": "shop_purchase",
+      "reward": { "type": "currency", "amount": 600 }
+    },
+    {
+      "achievementId": "ach_daily_7",
+      "code": "daily_7",
+      "title": "Прилежный",
+      "description": "Заберите 7 ежедневных наград",
+      "target": 7,
+      "sortOrder": 14,
+      "eventType": "daily_reward_claim",
+      "reward": { "type": "currency", "amount": 4000 }
+    },
+    {
+      "achievementId": "ach_daily_49",
+      "code": "daily_49",
+      "title": "Марафон",
+      "description": "Заберите все 49 ежедневных наград",
+      "target": 49,
+      "sortOrder": 15,
+      "eventType": "daily_reward_claim",
+      "reward": { "type": "currency", "amount": 7000 }
+    },
+    {
+      "achievementId": "ach_headshot_5",
+      "code": "headshot_5",
+      "title": "Снайпер",
+      "description": "Сделайте 5 убийств в голову",
+      "target": 5,
+      "sortOrder": 16,
+      "eventType": "headshot_kill",
+      "reward": { "type": "case", "caseId": "case_001", "amount": 1 }
+    },
+    {
+      "achievementId": "ach_streak_3",
+      "code": "streak_3",
+      "title": "Серия",
+      "description": "Сделайте 3 убийства подряд без смерти",
+      "target": 3,
+      "sortOrder": 17,
+      "eventType": "kill_streak",
+      "reward": { "type": "currency", "amount": 1500 }
     }
   ]
 }

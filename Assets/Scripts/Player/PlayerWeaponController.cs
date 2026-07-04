@@ -498,7 +498,6 @@ namespace ShooterPrototype.Player
 
         public void RestoreAfterRespawn()
         {
-            var restoredAmmo = 0;
             if (weaponLoadoutController != null && weaponLoadoutController.Loadout != null)
             {
                 var loadout = weaponLoadoutController.Loadout;
@@ -510,13 +509,16 @@ namespace ShooterPrototype.Player
                         slotIndex = loadout.IsSlotOccupied(0) ? 0 : 1;
                     }
 
-                    var slotMag = loadout.GetSlotMagAmmo(slotIndex);
-                    restoredAmmo = slotMag >= 0 ? slotMag : 0;
+                    loadout.SetSlotMagAmmo(slotIndex, MagazineSize);
                     reserveAmmo = loadout.SpareAmmo;
                 }
             }
 
-            currentAmmo = Mathf.Clamp(restoredAmmo, 0, MagazineSize);
+            currentAmmo = weaponLoadoutController != null &&
+                          weaponLoadoutController.Loadout != null &&
+                          weaponLoadoutController.Loadout.HasAnyWeapon
+                ? MagazineSize
+                : 0;
             isReloading = false;
             if (reloadCoroutine != null)
             {
@@ -1085,18 +1087,11 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
-            System.Array.Sort(hitQueryBuffer, 0, hitCount, RaycastHitDistanceComparer.Instance);
             return PlayerWeaponRaycastFilters.TrySelectClosestHit(
                 hitQueryBuffer,
                 hitCount,
                 transform,
                 out closestHit);
-        }
-
-        private sealed class RaycastHitDistanceComparer : System.Collections.Generic.IComparer<RaycastHit>
-        {
-            public static readonly RaycastHitDistanceComparer Instance = new RaycastHitDistanceComparer();
-            public int Compare(RaycastHit x, RaycastHit y) => x.distance.CompareTo(y.distance);
         }
 
         private enum HitZone

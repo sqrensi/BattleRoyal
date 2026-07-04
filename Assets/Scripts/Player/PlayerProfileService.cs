@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
 using ShooterPrototype.UI;
 using UnityEngine;
@@ -115,6 +116,8 @@ namespace ShooterPrototype.Player
 
         public static bool UsesLocalProgressOnly => !IsServerSynced;
 
+        public static bool UsesOfflineAchievements => !IsServerSynced;
+
         public static bool CanReportMatchStatsToServer => IsServerSynced;
 
         public static void ApplyLiveRatings(int duelRating, int rating)
@@ -149,6 +152,8 @@ namespace ShooterPrototype.Player
 
             CurrentProfile = profile;
             IsServerSynced = markSynced;
+            offlineAchievementCache = null;
+            serverAchievementCatalogCache = null;
             if (markSynced)
             {
                 ExitOfflineMode();
@@ -247,23 +252,48 @@ namespace ShooterPrototype.Player
 
         public static IReadOnlyList<PlayerAchievementEntry> GetActiveAchievements()
         {
-            if (IsServerSynced && CurrentProfile?.achievements != null)
-            {
-                return CurrentProfile.achievements;
-            }
-
             if (!IsServerSynced)
             {
                 return LoadOfflineAchievementsFromCatalog();
             }
 
-            return Array.Empty<PlayerAchievementEntry>();
+            var serverAchievements = CurrentProfile?.achievements;
+            if (serverAchievements != null && serverAchievements.Length > 0)
+            {
+                return serverAchievements;
+            }
+
+            return LoadServerAchievementCatalogFallback();
+        }
+
+        public static bool CanUseOfflineAchievementClaim(string achievementId)
+        {
+            if (string.IsNullOrWhiteSpace(achievementId))
+            {
+                return false;
+            }
+
+            if (!IsServerSynced)
+            {
+                return true;
+            }
+
+            return IsOfflineAchievementCompletedLocally(achievementId) &&
+                   !IsOfflineAchievementRewardClaimed(achievementId);
         }
 
         [Serializable]
         private sealed class OfflineAchievementCatalogFile
         {
             public OfflineAchievementCatalogEntry[] achievements;
+        }
+
+        [Serializable]
+        private sealed class OfflineAchievementRewardEntry
+        {
+            public string type;
+            public int amount;
+            public string caseId;
         }
 
         [Serializable]
@@ -275,9 +305,254 @@ namespace ShooterPrototype.Player
             public string description;
             public int target;
             public int sortOrder;
+            public string eventType;
+            public OfflineAchievementRewardEntry reward;
         }
 
         private static PlayerAchievementEntry[] offlineAchievementCache;
+        private static PlayerAchievementEntry[] serverAchievementCatalogCache;
+
+        public static bool IsOfflineAchievementRewardClaimed(string achievementId)
+        {
+            if (string.IsNullOrWhiteSpace(achievementId))
+            {
+                return false;
+            }
+
+            var claimedKey = $"offline_achievement_reward_claimed_{achievementId.Trim()}";
+            return UserScopedPlayerPrefs.GetInt(claimedKey, 0) == 1;
+        }
+
+        public static bool TryClaimOfflineAchievement(string achievementId, out string error)
+        {
+            error = string.Empty;
+            if (string.IsNullOrWhiteSpace(achievementId))
+            {
+                error = "Достижение не найдено.";
+                return false;
+            }
+
+            if (!CanUseOfflineAchievementClaim(achievementId))
+            {
+                error = "Награда доступна только в оффлайн-режиме.";
+                return false;
+            }
+
+            if (IsOfflineAchievementRewardClaimed(achievementId))
+            {
+                error = "Награда уже получена.";
+                return false;
+            }
+
+            var asset = Resources.Load<TextAsset>("Shop/achievement-catalog");
+            if (asset == null || string.IsNullOrWhiteSpace(asset.text))
+            {
+                error = "Каталог достижений недоступен.";
+                return false;
+            }
+
+            var catalog = JsonUtility.FromJson<OfflineAchievementCatalogFile>(asset.text);
+            if (catalog?.achievements == null)
+            {
+                error = "Каталог достижений пуст.";
+                return false;
+            }
+
+            OfflineAchievementCatalogEntry matched = null;
+            for (var i = 0; i < catalog.achievements.Length; i++)
+            {
+                var entry = catalog.achievements[i];
+                if (entry != null &&
+                    string.Equals(entry.achievementId, achievementId.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    matched = entry;
+                    break;
+                }
+            }
+
+            if (matched == null)
+            {
+                error = "Достижение не найдено.";
+                return false;
+            }
+
+            var target = Mathf.Max(1, matched.target);
+            var progressKey = $"offline_achievement_progress_{matched.achievementId}";
+            var progress = Mathf.Clamp(UserScopedPlayerPrefs.GetInt(progressKey, 0), 0, target);
+            if (progress < target)
+            {
+                error = "Достижение ещё не выполнено.";
+                return false;
+            }
+
+            GrantOfflineAchievementReward(matched);
+            UserScopedPlayerPrefs.SetInt($"offline_achievement_reward_claimed_{matched.achievementId}", 1);
+            offlineAchievementCache = null;
+            PlayerPrefs.Save();
+            ProfileSynced?.Invoke();
+            return true;
+        }
+
+        public static void ReportOfflineAchievementEvent(string eventType, int amount = 1)
+        {
+            if (string.IsNullOrWhiteSpace(eventType) || amount <= 0)
+            {
+                return;
+            }
+
+            if (IsServerSynced && !IsOfflineAchievementSession())
+            {
+                return;
+            }
+
+            var asset = Resources.Load<TextAsset>("Shop/achievement-catalog");
+            if (asset == null || string.IsNullOrWhiteSpace(asset.text))
+            {
+                return;
+            }
+
+            var catalog = JsonUtility.FromJson<OfflineAchievementCatalogFile>(asset.text);
+            if (catalog?.achievements == null || catalog.achievements.Length == 0)
+            {
+                return;
+            }
+
+            var changed = false;
+            for (var i = 0; i < catalog.achievements.Length; i++)
+            {
+                var entry = catalog.achievements[i];
+                if (entry == null ||
+                    string.IsNullOrWhiteSpace(entry.achievementId) ||
+                    !string.Equals(entry.eventType, eventType, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var target = Mathf.Max(1, entry.target);
+                var progressKey = $"offline_achievement_progress_{entry.achievementId}";
+                var claimedKey = $"offline_achievement_reward_claimed_{entry.achievementId}";
+                if (UserScopedPlayerPrefs.GetInt(claimedKey, 0) == 1)
+                {
+                    continue;
+                }
+
+                var progress = Mathf.Clamp(UserScopedPlayerPrefs.GetInt(progressKey, 0), 0, target);
+                var next = Mathf.Clamp(progress + amount, 0, target);
+                if (next == progress)
+                {
+                    continue;
+                }
+
+                UserScopedPlayerPrefs.SetInt(progressKey, next);
+                changed = true;
+
+                if (next < target)
+                {
+                    continue;
+                }
+            }
+
+            if (!changed)
+            {
+                return;
+            }
+
+            offlineAchievementCache = null;
+            PlayerPrefs.Save();
+            ProfileSynced?.Invoke();
+        }
+
+        private static void GrantOfflineAchievementReward(OfflineAchievementCatalogEntry entry)
+        {
+            if (entry?.reward == null)
+            {
+                return;
+            }
+
+            var type = entry.reward.type?.Trim().ToLowerInvariant() ?? string.Empty;
+            switch (type)
+            {
+                case "currency":
+                    PlayerCurrencyService.AddCurrency(Mathf.Max(0, entry.reward.amount));
+                    break;
+                case "case":
+                    if (!string.IsNullOrWhiteSpace(entry.reward.caseId))
+                    {
+                        CaseOpeningService.GrantLocalCase(entry.reward.caseId.Trim(), Mathf.Max(1, entry.reward.amount));
+                    }
+
+                    break;
+                default:
+                    break;
+            }
+
+            if (!string.IsNullOrWhiteSpace(entry.title))
+            {
+                AchievementToastController.Show(entry.title, entry.description);
+            }
+        }
+
+        private static bool IsOfflineAchievementSession()
+        {
+            return ActiveMatchContext.IsOfflineDuelSession ||
+                   ActiveMatchContext.IsOfflineDeathmatchSession ||
+                   ActiveMatchContext.IsOfflineTrainingSession ||
+                   ActiveMatchContext.IsOfflineChallengeSession;
+        }
+
+        private static bool ShouldPreferOfflineAchievements()
+        {
+            return !IsServerSynced;
+        }
+
+        public static bool IsOfflineAchievementCompletedLocally(string achievementId)
+        {
+            if (string.IsNullOrWhiteSpace(achievementId))
+            {
+                return false;
+            }
+
+            var target = ResolveOfflineAchievementTarget(achievementId);
+            if (target <= 0)
+            {
+                return false;
+            }
+
+            var progressKey = $"offline_achievement_progress_{achievementId.Trim()}";
+            return UserScopedPlayerPrefs.GetInt(progressKey, 0) >= target;
+        }
+
+        private static int ResolveOfflineAchievementTarget(string achievementId)
+        {
+            if (string.IsNullOrWhiteSpace(achievementId))
+            {
+                return 0;
+            }
+
+            var asset = Resources.Load<TextAsset>("Shop/achievement-catalog");
+            if (asset == null || string.IsNullOrWhiteSpace(asset.text))
+            {
+                return 0;
+            }
+
+            var catalog = JsonUtility.FromJson<OfflineAchievementCatalogFile>(asset.text);
+            if (catalog?.achievements == null)
+            {
+                return 0;
+            }
+
+            for (var i = 0; i < catalog.achievements.Length; i++)
+            {
+                var entry = catalog.achievements[i];
+                if (entry != null &&
+                    string.Equals(entry.achievementId, achievementId.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    return Mathf.Max(1, entry.target);
+                }
+            }
+
+            return 0;
+        }
 
         private static IReadOnlyList<PlayerAchievementEntry> LoadOfflineAchievementsFromCatalog()
         {
@@ -300,14 +575,25 @@ namespace ShooterPrototype.Player
                 return offlineAchievementCache;
             }
 
-            offlineAchievementCache = new PlayerAchievementEntry[catalog.achievements.Length];
+            var list = new List<PlayerAchievementEntry>(catalog.achievements.Length);
             for (var i = 0; i < catalog.achievements.Length; i++)
             {
                 var source = catalog.achievements[i];
+                if (source == null || string.IsNullOrWhiteSpace(source.achievementId))
+                {
+                    continue;
+                }
+
+                if (IsOfflineAchievementRewardClaimed(source.achievementId))
+                {
+                    continue;
+                }
+
                 var target = Mathf.Max(1, source.target);
                 var progressKey = $"offline_achievement_progress_{source.achievementId}";
                 var progress = Mathf.Clamp(UserScopedPlayerPrefs.GetInt(progressKey, 0), 0, target);
-                offlineAchievementCache[i] = new PlayerAchievementEntry
+                var completed = progress >= target;
+                list.Add(new PlayerAchievementEntry
                 {
                     achievementId = source.achievementId,
                     code = source.code,
@@ -315,15 +601,67 @@ namespace ShooterPrototype.Player
                     description = source.description,
                     progress = progress,
                     target = target,
-                    completed = progress >= target,
+                    completed = completed,
                     completedAt = 0,
-                    rewardType = string.Empty,
-                    rewardAmount = 0,
-                    rewardCaseId = string.Empty
-                };
+                    rewardType = source.reward != null ? source.reward.type ?? string.Empty : string.Empty,
+                    rewardAmount = source.reward != null ? source.reward.amount : 0,
+                    rewardCaseId = source.reward != null ? source.reward.caseId ?? string.Empty : string.Empty
+                });
             }
 
+            offlineAchievementCache = list.ToArray();
             return offlineAchievementCache;
+        }
+
+        private static IReadOnlyList<PlayerAchievementEntry> LoadServerAchievementCatalogFallback()
+        {
+            if (serverAchievementCatalogCache != null)
+            {
+                return serverAchievementCatalogCache;
+            }
+
+            var asset = Resources.Load<TextAsset>("Shop/achievement-catalog");
+            if (asset == null || string.IsNullOrWhiteSpace(asset.text))
+            {
+                serverAchievementCatalogCache = Array.Empty<PlayerAchievementEntry>();
+                return serverAchievementCatalogCache;
+            }
+
+            var catalog = JsonUtility.FromJson<OfflineAchievementCatalogFile>(asset.text);
+            if (catalog?.achievements == null || catalog.achievements.Length == 0)
+            {
+                serverAchievementCatalogCache = Array.Empty<PlayerAchievementEntry>();
+                return serverAchievementCatalogCache;
+            }
+
+            var list = new List<PlayerAchievementEntry>(catalog.achievements.Length);
+            for (var i = 0; i < catalog.achievements.Length; i++)
+            {
+                var source = catalog.achievements[i];
+                if (source == null || string.IsNullOrWhiteSpace(source.achievementId))
+                {
+                    continue;
+                }
+
+                var target = Mathf.Max(1, source.target);
+                list.Add(new PlayerAchievementEntry
+                {
+                    achievementId = source.achievementId,
+                    code = source.code,
+                    title = source.title,
+                    description = source.description,
+                    progress = 0,
+                    target = target,
+                    completed = false,
+                    completedAt = 0,
+                    rewardType = source.reward != null ? source.reward.type ?? string.Empty : string.Empty,
+                    rewardAmount = source.reward != null ? source.reward.amount : 0,
+                    rewardCaseId = source.reward != null ? source.reward.caseId ?? string.Empty : string.Empty
+                });
+            }
+
+            serverAchievementCatalogCache = list.ToArray();
+            return serverAchievementCatalogCache;
         }
 
         public static PlayerMatchStatsDto GetMatchStats()

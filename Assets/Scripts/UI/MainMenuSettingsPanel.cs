@@ -11,7 +11,7 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuSettingsPanel : MonoBehaviour
     {
-        private const int SettingsLayoutVersion = 2;
+        private const int SettingsLayoutVersion = 3;
 
         [SerializeField] private float edgeMargin = 28f;
         [SerializeField] private float leftReservedWidth = 228f;
@@ -340,6 +340,13 @@ namespace ShooterPrototype.UI
                 () => ClientSettingsService.AllowBotMatchmaking,
                 ClientSettingsService.SetAllowBotMatchmaking,
                 () => ClientSettingsService.CanToggleBotMatchmaking());
+
+            CreateSectionTitle(parent, "Интерфейс");
+            CreateToggleRow(
+                parent,
+                "Подсказки управления",
+                () => ClientSettingsService.ShowMatchControlHints,
+                ClientSettingsService.SetShowMatchControlHints);
 
             CreateSectionTitle(parent, "Графика");
             CreateSliderRow(

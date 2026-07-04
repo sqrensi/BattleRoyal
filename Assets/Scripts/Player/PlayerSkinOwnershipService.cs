@@ -9,22 +9,12 @@ namespace ShooterPrototype.Player
         private const string OwnedPrefPrefix = "player_skin_owned_";
         private const string OwnedCountPrefPrefix = "player_skin_count_";
         private const string OwnershipInitKey = "player_skin_ownership_initialized_v1";
-        private const string CurrencyGrantKey = "player_currency_grant_100k_v1";
-
         public static event Action OwnershipChanged;
         public static event Action EquipmentChanged;
 
         public static void EnsureInitialized()
         {
             ShopCatalogService.EnsureLoaded();
-
-            if (!UserScopedPlayerPrefs.HasKey(CurrencyGrantKey))
-            {
-                PlayerCurrencyService.AddCurrency(100000);
-                UserScopedPlayerPrefs.SetInt(CurrencyGrantKey, 1);
-                PlayerPrefs.Save();
-            }
-
             EnsureDefaultWeaponOwnership();
 
             if (UserScopedPlayerPrefs.HasKey(OwnershipInitKey))

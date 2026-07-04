@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using ShooterPrototype.Player;
 using TMPro;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 namespace ShooterPrototype.UI
@@ -27,6 +28,7 @@ namespace ShooterPrototype.UI
         private CanvasGroup panelGroup;
         private RectTransform panelRect;
         private RectTransform contentRect;
+        private ScrollRect achievementsScroll;
         private MainMenuUiSoundController uiSound;
         private bool isVisible;
         private bool claimInProgress;
@@ -80,6 +82,67 @@ namespace ShooterPrototype.UI
         private void OnDisable()
         {
             PlayerProfileService.ProfileSynced -= RebuildList;
+        }
+
+        private void Update()
+        {
+            if (!isVisible || achievementsScroll == null || panelRect == null)
+            {
+                return;
+            }
+
+            if (!TryReadMouseScrollDelta(out var scrollDelta))
+            {
+                return;
+            }
+
+            if (Mathf.Abs(scrollDelta) < 0.01f)
+            {
+                return;
+            }
+
+            if (!TryReadMouseScreenPosition(out var mousePosition) ||
+                !RectTransformUtility.RectangleContainsScreenPoint(panelRect, mousePosition))
+            {
+                return;
+            }
+
+            achievementsScroll.velocity = Vector2.zero;
+            achievementsScroll.content.anchoredPosition += new Vector2(0f, -scrollDelta * achievementsScroll.scrollSensitivity);
+        }
+
+        private static bool TryReadMouseScrollDelta(out float scrollDelta)
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (Mouse.current == null)
+            {
+                scrollDelta = 0f;
+                return false;
+            }
+
+            scrollDelta = Mouse.current.scroll.ReadValue().y;
+            return true;
+#else
+            scrollDelta = Input.mouseScrollDelta.y;
+            return true;
+#endif
+        }
+
+        private static bool TryReadMouseScreenPosition(out Vector2 mousePosition)
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (Mouse.current == null)
+            {
+                mousePosition = Vector2.zero;
+                return false;
+            }
+
+            mousePosition = Mouse.current.position.ReadValue();
+            return true;
+#else
+            mousePosition = Input.mousePosition;
+            return true;
+#endif
         }
 
         public void Show()
@@ -151,6 +214,7 @@ namespace ShooterPrototype.UI
             scrollRectTransform.offsetMax = new Vector2(-innerPadding, -(headerHeight + innerPadding));
 
             var scroll = scrollObject.AddComponent<ScrollRect>();
+            achievementsScroll = scroll;
             scroll.horizontal = false;
             scroll.vertical = true;
             scroll.movementType = ScrollRect.MovementType.Clamped;
@@ -163,6 +227,9 @@ namespace ShooterPrototype.UI
             viewportRect.anchorMax = Vector2.one;
             viewportRect.offsetMin = Vector2.zero;
             viewportRect.offsetMax = new Vector2(-(scrollbarWidth + scrollbarGap), 0f);
+            var viewportBackground = viewportObject.AddComponent<Image>();
+            viewportBackground.color = new Color(1f, 1f, 1f, 0.001f);
+            viewportBackground.raycastTarget = true;
             viewportObject.AddComponent<RectMask2D>();
 
             var scrollbar = CreateVerticalScrollbar(scrollObject.transform);
@@ -271,7 +338,7 @@ namespace ShooterPrototype.UI
             var background = rowObject.AddComponent<Image>();
             UiTheme.ApplyFlatFill(
                 background,
-                entry.completed ? UiTheme.SlotHighlight : UiTheme.SlotFill);
+                IsAchievementCompleted(entry) ? UiTheme.SlotHighlight : UiTheme.SlotFill);
 
             var contentObject = new GameObject("Content", typeof(RectTransform));
             contentObject.transform.SetParent(rowObject.transform, false);
@@ -342,40 +409,25 @@ namespace ShooterPrototype.UI
             bottomRow.childForceExpandWidth = false;
             bottomRow.childForceExpandHeight = true;
 
+            var canClaim = CanClaimAchievementReward(entry);
             var rewardBadgeObject = CreateBadge(
                 bottomRowObject.transform,
-                FormatReward(entry),
-                UiTheme.SectionFill,
-                UiTheme.TextAccent,
+                canClaim ? "Забрать награду" : FormatReward(entry),
+                canClaim ? UiTheme.PrimaryTop : UiTheme.SectionFill,
+                canClaim ? UiTheme.PrimaryText : UiTheme.TextAccent,
                 0f,
                 34f,
                 flexibleWidth: true);
             rewardBadgeObject.name = "RewardBadge";
 
             Button claimButton = null;
-            if (entry.completed && PlayerProfileService.IsServerSynced)
+            if (canClaim)
             {
-                var claimButtonObject = new GameObject("ClaimButton", typeof(RectTransform));
-                claimButtonObject.transform.SetParent(bottomRowObject.transform, false);
-                var claimLayout = claimButtonObject.AddComponent<LayoutElement>();
-                claimLayout.preferredWidth = 188f;
-                claimLayout.minHeight = 36f;
-
-                claimButtonObject.AddComponent<Image>();
-
-                claimButton = claimButtonObject.AddComponent<Button>();
+                var badgeBackground = rewardBadgeObject.GetComponent<Image>();
+                badgeBackground.raycastTarget = true;
+                claimButton = rewardBadgeObject.AddComponent<Button>();
                 UiTheme.StyleButton(claimButton, UiButtonStyle.Primary);
                 claimButton.onClick.AddListener(() => OnClaimClicked(entry));
-
-                var claimLabelObject = new GameObject("Label", typeof(RectTransform));
-                claimLabelObject.transform.SetParent(claimButtonObject.transform, false);
-                var claimLabelRect = claimLabelObject.GetComponent<RectTransform>();
-                StretchFull(claimLabelRect);
-                var claimLabel = claimLabelObject.AddComponent<TextMeshProUGUI>();
-                claimLabel.text = "Забрать награду";
-                claimLabel.fontSize = 17f;
-                claimLabel.alignment = TextAlignmentOptions.Center;
-                UiTheme.ApplyTmp(claimLabel, UiTextRole.PrimaryButton);
             }
 
             return new AchievementRowVisual
@@ -453,23 +505,67 @@ namespace ShooterPrototype.UI
             return "Награда";
         }
 
+        private static bool IsAchievementCompleted(PlayerAchievementEntry entry)
+        {
+            if (entry == null)
+            {
+                return false;
+            }
+
+            return entry.completed || entry.progress >= Mathf.Max(1, entry.target);
+        }
+
+        private static bool CanClaimAchievementReward(PlayerAchievementEntry entry)
+        {
+            if (!IsAchievementCompleted(entry))
+            {
+                return false;
+            }
+
+            if (PlayerProfileService.CanUseOfflineAchievementClaim(entry.achievementId))
+            {
+                return !PlayerProfileService.IsOfflineAchievementRewardClaimed(entry.achievementId);
+            }
+
+            return PlayerProfileService.IsServerSynced;
+        }
+
         private void OnClaimClicked(PlayerAchievementEntry entry)
         {
-            if (!PlayerProfileService.IsServerSynced || entry == null || claimInProgress || !entry.completed)
+            if (entry == null || claimInProgress || !IsAchievementCompleted(entry))
+            {
+                return;
+            }
+
+            if (PlayerProfileService.CanUseOfflineAchievementClaim(entry.achievementId))
+            {
+                if (PlayerProfileService.TryClaimOfflineAchievement(entry.achievementId, out _))
+                {
+                    uiSound?.PlayStart();
+                    RebuildList();
+                }
+
+                return;
+            }
+
+            if (!PlayerProfileService.TryResolveApiClient(out var apiClient))
             {
                 return;
             }
 
             var menu = FindObjectOfType<MainMenuController>();
-            if (menu == null || menu.ProfileApiClient == null)
+            var playerId = string.IsNullOrWhiteSpace(menu?.LocalPlayerId)
+                ? PlayerIdentityService.GetOrCreatePlayerId()
+                : menu.LocalPlayerId;
+            if (string.IsNullOrWhiteSpace(playerId))
             {
                 return;
             }
 
-            StartCoroutine(ClaimAchievementRoutine(menu, entry.achievementId));
+            StartCoroutine(ClaimAchievementRoutine(apiClient, playerId, entry.achievementId));
         }
 
-        private IEnumerator ClaimAchievementRoutine(MainMenuController menu, string achievementId)
+        private IEnumerator ClaimAchievementRoutine(PlayerProfileApiClient apiClient, string playerId, string achievementId)
         {
             claimInProgress = true;
             RefreshClaimButtons(false);
@@ -477,8 +573,8 @@ namespace ShooterPrototype.UI
             var success = false;
             yield return PlayerProfileService.ClaimAchievement(
                 this,
-                menu.ProfileApiClient,
-                menu.LocalPlayerId,
+                apiClient,
+                playerId,
                 achievementId,
                 (ok, _) => success = ok);
 

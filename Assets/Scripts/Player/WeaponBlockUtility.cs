@@ -28,11 +28,6 @@ namespace ShooterPrototype.Player
                 updated += EnsureHierarchyWeaponBlocks(roots[i].transform);
             }
 
-            if (updated > 0)
-            {
-                Debug.Log($"[WeaponBlockUtility] Promoted {updated} primitive collider(s) to WeaponBlock in scene '{scene.name}'.");
-            }
-
             return updated;
         }
 
@@ -92,10 +87,6 @@ namespace ShooterPrototype.Player
                 created += EnsureHierarchyBotOccluderProxies(roots[i].transform);
             }
 
-            if (created > 0)
-            {
-                Debug.Log($"[WeaponBlockUtility] Created {created} bot occluder proxy collider(s) in scene '{scene.name}'.");
-            }
 
             return created;
         }
@@ -208,10 +199,6 @@ namespace ShooterPrototype.Player
                 removed += RemoveWeaponBlockProxiesInHierarchy(roots[i].transform);
             }
 
-            if (removed > 0)
-            {
-                Debug.Log($"[WeaponBlockUtility] Removed {removed} WeaponBlockProxy object(s) from scene '{scene.name}'.");
-            }
 
             return removed;
         }
@@ -314,10 +301,6 @@ namespace ShooterPrototype.Player
                 removed += RemoveBotOccluderProxiesInHierarchy(roots[i].transform);
             }
 
-            if (removed > 0)
-            {
-                Debug.Log($"[WeaponBlockUtility] Removed {removed} bot occluder proxy collider(s) from scene '{scene.name}'.");
-            }
 
             ProcessedBotOccluderSceneHandles.Remove(scene.handle);
             return removed;
@@ -352,6 +335,11 @@ namespace ShooterPrototype.Player
         }
 
         public static void ResetProcessedScenesForTests()
+        {
+            ResetProcessedScenes();
+        }
+
+        public static void ResetProcessedScenes()
         {
             ProcessedSceneHandles.Clear();
             ProcessedBotOccluderSceneHandles.Clear();

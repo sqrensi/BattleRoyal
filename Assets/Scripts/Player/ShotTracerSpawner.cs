@@ -43,15 +43,21 @@ namespace ShooterPrototype.Player
             Material materialOverride)
         {
             activeTracers++;
-            var line = AcquireLineRenderer();
-            ConfigureLine(line, width, color, materialOverride);
-            line.SetPosition(0, from);
-            line.SetPosition(1, to);
+            try
+            {
+                var line = AcquireLineRenderer();
+                ConfigureLine(line, width, color, materialOverride);
+                line.SetPosition(0, from);
+                line.SetPosition(1, to);
 
-            yield return new WaitForSecondsRealtime(Mathf.Max(0.01f, duration));
+                yield return new WaitForSecondsRealtime(Mathf.Max(0.01f, duration));
 
-            ReleaseLineRenderer(line);
-            activeTracers = Mathf.Max(0, activeTracers - 1);
+                ReleaseLineRenderer(line);
+            }
+            finally
+            {
+                activeTracers = Mathf.Max(0, activeTracers - 1);
+            }
         }
 
         private static LineRenderer AcquireLineRenderer()
@@ -151,6 +157,35 @@ namespace ShooterPrototype.Player
             var rootObject = new GameObject("ShotTracerPool");
             Object.DontDestroyOnLoad(rootObject);
             poolRoot = rootObject.transform;
+        }
+
+        /// <summary>
+        /// Destroys pooled tracers. Call when leaving a match.
+        /// </summary>
+        public static void ResetSession()
+        {
+            activeTracers = 0;
+
+            while (Pool.Count > 0)
+            {
+                var line = Pool.Pop();
+                if (line != null)
+                {
+                    Object.Destroy(line.gameObject);
+                }
+            }
+
+            if (poolRoot != null)
+            {
+                for (var i = poolRoot.childCount - 1; i >= 0; i--)
+                {
+                    var child = poolRoot.GetChild(i);
+                    if (child != null)
+                    {
+                        Object.Destroy(child.gameObject);
+                    }
+                }
+            }
         }
     }
 }

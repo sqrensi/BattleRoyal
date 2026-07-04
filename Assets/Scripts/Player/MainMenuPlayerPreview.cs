@@ -12,6 +12,12 @@ namespace ShooterPrototype.Player
 
         internal static bool IsMenuPreviewSpawn { get; private set; }
 
+        public static bool IsMenuPreviewInstance(GameObject root)
+        {
+            return root != null &&
+                   string.Equals(root.name, PreviewObjectName, System.StringComparison.Ordinal);
+        }
+
         [SerializeField] private string spawnPointName = "SpawnPlayer";
         [SerializeField] private GameObject remotePlayerPrefab;
         [SerializeField] private string charactersResourcesFolder = "Characters";
@@ -32,6 +38,9 @@ namespace ShooterPrototype.Player
         private Coroutine spawnPreviewCoroutine;
 
         private bool allowPreview;
+        private bool previewCharacterRevealed;
+
+        public bool IsPreviewActive => allowPreview;
 
         public void PreviewInventoryItem(PlayerSkinDefinition item)
         {
@@ -58,8 +67,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            PlayerSkinSelectionService.ApplyToPlayer(previewInstance, forceReapply: true);
-            EnsurePreviewBodyVisible(previewInstance);
+            ApplyPreviewAppearance(previewInstance, keepVisible: previewCharacterRevealed);
             ClearMenuWeaponPresentation(previewInstance);
         }
 
@@ -67,7 +75,7 @@ namespace ShooterPrototype.Player
         {
             if (allowPreview == allow)
             {
-                if (allow)
+                if (allow && previewInstance == null)
                 {
                     RequestSpawnPreview();
                 }
@@ -79,6 +87,7 @@ namespace ShooterPrototype.Player
             if (!allowPreview)
             {
                 CancelSpawnPreviewCoroutine();
+                previewCharacterRevealed = false;
                 DestroyPreviewInstance();
                 return;
             }
@@ -89,6 +98,7 @@ namespace ShooterPrototype.Player
         public void Refresh()
         {
             CancelSpawnPreviewCoroutine();
+            previewCharacterRevealed = false;
             DestroyPreviewInstance();
             RequestSpawnPreview();
         }
@@ -106,16 +116,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (!PlayerProfileService.IsServerSynced)
-            {
-                ApplySelectedCharacterAndSkins(previewInstance);
-                EnsurePreviewBodyVisible(previewInstance);
-                ClearMenuWeaponPresentation(previewInstance);
-                return;
-            }
-
-            PlayerSkinSelectionService.ApplyToPlayer(previewInstance, forceReapply: true);
-            EnsurePreviewBodyVisible(previewInstance);
+            ApplyPreviewAppearance(previewInstance, keepVisible: previewCharacterRevealed);
             ClearMenuWeaponPresentation(previewInstance);
         }
 
@@ -140,8 +141,7 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            PlayerSkinSelectionService.ApplyToPlayer(previewInstance, forceReapply: true);
-            EnsurePreviewBodyVisible(previewInstance);
+            ApplyPreviewAppearance(previewInstance, keepVisible: previewCharacterRevealed);
             RequestEquipPinnedWeapon(forceReequip: true);
         }
 
@@ -196,6 +196,18 @@ namespace ShooterPrototype.Player
                 yield break;
             }
 
+            while (allowPreview && IsWaitingForInitialProfileSync())
+            {
+                yield return null;
+            }
+
+            if (previewInstance != null && previewCharacterRevealed)
+            {
+                ApplyPreviewAppearance(previewInstance, keepVisible: true);
+                spawnPreviewCoroutine = null;
+                yield break;
+            }
+
             if (previewInstance == null)
             {
                 SpawnPreviewInternal();
@@ -233,7 +245,14 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            RefreshSkins();
+            if (previewInstance == null)
+            {
+                RequestSpawnPreview();
+                return;
+            }
+
+            ApplyPreviewAppearance(previewInstance, keepVisible: previewCharacterRevealed);
+            ClearMenuWeaponPresentation(previewInstance);
         }
 
         private void HandleEquipmentChanged()
@@ -243,7 +262,25 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            RefreshSkins();
+            if (previewInstance == null)
+            {
+                RequestSpawnPreview();
+                return;
+            }
+
+            ApplyPreviewAppearance(previewInstance, keepVisible: previewCharacterRevealed);
+            ClearMenuWeaponPresentation(previewInstance);
+        }
+
+        private static bool IsWaitingForInitialProfileSync()
+        {
+            if (PlayerProfileService.IsServerSynced)
+            {
+                return false;
+            }
+
+            var menu = UnityEngine.Object.FindFirstObjectByType<MainMenuController>();
+            return menu != null && menu.IsProfileSyncInProgress;
         }
 
         private void SpawnPreviewInternal()
@@ -277,10 +314,9 @@ namespace ShooterPrototype.Player
                 previewInstance.name = PreviewObjectName;
                 previewInstance.transform.SetParent(spawnPoint, true);
 
+                SetPreviewBodyHidden(previewInstance, hidden: true);
                 WireAsMenuPreview(previewInstance);
-                ApplySelectedCharacterAndSkins(previewInstance);
-                FinalizeMenuPreviewPresentation(previewInstance);
-                EnsurePreviewBodyVisible(previewInstance);
+                ApplyPreviewAppearance(previewInstance, keepVisible: false);
                 ApplyIdlePose(previewInstance);
                 if (pinnedLobbyWeaponKind.HasValue)
                 {
@@ -377,7 +413,7 @@ namespace ShooterPrototype.Player
             }
 
             weaponPresentation.InvalidateAttachTarget();
-            previewInstance.GetComponent<RemoteThirdPersonPlayerBootstrap>()?.ApplyRemoteThirdPersonMode();
+            previewInstance.GetComponent<RemoteThirdPersonPlayerBootstrap>()?.ApplyRemoteThirdPersonMode(activateThirdPersonBody: true);
 
             if (!weaponPresentation.TryEnsureMenuAttachTarget())
             {
@@ -458,48 +494,157 @@ namespace ShooterPrototype.Player
             return transform;
         }
 
-        private void ApplySelectedCharacterAndSkins(GameObject root)
+        private void ApplyPreviewAppearance(GameObject root, bool keepVisible = false)
         {
-            if (!PlayerProfileService.IsServerSynced)
+            if (root == null)
             {
-                var bootstrap = root.GetComponent<RemoteThirdPersonPlayerBootstrap>();
-                bootstrap?.ApplyRemoteThirdPersonMode();
-                PlayerSkinSelectionService.ApplyDefaultSkinsToPlayer(root, forceReapply: true);
                 return;
             }
 
-            var selectedModel = CharacterSelectionService.ResolveSelectedModel(charactersResourcesFolder);
-            if (selectedModel.ModelAsset != null)
+            if (!keepVisible)
             {
-                CharacterModelApplier.TryApplyToPlayer(root, selectedModel.ModelAsset);
+                SetPreviewBodyHidden(root, hidden: true);
             }
-            else
+
+            ApplyMenuPreviewBootstrap(root, activateBody: false);
+            ApplyCharacterModelAndSkins(root);
+            ApplyMenuPreviewWeaponSetup(root);
+
+            if (!IsPreviewAssemblyComplete(root))
             {
-                var bootstrap = root.GetComponent<RemoteThirdPersonPlayerBootstrap>();
-                if (bootstrap != null)
+                return;
+            }
+
+            if (keepVisible)
+            {
+                EnsurePreviewBodyShown(root);
+                return;
+            }
+
+            RevealPreviewCharacter(root);
+            previewCharacterRevealed = true;
+        }
+
+        private void ApplyCharacterModelAndSkins(GameObject root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            if (PlayerProfileService.IsServerSynced)
+            {
+                var selectedModel = CharacterSelectionService.ResolveSelectedModel(charactersResourcesFolder);
+                if (selectedModel.ModelAsset != null)
                 {
-                    bootstrap.ApplyRemoteThirdPersonMode();
+                    CharacterModelApplier.TryApplyToPlayer(root, selectedModel.ModelAsset);
+                }
+            }
+            else if (!CharacterModelApplier.HasRenderableCharacterBody(root))
+            {
+                var selectedModel = CharacterSelectionService.ResolveSelectedModel(charactersResourcesFolder);
+                if (selectedModel.ModelAsset != null)
+                {
+                    CharacterModelApplier.TryApplyToPlayer(root, selectedModel.ModelAsset);
                 }
             }
 
-            ApplySelectedSkins(root);
-        }
-
-        private static void ApplySelectedSkins(GameObject root)
-        {
-            PlayerSkinSelectionService.ApplyToPlayer(root, forceReapply: true);
-        }
-
-        private static void FinalizeMenuPreviewPresentation(GameObject root)
-        {
-            var bootstrap = root.GetComponent<RemoteThirdPersonPlayerBootstrap>();
-            if (bootstrap != null)
+            if (PlayerProfileService.IsServerSynced)
             {
-                bootstrap.ApplyRemoteThirdPersonMode();
+                PlayerSkinSelectionService.ApplyToPlayer(root, forceReapply: true);
+            }
+            else
+            {
+                PlayerSkinSelectionService.ApplyDefaultSkinsToPlayer(root, forceReapply: true);
+            }
+        }
+
+        private static void ApplyMenuPreviewBootstrap(GameObject root, bool activateBody)
+        {
+            if (root == null || !MainMenuPlayerPreview.IsMenuPreviewInstance(root))
+            {
+                root?.GetComponent<RemoteThirdPersonPlayerBootstrap>()?.ApplyRemoteThirdPersonMode(activateBody);
+                return;
             }
 
+            root.GetComponent<RemoteThirdPersonPlayerBootstrap>()?.ApplyRemoteThirdPersonMode(activateThirdPersonBody: false);
+        }
+
+        private static void ApplyMenuPreviewWeaponSetup(GameObject root)
+        {
             ResolveWeaponPresentation(root)?.SetMenuPreviewMode(true);
             ClearMenuWeaponPresentation(root);
+        }
+
+        private static bool IsPreviewAssemblyComplete(GameObject root)
+        {
+            return CharacterModelApplier.HasRenderableCharacterBody(root);
+        }
+
+        private static void RevealPreviewCharacter(GameObject root)
+        {
+            EnsurePreviewBodyShown(root);
+        }
+
+        private static void EnsurePreviewBodyShown(GameObject root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var thirdPersonBody = root.transform.Find("ThirdPersonBody");
+            if (thirdPersonBody != null)
+            {
+                thirdPersonBody.gameObject.SetActive(true);
+            }
+
+            ApplyMenuPreviewBodyClipping(root);
+            ForceEnableMenuPreviewRenderers(thirdPersonBody);
+            ApplyMenuPreviewBodyClipping(root);
+        }
+
+        private static void ApplyMenuPreviewBodyClipping(GameObject root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var thirdPersonBody = root.transform.Find("ThirdPersonBody");
+            var syntyVisual = thirdPersonBody != null ? thirdPersonBody.Find("SyntyVisual") : null;
+            if (syntyVisual == null)
+            {
+                return;
+            }
+
+            var clothingApplier = root.GetComponent<RemoteResourceClothingApplier>();
+            if (clothingApplier == null)
+            {
+                return;
+            }
+
+            if (syntyVisual.Find(RemoteResourceClothingApplier.RemoteClothingRootName) == null)
+            {
+                return;
+            }
+
+            clothingApplier.InvalidateBodyMeshCache();
+            clothingApplier.RefreshHiddenBodyForVisual(syntyVisual, hideHandsOnBody: true);
+        }
+
+        private static void SetPreviewBodyHidden(GameObject root, bool hidden)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            var thirdPersonBody = root.transform.Find("ThirdPersonBody");
+            if (thirdPersonBody != null)
+            {
+                thirdPersonBody.gameObject.SetActive(!hidden);
+            }
         }
 
         private static void ClearMenuWeaponPresentation(GameObject root)
@@ -546,7 +691,17 @@ namespace ShooterPrototype.Player
             var presentation = root.GetComponent<PlayerViewPresentation>();
             presentation?.Configure(false);
 
-            root.GetComponent<SyntySplitBodyPresentation>()?.ApplyViewMode();
+            var splitBody = root.GetComponent<SyntySplitBodyPresentation>();
+            if (splitBody != null)
+            {
+                splitBody.enabled = false;
+            }
+
+            var visibilityGate = root.GetComponent<EnemyPresentationVisibilityGate>();
+            if (visibilityGate != null)
+            {
+                visibilityGate.enabled = false;
+            }
 
             DisableLocalOnlyPreviewComponents(root);
         }
@@ -611,41 +766,30 @@ namespace ShooterPrototype.Player
             }
         }
 
-        private static void EnsurePreviewBodyVisible(GameObject root)
+        private static void ForceEnableMenuPreviewRenderers(Transform thirdPersonBody)
         {
-            if (root == null)
+            if (thirdPersonBody == null)
             {
                 return;
             }
 
-            var presentation = root.GetComponent<PlayerViewPresentation>();
-            presentation?.Configure(false);
-
-            var thirdPersonBody = root.transform.Find("ThirdPersonBody");
-            if (thirdPersonBody != null)
+            var renderers = thirdPersonBody.GetComponentsInChildren<Renderer>(true);
+            for (var i = 0; i < renderers.Length; i++)
             {
-                thirdPersonBody.gameObject.SetActive(true);
-
-                var renderers = thirdPersonBody.GetComponentsInChildren<Renderer>(true);
-                for (var i = 0; i < renderers.Length; i++)
+                var renderer = renderers[i];
+                if (renderer == null)
                 {
-                    var renderer = renderers[i];
-                    if (renderer == null)
-                    {
-                        continue;
-                    }
-
-                    if (renderer.gameObject.name.EndsWith("_FirstPersonArms", System.StringComparison.Ordinal))
-                    {
-                        renderer.enabled = false;
-                        continue;
-                    }
-
-                    renderer.enabled = true;
+                    continue;
                 }
-            }
 
-            root.GetComponent<SyntySplitBodyPresentation>()?.ApplyViewMode();
+                if (renderer.gameObject.name.EndsWith("_FirstPersonArms", System.StringComparison.Ordinal))
+                {
+                    renderer.enabled = false;
+                    continue;
+                }
+
+                renderer.enabled = true;
+            }
         }
 
         private void DestroyPreviewInstance()
@@ -657,6 +801,7 @@ namespace ShooterPrototype.Player
 
             Destroy(previewInstance);
             previewInstance = null;
+            previewCharacterRevealed = false;
         }
     }
 }

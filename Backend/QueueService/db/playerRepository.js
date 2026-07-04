@@ -30,7 +30,7 @@ function buildRatingUpdateClause(ratingColumn) {
   return `SET ${column} = MAX(0, ${column} + ?)`;
 }
 
-const STARTER_CURRENCY = 100000;
+const STARTER_CURRENCY = 0;
 const ITEM_TYPE_SKIN = "skin";
 const ITEM_TYPE_CASE = "case";
 const UNEQUIPPED_ATTACHMENT = "__none__";
@@ -712,6 +712,42 @@ async function recordMatchStats(externalPlayerId, payload) {
   }
 }
 
+async function syncAchievementDefinitionRows() {
+  const achievements = getAllAchievements();
+  if (!Array.isArray(achievements) || achievements.length === 0) {
+    return;
+  }
+
+  const timestamp = nowMs();
+  for (let i = 0; i < achievements.length; i++) {
+    const entry = achievements[i];
+    if (!entry || !entry.achievementId) {
+      continue;
+    }
+
+    await run(
+      `INSERT INTO achievement_definitions
+       (id, code, title, description, category, sort_order, is_hidden, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         code = excluded.code,
+         title = excluded.title,
+         description = excluded.description,
+         category = excluded.category,
+         sort_order = excluded.sort_order`,
+      [
+        entry.achievementId,
+        entry.code || entry.achievementId,
+        entry.title || entry.achievementId,
+        entry.description || "",
+        entry.eventType || "",
+        Number.isFinite(entry.sortOrder) ? entry.sortOrder : 0,
+        timestamp,
+      ]
+    );
+  }
+}
+
 async function syncPlayerAchievements(playerId) {
   if (!playerId) {
     return;
@@ -912,6 +948,7 @@ async function ensurePlayer(externalPlayerId) {
       await grantStarterPack(playerRow.id);
       playerRow = await getPlayerByExternalId(normalizedExternalId);
     }
+    await syncAchievementDefinitionRows();
     await syncPlayerAchievements(playerRow.id);
     await ensurePlayerMatchStats(playerRow.id);
     return buildProfileResponse(playerRow);
@@ -939,6 +976,7 @@ async function ensurePlayer(externalPlayerId) {
   });
 
   playerRow = await getPlayerByExternalId(normalizedExternalId);
+  await syncAchievementDefinitionRows();
   await syncPlayerAchievements(playerRow.id);
   await ensurePlayerMatchStats(playerRow.id);
   return buildProfileResponse(playerRow);
@@ -1289,11 +1327,11 @@ async function setSelectedCharacterModel(externalPlayerId, modelName) {
 async function listPlayerAchievements(playerId) {
   const rows = await all(
     `SELECT pa.achievement_id, pa.progress, pa.target, pa.completed_at, pa.claimed_at,
-            ad.code, ad.title, ad.description, ad.category, ad.is_hidden
+            ad.code, ad.title, ad.description, ad.category, ad.is_hidden, ad.sort_order
      FROM player_achievements pa
-     JOIN achievement_definitions ad ON ad.id = pa.achievement_id
+     LEFT JOIN achievement_definitions ad ON ad.id = pa.achievement_id
      WHERE pa.player_id = ? AND pa.claimed_at IS NULL
-     ORDER BY ad.sort_order ASC, ad.title ASC`,
+     ORDER BY COALESCE(ad.sort_order, 9999) ASC, COALESCE(ad.title, pa.achievement_id) ASC`,
     [playerId]
   );
 
@@ -1302,10 +1340,10 @@ async function listPlayerAchievements(playerId) {
     const reward = definition ? definition.reward : null;
     return {
       achievementId: row.achievement_id,
-      code: row.code,
-      title: row.title,
-      description: row.description || "",
-      category: row.category || "",
+      code: row.code || (definition ? definition.code : row.achievement_id),
+      title: row.title || (definition ? definition.title : row.achievement_id),
+      description: row.description || (definition ? definition.description : "") || "",
+      category: row.category || (definition ? definition.eventType : "") || "",
       isHidden: !!row.is_hidden,
       progress: row.progress,
       target: row.target,

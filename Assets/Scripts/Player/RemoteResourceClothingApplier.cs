@@ -16,6 +16,7 @@ namespace ShooterPrototype.Player
         }
 
         private const string ClothingRootName = "RemoteResourceClothing";
+        public const string RemoteClothingRootName = ClothingRootName;
         public const string FirstPersonGlovesRootName = "LocalFirstPersonGloves";
         private const float MinimumBoneBindRatio = 0.65f;
 
@@ -108,8 +109,6 @@ namespace ShooterPrototype.Player
         private bool warnedLegHideFailed;
         private bool warnedFootHideFailed;
         private bool warnedHandHideFailed;
-        private bool loggedHandBonesOnce;
-
         private SkinnedMeshRenderer bodyRendererWithHiddenParts;
         private Mesh originalBodyMeshBeforeHide;
         private int lastHiddenBodyStateHash;
@@ -123,6 +122,24 @@ namespace ShooterPrototype.Player
             originalBodyMeshBeforeHide = null;
             lastHiddenBodyStateHash = 0;
             lastAppliedHiddenMesh = null;
+        }
+
+        public void RefreshHiddenBodyForVisual(Transform syntyVisual, bool hideHandsOnBody)
+        {
+            if (syntyVisual == null)
+            {
+                return;
+            }
+
+            var bodyRenderer = FindCharacterBodyRenderer(syntyVisual);
+            if (bodyRenderer == null)
+            {
+                return;
+            }
+
+            lastHiddenBodyStateHash = 0;
+            lastAppliedHiddenMesh = null;
+            RefreshHiddenBodyParts(bodyRenderer, hideHandsOnBody);
         }
 
         public void ConfigureSkinPaths(
@@ -156,14 +173,14 @@ namespace ShooterPrototype.Player
             if (!forceReapply && existing != null)
             {
                 var bodyRenderer = FindCharacterBodyRenderer(syntyVisual);
-                if (!NeedsHiddenBodyRefresh(bodyRenderer, hideHandsOnBody: true))
+                if (bodyRenderer != null)
                 {
-                    return;
-                }
-
-                using (NetworkPerformanceMonitor.RefreshHiddenBodyMarker.Auto())
-                {
-                    RefreshHiddenBodyParts(bodyRenderer, hideHandsOnBody: true);
+                    using (NetworkPerformanceMonitor.RefreshHiddenBodyMarker.Auto())
+                    {
+                        lastHiddenBodyStateHash = 0;
+                        lastAppliedHiddenMesh = null;
+                        RefreshHiddenBodyParts(bodyRenderer, hideHandsOnBody: true);
+                    }
                 }
 
                 return;
@@ -178,7 +195,6 @@ namespace ShooterPrototype.Player
                 warnedLegHideFailed = false;
                 warnedFootHideFailed = false;
                 warnedHandHideFailed = false;
-                loggedHandBonesOnce = false;
             }
 
             ClearExistingClothing(syntyVisual);
@@ -201,6 +217,14 @@ namespace ShooterPrototype.Player
             if (!forceReapply && existing != null)
             {
                 ApplyFirstPersonGloves(syntyVisual, armsPresenter);
+                var bodyRenderer = FindCharacterBodyRenderer(syntyVisual);
+                if (bodyRenderer != null)
+                {
+                    lastHiddenBodyStateHash = 0;
+                    lastAppliedHiddenMesh = null;
+                    RefreshHiddenBodyParts(bodyRenderer, hideHandsOnBody: false);
+                }
+
                 return;
             }
 
@@ -213,7 +237,6 @@ namespace ShooterPrototype.Player
                 warnedLegHideFailed = false;
                 warnedFootHideFailed = false;
                 warnedHandHideFailed = false;
-                loggedHandBonesOnce = false;
             }
 
             ClearExistingClothing(syntyVisual);
@@ -250,6 +273,8 @@ namespace ShooterPrototype.Player
             }
 
             var hiddenBodyRenderer = FindCharacterBodyRenderer(syntyVisual) ?? bodyRenderer;
+            lastHiddenBodyStateHash = 0;
+            lastAppliedHiddenMesh = null;
             RefreshHiddenBodyParts(hiddenBodyRenderer, hideHandsOnThirdPersonBody);
             return true;
         }
@@ -420,7 +445,6 @@ namespace ShooterPrototype.Player
                     continue;
                 }
 
-                LogHandBonesHiddenOnce(armsRenderer, "local first-person arms");
                 armsPresenter.RegisterGeneratedMesh(withoutHands);
                 armsRenderer.sharedMesh = withoutHands;
             }
@@ -697,7 +721,6 @@ namespace ShooterPrototype.Player
                 }
                 else
                 {
-                    LogHandBonesHiddenOnce(bodyRenderer, "remote body");
                     workingMesh = withoutHands;
                     bodyRenderer.sharedMesh = workingMesh;
                 }
@@ -2554,7 +2577,7 @@ namespace ShooterPrototype.Player
             }
         }
 
-        private void WarnMissingResourceOnce(string resourcePath)
+        private void WarnMissingResourceOnce(string _)
         {
             if (warnedMissingResource)
             {
@@ -2562,9 +2585,41 @@ namespace ShooterPrototype.Player
             }
 
             warnedMissingResource = true;
-            Debug.LogWarning(
-                $"[RemoteResourceClothingApplier] Resources.Load<GameObject>(\"{resourcePath}\") returned null.",
-                this);
+        }
+
+        public static void ClearSessionStaticCaches()
+        {
+            DestroyCachedMeshes(BodyWithoutTorsoMeshCache);
+            DestroyCachedMeshes(BodyWithoutLegsMeshCache);
+            DestroyCachedMeshes(BodyWithoutFeetMeshCache);
+            DestroyCachedMeshes(BodyWithoutHandsMeshCache);
+            TrimmedBodyMeshSources.Clear();
+        }
+
+        private static void DestroyCachedMeshes(Dictionary<int, Mesh> cache)
+        {
+            foreach (var entry in cache)
+            {
+                if (entry.Value != null)
+                {
+                    UnityEngine.Object.Destroy(entry.Value);
+                }
+            }
+
+            cache.Clear();
+        }
+
+        private static void DestroyCachedMeshes(Dictionary<long, Mesh> cache)
+        {
+            foreach (var entry in cache)
+            {
+                if (entry.Value != null)
+                {
+                    UnityEngine.Object.Destroy(entry.Value);
+                }
+            }
+
+            cache.Clear();
         }
 
         private void WarnIncompatibleRigOnce()
@@ -2575,10 +2630,6 @@ namespace ShooterPrototype.Player
             }
 
             warnedIncompatibleRig = true;
-            Debug.LogWarning(
-                "[RemoteResourceClothingApplier] Clothing was loaded, but no compatible renderer could be applied. " +
-                "Export hoodie FBX with Armature selected so skin weights are preserved.",
-                this);
         }
 
         private void WarnStaticClothingOnce()
@@ -2589,13 +2640,9 @@ namespace ShooterPrototype.Player
             }
 
             warnedStaticMesh = true;
-            Debug.LogWarning(
-                "[RemoteResourceClothingApplier] Clothing loaded as static mesh and will not follow animation. " +
-                "Re-export from Blender with Armature + hoodie selected.",
-                this);
         }
 
-        private void WarnTorsoHideFailedOnce(SkinnedMeshRenderer bodyRenderer)
+        private void WarnTorsoHideFailedOnce(SkinnedMeshRenderer _)
         {
             if (warnedTorsoHideFailed)
             {
@@ -2603,13 +2650,9 @@ namespace ShooterPrototype.Player
             }
 
             warnedTorsoHideFailed = true;
-            Debug.LogWarning(
-                "[RemoteResourceClothingApplier] Could not hide body torso under clothing. " +
-                "Enable Read/Write on the Ch36 body mesh import settings.",
-                bodyRenderer);
         }
 
-        private void WarnLegHideFailedOnce(SkinnedMeshRenderer bodyRenderer)
+        private void WarnLegHideFailedOnce(SkinnedMeshRenderer _)
         {
             if (warnedLegHideFailed)
             {
@@ -2617,13 +2660,9 @@ namespace ShooterPrototype.Player
             }
 
             warnedLegHideFailed = true;
-            Debug.LogWarning(
-                "[RemoteResourceClothingApplier] Could not hide body legs under pants. " +
-                "Enable Read/Write on the Ch36 body mesh import settings.",
-                bodyRenderer);
         }
 
-        private void WarnFootHideFailedOnce(SkinnedMeshRenderer bodyRenderer)
+        private void WarnFootHideFailedOnce(SkinnedMeshRenderer _)
         {
             if (warnedFootHideFailed)
             {
@@ -2631,32 +2670,9 @@ namespace ShooterPrototype.Player
             }
 
             warnedFootHideFailed = true;
-            Debug.LogWarning(
-                "[RemoteResourceClothingApplier] Could not hide body feet under boots. " +
-                "Enable Read/Write on the Ch36 body mesh import settings.",
-                bodyRenderer);
         }
 
-        private void LogHandBonesHiddenOnce(SkinnedMeshRenderer renderer, string context)
-        {
-            if (loggedHandBonesOnce || renderer == null)
-            {
-                return;
-            }
-
-            loggedHandBonesOnce = true;
-            var bones = SyntyFirstPersonArmsMeshBuilder.CollectResolvedHandBoneNamesToHide(renderer.bones);
-            var tokens = string.Join(", ", SyntyFirstPersonArmsMeshBuilder.HandHideBoneNameTokens);
-            Debug.Log(
-                $"[RemoteResourceClothingApplier] Glove palm hide ({context}). " +
-                $"Matched rig bones ({bones.Count}): {string.Join(", ", bones)}. " +
-                $"Name tokens: {tokens}. " +
-                "Preserved forearm bones: ForeArm, LowerArm, Elbow. " +
-                $"Vertices stay when hand weight must exceed forearm weight; triangles at the wrist stay unless all 3 corners are palm.",
-                renderer);
-        }
-
-        private void WarnHandHideFailedOnce(SkinnedMeshRenderer bodyRenderer)
+        private void WarnHandHideFailedOnce(SkinnedMeshRenderer _)
         {
             if (warnedHandHideFailed)
             {
@@ -2664,10 +2680,6 @@ namespace ShooterPrototype.Player
             }
 
             warnedHandHideFailed = true;
-            Debug.LogWarning(
-                "[RemoteResourceClothingApplier] Could not hide body hands under gloves. " +
-                "Enable Read/Write on the Ch36 body mesh import settings.",
-                bodyRenderer);
         }
     }
 }

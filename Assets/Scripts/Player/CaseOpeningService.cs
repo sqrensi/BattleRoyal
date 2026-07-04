@@ -94,6 +94,27 @@ namespace ShooterPrototype.Player
             return LocalOwnedCases.TryGetValue(caseId.Trim(), out var quantity) ? quantity : 0;
         }
 
+        public static void GrantLocalCase(string caseId, int amount = 1)
+        {
+            if (string.IsNullOrWhiteSpace(caseId) || amount <= 0)
+            {
+                return;
+            }
+
+            EnsureLocalCasesLoaded();
+            var normalizedId = caseId.Trim();
+            if (LocalOwnedCases.TryGetValue(normalizedId, out var quantity))
+            {
+                LocalOwnedCases[normalizedId] = quantity + amount;
+            }
+            else
+            {
+                LocalOwnedCases[normalizedId] = amount;
+            }
+
+            SaveLocalOwnedCases();
+        }
+
         private static void EnsureLocalCasesLoaded()
         {
             if (localCasesLoaded)

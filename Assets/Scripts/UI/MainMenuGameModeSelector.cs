@@ -8,7 +8,7 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuGameModeSelector : MonoBehaviour
     {
-        private const int LayoutVersion = 7;
+        private const int LayoutVersion = 9;
 
         private static readonly MainMenuGameMode[] Modes =
         {
