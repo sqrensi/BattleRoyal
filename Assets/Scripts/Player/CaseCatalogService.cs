@@ -24,13 +24,21 @@ namespace ShooterPrototype.Player
             string displayName,
             string pictureResourcePath,
             int price,
-            IReadOnlyList<CaseLootEntry> lootPool)
+            IReadOnlyList<CaseLootEntry> lootPool,
+            string realMoneyProductId = "",
+            int priceRubles = 0,
+            bool excludeFromRewards = false,
+            bool isDonateExclusive = false)
         {
             Id = id ?? string.Empty;
             DisplayName = displayName ?? string.Empty;
             PictureResourcePath = pictureResourcePath ?? string.Empty;
             Price = Mathf.Max(0, price);
             LootPool = lootPool ?? Array.Empty<CaseLootEntry>();
+            RealMoneyProductId = realMoneyProductId ?? string.Empty;
+            PriceRubles = Mathf.Max(0, priceRubles);
+            ExcludeFromRewards = excludeFromRewards;
+            IsDonateExclusive = isDonateExclusive;
         }
 
         public string Id { get; }
@@ -38,8 +46,13 @@ namespace ShooterPrototype.Player
         public string PictureResourcePath { get; }
         public int Price { get; }
         public IReadOnlyList<CaseLootEntry> LootPool { get; }
+        public string RealMoneyProductId { get; }
+        public int PriceRubles { get; }
+        public bool ExcludeFromRewards { get; }
+        public bool IsDonateExclusive { get; }
 
         public bool IsValid => !string.IsNullOrWhiteSpace(Id) && LootPool.Count > 0;
+        public bool IsRealMoneyPurchase => !string.IsNullOrWhiteSpace(RealMoneyProductId);
     }
 
     /// <summary>
@@ -51,6 +64,8 @@ namespace ShooterPrototype.Player
 
         private static CaseCatalogData cachedCatalog;
         private static Dictionary<string, CaseDefinition> casesById;
+        private static Dictionary<string, CaseDefinition> casesByProductId;
+        private static HashSet<string> donateExclusiveSkinIds;
 
         public static void EnsureLoaded()
         {
@@ -77,6 +92,8 @@ namespace ShooterPrototype.Player
             }
 
             casesById = new Dictionary<string, CaseDefinition>(StringComparer.OrdinalIgnoreCase);
+            casesByProductId = new Dictionary<string, CaseDefinition>(StringComparer.OrdinalIgnoreCase);
+            donateExclusiveSkinIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (cachedCatalog.shopCases == null)
             {
                 return;
@@ -108,8 +125,25 @@ namespace ShooterPrototype.Player
                         : entry.displayName.Trim(),
                     $"Cases/{pictureFolder}/picture",
                     entry.price,
-                    lootPool);
+                    lootPool,
+                    entry.realMoneyProductId,
+                    entry.priceRubles,
+                    entry.excludeFromRewards,
+                    entry.isDonateExclusive);
                 casesById[definition.Id] = definition;
+
+                if (!string.IsNullOrWhiteSpace(definition.RealMoneyProductId))
+                {
+                    casesByProductId[definition.RealMoneyProductId.Trim()] = definition;
+                }
+
+                if (definition.IsDonateExclusive)
+                {
+                    for (var lootIndex = 0; lootIndex < lootPool.Count; lootIndex++)
+                    {
+                        donateExclusiveSkinIds.Add(lootPool[lootIndex].SkinId);
+                    }
+                }
             }
         }
 
@@ -154,6 +188,46 @@ namespace ShooterPrototype.Player
         public static int GetPrice(CaseDefinition caseDefinition)
         {
             return caseDefinition.IsValid ? caseDefinition.Price : 0;
+        }
+
+        public static bool IsRewardEligibleCase(string caseId)
+        {
+            EnsureLoaded();
+            if (string.IsNullOrWhiteSpace(caseId))
+            {
+                return false;
+            }
+
+            if (!casesById.TryGetValue(caseId.Trim(), out var definition))
+            {
+                return false;
+            }
+
+            return !definition.ExcludeFromRewards;
+        }
+
+        public static bool IsDonateExclusiveSkin(string skinId)
+        {
+            EnsureLoaded();
+            return !string.IsNullOrWhiteSpace(skinId) &&
+                   donateExclusiveSkinIds != null &&
+                   donateExclusiveSkinIds.Contains(skinId.Trim());
+        }
+
+        public static bool TryGetCaseByRealMoneyProductId(
+            string productId,
+            out CaseDefinition definition)
+        {
+            EnsureLoaded();
+            definition = default;
+            if (string.IsNullOrWhiteSpace(productId))
+            {
+                return false;
+            }
+
+            return casesByProductId != null &&
+                   casesByProductId.TryGetValue(productId.Trim(), out definition) &&
+                   definition.IsValid;
         }
 
         public static bool TryRollLoot(CaseDefinition caseDefinition, out string skinId)
@@ -215,6 +289,141 @@ namespace ShooterPrototype.Player
             return results.Count > 0;
         }
 
+        public static SkinRarity GetLootRarity(CaseDefinition caseDefinition, string skinId)
+        {
+            if (string.IsNullOrWhiteSpace(skinId))
+            {
+                return SkinRarity.Common;
+            }
+
+            if (ShopCatalogService.HasExplicitRarity(skinId))
+            {
+                return ShopCatalogService.GetRarity(skinId);
+            }
+
+            if (!caseDefinition.IsValid || !TryGetLootWeight(caseDefinition, skinId, out var weight))
+            {
+                return DeriveDeterministicRarity(skinId);
+            }
+
+            if (AllLootWeightsEqual(caseDefinition))
+            {
+                return DeriveDeterministicRarity(skinId);
+            }
+
+            return WeightToRarity(weight);
+        }
+
+        public static Color GetLootRarityStripeColor(CaseDefinition caseDefinition, string skinId)
+        {
+            return SkinRarityUtility.GetStripeColor(GetLootRarity(caseDefinition, skinId));
+        }
+
+        private static bool TryGetLootWeight(CaseDefinition caseDefinition, string skinId, out int weight)
+        {
+            weight = 0;
+            for (var i = 0; i < caseDefinition.LootPool.Count; i++)
+            {
+                var entry = caseDefinition.LootPool[i];
+                if (string.Equals(entry.SkinId, skinId, StringComparison.OrdinalIgnoreCase))
+                {
+                    weight = entry.Weight;
+                    return entry.IsValid;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool AllLootWeightsEqual(CaseDefinition caseDefinition)
+        {
+            if (!caseDefinition.IsValid || caseDefinition.LootPool.Count <= 1)
+            {
+                return true;
+            }
+
+            var firstWeight = caseDefinition.LootPool[0].Weight;
+            for (var i = 1; i < caseDefinition.LootPool.Count; i++)
+            {
+                if (caseDefinition.LootPool[i].Weight != firstWeight)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static SkinRarity WeightToRarity(int weight)
+        {
+            if (weight >= 50)
+            {
+                return SkinRarity.Common;
+            }
+
+            if (weight >= 30)
+            {
+                return SkinRarity.Uncommon;
+            }
+
+            if (weight >= 15)
+            {
+                return SkinRarity.Rare;
+            }
+
+            if (weight >= 8)
+            {
+                return SkinRarity.Epic;
+            }
+
+            if (weight >= 2)
+            {
+                return SkinRarity.Legendary;
+            }
+
+            return SkinRarity.Common;
+        }
+
+        private static SkinRarity DeriveDeterministicRarity(string skinId)
+        {
+            var roll = StableHash(skinId) % 100;
+            if (roll < 40)
+            {
+                return SkinRarity.Common;
+            }
+
+            if (roll < 65)
+            {
+                return SkinRarity.Uncommon;
+            }
+
+            if (roll < 82)
+            {
+                return SkinRarity.Rare;
+            }
+
+            if (roll < 94)
+            {
+                return SkinRarity.Epic;
+            }
+
+            return SkinRarity.Legendary;
+        }
+
+        private static int StableHash(string value)
+        {
+            unchecked
+            {
+                var hash = 17;
+                for (var i = 0; i < value.Length; i++)
+                {
+                    hash = (hash * 31) + value[i];
+                }
+
+                return hash & 0x7FFFFFFF;
+            }
+        }
+
         private static bool ContainsDefinition(List<PlayerSkinDefinition> results, string skinId)
         {
             for (var i = 0; i < results.Count; i++)
@@ -264,6 +473,10 @@ namespace ShooterPrototype.Player
             public string displayName;
             public string pictureFolder;
             public int price;
+            public string realMoneyProductId;
+            public int priceRubles;
+            public bool excludeFromRewards;
+            public bool isDonateExclusive;
             public CaseCatalogLootEntry[] lootPool;
         }
 

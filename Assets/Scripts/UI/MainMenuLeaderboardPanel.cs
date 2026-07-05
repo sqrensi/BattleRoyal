@@ -439,6 +439,7 @@ namespace ShooterPrototype.UI
                 nickname = string.IsNullOrWhiteSpace(PlayerProfileService.Nickname)
                     ? "Вы"
                     : PlayerProfileService.Nickname.Trim(),
+                nicknamePrefix = PlayerProfileService.NicknamePrefix,
                 playerId = PlayerIdentityService.GetOrCreatePlayerId(),
                 rating = IsChallengeMode ? 0 : selfValue,
                 challengeTimeMs = IsChallengeMode ? selfValue : -1,
@@ -563,7 +564,8 @@ namespace ShooterPrototype.UI
             var nicknameLayout = nicknameObject.AddComponent<LayoutElement>();
             nicknameLayout.flexibleWidth = 1f;
             var nicknameText = nicknameObject.AddComponent<TextMeshProUGUI>();
-            nicknameText.text = string.IsNullOrWhiteSpace(entry.nickname) ? "Игрок" : entry.nickname.Trim();
+            nicknameText.richText = true;
+            nicknameText.text = NicknamePrefixUtility.FormatRich(entry.nicknamePrefix, entry.nickname);
             nicknameText.fontSize = rowFontSize;
             nicknameText.fontStyle = isSelf ? FontStyles.Bold : FontStyles.Normal;
             nicknameText.alignment = TextAlignmentOptions.MidlineLeft;

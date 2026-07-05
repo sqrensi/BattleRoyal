@@ -13,6 +13,8 @@ namespace ShooterPrototype.Player
         private const string OwnershipInitKey = "player_skin_ownership_initialized_v1";
         private const string CurrencyGrantKey = "player_currency_grant_100k_v1";
         private const string NicknamePrefKey = "player_nickname_v1";
+        private const string VipPrefixExpiresPrefKey = "player_vip_prefix_expires_v1";
+        private const long VipDurationMs = 30L * 24L * 60L * 60L * 1000L;
 
         private static readonly HashSet<string> OwnedSkinCache = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, int> OwnedSkinQuantityCache =
@@ -27,6 +29,53 @@ namespace ShooterPrototype.Player
         public static int Rating => CurrentProfile?.rating ?? MatchRatingUtility.DefaultRating;
 
         public static int DuelRating => CurrentProfile?.duelRating ?? MatchRatingUtility.DefaultRating;
+
+        public static bool HasVipPrefix => IsVipPrefixActive(VipPrefixExpiresAtMs);
+
+        public static long VipPrefixExpiresAtMs
+        {
+            get
+            {
+                if (CurrentProfile != null && CurrentProfile.vipPrefixExpiresAtMs > 0)
+                {
+                    return CurrentProfile.vipPrefixExpiresAtMs;
+                }
+
+                var stored = PlayerPrefs.GetString(VipPrefixExpiresPrefKey, "0");
+                return long.TryParse(stored, out var expiresAtMs) ? expiresAtMs : 0L;
+            }
+        }
+
+        public static string FormatVipExpiryShopLabel()
+        {
+            if (!HasVipPrefix)
+            {
+                return string.Empty;
+            }
+
+            var expiresAt = DateTimeOffset.FromUnixTimeMilliseconds(VipPrefixExpiresAtMs).ToLocalTime();
+            return $"до {expiresAt:dd.MM.yy}";
+        }
+
+        public static string NicknamePrefix
+        {
+            get
+            {
+                if (CurrentProfile != null)
+                {
+                    var fromServer = NicknamePrefixUtility.Normalize(CurrentProfile.nicknamePrefix);
+                    if (!string.IsNullOrEmpty(fromServer))
+                    {
+                        return fromServer;
+                    }
+                }
+
+                return HasVipPrefix ? NicknamePrefixUtility.Vip : string.Empty;
+            }
+        }
+
+        public static string LocalDisplayNickname =>
+            NicknamePrefixUtility.FormatPlain(NicknamePrefix, Nickname);
 
         public static int ChallengeBestTimeMs => ResolveChallengeBestTimeMs();
 
@@ -103,6 +152,39 @@ namespace ShooterPrototype.Player
             PlayerSkinOwnershipService.EnsureInitialized();
         }
 
+        public static bool GrantLocalVipPrefix()
+        {
+            if (HasVipPrefix)
+            {
+                return false;
+            }
+
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var expiresAtMs = nowMs + VipDurationMs;
+            PlayerPrefs.SetString(VipPrefixExpiresPrefKey, expiresAtMs.ToString());
+            PlayerPrefs.Save();
+
+            if (CurrentProfile != null)
+            {
+                CurrentProfile.hasVipPrefix = true;
+                CurrentProfile.vipPrefixExpiresAtMs = expiresAtMs;
+                CurrentProfile.nicknamePrefix = NicknamePrefixUtility.Vip;
+            }
+
+            ProfileSynced?.Invoke();
+            return true;
+        }
+
+        private static bool IsVipPrefixActive(long expiresAtMs)
+        {
+            if (expiresAtMs <= 0)
+            {
+                return false;
+            }
+
+            return expiresAtMs > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        }
+
         public static void EnterOfflineMode()
         {
             IsOfflineMode = true;
@@ -162,6 +244,15 @@ namespace ShooterPrototype.Player
             if (!string.IsNullOrWhiteSpace(Nickname))
             {
                 PlayerPrefs.SetString(NicknamePrefKey, Nickname);
+            }
+
+            if (IsVipPrefixActive(profile.vipPrefixExpiresAtMs))
+            {
+                PlayerPrefs.SetString(VipPrefixExpiresPrefKey, profile.vipPrefixExpiresAtMs.ToString());
+            }
+            else if (markSynced)
+            {
+                PlayerPrefs.DeleteKey(VipPrefixExpiresPrefKey);
             }
 
             PlayerCurrencyService.ApplyFromServer(profile.currencyBalance);
@@ -476,7 +567,8 @@ namespace ShooterPrototype.Player
                     PlayerCurrencyService.AddCurrency(Mathf.Max(0, entry.reward.amount));
                     break;
                 case "case":
-                    if (!string.IsNullOrWhiteSpace(entry.reward.caseId))
+                    if (!string.IsNullOrWhiteSpace(entry.reward.caseId) &&
+                        CaseCatalogService.IsRewardEligibleCase(entry.reward.caseId))
                     {
                         CaseOpeningService.GrantLocalCase(entry.reward.caseId.Trim(), Mathf.Max(1, entry.reward.amount));
                     }
@@ -714,6 +806,48 @@ namespace ShooterPrototype.Player
             }
 
             onCompleted?.Invoke(false, string.IsNullOrWhiteSpace(error) ? "Case purchase failed." : error);
+        }
+
+        public static IEnumerator GrantIapProduct(
+            MonoBehaviour runner,
+            PlayerProfileApiClient apiClient,
+            string playerId,
+            string productId,
+            Action<bool, string> onCompleted)
+        {
+            if (!IsServerSynced || runner == null || apiClient == null)
+            {
+                onCompleted?.Invoke(false, "Profile is not synced with server.");
+                yield break;
+            }
+
+            var completed = false;
+            var success = false;
+            var error = string.Empty;
+            PlayerProfileDto profile = null;
+
+            yield return apiClient.GrantIapProduct(playerId, productId, (ok, responseProfile, responseError) =>
+            {
+                completed = true;
+                success = ok;
+                profile = responseProfile;
+                error = responseError;
+            });
+
+            if (!completed)
+            {
+                onCompleted?.Invoke(false, "IAP grant request did not complete.");
+                yield break;
+            }
+
+            if (success && profile != null)
+            {
+                ApplyProfile(profile);
+                onCompleted?.Invoke(true, string.Empty);
+                yield break;
+            }
+
+            onCompleted?.Invoke(false, string.IsNullOrWhiteSpace(error) ? "IAP grant failed." : error);
         }
 
         public static IEnumerator OpenCase(
@@ -1211,6 +1345,79 @@ namespace ShooterPrototype.Player
                 damageDealt = Mathf.Max(0, damageDealt),
                 matchMode = matchMode ?? string.Empty
             };
+
+            yield return RecordMatchStats(runner, apiClient, playerId, request, onCompleted);
+        }
+
+        public static IEnumerator RecordMatchStats(
+            MonoBehaviour runner,
+            PlayerProfileApiClient apiClient,
+            string playerId,
+            string sourceId,
+            int kills,
+            int deaths,
+            int placement,
+            bool won,
+            int damageDealt,
+            string matchMode,
+            int roundWins,
+            int roundLosses,
+            int opponentRating,
+            Action<bool, int, string> onCompleted)
+        {
+            if (runner == null || apiClient == null || string.IsNullOrWhiteSpace(playerId))
+            {
+                onCompleted?.Invoke(false, 0, "Profile is not synced with server.");
+                yield break;
+            }
+
+            if (string.IsNullOrWhiteSpace(sourceId))
+            {
+                onCompleted?.Invoke(false, 0, "Missing match source id.");
+                yield break;
+            }
+
+            var request = new PlayerProfileMatchStatsRequest
+            {
+                sourceId = sourceId,
+                kills = Mathf.Max(0, kills),
+                deaths = Mathf.Max(0, deaths),
+                placement = Mathf.Max(1, placement),
+                won = won,
+                damageDealt = Mathf.Max(0, damageDealt),
+                matchMode = matchMode ?? string.Empty,
+                roundWins = Mathf.Max(0, roundWins),
+                roundLosses = Mathf.Max(0, roundLosses),
+                opponentRating = Mathf.Max(0, opponentRating)
+            };
+
+            yield return RecordMatchStats(runner, apiClient, playerId, request, onCompleted);
+        }
+
+        private static IEnumerator RecordMatchStats(
+            MonoBehaviour runner,
+            PlayerProfileApiClient apiClient,
+            string playerId,
+            PlayerProfileMatchStatsRequest request,
+            Action<bool, int, string> onCompleted)
+        {
+            if (runner == null || apiClient == null || string.IsNullOrWhiteSpace(playerId))
+            {
+                onCompleted?.Invoke(false, 0, "Profile is not synced with server.");
+                yield break;
+            }
+
+            if (request == null || string.IsNullOrWhiteSpace(request.sourceId))
+            {
+                onCompleted?.Invoke(false, 0, "Missing match source id.");
+                yield break;
+            }
+
+            var completed = false;
+            var success = false;
+            var error = string.Empty;
+            var ratingDelta = 0;
+            PlayerProfileDto profile = null;
 
             yield return apiClient.RecordMatchStats(playerId, request, (ok, responseDelta, responseProfile, responseError) =>
             {

@@ -1,0 +1,37 @@
+{
+  "products": [
+    {
+      "productId": "coins_1000",
+      "displayName": "1000 монет",
+      "description": "Пакет внутриигровой валюты для покупки скинов и кейсов",
+      "priceRubles": 100,
+      "rewardType": "currency",
+      "amount": 1000
+    },
+    {
+      "productId": "coins_5000",
+      "displayName": "5000 монет",
+      "description": "Пакет внутриигровой валюты",
+      "priceRubles": 500,
+      "rewardType": "currency",
+      "amount": 5000
+    },
+    {
+      "productId": "case_neon_strand",
+      "displayName": "Элитный комплект",
+      "description": "Премиальный набор причёсок",
+      "priceRubles": 100,
+      "rewardType": "case",
+      "caseId": "case_neon_strand",
+      "amount": 1
+    },
+    {
+      "productId": "vip_prefix",
+      "displayName": "VIP",
+      "description": "Приписка [VIP] перед ником на 30 дней",
+      "priceRubles": 300,
+      "rewardType": "vip_prefix",
+      "amount": 1
+    }
+  ]
+}

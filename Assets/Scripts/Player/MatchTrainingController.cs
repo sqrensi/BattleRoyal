@@ -358,8 +358,7 @@ namespace ShooterPrototype.Player
 
         private static string ResolveLocalKillerName()
         {
-            var nickname = PlayerProfileService.Nickname;
-            return string.IsNullOrWhiteSpace(nickname) ? "Вы" : nickname.Trim();
+            return PlayerProfileService.LocalDisplayNickname;
         }
     }
 }

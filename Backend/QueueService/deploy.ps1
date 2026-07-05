@@ -31,7 +31,9 @@ $RootFiles = @(
     "config.js",
     "package.json",
     "package-lock.json",
-    "duelMatch.js"
+    "duelMatch.js",
+    "duelRewards.js",
+    "nicknamePrefix.js"
 )
 
 $RootDirs = @(

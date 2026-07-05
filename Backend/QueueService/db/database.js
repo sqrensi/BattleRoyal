@@ -40,6 +40,57 @@ function applySqliteMigrations(db) {
   applyPlayerRatingMigration(db, insertMigration);
   applyModeLeaderboardMigration(db, insertMigration);
   applyModeStatsLeaderboardMigration(db, insertMigration);
+  applyVipPrefixMigration(db, insertMigration);
+  applyVipPrefixExpiryMigration(db, insertMigration);
+}
+
+function applyVipPrefixExpiryMigration(db, insertMigration) {
+  const migrationName = "010_vip_prefix_expiry";
+  const applied = db
+    .prepare("SELECT 1 AS ok FROM schema_migrations WHERE name = ?")
+    .get(migrationName);
+  if (applied) {
+    return;
+  }
+
+  const profileColumns = db.prepare("PRAGMA table_info(player_profiles)").all();
+  const hasExpiry = profileColumns.some((column) => column.name === "vip_prefix_expires_at");
+  if (!hasExpiry) {
+    db.exec(
+      "ALTER TABLE player_profiles ADD COLUMN vip_prefix_expires_at INTEGER NOT NULL DEFAULT 0 CHECK (vip_prefix_expires_at >= 0);"
+    );
+  }
+
+  const migrationNow = nowMs();
+  const graceExpiresAt = migrationNow + 30 * 24 * 60 * 60 * 1000;
+  db.prepare(
+    `UPDATE player_profiles
+     SET vip_prefix_expires_at = ?
+     WHERE has_vip_prefix = 1
+       AND (vip_prefix_expires_at IS NULL OR vip_prefix_expires_at <= 0)`
+  ).run(graceExpiresAt);
+
+  insertMigration.run(migrationName, migrationNow);
+}
+
+function applyVipPrefixMigration(db, insertMigration) {
+  const migrationName = "009_vip_prefix";
+  const applied = db
+    .prepare("SELECT 1 AS ok FROM schema_migrations WHERE name = ?")
+    .get(migrationName);
+  if (applied) {
+    return;
+  }
+
+  const profileColumns = db.prepare("PRAGMA table_info(player_profiles)").all();
+  const hasVipPrefix = profileColumns.some((column) => column.name === "has_vip_prefix");
+  if (!hasVipPrefix) {
+    db.exec(
+      "ALTER TABLE player_profiles ADD COLUMN has_vip_prefix INTEGER NOT NULL DEFAULT 0 CHECK (has_vip_prefix IN (0, 1));"
+    );
+  }
+
+  insertMigration.run(migrationName, nowMs());
 }
 
 function applyModeLeaderboardMigration(db, insertMigration) {

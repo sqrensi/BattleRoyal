@@ -203,7 +203,6 @@ namespace ShooterPrototype.Player
             GameHudController.IsPauseMenuOpen ||
             (medkitController != null && medkitController.IsUsingMedkit) ||
             (holsterController != null && holsterController.IsMedkitWeaponLocked) ||
-            (holsterController != null && holsterController.IsSwimmingWeaponLocked) ||
             localHolstered;
 
         private void Awake()

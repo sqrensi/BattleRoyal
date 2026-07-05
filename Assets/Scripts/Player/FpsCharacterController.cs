@@ -65,16 +65,6 @@ namespace ShooterPrototype.Player
         [SerializeField] private float groundedCheckDistance = 0.08f;
         [SerializeField] private LayerMask groundedMask = ~0;
 
-        [Header("Swimming")]
-        [SerializeField] private float swimHorizontalSpeedMultiplier = 0.58f;
-        [SerializeField] private float swimHorizontalAccel = 3.2f;
-        [SerializeField] private float swimVerticalSpeed = 2.4f;
-        [SerializeField] private float swimVerticalAccel = 3.8f;
-        [SerializeField] private float swimIdleBuoyancy = 0.85f;
-        [SerializeField] private float swimBuoyancyAccel = 2.8f;
-        [SerializeField] private float swimMaxSinkSpeed = -1.6f;
-        [SerializeField] private float swimStrokeInterval = 1.45f;
-
         private CharacterController characterController;
         private float verticalVelocity;
         private float cameraPitch;
@@ -105,7 +95,6 @@ namespace ShooterPrototype.Player
         private float crouchCameraVelocity;
         private readonly Collider[] standCheckHits = new Collider[16];
         private float nextFootstepAt;
-        private float nextSwimStrokeAt;
         private int footstepSequence;
         private PlayerAudioController audioController;
         private PlayerWeaponHolsterController weaponHolster;
@@ -130,8 +119,6 @@ namespace ShooterPrototype.Player
         private bool movementLocked;
         private Vector2 externalHorizontalVelocity;
         private bool medkitUseMovementMode;
-        private bool swimmingMode;
-        private Vector2 swimHorizontalVelocity;
         private System.Action medkitMovementCancelHandler;
         private float defaultAdsMaxLookAngle;
         private float adsLookSensitivityMultiplier = 1f;
@@ -144,7 +131,6 @@ namespace ShooterPrototype.Player
         public bool IsMovementLocked => movementLocked;
 
         public bool IsMedkitUseMovementMode => medkitUseMovementMode;
-        public bool IsSwimming => swimmingMode;
         public bool IsCrouching => isCrouching;
         public bool IsSprinting => isSprinting;
         public float SprintSpeedMultiplier => Mathf.Clamp(sprintSpeedMultiplier, 1f, 3f);
@@ -306,27 +292,6 @@ namespace ShooterPrototype.Player
 
             isSprinting = false;
             networkJumpPressed = false;
-        }
-
-        public void SetSwimmingMode(bool enabled)
-        {
-            if (swimmingMode == enabled)
-            {
-                return;
-            }
-
-            swimmingMode = enabled;
-            if (!enabled)
-            {
-                nextSwimStrokeAt = 0f;
-                swimHorizontalVelocity = Vector2.zero;
-                return;
-            }
-
-            isSprinting = false;
-            networkJumpPressed = false;
-            RestoreStandingPoseForSwimming();
-            verticalVelocity = Mathf.Clamp(verticalVelocity, swimMaxSinkSpeed, swimVerticalSpeed);
         }
 
         public void ReconcileToServer(
@@ -1031,12 +996,6 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (swimmingMode)
-            {
-                ApplySwimmingMovement();
-                return;
-            }
-
             UpdateCrouchState();
 
             var inputX = networkMoveInputX;
@@ -1098,89 +1057,6 @@ namespace ShooterPrototype.Player
             TryEmitFootstep();
         }
 
-        private void ApplySwimmingMovement()
-        {
-            if (!CanUseCharacterController())
-            {
-                horizontalSpeed = 0f;
-                return;
-            }
-
-            RestoreStandingPoseForSwimming();
-
-            var inputX = networkMoveInputX;
-            var inputZ = networkMoveInputZ;
-            networkJumpPressed = false;
-            moveInputMagnitude = Mathf.Clamp01(Mathf.Sqrt(inputX * inputX + inputZ * inputZ));
-            isSprinting = false;
-
-            var moveDirection = BuildScaledMoveDirection(inputX, inputZ);
-            var swimSpeed = moveSpeed * Mathf.Clamp(swimHorizontalSpeedMultiplier, 0.2f, 1f);
-            var targetHorizontal = new Vector2(moveDirection.x, moveDirection.z) * swimSpeed;
-            swimHorizontalVelocity = Vector2.MoveTowards(
-                swimHorizontalVelocity,
-                targetHorizontal,
-                Mathf.Max(0.5f, swimHorizontalAccel) * Time.deltaTime);
-            var verticalInput = 0f;
-            if (ReadJumpPressed())
-            {
-                verticalInput += 1f;
-            }
-
-            if (ReadCrouchPressed())
-            {
-                verticalInput -= 1f;
-            }
-
-            var targetVerticalVelocity = verticalInput * swimVerticalSpeed;
-            if (Mathf.Abs(verticalInput) < 0.01f)
-            {
-                targetVerticalVelocity = swimIdleBuoyancy;
-            }
-
-            verticalVelocity = Mathf.MoveTowards(
-                verticalVelocity,
-                targetVerticalVelocity,
-                swimVerticalAccel * Time.deltaTime);
-            verticalVelocity = Mathf.Clamp(verticalVelocity, swimMaxSinkSpeed, swimVerticalSpeed);
-
-            var velocity = new Vector3(swimHorizontalVelocity.x, verticalVelocity, swimHorizontalVelocity.y);
-            characterController.Move(velocity * Time.deltaTime);
-
-            isGrounded = false;
-            externalHorizontalVelocity = Vector2.zero;
-            var ccVelocity = characterController.velocity;
-            horizontalSpeed = new Vector2(ccVelocity.x, ccVelocity.z).magnitude;
-            TryEmitSwimStroke(verticalInput);
-        }
-
-        private void RestoreStandingPoseForSwimming()
-        {
-            if (characterController == null || cameraPivot == null)
-            {
-                return;
-            }
-
-            if (!isCrouching &&
-                Mathf.Approximately(characterController.height, standingHeight) &&
-                Mathf.Approximately(cameraPivot.localPosition.y, standingCameraLocalY))
-            {
-                return;
-            }
-
-            isCrouching = false;
-            crouchHeightVelocity = 0f;
-            crouchCameraVelocity = 0f;
-            characterController.height = standingHeight;
-            var center = characterController.center;
-            center.y = standingCenterY;
-            characterController.center = center;
-
-            var cameraLocalPos = cameraPivot.localPosition;
-            cameraLocalPos.y = standingCameraLocalY;
-            cameraPivot.localPosition = cameraLocalPos;
-        }
-
         private bool EvaluateGroundedCached(bool forceRefresh = false)
         {
             if (!forceRefresh && groundedEvalFrame == Time.frameCount)
@@ -1225,31 +1101,6 @@ namespace ShooterPrototype.Player
         public void PlayRemoteJump()
         {
             audioController?.PlayJump(false);
-        }
-
-        private void TryEmitSwimStroke(float verticalInput)
-        {
-            var hasHorizontalMove = moveInputMagnitude >= 0.12f;
-            var hasVerticalMove = Mathf.Abs(verticalInput) > 0.01f;
-            if (!hasHorizontalMove && !hasVerticalMove)
-            {
-                return;
-            }
-
-            if (Time.time < nextSwimStrokeAt)
-            {
-                return;
-            }
-
-            var cadence = Mathf.Max(0.95f, swimStrokeInterval);
-            if (hasHorizontalMove && hasVerticalMove)
-            {
-                cadence *= 0.92f;
-            }
-
-            nextSwimStrokeAt = Time.time + cadence;
-            footstepSequence++;
-            audioController?.PlaySwimStroke(true);
         }
 
         private void TryEmitFootstep()
@@ -1458,8 +1309,7 @@ namespace ShooterPrototype.Player
                 return true;
             }
 
-            return weaponHolster != null &&
-                   (weaponHolster.IsMedkitWeaponLocked || weaponHolster.IsSwimmingWeaponLocked);
+            return weaponHolster != null && weaponHolster.IsMedkitWeaponLocked;
         }
 
         private static bool ReadAimPressed()

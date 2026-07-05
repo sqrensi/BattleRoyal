@@ -189,19 +189,7 @@ namespace ShooterPrototype.Player
             capturedOutcome = null;
             gameHud?.ResetMatchOverlay();
             EnsureLocalPlayer();
-            ResetLocalSwimmingState();
             gameHud?.ClearGameplayHints();
-        }
-
-        private void ResetLocalSwimmingState()
-        {
-            if (localPlayer == null)
-            {
-                return;
-            }
-
-            localPlayer.GetComponent<PlayerSwimmingController>()?.ForceExitWaterState();
-            fpsController?.SetSwimmingMode(false);
         }
 
         private void OnDisable()
@@ -854,7 +842,6 @@ namespace ShooterPrototype.Player
             isOnPlane = true;
             hasJumpedLocally = false;
             parachuteDeployed = false;
-            ResetLocalSwimmingState();
             fpsController?.SetMovementLocked(true);
             fpsController?.SetServerReconciliationSuspended(true);
             viewPresentation?.SetForceThirdPersonBody(true);
@@ -1139,7 +1126,6 @@ namespace ShooterPrototype.Player
             }
 
             hasJumpedLocally = true;
-            ResetLocalSwimmingState();
             isOnPlane = false;
             localDropState = LocalDropState.Falling;
             parachuteDeployed = false;

@@ -77,3 +77,43 @@ MonoBehaviour:
     colorSpace: 0
     archivingBuild: 0
     syncInitSDK: 0
+  Payments:
+    durationPayPanel: 1
+    testBuyFail: 0
+    purshases:
+    - id: coins_1000
+      title: 1000 монет
+      description: Пакет внутриигровой валюты
+      imageURI: 
+      price: 100 ₽
+      priceValue: 100
+      priceCurrencyCode: RUB
+      currencyImageURL: 
+      consumed: 1
+    - id: coins_5000
+      title: 5000 монет
+      description: Пакет внутриигровой валюты
+      imageURI: 
+      price: 500 ₽
+      priceValue: 500
+      priceCurrencyCode: RUB
+      currencyImageURL: 
+      consumed: 1
+    - id: case_neon_strand
+      title: Элитный комплект
+      description: Премиальный набор причёсок
+      imageURI: 
+      price: 100 ₽
+      priceValue: 100
+      priceCurrencyCode: RUB
+      currencyImageURL: 
+      consumed: 1
+    - id: vip_prefix
+      title: VIP
+      description: Приписка [VIP] перед ником на 30 дней
+      imageURI: 
+      price: 300 ₽
+      priceValue: 300
+      priceCurrencyCode: RUB
+      currencyImageURL: 
+      consumed: 1

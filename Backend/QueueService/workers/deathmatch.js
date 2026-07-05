@@ -1,5 +1,7 @@
 "use strict";
 
+const { formatNicknameWithPrefix } = require("../nicknamePrefix");
+
 const Player = require("./player");
 const { WEAPON_SLOT_EMPTY } = require("./player");
 const combat = require("./combat");
@@ -178,8 +180,8 @@ class Deathmatch {
       seq: this.killFeedSeq,
       killerTicketId: killer.ticketId,
       victimTicketId: victim.ticketId,
-      killerNickname: killer.nickname || killer.playerId || "Игрок",
-      victimNickname: victim.nickname || victim.playerId || "Игрок",
+      killerNickname: formatNicknameWithPrefix(killer.nicknamePrefix, killer.nickname || killer.playerId || "Игрок"),
+      victimNickname: formatNicknameWithPrefix(victim.nicknamePrefix, victim.nickname || victim.playerId || "Игрок"),
       weaponKind: Math.max(0, Math.min(3, Number(killer.weaponKind) || 0)),
       cause: "player",
     };

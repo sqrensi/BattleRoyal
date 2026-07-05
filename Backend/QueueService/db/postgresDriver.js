@@ -34,7 +34,57 @@ class PostgresDriver {
     );
     await this.applyModeLeaderboardMigration();
     await this.applyModeStatsLeaderboardMigration();
+    await this.applyVipPrefixMigration();
+    await this.applyVipPrefixExpiryMigration();
     await this.syncAchievementDefinitions();
+  }
+
+  async applyVipPrefixExpiryMigration() {
+    const migrationName = "010_vip_prefix_expiry";
+    const applied = await this.get(
+      "SELECT 1 AS ok FROM schema_migrations WHERE name = ?",
+      [migrationName]
+    );
+    if (applied) {
+      return;
+    }
+
+    await this.pool.query(
+      "ALTER TABLE player_profiles ADD COLUMN IF NOT EXISTS vip_prefix_expires_at BIGINT NOT NULL DEFAULT 0"
+    );
+
+    const migrationNow = Date.now();
+    const graceExpiresAt = migrationNow + 30 * 24 * 60 * 60 * 1000;
+    await this.pool.query(
+      `UPDATE player_profiles
+       SET vip_prefix_expires_at = $1
+       WHERE has_vip_prefix = 1
+         AND (vip_prefix_expires_at IS NULL OR vip_prefix_expires_at <= 0)`,
+      [graceExpiresAt]
+    );
+    await this.run(
+      "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?) ON CONFLICT (name) DO NOTHING",
+      [migrationName, migrationNow]
+    );
+  }
+
+  async applyVipPrefixMigration() {
+    const migrationName = "009_vip_prefix";
+    const applied = await this.get(
+      "SELECT 1 AS ok FROM schema_migrations WHERE name = ?",
+      [migrationName]
+    );
+    if (applied) {
+      return;
+    }
+
+    await this.pool.query(
+      "ALTER TABLE player_profiles ADD COLUMN IF NOT EXISTS has_vip_prefix INTEGER NOT NULL DEFAULT 0"
+    );
+    await this.run(
+      "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?) ON CONFLICT (name) DO NOTHING",
+      [migrationName, Date.now()]
+    );
   }
 
   async applyModeStatsLeaderboardMigration() {

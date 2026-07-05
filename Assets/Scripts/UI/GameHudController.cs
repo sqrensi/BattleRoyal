@@ -1464,7 +1464,7 @@ namespace ShooterPrototype.UI
             }
 
             return ActiveMatchContext.IsDuel
-                ? MatchRatingUtility.CalculateDuelDelta(won)
+                ? summary.ResolveDuelRatingDelta(won)
                 : MatchRatingUtility.CalculateDelta(summary.Placement, summary.KillCount);
         }
 
@@ -1493,9 +1493,12 @@ namespace ShooterPrototype.UI
                 deaths,
                 summary.Placement,
                 won,
-                damageDealt,
+                Mathf.Max(damageDealt, summary.DamageDealt),
                 ActiveMatchContext.IsDuel ? "duel" :
                 ActiveMatchContext.IsDeathmatch ? "deathmatch" : "battle_royale",
+                summary.KillCount,
+                summary.RoundLosses,
+                summary.OpponentRating,
                 (success, ratingDelta, _) =>
                 {
                     UpdateGameOverRatingText(

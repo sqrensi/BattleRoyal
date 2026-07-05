@@ -134,7 +134,6 @@ namespace ShooterPrototype.Player
             var existingLocalPlayer = FindObjectOfType<LocalPlayerMarker>();
             if (existingLocalPlayer != null)
             {
-                ResetMovementStateForMatch(existingLocalPlayer.gameObject);
                 if (ActiveMatchContext.IsDeathmatch ||
                     DmSpawnUtility.IsDeathmatchScene(SceneManager.GetActiveScene()))
                 {
@@ -209,11 +208,6 @@ namespace ShooterPrototype.Player
                 instance.AddComponent<PlayerMedkitController>();
             }
 
-            if (instance.GetComponent<PlayerSwimmingController>() == null)
-            {
-                instance.AddComponent<PlayerSwimmingController>();
-            }
-
             if (instance.GetComponent<PlayerPickupController>() == null)
             {
                 instance.AddComponent<PlayerPickupController>();
@@ -266,7 +260,6 @@ namespace ShooterPrototype.Player
             }
 
             ResetPlayerLoadoutForSpawn(instance);
-            ResetMovementStateForMatch(instance);
 
             if (ActiveMatchContext.IsSoloPracticeScene)
             {
@@ -306,17 +299,6 @@ namespace ShooterPrototype.Player
                     "Assets/Prefabs/Player/PlayerCleanRemote.prefab");
             }
 #endif
-        }
-
-        private static void ResetMovementStateForMatch(GameObject player)
-        {
-            if (player == null)
-            {
-                return;
-            }
-
-            player.GetComponent<PlayerSwimmingController>()?.ForceExitWaterState();
-            player.GetComponent<FpsCharacterController>()?.SetSwimmingMode(false);
         }
 
         private static void ResetPlayerLoadoutForSpawn(GameObject player)

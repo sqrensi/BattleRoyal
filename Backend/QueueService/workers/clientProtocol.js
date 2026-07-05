@@ -1,4 +1,4 @@
-"use strict";
+const { formatNicknameWithPrefix } = require("../nicknamePrefix");
 
 const { WEAPON_SLOT_EMPTY } = require("./player");
 
@@ -86,7 +86,8 @@ function buildDeathmatchStateForTicket(match, ticketId) {
     : countdownRemainingSeconds;
   const dmScoreboard = match.players.map((player) => ({
     ticketId: player.ticketId,
-    nickname: player.nickname || player.playerId || "Игрок",
+    nickname: formatNicknameWithPrefix(player.nicknamePrefix, player.nickname || player.playerId || "Игрок"),
+    nicknamePrefix: player.nicknamePrefix || "",
     kills: Math.max(0, Number(match.killCount && match.killCount[player.ticketId]) || 0),
     deaths: Math.max(0, Number(player.matchDeaths) || 0),
     damage: Math.max(0, Math.floor(Number(player.damageDealt) || 0)),
@@ -251,7 +252,10 @@ function buildDuelStateForTicket(duel, ticketId) {
     duelLocalDuelRating: localPlayer && Number.isFinite(localPlayer.duelRating)
       ? Math.max(0, localPlayer.duelRating)
       : 1000,
-    duelOpponentNickname: opponent ? (opponent.nickname || opponent.playerId || "") : "",
+    duelOpponentNickname: opponent
+      ? formatNicknameWithPrefix(opponent.nicknamePrefix, opponent.nickname || opponent.playerId || "")
+      : "",
+    duelOpponentNicknamePrefix: opponent ? (opponent.nicknamePrefix || "") : "",
     duelOpponentDuelRating: opponent && Number.isFinite(opponent.duelRating)
       ? Math.max(0, opponent.duelRating)
       : 1000,
@@ -285,7 +289,8 @@ function buildRemotePlayerState(player, serverTick, historySamples = 12) {
 
   return {
     ticketId: player.ticketId,
-    nickname: player.nickname || player.playerId || "Игрок",
+    nickname: formatNicknameWithPrefix(player.nicknamePrefix, player.nickname || player.playerId || "Игрок"),
+    nicknamePrefix: player.nicknamePrefix || "",
     duelRating: Number.isFinite(player.duelRating) ? Math.max(0, player.duelRating) : 1000,
     position: { x: player.x, y: player.y, z: player.z },
     yaw: player.yaw || 0,
@@ -314,7 +319,7 @@ function buildRemotePlayerState(player, serverTick, historySamples = 12) {
     footstepSeq: player.footstepSeq || 0,
     isCrouching: !!player.isCrouching,
     isSprinting: !!player.isSprinting,
-    isSwimming: !!player.isSwimming,
+    isSwimming: false,
     isAiming: !!player.isAiming,
     wallAvoidBlend: player.wallAvoidBlend || 0,
     deathSeq: player.deathSeq || 0,

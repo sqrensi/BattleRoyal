@@ -58,7 +58,7 @@ function normalizePoseMessage(message) {
     skinWeaponMp7: message.skinWeaponMp7,
     isCrouching: message.isCrouching,
     isSprinting: message.isSprinting,
-    isSwimming: message.isSwimming,
+    isSwimming: false,
     isAiming: message.isAiming,
     isHolstered: message.isHolstered,
     jumpState: message.jumpState,

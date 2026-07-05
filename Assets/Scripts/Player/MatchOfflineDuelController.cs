@@ -251,7 +251,13 @@ namespace ShooterPrototype.Player
             if (!matchOutcomeScheduled)
             {
                 matchOutcomeScheduled = true;
-                var summary = MatchOutcomeSummary.CreateDuel(localWon, localRoundWins, 0);
+                var summary = MatchOutcomeSummary.CreateDuel(
+                    localWon,
+                    localRoundWins,
+                    botRoundWins,
+                    MatchStatsTracker.DamageDealtThisMatch,
+                    PlayerProfileService.DuelRating,
+                    botDuelRating > 0 ? botDuelRating : MatchRatingUtility.DefaultRating);
                 gameHud?.ScheduleGameOver(localWon, summary);
             }
         }
@@ -685,7 +691,7 @@ namespace ShooterPrototype.Player
                 : MatchRatingUtility.DefaultRating;
 
             gameHud.SetDuelPlayersPanel(
-                PlayerProfileService.Nickname,
+                PlayerProfileService.LocalDisplayNickname,
                 PlayerProfileService.DuelRating,
                 opponentNick,
                 opponentRating);

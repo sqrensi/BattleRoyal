@@ -128,6 +128,23 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
       return true;
     }
 
+    if (method === "POST" && path.endsWith("/grant-iap")) {
+      const prefix = "/profile/";
+      const suffix = "/grant-iap";
+      if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
+        return false;
+      }
+
+      const externalPlayerId = decodeURIComponent(
+        path.slice(prefix.length, path.length - suffix.length)
+      );
+      const body = await readJsonBody(req);
+      const productId = body && body.productId;
+      const result = await playerRepository.grantIapProduct(externalPlayerId, productId);
+      respondJson(res, result.ok ? 200 : 400, result);
+      return true;
+    }
+
     if (method === "POST" && path.endsWith("/purchase")) {
       const prefix = "/profile/";
       const suffix = "/purchase";

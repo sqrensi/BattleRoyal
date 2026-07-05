@@ -111,6 +111,12 @@ namespace ShooterPrototype.Player
                 : SkinRarity.Common;
         }
 
+        public static bool HasExplicitRarity(string skinId)
+        {
+            EnsureLoaded();
+            return !string.IsNullOrWhiteSpace(skinId) && rarityBySkinId.ContainsKey(skinId.Trim());
+        }
+
         public static Color GetRarityCardColor(string skinId)
         {
             return SkinRarityUtility.GetCardBackgroundColor(GetRarity(skinId));

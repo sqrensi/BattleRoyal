@@ -1020,10 +1020,12 @@ namespace ShooterPrototype.Player
             var validCount = 0;
             for (var i = 0; i < options.Count; i++)
             {
-                if (options[i].IsValid && !string.IsNullOrWhiteSpace(options[i].Id))
+                if (!IsValidBotSkinOption(slot, options[i]))
                 {
-                    validCount++;
+                    continue;
                 }
+
+                validCount++;
             }
 
             if (validCount <= 0)
@@ -1034,7 +1036,7 @@ namespace ShooterPrototype.Player
             var pick = UnityEngine.Random.Range(0, validCount);
             for (var i = 0; i < options.Count; i++)
             {
-                if (!options[i].IsValid || string.IsNullOrWhiteSpace(options[i].Id))
+                if (!IsValidBotSkinOption(slot, options[i]))
                 {
                     continue;
                 }
@@ -1048,6 +1050,21 @@ namespace ShooterPrototype.Player
             }
 
             return ResolveFallbackCatalogSkinId(slot, options);
+        }
+
+        private static bool IsValidBotSkinOption(PlayerSkinSlot slot, PlayerSkinDefinition definition)
+        {
+            if (!definition.IsValid || string.IsNullOrWhiteSpace(definition.Id))
+            {
+                return false;
+            }
+
+            if (slot != PlayerSkinSlot.Face && slot != PlayerSkinSlot.Hair)
+            {
+                return true;
+            }
+
+            return !CaseCatalogService.IsDonateExclusiveSkin(definition.Id);
         }
 
         private static string ResolveFallbackCatalogSkinId(

@@ -313,7 +313,7 @@ namespace ShooterPrototype.Player
 
         public void EnsureScoreboardParticipants()
         {
-            MatchScoreboardTracker.Upsert("offline-local", PlayerProfileService.Nickname);
+            MatchScoreboardTracker.Upsert("offline-local", PlayerProfileService.LocalDisplayNickname);
             for (var i = 0; i < bots.Count; i++)
             {
                 var bot = bots[i];
@@ -669,7 +669,8 @@ namespace ShooterPrototype.Player
         {
             if (string.Equals(ticketId, "offline-local", System.StringComparison.Ordinal))
             {
-                return "Вы";
+                var prefix = PlayerProfileService.NicknamePrefix;
+                return string.IsNullOrEmpty(prefix) ? "Вы" : $"[{prefix}] Вы";
             }
 
             return string.IsNullOrWhiteSpace(nickname) ? "Игрок" : nickname.Trim();
@@ -842,7 +843,7 @@ namespace ShooterPrototype.Player
 
             if (string.Equals(ticketId, "offline-local", System.StringComparison.Ordinal))
             {
-                return PlayerProfileService.Nickname;
+                return PlayerProfileService.LocalDisplayNickname;
             }
 
             for (var i = 0; i < bots.Count; i++)
@@ -882,7 +883,7 @@ namespace ShooterPrototype.Player
         {
             if (health.GetComponent<LocalPlayerMarker>() != null)
             {
-                return PlayerProfileService.Nickname;
+                return PlayerProfileService.LocalDisplayNickname;
             }
 
             var bot = health.GetComponent<DuelNavBotController>();

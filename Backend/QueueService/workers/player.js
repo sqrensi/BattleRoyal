@@ -9,6 +9,7 @@ class Player {
     this.ticketId = data.ticketId;
     this.playerId = data.playerId || data.ticketId;
     this.nickname = data.nickname || "Player";
+    this.nicknamePrefix = data.nicknamePrefix || "";
     this.duelRating = Number.isFinite(data.duelRating) ? Math.max(0, data.duelRating) : 1000;
 
     this.hp = 100;
@@ -148,9 +149,6 @@ class Player {
     }
     if (Number.isFinite(Number(message.isSprinting)) || typeof message.isSprinting === "boolean") {
       this.isSprinting = !!message.isSprinting;
-    }
-    if (Number.isFinite(Number(message.isSwimming)) || typeof message.isSwimming === "boolean") {
-      this.isSwimming = !!message.isSwimming;
     }
     if (Number.isFinite(Number(message.isAiming)) || typeof message.isAiming === "boolean") {
       this.isAiming = !!message.isAiming;

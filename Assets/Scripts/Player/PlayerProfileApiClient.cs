@@ -78,6 +78,9 @@ namespace ShooterPrototype.Player
         public string playerId;
         public string internalPlayerId;
         public string nickname;
+        public string nicknamePrefix;
+        public bool hasVipPrefix;
+        public long vipPrefixExpiresAtMs;
         public string selectedCharacterModel;
         public int currencyBalance;
         public int rating;
@@ -117,6 +120,12 @@ namespace ShooterPrototype.Player
     public sealed class PlayerProfilePurchaseCaseRequest
     {
         public string caseId;
+    }
+
+    [Serializable]
+    public sealed class PlayerProfileGrantIapRequest
+    {
+        public string productId;
     }
 
     [Serializable]
@@ -189,6 +198,9 @@ namespace ShooterPrototype.Player
         public string matchMode;
         public int completionTimeMs;
         public int trainingTimeSeconds;
+        public int roundWins;
+        public int roundLosses;
+        public int opponentRating;
     }
 
     [Serializable]
@@ -212,6 +224,7 @@ namespace ShooterPrototype.Player
     {
         public int rank;
         public string nickname;
+        public string nicknamePrefix;
         public int rating;
         public int challengeTimeMs;
         public int kills;
@@ -310,6 +323,24 @@ namespace ShooterPrototype.Player
             };
 
             var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/purchase-case";
+            yield return SendRequest(
+                UnityWebRequest.kHttpVerbPOST,
+                path,
+                requestBody,
+                (ok, json, error) => ParseProfileResponse(ok, json, error, onCompleted));
+        }
+
+        public IEnumerator GrantIapProduct(
+            string playerId,
+            string productId,
+            Action<bool, PlayerProfileDto, string> onCompleted)
+        {
+            var requestBody = new PlayerProfileGrantIapRequest
+            {
+                productId = productId
+            };
+
+            var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/grant-iap";
             yield return SendRequest(
                 UnityWebRequest.kHttpVerbPOST,
                 path,

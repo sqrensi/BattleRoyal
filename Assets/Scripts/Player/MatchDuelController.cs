@@ -622,7 +622,7 @@ namespace ShooterPrototype.Player
                 : networkLauncher != null && !string.IsNullOrWhiteSpace(networkLauncher.CurrentTicketId)
                     ? networkLauncher.CurrentTicketId.Trim()
                     : string.Empty;
-            var localNick = PlayerProfileService.Nickname;
+            var localNick = PlayerProfileService.LocalDisplayNickname;
             var localRating = ResolveDuelPanelRating(
                 state.duelLocalDuelRating,
                 PlayerProfileService.DuelRating);
@@ -879,7 +879,22 @@ namespace ShooterPrototype.Player
             }
 
             var roundWins = lastState?.duelLocalRoundWins ?? 0;
-            var summary = MatchOutcomeSummary.CreateDuel(won, roundWins, 0);
+            var roundLosses = lastState?.duelOpponentRoundWins ?? 0;
+            var playerRating = ResolveDuelPanelRating(
+                lastState?.duelLocalDuelRating ?? 0,
+                PlayerProfileService.DuelRating);
+            var opponentRating = cachedOpponentDuelRating > 0
+                ? cachedOpponentDuelRating
+                : lastState?.duelOpponentDuelRating > 0
+                    ? lastState.duelOpponentDuelRating
+                    : MatchRatingUtility.DefaultRating;
+            var summary = MatchOutcomeSummary.CreateDuel(
+                won,
+                roundWins,
+                roundLosses,
+                MatchStatsTracker.DamageDealtThisMatch,
+                playerRating,
+                opponentRating);
             capturedOutcome = summary;
             return summary;
         }

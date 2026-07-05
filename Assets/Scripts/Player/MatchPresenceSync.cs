@@ -1358,7 +1358,6 @@ namespace ShooterPrototype.Player
             var footstepSeq = localFpsController != null ? localFpsController.LastFootstepSequence : 0;
             var isCrouching = localFpsController != null && localFpsController.IsCrouching;
             var isSprinting = localFpsController != null && localFpsController.IsSprinting;
-            var isSwimming = localFpsController != null && localFpsController.IsSwimming;
             var wallAvoidBlend = localWeaponMount != null ? localWeaponMount.CurrentWallAvoidBlend : 0f;
             var isDead = localHealth != null && localHealth.IsDead;
             var deathSeq = localHealth != null ? localHealth.DeathSequence : 0;
@@ -1437,7 +1436,6 @@ namespace ShooterPrototype.Player
                     footstepSeq,
                     isCrouching,
                     isSprinting,
-                    isSwimming,
                     wallAvoidBlend,
                     isDead,
                     deathSeq,
@@ -2932,18 +2930,11 @@ namespace ShooterPrototype.Player
             }
 
             var audio = avatar.RemoteAudio;
-            var maxReplay = playerState.isSwimming ? 3 : (playerState.isSprinting ? 6 : 3);
+            var maxReplay = playerState.isSprinting ? 6 : 3;
             var count = Mathf.Clamp(playerState.footstepSeq - avatar.LastAppliedFootstepSeq, 1, maxReplay);
             for (var i = 0; i < count; i++)
             {
-                if (playerState.isSwimming)
-                {
-                    audio?.PlaySwimStroke(false);
-                }
-                else
-                {
-                    audio?.PlayFootstep(false, playerState.isSprinting);
-                }
+                audio?.PlayFootstep(false, playerState.isSprinting);
             }
 
             avatar.LastAppliedFootstepSeq = playerState.footstepSeq;

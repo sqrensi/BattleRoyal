@@ -43,8 +43,26 @@ function normalizeCaseEntry(raw) {
     displayName: String(raw.displayName || raw.caseId || "Case").trim(),
     pictureFolder: String(raw.pictureFolder || "001").trim(),
     price: typeof raw.price === "number" ? Math.max(0, raw.price) : 0,
+    realMoneyProductId: String(raw.realMoneyProductId || "").trim(),
+    priceRubles: typeof raw.priceRubles === "number" ? Math.max(0, raw.priceRubles) : 0,
+    excludeFromRewards: Boolean(raw.excludeFromRewards),
+    isDonateExclusive: Boolean(raw.isDonateExclusive),
     lootPool: normalizeLootPool(raw.lootPool),
   };
+}
+
+function isCaseAllowedForSource(caseId, source) {
+  const definition = getCaseDefinition(caseId);
+  if (!definition) {
+    return false;
+  }
+
+  if (!definition.excludeFromRewards) {
+    return true;
+  }
+
+  const normalizedSource = String(source || "").trim().toLowerCase();
+  return normalizedSource === "purchase" || normalizedSource === "iap";
 }
 
 function getCaseDefinition(caseId) {
@@ -93,4 +111,5 @@ module.exports = {
   getShopCases,
   getCasePrice,
   rollCaseLoot,
+  isCaseAllowedForSource,
 };

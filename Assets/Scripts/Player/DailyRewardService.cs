@@ -151,6 +151,11 @@ namespace ShooterPrototype.Player
                         return false;
                     }
 
+                    if (!CaseCatalogService.IsRewardEligibleCase(entry.caseId))
+                    {
+                        return false;
+                    }
+
                     CaseOpeningService.GrantLocalCase(entry.caseId.Trim(), Mathf.Max(1, entry.amount));
                     return true;
                 default:

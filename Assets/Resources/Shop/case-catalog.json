@@ -2,24 +2,282 @@
   "shopCases": [
     {
       "caseId": "case_001",
-      "displayName": "Оружейный кейс",
+      "displayName": "Арсенальный контейнер",
       "pictureFolder": "001",
       "price": 5000,
       "lootPool": [
-        { "skinId": "weapon_ak47_001", "weight": 50 },
-        { "skinId": "weapon_ak47_002", "weight": 30 },
-        { "skinId": "weapon_ak47_003", "weight": 15 },
-        { "skinId": "weapon_ak47_004", "weight": 2 },
-        { "skinId": "weapon_sniper_001", "weight": 50 },
-        { "skinId": "weapon_sniper_002", "weight": 30 },
-        { "skinId": "weapon_sniper_003", "weight": 15 },
-        { "skinId": "weapon_sniper_004", "weight": 2 },
-        { "skinId": "weapon_pistol_001", "weight": 50 },
-        { "skinId": "weapon_pistol_002", "weight": 30 },
-        { "skinId": "weapon_pistol_003", "weight": 8 },
-        { "skinId": "weapon_mp7_001", "weight": 50 },
-        { "skinId": "weapon_mp7_002", "weight": 30 },
-        { "skinId": "weapon_mp7_003", "weight": 8 }
+        {
+          "skinId": "weapon_ak47_001",
+          "weight": 50
+        },
+        {
+          "skinId": "weapon_ak47_002",
+          "weight": 30
+        },
+        {
+          "skinId": "weapon_ak47_003",
+          "weight": 15
+        },
+        {
+          "skinId": "weapon_ak47_004",
+          "weight": 2
+        },
+        {
+          "skinId": "weapon_sniper_001",
+          "weight": 50
+        },
+        {
+          "skinId": "weapon_sniper_002",
+          "weight": 30
+        },
+        {
+          "skinId": "weapon_sniper_003",
+          "weight": 15
+        },
+        {
+          "skinId": "weapon_sniper_004",
+          "weight": 2
+        },
+        {
+          "skinId": "weapon_pistol_001",
+          "weight": 50
+        },
+        {
+          "skinId": "weapon_pistol_002",
+          "weight": 30
+        },
+        {
+          "skinId": "weapon_pistol_003",
+          "weight": 8
+        },
+        {
+          "skinId": "weapon_mp7_001",
+          "weight": 50
+        },
+        {
+          "skinId": "weapon_mp7_002",
+          "weight": 30
+        },
+        {
+          "skinId": "weapon_mp7_003",
+          "weight": 8
+        }
+      ]
+    },
+    {
+      "caseId": "case_neon_strand",
+      "displayName": "Элитный комплект",
+      "pictureFolder": "003",
+      "price": 0,
+      "realMoneyProductId": "case_neon_strand",
+      "priceRubles": 100,
+      "excludeFromRewards": true,
+      "isDonateExclusive": true,
+      "lootPool": [
+        {
+          "skinId": "attachment_hair_005",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_012",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_013",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_014",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_018",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_020",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_021",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_027",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_028",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_029",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_030",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_033",
+          "weight": 10
+        }
+      ]
+    },
+    {
+      "caseId": "case_identity_vault",
+      "displayName": "Тактический комплект",
+      "pictureFolder": "002",
+      "price": 5000,
+      "lootPool": [
+        {
+          "skinId": "attachment_hair_003",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_004",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_006",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_007",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_008",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_009",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_010",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_011",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_015",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_016",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_017",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_019",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_022",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_023",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_024",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_025",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_026",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_031",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_032",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_034",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_035",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_036",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_037",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_038",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_039",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_040",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_041",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_042",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_043",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_044",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_hair_045",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_face_001",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_face_002",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_face_003",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_face_004",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_face_005",
+          "weight": 10
+        },
+        {
+          "skinId": "attachment_face_006",
+          "weight": 10
+        }
       ]
     }
   ]

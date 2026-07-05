@@ -96,7 +96,7 @@ namespace ShooterPrototype.UI
             EnsureAudio();
             BuildTitle(caseDefinition.DisplayName);
             BuildViewport();
-            BuildResultPanel(winner);
+            BuildResultPanel(caseDefinition, winner);
             BuildCloseButton(onCompleted);
 
             animationCoroutine = StartCoroutine(FadeInAndSpin(caseDefinition, winner));
@@ -357,7 +357,7 @@ namespace ShooterPrototype.UI
             image.raycastTarget = false;
         }
 
-        private void BuildResultPanel(PlayerSkinDefinition winner)
+        private void BuildResultPanel(CaseDefinition caseDefinition, PlayerSkinDefinition winner)
         {
             var resultObject = new GameObject("ResultPanel");
             resultObject.transform.SetParent(transform, false);
@@ -372,7 +372,10 @@ namespace ShooterPrototype.UI
             resultBackground = resultObject.AddComponent<Image>();
             resultBackground.sprite = UiTheme.WhiteSprite;
             resultBackground.color = UiTheme.SlotFill;
-            UiDecor.CreateRarityStripe(resultObject.transform, ShopCatalogService.GetRarityStripeColor(winner.Id), 5f);
+            UiDecor.CreateRarityStripe(
+                resultObject.transform,
+                CaseCatalogService.GetLootRarityStripeColor(caseDefinition, winner.Id),
+                5f);
 
             var iconObject = new GameObject("Icon");
             iconObject.transform.SetParent(resultObject.transform, false);
@@ -501,7 +504,7 @@ namespace ShooterPrototype.UI
                     definition = lootDefinitions[UnityEngine.Random.Range(0, lootDefinitions.Count)];
                 }
 
-                stripItems.Add(CreateStripItem(stripRect, definition, i));
+                stripItems.Add(CreateStripItem(stripRect, caseDefinition, definition, i));
             }
 
             var viewportWidth = viewportRect.rect.width;
@@ -545,6 +548,7 @@ namespace ShooterPrototype.UI
 
         private RectTransform CreateStripItem(
             Transform parent,
+            CaseDefinition caseDefinition,
             PlayerSkinDefinition definition,
             int index)
         {
@@ -561,7 +565,9 @@ namespace ShooterPrototype.UI
             var background = slotObject.AddComponent<Image>();
             background.sprite = UiTheme.WhiteSprite;
             background.color = UiTheme.SlotFill;
-            UiDecor.CreateRarityStripe(slotObject.transform, ShopCatalogService.GetRarityStripeColor(definition.Id));
+            UiDecor.CreateRarityStripe(
+                slotObject.transform,
+                CaseCatalogService.GetLootRarityStripeColor(caseDefinition, definition.Id));
 
             var iconObject = new GameObject("Icon");
             iconObject.transform.SetParent(slotObject.transform, false);

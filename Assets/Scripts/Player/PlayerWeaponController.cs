@@ -377,11 +377,6 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            if (weaponHolster != null && weaponHolster.IsSwimmingWeaponLocked)
-            {
-                return;
-            }
-
             if (weaponHolster != null && !weaponHolster.IsWeaponReady)
             {
                 return;

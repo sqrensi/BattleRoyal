@@ -5,6 +5,7 @@ const { WEAPON_SLOT_EMPTY } = require("./player");
 const combat = require("./combat");
 const movement = require("./movement");
 const { getSpawnCount, resolveSpawnPose } = require("./spawnTable");
+const { formatNicknameWithPrefix } = require("../nicknamePrefix");
 const {
   buildMatchStateForTicket,
   buildSnapshotForViewer,
@@ -122,8 +123,8 @@ class Duel {
       seq: this.killFeedSeq,
       killerTicketId: killer.ticketId,
       victimTicketId: victim.ticketId,
-      killerNickname: killer.nickname || killer.playerId || "Игрок",
-      victimNickname: victim.nickname || victim.playerId || "Игрок",
+      killerNickname: formatNicknameWithPrefix(killer.nicknamePrefix, killer.nickname || killer.playerId || "Игрок"),
+      victimNickname: formatNicknameWithPrefix(victim.nicknamePrefix, victim.nickname || victim.playerId || "Игрок"),
       weaponKind: Math.max(0, Math.min(3, Number(killer.weaponKind) || 0)),
       cause: "player",
     };
@@ -316,6 +317,8 @@ class Duel {
       return;
     }
 
+    shooter.damageDealt = Math.max(0, Number(shooter.damageDealt) || 0) + damage;
+
     let dirX = Number(message.dirX ?? 0);
     let dirY = Number(message.dirY ?? 0);
     let dirZ = Number(message.dirZ ?? 0);
@@ -504,6 +507,14 @@ class Duel {
 
   buildStateForTicket(ticketId) {
     return buildMatchStateForTicket(this, ticketId);
+  }
+
+  buildDamageDealt() {
+    const damageByTicket = {};
+    for (const player of this.players) {
+      damageByTicket[player.ticketId] = Math.max(0, Math.floor(Number(player.damageDealt) || 0));
+    }
+    return damageByTicket;
   }
 }
 

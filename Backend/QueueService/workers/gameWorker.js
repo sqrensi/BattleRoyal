@@ -52,6 +52,9 @@ function postMatchFinished(match) {
   if (typeof match.buildDeathCounts === "function") {
     payload.deathCounts = match.buildDeathCounts();
   }
+  if (typeof match.buildDamageDealt === "function") {
+    payload.damageDealt = match.buildDamageDealt();
+  }
   post(WorkerToMaster.MATCH_FINISHED, payload);
 }
 

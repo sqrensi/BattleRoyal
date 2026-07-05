@@ -7,7 +7,17 @@ const {
   getShopPrice,
   slotForSkinId,
 } = require("../data/shop-catalog");
-const { getCaseDefinition, rollCaseLoot } = require("../data/case-catalog");
+const { calculateDuelRewards } = require("../duelRewards");
+const {
+  PRO_TOP_COUNT,
+  resolveNicknamePrefix,
+  resolveBestNicknamePrefix,
+  formatNicknameWithPrefix,
+  isVipPrefixActive,
+  computeVipPrefixExpiresAt,
+} = require("../nicknamePrefix");
+const { getCaseDefinition, rollCaseLoot, isCaseAllowedForSource } = require("../data/case-catalog");
+const { getIapProduct } = require("../data/shop-iap-catalog");
 const {
   getAchievementDefinition,
   getAchievementsByEventType,
@@ -28,6 +38,15 @@ function buildRatingUpdateClause(ratingColumn) {
   }
 
   return `SET ${column} = MAX(0, ${column} + ?)`;
+}
+
+function sqlBoolLiteral(value) {
+  const bool = !!value;
+  if (getDriverName() === "postgres") {
+    return bool ? "TRUE" : "FALSE";
+  }
+
+  return bool ? "1" : "0";
 }
 
 const STARTER_CURRENCY = 0;
@@ -140,12 +159,135 @@ async function getPlayerByExternalId(externalPlayerId) {
     `SELECT p.id, p.external_player_id, p.created_at, p.updated_at,
             pp.nickname, pp.selected_character_model, pp.currency_balance,
             pp.starter_pack_granted, pp.rating, pp.duel_rating, pp.challenge_best_time_ms,
+            pp.has_vip_prefix, pp.vip_prefix_expires_at,
             pp.updated_at AS profile_updated_at
      FROM players p
      LEFT JOIN player_profiles pp ON pp.player_id = p.id
      WHERE p.external_player_id = ?`,
     [normalizeExternalPlayerId(externalPlayerId)]
   );
+}
+
+async function getDuelLeaderboardRank(internalPlayerId) {
+  if (!internalPlayerId) {
+    return 0;
+  }
+
+  const row = await get(
+    `SELECT duel_rating, updated_at
+     FROM player_profiles
+     WHERE player_id = ?`,
+    [internalPlayerId]
+  );
+  if (!row) {
+    return 0;
+  }
+
+  const rating = Number.isFinite(row.duel_rating) ? row.duel_rating : 0;
+  const updatedAt = Number.isFinite(row.updated_at) ? row.updated_at : 0;
+  const higher = await get(
+    `SELECT COUNT(*) AS higher_count
+     FROM player_profiles
+     WHERE duel_rating > ?
+        OR (duel_rating = ? AND updated_at < ?)`,
+    [rating, rating, updatedAt]
+  );
+
+  return (higher && Number.isFinite(higher.higher_count) ? higher.higher_count : 0) + 1;
+}
+
+async function getChallengeLeaderboardRank(internalPlayerId) {
+  if (!internalPlayerId) {
+    return 0;
+  }
+
+  const row = await get(
+    `SELECT challenge_best_time_ms, updated_at
+     FROM player_profiles
+     WHERE player_id = ?`,
+    [internalPlayerId]
+  );
+  if (!row || !Number.isFinite(row.challenge_best_time_ms) || row.challenge_best_time_ms <= 0) {
+    return 0;
+  }
+
+  const bestTime = row.challenge_best_time_ms;
+  const updatedAt = Number.isFinite(row.updated_at) ? row.updated_at : 0;
+  const faster = await get(
+    `SELECT COUNT(*) AS higher_count
+     FROM player_profiles
+     WHERE challenge_best_time_ms IS NOT NULL
+       AND challenge_best_time_ms > 0
+       AND (
+         challenge_best_time_ms < ?
+         OR (challenge_best_time_ms = ? AND updated_at < ?)
+       )`,
+    [bestTime, bestTime, updatedAt]
+  );
+
+  return (faster && Number.isFinite(faster.higher_count) ? faster.higher_count : 0) + 1;
+}
+
+async function getDeathmatchLeaderboardRank(internalPlayerId) {
+  if (!internalPlayerId) {
+    return 0;
+  }
+
+  const row = await get(
+    `SELECT dm_total_kills, dm_total_deaths, updated_at
+     FROM player_match_stats
+     WHERE player_id = ?`,
+    [internalPlayerId]
+  );
+  if (!row || !Number.isFinite(row.dm_total_kills) || row.dm_total_kills <= 0) {
+    return 0;
+  }
+
+  const kills = Math.max(0, row.dm_total_kills);
+  const deaths = Math.max(0, row.dm_total_deaths);
+  const updatedAt = Number.isFinite(row.updated_at) ? row.updated_at : 0;
+  const higher = await get(
+    `SELECT COUNT(*) AS higher_count
+     FROM player_match_stats
+     WHERE dm_total_kills > 0
+       AND (
+         dm_total_kills > ?
+         OR (dm_total_kills = ? AND dm_total_deaths < ?)
+         OR (dm_total_kills = ? AND dm_total_deaths = ? AND updated_at < ?)
+       )`,
+    [kills, kills, deaths, kills, deaths, updatedAt]
+  );
+
+  return (higher && Number.isFinite(higher.higher_count) ? higher.higher_count : 0) + 1;
+}
+
+async function resolvePlayerNicknamePrefix(playerRow, nowMs = Date.now()) {
+  if (!playerRow) {
+    return "";
+  }
+
+  const [duelRank, challengeRank, dmRank] = await Promise.all([
+    getDuelLeaderboardRank(playerRow.id),
+    getChallengeLeaderboardRank(playerRow.id),
+    getDeathmatchLeaderboardRank(playerRow.id),
+  ]);
+
+  return resolveBestNicknamePrefix(
+    [duelRank, challengeRank, dmRank],
+    playerRow.vip_prefix_expires_at,
+    nowMs
+  );
+}
+
+function hasActiveVipPrefix(playerRow, nowMs = Date.now()) {
+  if (!playerRow) {
+    return false;
+  }
+
+  return isVipPrefixActive({
+    vipPrefixExpiresAtMs: playerRow.vip_prefix_expires_at,
+    nowMs,
+  });
 }
 
 async function getOwnedSkinIds(playerId) {
@@ -225,6 +367,10 @@ async function getOwnedCaseQuantities(playerId) {
 async function grantOwnedCase(playerId, caseId, source, allowDuplicateIncrement, tx = null) {
   const normalizedCaseId = String(caseId || "").trim();
   if (!normalizedCaseId || !getCaseDefinition(normalizedCaseId)) {
+    return false;
+  }
+
+  if (!isCaseAllowedForSource(normalizedCaseId, source)) {
     return false;
   }
 
@@ -392,11 +538,18 @@ async function buildProfileResponse(playerRow) {
 
   const ownedSkins = await getOwnedSkinIds(playerRow.id);
   const equipped = mapEquippedForClient(await getEquippedMap(playerRow.id));
+  const nicknamePrefix = await resolvePlayerNicknamePrefix(playerRow);
+  const vipPrefixExpiresAtMs = Number.isFinite(playerRow.vip_prefix_expires_at)
+    ? Math.max(0, playerRow.vip_prefix_expires_at)
+    : 0;
 
   return {
     playerId: playerRow.external_player_id,
     internalPlayerId: playerRow.id,
     nickname: playerRow.nickname || "",
+    nicknamePrefix,
+    hasVipPrefix: hasActiveVipPrefix(playerRow),
+    vipPrefixExpiresAtMs,
     selectedCharacterModel: playerRow.selected_character_model || "",
     currencyBalance: Number.isFinite(playerRow.currency_balance)
       ? playerRow.currency_balance
@@ -465,19 +618,35 @@ async function getPlayerMatchStats(playerId) {
   };
 }
 
-function calculateRatingDelta(placement, kills, matchMode, won) {
+function calculateRatingDelta(placement, kills, matchMode, won, duelContext) {
   const normalizedMode = String(matchMode || "").trim().toLowerCase();
   if (normalizedMode === "deathmatch" || normalizedMode === "dm") {
     return 0;
   }
   if (normalizedMode === "duel" || normalizedMode === "1v1") {
-    if (won === true) {
-      return 15;
-    }
-    if (won === false) {
-      return -15;
-    }
-    return placement <= 1 ? 15 : -15;
+    const context = duelContext || {};
+    const roundWins = Math.max(
+      0,
+      Math.floor(Number(context.roundWins ?? kills) || 0)
+    );
+    const roundLosses = Math.max(0, Math.floor(Number(context.roundLosses) || 0));
+    const playerRating = Math.max(
+      0,
+      Math.floor(Number(context.playerRating) || 1000)
+    );
+    const opponentRating = Math.max(
+      0,
+      Math.floor(Number(context.opponentRating) || 1000)
+    );
+    const damageDealt = Math.max(0, Math.floor(Number(context.damageDealt) || 0));
+    return calculateDuelRewards({
+      won: won === true,
+      roundWins,
+      roundLosses,
+      playerRating,
+      opponentRating,
+      damageDealt,
+    }).ratingDelta;
   }
 
   const brSize = 20;
@@ -654,7 +823,19 @@ async function recordMatchStats(externalPlayerId, payload) {
         return true;
       }
 
-      ratingDelta = calculateRatingDelta(placement, kills, payload && payload.matchMode, won);
+      ratingDelta = calculateRatingDelta(placement, kills, payload && payload.matchMode, won, {
+        roundWins: Math.max(0, Math.floor(Number(payload && payload.roundWins) || kills)),
+        roundLosses: Math.max(0, Math.floor(Number(payload && payload.roundLosses) || 0)),
+        playerRating:
+          matchMode === "duel" || matchMode === "1v1"
+            ? Math.max(0, Math.floor(Number(playerRow.duel_rating) || 1000))
+            : Math.max(0, Math.floor(Number(playerRow.rating) || 1000)),
+        opponentRating: Math.max(
+          0,
+          Math.floor(Number(payload && payload.opponentRating) || 1000)
+        ),
+        damageDealt,
+      });
 
       const normalizedMode = matchMode;
       const skipRatingUpdate = normalizedMode === "deathmatch" || normalizedMode === "dm";
@@ -728,7 +909,7 @@ async function syncAchievementDefinitionRows() {
     await run(
       `INSERT INTO achievement_definitions
        (id, code, title, description, category, sort_order, is_hidden, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ${sqlBoolLiteral(false)}, ?)
        ON CONFLICT(id) DO UPDATE SET
          code = excluded.code,
          title = excluded.title,
@@ -927,6 +1108,7 @@ async function ensurePlayerForQueue(externalPlayerId) {
       duelRating: playerRow && Number.isFinite(playerRow.duel_rating)
         ? Math.max(0, playerRow.duel_rating)
         : 1000,
+      nicknamePrefix: playerRow ? await resolvePlayerNicknamePrefix(playerRow) : "",
     };
     queueProfileCache.set(normalizedExternalId, {
       cachedAtMs: Date.now(),
@@ -1142,6 +1324,96 @@ async function purchaseCase(externalPlayerId, caseId) {
 
     if (String(error.message || error) === "GRANT_FAILED") {
       return { ok: false, error: "GrantFailed", message: "Failed to grant purchased case." };
+    }
+
+    throw error;
+  }
+
+  return {
+    ok: true,
+    profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)),
+  };
+}
+
+async function grantIapProduct(externalPlayerId, productId) {
+  const normalizedProductId = String(productId || "").trim();
+  const product = getIapProduct(normalizedProductId);
+  if (!product) {
+    return { ok: false, error: "UnknownProduct", message: "Unknown IAP product id." };
+  }
+
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
+  if (!playerRow) {
+    return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
+  }
+
+  const timestamp = nowMs();
+
+  try {
+    await transaction(async (tx) => {
+      if (product.rewardType === "currency") {
+        await tx.run(
+          `UPDATE player_profiles
+           SET currency_balance = currency_balance + ?,
+               updated_at = ?
+           WHERE player_id = ?`,
+          [product.amount, timestamp, playerRow.id]
+        );
+        return;
+      }
+
+      if (product.rewardType === "case") {
+        for (let i = 0; i < product.amount; i++) {
+          if (!(await grantOwnedCase(playerRow.id, product.caseId, "iap", true, tx))) {
+            throw new Error("GRANT_FAILED");
+          }
+        }
+        return;
+      }
+
+      if (product.rewardType === "vip_prefix") {
+        const profileRow = await tx.get(
+          `SELECT vip_prefix_expires_at
+           FROM player_profiles
+           WHERE player_id = ?`,
+          [playerRow.id]
+        );
+        const currentExpiresAt = profileRow && Number.isFinite(profileRow.vip_prefix_expires_at)
+          ? profileRow.vip_prefix_expires_at
+          : 0;
+        if (isVipPrefixActive({ vipPrefixExpiresAtMs: currentExpiresAt, nowMs: timestamp })) {
+          throw new Error("VIP_PREFIX_ACTIVE");
+        }
+
+        const newExpiresAt = computeVipPrefixExpiresAt(0, timestamp);
+        await tx.run(
+          `UPDATE player_profiles
+           SET has_vip_prefix = 1,
+               vip_prefix_expires_at = ?,
+               updated_at = ?
+           WHERE player_id = ?`,
+          [newExpiresAt, timestamp, playerRow.id]
+        );
+        return;
+      }
+
+      throw new Error("UNKNOWN_REWARD");
+    });
+  } catch (error) {
+    if (String(error.message || error) === "GRANT_FAILED") {
+      return { ok: false, error: "GrantFailed", message: "Failed to grant IAP reward." };
+    }
+
+    if (String(error.message || error) === "UNKNOWN_REWARD") {
+      return { ok: false, error: "UnknownReward", message: "Unsupported IAP reward." };
+    }
+
+    if (String(error.message || error) === "VIP_PREFIX_ACTIVE") {
+      return {
+        ok: false,
+        error: "VipPrefixActive",
+        message: "VIP prefix is already active.",
+      };
     }
 
     throw error;
@@ -1610,6 +1882,7 @@ async function getLeaderboard(limit = 25, mode = "duel") {
   if (normalizedMode === "challenge") {
     const rows = await all(
       `SELECT COALESCE(NULLIF(TRIM(pp.nickname), ''), 'Игрок') AS nickname,
+              pp.vip_prefix_expires_at AS vip_prefix_expires_at,
               pp.challenge_best_time_ms AS challenge_time_ms,
               p.external_player_id AS player_id
        FROM player_profiles pp
@@ -1623,6 +1896,10 @@ async function getLeaderboard(limit = 25, mode = "duel") {
     return rows.map((row, index) => ({
       rank: index + 1,
       nickname: row.nickname || "Игрок",
+      nicknamePrefix: resolveNicknamePrefix({
+        leaderboardRank: index + 1,
+        vipPrefixExpiresAtMs: row.vip_prefix_expires_at,
+      }),
       rating: 0,
       challengeTimeMs: Number.isFinite(row.challenge_time_ms) ? row.challenge_time_ms : -1,
       playerId: row.player_id || "",
@@ -1632,6 +1909,7 @@ async function getLeaderboard(limit = 25, mode = "duel") {
   if (normalizedMode === "deathmatch" || normalizedMode === "dm") {
     const rows = await all(
       `SELECT COALESCE(NULLIF(TRIM(pp.nickname), ''), 'Игрок') AS nickname,
+              pp.vip_prefix_expires_at AS vip_prefix_expires_at,
               pms.dm_total_kills AS kills,
               pms.dm_total_deaths AS deaths,
               p.external_player_id AS player_id
@@ -1651,6 +1929,10 @@ async function getLeaderboard(limit = 25, mode = "duel") {
       return {
         rank: index + 1,
         nickname: row.nickname || "Игрок",
+        nicknamePrefix: resolveNicknamePrefix({
+          leaderboardRank: index + 1,
+          vipPrefixExpiresAtMs: row.vip_prefix_expires_at,
+        }),
         rating: kills,
         kills,
         deaths,
@@ -1665,6 +1947,7 @@ async function getLeaderboard(limit = 25, mode = "duel") {
   if (normalizedMode === "training") {
     const rows = await all(
       `SELECT COALESCE(NULLIF(TRIM(pp.nickname), ''), 'Игрок') AS nickname,
+              pp.vip_prefix_expires_at AS vip_prefix_expires_at,
               pms.training_time_seconds AS training_time_seconds,
               p.external_player_id AS player_id
        FROM player_match_stats pms
@@ -1683,6 +1966,10 @@ async function getLeaderboard(limit = 25, mode = "duel") {
       return {
         rank: index + 1,
         nickname: row.nickname || "Игрок",
+        nicknamePrefix: resolveNicknamePrefix({
+          leaderboardRank: 0,
+          vipPrefixExpiresAtMs: row.vip_prefix_expires_at,
+        }),
         rating: trainingTimeSeconds,
         kills: 0,
         deaths: 0,
@@ -1698,6 +1985,7 @@ async function getLeaderboard(limit = 25, mode = "duel") {
   const rows = await all(
     `SELECT COALESCE(NULLIF(TRIM(pp.nickname), ''), 'Игрок') AS nickname,
             pp.${ratingColumn} AS rating,
+            pp.vip_prefix_expires_at AS vip_prefix_expires_at,
             p.external_player_id AS player_id
      FROM player_profiles pp
      INNER JOIN players p ON p.id = pp.player_id
@@ -1709,6 +1997,10 @@ async function getLeaderboard(limit = 25, mode = "duel") {
   return rows.map((row, index) => ({
     rank: index + 1,
     nickname: row.nickname || "Игрок",
+    nicknamePrefix: resolveNicknamePrefix({
+      leaderboardRank: index + 1,
+      vipPrefixExpiresAtMs: row.vip_prefix_expires_at,
+    }),
     rating: Number.isFinite(row.rating) ? Math.max(0, row.rating) : 1000,
     challengeTimeMs: -1,
     playerId: row.player_id || "",
@@ -1732,6 +2024,7 @@ module.exports = {
   },
   purchaseSkin,
   purchaseCase,
+  grantIapProduct,
   openCase,
   reportAchievementEvent,
   claimAchievement,

@@ -197,12 +197,13 @@ function normalizeMatchMode(value) {
   return "duel";
 }
 
-function createTicket(playerId, matchMode, nickname, duelRating) {
+function createTicket(playerId, matchMode, nickname, duelRating, nicknamePrefix) {
   const ticketId = crypto.randomUUID();
   const ticket = {
     ticketId,
     playerId,
     nickname: nickname || "",
+    nicknamePrefix: nicknamePrefix || "",
     duelRating: Number.isFinite(duelRating) ? Math.max(0, duelRating) : 1000,
     matchMode: normalizeMatchMode(matchMode),
     status: "Queued",
@@ -296,6 +297,7 @@ async function makeDeathmatch(players) {
       ticketId: ticket.ticketId,
       playerId: ticket.playerId,
       nickname: ticket.nickname || "",
+      nicknamePrefix: ticket.nicknamePrefix || "",
       duelRating: Number.isFinite(ticket.duelRating) ? Math.max(0, ticket.duelRating) : 1000,
     })),
   });
@@ -354,12 +356,14 @@ async function makeMatch(playerA, playerB) {
         playerId: playerA.playerId,
         nickname: nickA,
         duelRating: duelRatingA,
+        nicknamePrefix: playerA.nicknamePrefix || "",
       },
       {
         ticketId: playerB.ticketId,
         playerId: playerB.playerId,
         nickname: nickB,
         duelRating: duelRatingB,
+        nicknamePrefix: playerB.nicknamePrefix || "",
       },
     ],
   });
@@ -437,6 +441,7 @@ async function addTicketToExistingDeathmatch(ticket, match) {
     ticketId: ticket.ticketId,
     playerId: ticket.playerId,
     nickname: ticket.nickname || "",
+    nicknamePrefix: ticket.nicknamePrefix || "",
     duelRating: Number.isFinite(ticket.duelRating) ? Math.max(0, ticket.duelRating) : 1000,
   };
 
@@ -677,7 +682,7 @@ function resolveDeathmatchWinnerTicketId(killCounts, ticketIds) {
   return tied || !bestTicketId || bestKills <= 0 ? "" : bestTicketId;
 }
 
-async function finalizeDuelMatchStats(match, winnerTicketId, roundWins) {
+async function finalizeDuelMatchStats(match, winnerTicketId, roundWins, damageDealtByTicket) {
   if (!match || match.mode !== "duel") {
     return;
   }
@@ -696,17 +701,32 @@ async function finalizeDuelMatchStats(match, winnerTicketId, roundWins) {
     }
 
     const won = !!resolvedWinnerTicketId && ticketId === resolvedWinnerTicketId;
-    const kills = Math.max(0, Math.floor(Number(roundWins && roundWins[ticketId]) || 0));
+    const roundWinsCount = Math.max(0, Math.floor(Number(roundWins && roundWins[ticketId]) || 0));
+    const opponentTicketId = match.ticketIds.find((id) => id !== ticketId) || "";
+    const roundLosses = opponentTicketId
+      ? Math.max(0, Math.floor(Number(roundWins && roundWins[opponentTicketId]) || 0))
+      : 0;
+    const damageDealt = Math.max(
+      0,
+      Math.floor(Number(damageDealtByTicket && damageDealtByTicket[ticketId]) || 0)
+    );
+    const playerRating = resolveMatchPlayerDuelRating(match, ticketId, ticket);
+    const opponentRating = opponentTicketId
+      ? resolveMatchPlayerDuelRating(match, opponentTicketId, ticketsById.get(opponentTicketId))
+      : 1000;
 
     try {
       const result = await playerRepository.recordMatchStats(ticket.playerId, {
         sourceId,
-        kills,
+        kills: roundWinsCount,
         deaths: won ? 0 : 1,
         placement: won ? 1 : 2,
         won,
-        damageDealt: 0,
+        damageDealt,
         matchMode: "duel",
+        roundWins: roundWinsCount,
+        roundLosses,
+        opponentRating,
       });
       if (!result.ok) {
         log.warn("match", `stats ${ticket.playerId}: ${result.error || "failed"}`);
@@ -775,6 +795,21 @@ function resolveDuelWinnerTicketId(winnerTicketId, roundWins, ticketIds) {
   }
 
   return tied ? "" : bestTicketId;
+}
+
+function resolveMatchPlayerDuelRating(match, ticketId, ticket) {
+  if (match && Array.isArray(match.players)) {
+    const player = match.players.find((entry) => entry && entry.ticketId === ticketId);
+    if (player && Number.isFinite(player.duelRating)) {
+      return Math.max(0, player.duelRating);
+    }
+  }
+
+  if (ticket && Number.isFinite(ticket.duelRating)) {
+    return Math.max(0, ticket.duelRating);
+  }
+
+  return 1000;
 }
 
 function deliverMatchStats(ticketId, payload) {
@@ -926,7 +961,12 @@ async function handleMatchFinished(msg) {
             msg.deathCounts || {}
           );
         } else {
-          await finalizeDuelMatchStats(match, msg.winnerTicketId || "", msg.roundWins || {});
+          await finalizeDuelMatchStats(
+            match,
+            msg.winnerTicketId || "",
+            msg.roundWins || {},
+            msg.damageDealt || {}
+          );
         }
       } catch (error) {
         log.warn("match", `stats finalize failed for ${msg.matchId}: ${error.message || error}`);
@@ -1097,7 +1137,8 @@ const server = http.createServer(async (req, res) => {
       playerId,
       matchMode,
       queueProfile.nickname,
-      queueProfile.duelRating
+      queueProfile.duelRating,
+      queueProfile.nicknamePrefix
     );
     queue.push(ticket);
     metrics.setQueueSize(queue.length);
