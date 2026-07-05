@@ -28,7 +28,7 @@ namespace ShooterPrototype.Player
 
             ConfigureEnemyAnimators(root);
             ConfigureEnemyRenderers(root);
-            PlayerRenderingUtility.DisablePlayerShadows(root);
+            PlayerRenderingUtility.ApplyPlayerShadowSettings(root, ClientSettingsService.ShadowsEnabled);
             EnsureVisibilityGate(root);
         }
 

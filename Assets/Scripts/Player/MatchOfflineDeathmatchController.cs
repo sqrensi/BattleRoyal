@@ -796,13 +796,18 @@ namespace ShooterPrototype.Player
 
         private IEnumerator EnsureNavMeshReadyRoutine()
         {
-            if (localPlayer == null)
-            {
-                yield break;
-            }
-
             for (var i = 0; i < 20; i++)
             {
+                if (localPlayer == null)
+                {
+                    localPlayer = FindFirstObjectByType<LocalPlayerMarker>();
+                }
+
+                if (localPlayer == null)
+                {
+                    yield break;
+                }
+
                 if (NavMesh.SamplePosition(localPlayer.transform.position, out _, 4f, NavMesh.AllAreas))
                 {
                     yield break;
@@ -811,8 +816,11 @@ namespace ShooterPrototype.Player
                 yield return new WaitForSeconds(0.1f);
             }
 
-            Debug.LogWarning(
-                "[MatchOfflineDeathmatch] NavMesh not found near spawn. Bake NavMesh on the DM scene.");
+            if (localPlayer != null)
+            {
+                Debug.LogWarning(
+                    "[MatchOfflineDeathmatch] NavMesh not found near spawn. Bake NavMesh on the DM scene.");
+            }
         }
 
         private string ResolveKillerNickname(PlayerHealth victimHealth, string killerTicket)

@@ -321,6 +321,7 @@ namespace ShooterPrototype.UI
             }
 
             isVisible = false;
+            ResolvePlayerPreview()?.ClearInventoryPreview();
             ResolveCameraMotion()?.ExitInventoryView();
             UiMenuBackdrop.PopClosed();
             StopNotificationPulse();
@@ -1145,6 +1146,9 @@ namespace ShooterPrototype.UI
                         : rarity;
                 });
 
+            var hoverPreview = bodyObject.AddComponent<MainMenuInventoryItemHoverPreview>();
+            hoverPreview.Configure(item, ResolvePlayerPreview());
+
             return new ItemSlotVisual
             {
                 Definition = item,
@@ -1203,7 +1207,7 @@ namespace ShooterPrototype.UI
             }
 
             pendingPulseItemId = item.Id;
-            PreviewInventoryItem(item);
+            ResolvePlayerPreview()?.RefreshSkins();
             RefreshEquippedVisuals();
             pendingPulseItemId = null;
             uiSound?.PlayButton();

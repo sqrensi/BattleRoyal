@@ -122,6 +122,11 @@ namespace ShooterPrototype.Player
             ClearMenuWeaponPresentation(previewInstance);
         }
 
+        public void ClearInventoryPreview()
+        {
+            RefreshSkins();
+        }
+
         public void ShowWeaponWithSkin(WeaponKind kind)
         {
             PreviewWeaponSkin(kind);

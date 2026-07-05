@@ -926,15 +926,18 @@ namespace ShooterPrototype.Player
 
         private void SpawnVisualImpactVfx(RaycastHit hit, Vector3 shotDirection)
         {
-            var playerHit = IsPlayerHit(hit.collider);
-            var targetVfx = playerHit ? playerHitVfx : worldHitVfx;
-            if (targetVfx == null)
+            if (!IsPlayerHit(hit.collider))
+            {
+                return;
+            }
+
+            if (playerHitVfx == null)
             {
                 return;
             }
 
             var normal = hit.normal.sqrMagnitude > 0.0001f ? hit.normal : -shotDirection;
-            SpawnVfx(targetVfx, hit.point, Quaternion.LookRotation(normal, Vector3.up));
+            SpawnVfx(playerHitVfx, hit.point, Quaternion.LookRotation(normal, Vector3.up));
         }
 
         private bool ShouldRegisterHitOnce(Collider targetCollider, HitZone hitZone)

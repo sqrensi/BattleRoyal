@@ -184,7 +184,7 @@ namespace ShooterPrototype.Player
             }
 
             GameplayRuntimeCache.RegisterLocalPlayer(instance.GetComponent<LocalPlayerMarker>());
-            PlayerRenderingUtility.DisablePlayerShadows(instance);
+            PlayerRenderingUtility.ApplyPlayerShadowSettings(instance, ClientSettingsService.ShadowsEnabled);
             var identity = instance.GetComponent<PlayerNetworkIdentity>();
             if (identity == null)
             {

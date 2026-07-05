@@ -149,8 +149,10 @@ namespace ShooterPrototype.Player
                         out var usePlayerHitVfx))
                 {
                     endPoint = impactPoint;
-                    var hitPrefab = usePlayerHitVfx ? playerHitVfx : worldHitVfx;
-                    SpawnVfx(hitPrefab, impactPoint, Quaternion.LookRotation(impactNormal, Vector3.up));
+                    if (usePlayerHitVfx && playerHitVfx != null)
+                    {
+                        SpawnVfx(playerHitVfx, impactPoint, Quaternion.LookRotation(impactNormal, Vector3.up));
+                    }
                 }
             }
 

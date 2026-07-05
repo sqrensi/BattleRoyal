@@ -125,6 +125,7 @@ namespace ShooterPrototype.Bootstrap
             });
 
             ApplyVolumeAndCameraSettings(postProcessingEnabled, shadowsEnabled);
+            PlayerRenderingUtility.RefreshAllPlayerShadowsInScene();
         }
 
         public void SetRenderScaleOverride(float value)

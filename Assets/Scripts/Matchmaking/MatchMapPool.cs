@@ -7,8 +7,25 @@ namespace ShooterPrototype.Matchmaking
 {
     public static class MatchMapPool
     {
-        private static readonly string[] DefaultDuelScenes = { "1x1", "1x1 1" };
-        private static readonly string[] DefaultDeathmatchScenes = { "dm", "dm 1" };
+        private static readonly string[] DefaultDuelScenes =
+        {
+            "1x1",
+            "1x1 1",
+            "1x1 2",
+            "1x1 3",
+            "1x1 4",
+            "1x1 5"
+        };
+
+        private static readonly string[] DefaultDeathmatchScenes =
+        {
+            "dm",
+            "dm 1",
+            "dm 2",
+            "dm 3",
+            "dm 4",
+            "dm 5"
+        };
 
         public static IReadOnlyList<string> DuelScenes => DefaultDuelScenes;
 

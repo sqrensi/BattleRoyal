@@ -67,6 +67,8 @@ namespace ShooterPrototype.UI
         public TMP_Text StatusText => statusText;
         public bool IsProfileSyncInProgress => profileSyncCoroutine != null;
 
+        public bool HasCompletedInitialProfileBootstrap { get; private set; }
+
         private void Awake()
         {
             EnsureDependencies();
@@ -138,6 +140,7 @@ namespace ShooterPrototype.UI
             {
                 StopCoroutine(profileSyncCoroutine);
                 profileSyncCoroutine = null;
+                HasCompletedInitialProfileBootstrap = true;
             }
 
             if (queuePollingCoroutine != null)
@@ -684,6 +687,7 @@ namespace ShooterPrototype.UI
 
             EnsureDependencies();
             localPlayerId = PlayerIdentityService.GetOrCreatePlayerId();
+            HasCompletedInitialProfileBootstrap = false;
             RefreshReconnectButton(PlayerProfileService.IsServerSynced, interactable: false);
             ApplyServerConnectionState(
                 MainMenuServerConnectionState.Loading,
@@ -761,6 +765,7 @@ namespace ShooterPrototype.UI
             }
             finally
             {
+                HasCompletedInitialProfileBootstrap = true;
                 profileSyncCoroutine = null;
                 RefreshServerSyncUiState();
             }

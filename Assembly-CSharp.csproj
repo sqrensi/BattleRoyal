@@ -252,6 +252,7 @@
     <Compile Include="Assets\Scripts\UI\UiTheme.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark01.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TextMeshSpawner.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuInventoryItemHoverPreview.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteLookPitchPosture.cs" />
     <Compile Include="Assets\Scripts\Bootstrap\PerformancePresetController.cs" />
     <Compile Include="Assets\Scripts\Bootstrap\OfflineChallengeBootstrap.cs" />
