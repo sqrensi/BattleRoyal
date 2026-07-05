@@ -52,8 +52,11 @@ namespace ShooterPrototype.Player
         private PlayerNetworkIdentity identity;
         private Rigidbody deathRigidbody;
         private CapsuleCollider deathCapsule;
+        private bool deathRigidbodyAdded;
+        private bool deathCapsuleAdded;
         private bool networkMode;
         private bool trainingBotMode;
+        private bool destroyDeathPhysicsOnCleanup;
         private bool eliminationMode;
         private int deathSequence;
         private int lastNetworkDeathSeq = -1;
@@ -382,14 +385,21 @@ namespace ShooterPrototype.Player
             SetEliminationMode(true);
             enableDeathFall = true;
             useSimpleDeathFall = false;
-            simpleDeathPitch = 82f;
-            simpleDeathDropDistance = 0.38f;
+            destroyDeathPhysicsOnCleanup = true;
         }
 
         public void ConfigureOfflineDmLocalPlayer()
         {
             SetNetworkMode(false);
             SetEliminationMode(true);
+            enableDeathFall = true;
+            useSimpleDeathFall = false;
+            destroyDeathPhysicsOnCleanup = true;
+        }
+
+        public void SetDestroyDeathPhysicsOnCleanup(bool enabled)
+        {
+            destroyDeathPhysicsOnCleanup = enabled;
         }
 
         public void ApplyLocalShooterDamage(
@@ -573,17 +583,10 @@ namespace ShooterPrototype.Player
 
             if (enableDeathFall)
             {
-                if (useSimpleDeathFall && trainingBotMode && !networkMode)
+                StartDeathFallPhysics();
+                if (eliminationMode && networkMode)
                 {
-                    StartSimpleDeathFall();
-                }
-                else
-                {
-                    StartDeathFallPhysics();
-                    if (eliminationMode && networkMode)
-                    {
-                        BeginDeathFallLandingMonitor();
-                    }
+                    BeginDeathFallLandingMonitor();
                 }
             }
 
@@ -843,6 +846,7 @@ namespace ShooterPrototype.Player
                 if (deathCapsule == null)
                 {
                     deathCapsule = gameObject.AddComponent<CapsuleCollider>();
+                    deathCapsuleAdded = true;
                 }
             }
 
@@ -867,6 +871,7 @@ namespace ShooterPrototype.Player
                 if (deathRigidbody == null)
                 {
                     deathRigidbody = gameObject.AddComponent<Rigidbody>();
+                    deathRigidbodyAdded = true;
                 }
             }
 
@@ -1028,11 +1033,24 @@ namespace ShooterPrototype.Player
                 deathRigidbody.useGravity = false;
                 deathRigidbody.isKinematic = true;
                 deathRigidbody.constraints = RigidbodyConstraints.None;
+
+                if (destroyDeathPhysicsOnCleanup && deathRigidbodyAdded)
+                {
+                    Destroy(deathRigidbody);
+                    deathRigidbody = null;
+                    deathRigidbodyAdded = false;
+                }
             }
 
             if (deathCapsule != null)
             {
                 deathCapsule.enabled = false;
+                if (destroyDeathPhysicsOnCleanup && deathCapsuleAdded)
+                {
+                    Destroy(deathCapsule);
+                    deathCapsule = null;
+                    deathCapsuleAdded = false;
+                }
             }
         }
 

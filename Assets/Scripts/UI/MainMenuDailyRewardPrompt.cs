@@ -147,12 +147,15 @@ namespace ShooterPrototype.UI
 
         private void OnClaimClicked()
         {
-            if (DailyRewardService.TryClaimToday(out _, out _))
+            if (!DailyRewardService.TryClaimToday(out var claimedReward, out _))
             {
-                uiSound?.PlayStart();
-                MatchAchievementReporter.ReportEvent(this, AchievementEventTypes.DailyRewardClaim, 1);
+                Hide();
+                return;
             }
 
+            uiSound?.PlayStart();
+            MainMenuDailyRewardsPanel.NotifyClaimedReward(claimedReward);
+            MatchAchievementReporter.ReportEvent(this, AchievementEventTypes.DailyRewardClaim, 1);
             Hide();
         }
 

@@ -150,6 +150,40 @@ namespace ShooterPrototype.Player
             OwnedCaseQuantityCache.Clear();
             Nickname = PlayerPrefs.GetString(NicknamePrefKey, string.Empty);
             PlayerSkinOwnershipService.EnsureInitialized();
+            ProfileSynced?.Invoke();
+        }
+
+        public static void ApplyLocalOwnedSkinGrant(string skinId, bool allowDuplicate = true)
+        {
+            if (string.IsNullOrWhiteSpace(skinId))
+            {
+                return;
+            }
+
+            var normalized = skinId.Trim();
+            OwnedSkinCache.Add(normalized);
+            if (OwnedSkinQuantityCache.TryGetValue(normalized, out var current))
+            {
+                OwnedSkinQuantityCache[normalized] = allowDuplicate
+                    ? Mathf.Max(1, current + 1)
+                    : Mathf.Max(1, current);
+            }
+            else
+            {
+                OwnedSkinQuantityCache[normalized] = 1;
+            }
+        }
+
+        public static void ApplyLocalCaseRewardGrant(string caseId, int amount = 1)
+        {
+            if (string.IsNullOrWhiteSpace(caseId) || amount <= 0)
+            {
+                return;
+            }
+
+            var normalized = caseId.Trim();
+            OwnedCaseQuantityCache.TryGetValue(normalized, out var current);
+            OwnedCaseQuantityCache[normalized] = Mathf.Max(0, current) + amount;
         }
 
         public static bool GrantLocalVipPrefix()

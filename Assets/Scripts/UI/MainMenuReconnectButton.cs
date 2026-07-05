@@ -8,7 +8,7 @@ namespace ShooterPrototype.UI
     public sealed class MainMenuReconnectButton : MonoBehaviour
     {
         [SerializeField] private float edgeMargin = 28f;
-        [SerializeField] private float centerYOffset = 56f;
+        [SerializeField] private float centerYOffset = 24f;
         [SerializeField] private float buttonWidth = 220f;
         [SerializeField] private float buttonHeight = 52f;
         [SerializeField] private float labelFontSize = 17f;

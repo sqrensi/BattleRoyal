@@ -131,6 +131,8 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
+            PlayerSkinOwnershipService.EnsureInitialized();
+
             var type = entry.type?.Trim().ToLowerInvariant() ?? string.Empty;
             switch (type)
             {
@@ -143,7 +145,7 @@ namespace ShooterPrototype.Player
                         return false;
                     }
 
-                    PlayerSkinOwnershipService.GrantOwnedSkin(entry.skinId.Trim(), allowDuplicate: true);
+                    PlayerSkinOwnershipService.GrantDailyRewardSkin(entry.skinId.Trim(), allowDuplicate: true);
                     return true;
                 case "case":
                     if (string.IsNullOrWhiteSpace(entry.caseId))
@@ -156,7 +158,13 @@ namespace ShooterPrototype.Player
                         return false;
                     }
 
-                    CaseOpeningService.GrantLocalCase(entry.caseId.Trim(), Mathf.Max(1, entry.amount));
+                    var caseAmount = Mathf.Max(1, entry.amount);
+                    CaseOpeningService.GrantLocalCase(entry.caseId.Trim(), caseAmount);
+                    if (PlayerProfileService.IsServerSynced)
+                    {
+                        PlayerProfileService.ApplyLocalCaseRewardGrant(entry.caseId.Trim(), caseAmount);
+                    }
+
                     return true;
                 default:
                     return false;

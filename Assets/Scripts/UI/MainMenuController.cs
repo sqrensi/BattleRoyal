@@ -625,6 +625,13 @@ namespace ShooterPrototype.UI
             BeginProfileSync(isManualRetry: true);
         }
 
+        public void NotifyServerConnectionRequired()
+        {
+            SetStatus(
+                "Подключитесь к серверу, чтобы открыть этот раздел. Нажмите «Переподключиться» слева.",
+                showInUi: true);
+        }
+
         public void RequestServerSyncedPanel(MainMenuPanelMode panelMode)
         {
             if (PlayerProfileService.IsServerSynced)
@@ -761,6 +768,7 @@ namespace ShooterPrototype.UI
 
                 SetStatus("Сервер недоступен. Доступны тренировка и челлендж.", showInUi: false);
                 HandleServerUnavailable(ResolveServerUnavailableMessage());
+                PlayerProfileService.ApplyLocalFallback();
                 RefreshPlayerPreview(true);
             }
             finally
@@ -849,6 +857,11 @@ namespace ShooterPrototype.UI
             achievementsPanel?.RefreshFromProfile();
 
             GetComponent<MainMenuSettingsPanel>()?.RefreshFromSettings();
+
+            if (!synced)
+            {
+                GetComponent<MainMenuUiLayout>()?.TryShowDailyRewardLoginPrompt();
+            }
         }
 
         private void StartOfflineTraining()

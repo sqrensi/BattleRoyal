@@ -2477,6 +2477,10 @@ namespace ShooterPrototype.Player
                 health = root.AddComponent<PlayerHealth>();
             }
             health.SetNetworkMode(true);
+            if (ActiveMatchContext.IsDeathmatch || ActiveMatchContext.IsOfflineDeathmatchSession)
+            {
+                health.SetDestroyDeathPhysicsOnCleanup(true);
+            }
             health.SetNetworkDeadState(false, 0, Vector3.forward);
 
             RemotePlayerLocomotionUtility.EnsureNetworkRemoteLocomotion(root);

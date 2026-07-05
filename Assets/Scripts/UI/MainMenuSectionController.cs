@@ -220,7 +220,7 @@ namespace ShooterPrototype.UI
                 return true;
             }
 
-            menuController?.RequestServerSyncedPanel(panelMode);
+            menuController?.NotifyServerConnectionRequired();
             return false;
         }
 

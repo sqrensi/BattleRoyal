@@ -83,6 +83,26 @@ namespace ShooterPrototype.Player
                 return;
             }
 
+            GrantOwnedSkinLocal(skinId, allowDuplicate);
+        }
+
+        public static void GrantDailyRewardSkin(string skinId, bool allowDuplicate = true)
+        {
+            if (string.IsNullOrWhiteSpace(skinId))
+            {
+                return;
+            }
+
+            EnsureInitialized();
+            GrantOwnedSkinLocal(skinId, allowDuplicate);
+            if (PlayerProfileService.IsServerSynced)
+            {
+                PlayerProfileService.ApplyLocalOwnedSkinGrant(skinId, allowDuplicate);
+            }
+        }
+
+        private static void GrantOwnedSkinLocal(string skinId, bool allowDuplicate)
+        {
             var normalized = skinId.Trim();
             var currentCount = GetOwnedCount(normalized);
             if (currentCount <= 0)

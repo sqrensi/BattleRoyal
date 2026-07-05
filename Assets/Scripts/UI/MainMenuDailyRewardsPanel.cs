@@ -257,7 +257,7 @@ namespace ShooterPrototype.UI
 
         private void OnClaimClicked()
         {
-            if (!DailyRewardService.TryClaimToday(out _, out var error))
+            if (!DailyRewardService.TryClaimToday(out var claimedReward, out var error))
             {
                 if (!string.IsNullOrWhiteSpace(error))
                 {
@@ -269,8 +269,28 @@ namespace ShooterPrototype.UI
             }
 
             uiSound?.PlayStart();
+            NotifyClaimedReward(claimedReward);
             MatchAchievementReporter.ReportEvent(this, AchievementEventTypes.DailyRewardClaim, 1);
             Refresh();
+        }
+
+        public static void NotifyClaimedReward(DailyRewardEntry entry)
+        {
+            if (entry == null)
+            {
+                return;
+            }
+
+            var type = entry.type?.Trim().ToLowerInvariant() ?? string.Empty;
+            if (type == "skin" && !string.IsNullOrWhiteSpace(entry.skinId))
+            {
+                MainMenuNotificationState.MarkSkinAsNew(entry.skinId.Trim());
+                PlayerSkinOwnershipService.NotifyOwnershipChanged();
+            }
+            else if (type == "case" && !string.IsNullOrWhiteSpace(entry.caseId))
+            {
+                MainMenuNotificationState.MarkCaseAsNew(entry.caseId.Trim());
+            }
         }
 
         private void Refresh()
