@@ -149,6 +149,7 @@
     <Compile Include="Assets\Scripts\Player\DailyRewardService.cs" />
     <Compile Include="Assets\Scripts\Player\PickupItemDefinition.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexShakeB.cs" />
+    <Compile Include="Assets\Scripts\Player\AchievementEventTypes.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\CFX_LightIntensityFade.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteAnimatorHolsterPresentation.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Basic\YGInsides.cs" />
@@ -248,6 +249,7 @@
     <Compile Include="Assets\Scripts\UI\MainMenuInventoryPanel.cs" />
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_SimpleRotate.cs" />
     <Compile Include="Assets\Scripts\Player\PickupWorldVisualBuilder.cs" />
+    <Compile Include="Assets\Scripts\Player\MatchUiNicknameUtility.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerProfileApiClient.cs" />
     <Compile Include="Assets\Scripts\Player\MatchDuelController.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponScopeOverlay.cs" />

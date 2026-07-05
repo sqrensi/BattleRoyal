@@ -34,6 +34,7 @@ namespace ShooterPrototype.Player
         private bool localWeaponPickedThisRoundPick;
         private string cachedOpponentNickname = string.Empty;
         private int cachedOpponentDuelRating;
+        private long lastReportedKillFeedSeq = -1;
 
         public bool ShouldSuppressPoseReconcile =>
             string.Equals(currentPhase, "ending", StringComparison.Ordinal);
@@ -54,6 +55,7 @@ namespace ShooterPrototype.Player
             remotesRevealed = false;
             cachedOpponentNickname = string.Empty;
             cachedOpponentDuelRating = 0;
+            lastReportedKillFeedSeq = -1;
             currentPhase = "lobby";
             lastState = null;
             DuelSpawnUtility.ClearCachedRoots();
@@ -75,6 +77,7 @@ namespace ShooterPrototype.Player
             {
                 transportClient.MatchStateReceived += HandleMatchState;
                 transportClient.MatchStatsReceived += HandleMatchStats;
+                transportClient.KillFeedReceived += HandleKillFeed;
                 if (transportClient.TryGetLatestMatchState(out var cachedState))
                 {
                     HandleMatchState(cachedState);
@@ -88,6 +91,7 @@ namespace ShooterPrototype.Player
             {
                 transportClient.MatchStateReceived -= HandleMatchState;
                 transportClient.MatchStatsReceived -= HandleMatchStats;
+                transportClient.KillFeedReceived -= HandleKillFeed;
             }
 
             fpsController?.SetWeaponPickUiMode(false);
@@ -224,6 +228,48 @@ namespace ShooterPrototype.Player
 
             PlayerProfileService.ApplyLiveRatings(message.profile.duelRating, message.profile.rating);
             gameHud?.NotifyServerMatchStatsApplied(message.ratingDelta);
+        }
+
+        private void HandleKillFeed(RealtimeTransportClient.KillFeedMessage message)
+        {
+            if (message == null ||
+                ActiveMatchContext.IsOfflineDuelSession ||
+                !ActiveMatchContext.IsDuel)
+            {
+                return;
+            }
+
+            if (message.seq <= lastReportedKillFeedSeq)
+            {
+                return;
+            }
+
+            if (!string.Equals(message.cause, "player", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var localTicketId = ResolveLocalTicketId();
+            if (string.IsNullOrWhiteSpace(localTicketId) ||
+                !string.Equals(message.killerTicketId, localTicketId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            lastReportedKillFeedSeq = message.seq;
+            MatchAchievementReporter.ReportPlayerKill(this, message.victimTicketId);
+        }
+
+        private string ResolveLocalTicketId()
+        {
+            if (!string.IsNullOrWhiteSpace(lastState?.localTicketId))
+            {
+                return lastState.localTicketId.Trim();
+            }
+
+            return !string.IsNullOrWhiteSpace(networkLauncher?.CurrentTicketId)
+                ? networkLauncher.CurrentTicketId.Trim()
+                : string.Empty;
         }
 
         private void HandleMatchState(RealtimeTransportClient.MatchStateMessage state)

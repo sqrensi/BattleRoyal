@@ -150,6 +150,7 @@ namespace ShooterPrototype.UI
             if (DailyRewardService.TryClaimToday(out _, out _))
             {
                 uiSound?.PlayStart();
+                MatchAchievementReporter.ReportEvent(this, AchievementEventTypes.DailyRewardClaim, 1);
             }
 
             Hide();

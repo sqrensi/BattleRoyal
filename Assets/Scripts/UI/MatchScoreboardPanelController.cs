@@ -484,29 +484,10 @@ namespace ShooterPrototype.UI
                 return "Игрок";
             }
 
-            if (ShouldShowLocalAsYou(row.TicketId))
-            {
-                return "Вы";
-            }
-
-            return string.IsNullOrWhiteSpace(row.Nickname) ? "Игрок" : row.Nickname;
-        }
-
-        private bool ShouldShowLocalAsYou(string ticketId)
-        {
-            if (string.IsNullOrWhiteSpace(ticketId) || string.IsNullOrWhiteSpace(localTicketId))
-            {
-                return false;
-            }
-
-            if (!string.Equals(ticketId, localTicketId, StringComparison.Ordinal))
-            {
-                return false;
-            }
-
-            return ActiveMatchContext.IsOfflineDuelSession ||
-                   ActiveMatchContext.IsOfflineDeathmatchSession ||
-                   ActiveMatchContext.IsOfflineSoloSession;
+            return MatchUiNicknameUtility.FormatScoreboardRich(
+                row.TicketId,
+                localTicketId,
+                row.Nickname);
         }
 
         private static bool ReadTabHeld()

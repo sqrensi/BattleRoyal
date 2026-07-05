@@ -553,6 +553,62 @@ namespace ShooterPrototype.Player
             ProfileSynced?.Invoke();
         }
 
+        public static void ResetOfflineAchievementEventProgress(string eventType)
+        {
+            if (string.IsNullOrWhiteSpace(eventType))
+            {
+                return;
+            }
+
+            var asset = Resources.Load<TextAsset>("Shop/achievement-catalog");
+            if (asset == null || string.IsNullOrWhiteSpace(asset.text))
+            {
+                return;
+            }
+
+            var catalog = JsonUtility.FromJson<OfflineAchievementCatalogFile>(asset.text);
+            if (catalog?.achievements == null || catalog.achievements.Length == 0)
+            {
+                return;
+            }
+
+            var changed = false;
+            for (var i = 0; i < catalog.achievements.Length; i++)
+            {
+                var entry = catalog.achievements[i];
+                if (entry == null ||
+                    string.IsNullOrWhiteSpace(entry.achievementId) ||
+                    !string.Equals(entry.eventType, eventType, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var progressKey = $"offline_achievement_progress_{entry.achievementId}";
+                var claimedKey = $"offline_achievement_reward_claimed_{entry.achievementId}";
+                if (UserScopedPlayerPrefs.GetInt(claimedKey, 0) == 1)
+                {
+                    continue;
+                }
+
+                if (UserScopedPlayerPrefs.GetInt(progressKey, 0) == 0)
+                {
+                    continue;
+                }
+
+                UserScopedPlayerPrefs.SetInt(progressKey, 0);
+                changed = true;
+            }
+
+            if (!changed)
+            {
+                return;
+            }
+
+            offlineAchievementCache = null;
+            PlayerPrefs.Save();
+            ProfileSynced?.Invoke();
+        }
+
         private static void GrantOfflineAchievementReward(OfflineAchievementCatalogEntry entry)
         {
             if (entry?.reward == null)

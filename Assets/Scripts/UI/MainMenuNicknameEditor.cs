@@ -38,6 +38,9 @@ namespace ShooterPrototype.UI
         private RectTransform customCaretRect;
         private Image customCaretImage;
         private TMP_Text nicknameInputText;
+        private TMP_Text prefixLabel;
+        private RectTransform textAreaRect;
+        private float prefixLayoutWidth;
         private bool built;
         private bool isEditing;
         private bool caretVisible = true;
@@ -226,6 +229,7 @@ namespace ShooterPrototype.UI
             }
 
             RefreshRatingFromProfile();
+            RefreshPrefixFromProfile();
 
             if (!isEditing)
             {
@@ -280,6 +284,48 @@ namespace ShooterPrototype.UI
             var seconds = Mathf.FloorToInt(totalSeconds % 60f);
             var tenths = Mathf.FloorToInt((totalSeconds - Mathf.Floor(totalSeconds)) * 10f);
             return $"{minutes}:{seconds:00}.{tenths}";
+        }
+
+        private void RefreshPrefixFromProfile()
+        {
+            if (prefixLabel == null || textAreaRect == null)
+            {
+                return;
+            }
+
+            var prefix = PlayerProfileService.NicknamePrefix;
+            if (string.IsNullOrEmpty(prefix))
+            {
+                prefixLabel.text = string.Empty;
+                prefixLabel.gameObject.SetActive(false);
+                prefixLayoutWidth = 0f;
+            }
+            else
+            {
+                prefixLabel.text = NicknamePrefixUtility.FormatRichPrefixLabel(prefix);
+                prefixLabel.gameObject.SetActive(true);
+                prefixLabel.ForceMeshUpdate();
+                prefixLayoutWidth = Mathf.Max(0f, prefixLabel.preferredWidth + 6f);
+            }
+
+            textAreaRect.offsetMin = new Vector2(TextAreaLeftPadding, textAreaRect.offsetMin.y);
+            ApplyNicknameTextInsets();
+            UpdateCustomCaretPosition();
+        }
+
+        private void ApplyNicknameTextInsets()
+        {
+            if (nicknameInputText != null)
+            {
+                var textRect = nicknameInputText.rectTransform;
+                textRect.offsetMin = new Vector2(prefixLayoutWidth, textRect.offsetMin.y);
+            }
+
+            if (nicknameInput != null && nicknameInput.placeholder is TMP_Text placeholderText)
+            {
+                var placeholderRectTransform = placeholderText.rectTransform;
+                placeholderRectTransform.offsetMin = new Vector2(prefixLayoutWidth, placeholderRectTransform.offsetMin.y);
+            }
         }
 
         private void RefreshNicknameFromProfile()
@@ -477,11 +523,29 @@ namespace ShooterPrototype.UI
 
             var textAreaObject = new GameObject("Text Area");
             textAreaObject.transform.SetParent(inputObject.transform, false);
-            var textAreaRect = textAreaObject.AddComponent<RectTransform>();
+            textAreaRect = textAreaObject.AddComponent<RectTransform>();
             StretchFull(textAreaRect);
             textAreaRect.offsetMin = new Vector2(TextAreaLeftPadding, 7f);
             textAreaRect.offsetMax = new Vector2(-rightPadding, -7f);
             textAreaObject.AddComponent<RectMask2D>();
+
+            var prefixObject = new GameObject("Prefix");
+            prefixObject.transform.SetParent(textAreaObject.transform, false);
+            var prefixRect = prefixObject.AddComponent<RectTransform>();
+            prefixRect.anchorMin = new Vector2(0f, 0f);
+            prefixRect.anchorMax = new Vector2(0f, 1f);
+            prefixRect.pivot = new Vector2(0f, 0.5f);
+            prefixRect.anchoredPosition = Vector2.zero;
+            prefixRect.sizeDelta = new Vector2(120f, 0f);
+            prefixLabel = prefixObject.AddComponent<TextMeshProUGUI>();
+            prefixLabel.richText = true;
+            prefixLabel.fontSize = inputFontSize;
+            prefixLabel.alignment = TextAlignmentOptions.MidlineLeft;
+            prefixLabel.enableWordWrapping = false;
+            prefixLabel.overflowMode = TextOverflowModes.Overflow;
+            UiTheme.ApplyTmp(prefixLabel, UiTextRole.Body);
+            prefixLabel.raycastTarget = false;
+            prefixLabel.gameObject.SetActive(false);
 
             var placeholderObject = new GameObject("Placeholder");
             placeholderObject.transform.SetParent(textAreaObject.transform, false);
@@ -576,7 +640,7 @@ namespace ShooterPrototype.UI
             var textBeforeCaret = nicknameInput.text.Substring(0, caretIndex);
             nicknameInputText.ForceMeshUpdate();
             var textOffset = ResolveCaretOffsetX(nicknameInputText, textBeforeCaret, caretIndex);
-            customCaretRect.anchoredPosition = new Vector2(TextAreaLeftPadding + textOffset, 0f);
+            customCaretRect.anchoredPosition = new Vector2(TextAreaLeftPadding + prefixLayoutWidth + textOffset, 0f);
         }
 
         private static float ResolveCaretOffsetX(TMP_Text text, string textBeforeCaret, int caretIndex)

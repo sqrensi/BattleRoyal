@@ -31,6 +31,11 @@ function useDb(tx) {
   return tx || { get, all, run };
 }
 
+function readSqlCount(value) {
+  const parsed = Math.floor(Number(value));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
 function buildRatingUpdateClause(ratingColumn) {
   const column = ratingColumn === "duel_rating" ? "duel_rating" : "rating";
   if (getDriverName() === "postgres") {
@@ -193,7 +198,7 @@ async function getDuelLeaderboardRank(internalPlayerId) {
     [rating, rating, updatedAt]
   );
 
-  return (higher && Number.isFinite(higher.higher_count) ? higher.higher_count : 0) + 1;
+  return readSqlCount(higher && higher.higher_count) + 1;
 }
 
 async function getChallengeLeaderboardRank(internalPlayerId) {
@@ -225,7 +230,7 @@ async function getChallengeLeaderboardRank(internalPlayerId) {
     [bestTime, bestTime, updatedAt]
   );
 
-  return (faster && Number.isFinite(faster.higher_count) ? faster.higher_count : 0) + 1;
+  return readSqlCount(faster && faster.higher_count) + 1;
 }
 
 async function getDeathmatchLeaderboardRank(internalPlayerId) {
@@ -258,7 +263,7 @@ async function getDeathmatchLeaderboardRank(internalPlayerId) {
     [kills, kills, deaths, kills, deaths, updatedAt]
   );
 
-  return (higher && Number.isFinite(higher.higher_count) ? higher.higher_count : 0) + 1;
+  return readSqlCount(higher && higher.higher_count) + 1;
 }
 
 async function resolvePlayerNicknamePrefix(playerRow, nowMs = Date.now()) {
@@ -775,6 +780,10 @@ async function recordMatchStats(externalPlayerId, payload) {
         return false;
       });
 
+      if (!alreadyReported) {
+        await applyMatchCompletionAchievements(externalPlayerId, { matchMode: "challenge" }, false);
+      }
+
       return {
         ok: true,
         alreadyReported,
@@ -877,6 +886,14 @@ async function recordMatchStats(externalPlayerId, payload) {
 
       return false;
     });
+
+    if (!alreadyReported) {
+      await applyMatchCompletionAchievements(
+        externalPlayerId,
+        { matchMode, won },
+        false
+      );
+    }
 
     return {
       ok: true,
@@ -1266,6 +1283,8 @@ async function purchaseSkin(externalPlayerId, skinId) {
     throw error;
   }
 
+  await reportAchievementEvent(externalPlayerId, "shop_purchase", 1);
+
   return { ok: true, profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)) };
 }
 
@@ -1477,6 +1496,8 @@ async function openCase(externalPlayerId, caseId) {
     throw error;
   }
 
+  await reportAchievementEvent(externalPlayerId, "case_opened", 1);
+
   return {
     ok: true,
     rolledSkinId,
@@ -1632,13 +1653,83 @@ async function listPlayerAchievements(playerId) {
   });
 }
 
+async function applyMatchCompletionAchievements(externalPlayerId, payload, alreadyReported) {
+  if (alreadyReported) {
+    return;
+  }
+
+  const matchMode = String(payload && payload.matchMode ? payload.matchMode : "")
+    .trim()
+    .toLowerCase();
+  if (matchMode === "training") {
+    return;
+  }
+
+  await reportAchievementEvent(externalPlayerId, "match_completed", 1);
+
+  if (!(payload && payload.won === true)) {
+    return;
+  }
+
+  if (matchMode === "duel" || matchMode === "1v1") {
+    await reportAchievementEvent(externalPlayerId, "duel_match_win", 1);
+    return;
+  }
+
+  if (matchMode === "deathmatch" || matchMode === "dm") {
+    await reportAchievementEvent(externalPlayerId, "dm_match_win", 1);
+  }
+}
+
 async function reportAchievementEvent(externalPlayerId, eventType, amount) {
   const normalizedEventType = String(eventType || "").trim();
   if (!normalizedEventType) {
     return { ok: false, error: "MissingEventType", message: "Event type is required." };
   }
 
-  const increment = Math.max(1, Math.floor(Number(amount) || 1));
+  const rawAmount = Math.floor(Number(amount) || 0);
+  if (rawAmount === 0) {
+    const playerRow = await getPlayerByExternalId(externalPlayerId);
+    if (!playerRow) {
+      return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
+    }
+
+    await syncPlayerAchievements(playerRow.id);
+    const matching = getAchievementsByEventType(normalizedEventType);
+    if (!Array.isArray(matching) || matching.length === 0) {
+      return {
+        ok: true,
+        newlyCompleted: [],
+        profile: await buildProfileResponse(playerRow),
+      };
+    }
+
+    const timestamp = nowMs();
+    await transaction(async (tx) => {
+      for (let i = 0; i < matching.length; i++) {
+        const definition = matching[i];
+        await tx.run(
+          `UPDATE player_achievements
+           SET progress = 0,
+               completed_at = NULL,
+               updated_at = ?
+           WHERE player_id = ?
+             AND achievement_id = ?
+             AND completed_at IS NULL
+             AND claimed_at IS NULL`,
+          [timestamp, playerRow.id, definition.achievementId]
+        );
+      }
+    });
+
+    return {
+      ok: true,
+      newlyCompleted: [],
+      profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)),
+    };
+  }
+
+  const increment = Math.max(1, rawAmount);
   const playerRow = await getPlayerByExternalId(externalPlayerId);
   if (!playerRow) {
     return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };

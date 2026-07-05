@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using ShooterPrototype.Network;
+using ShooterPrototype.Player;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -199,16 +200,37 @@ namespace ShooterPrototype.UI
             var victim = string.IsNullOrWhiteSpace(message.victimNickname) ? "Игрок" : message.victimNickname.Trim();
             if (string.Equals(message.cause, "zone", System.StringComparison.OrdinalIgnoreCase))
             {
-                return $"<color=#{ColorToHex(UiTheme.KillFeedVictim)}>{victim}</color> <color=#{ColorToHex(UiTheme.KillFeedWeapon)}>погиб от зоны</color>";
+                return $"{FormatKillFeedParticipantName(victim, UiTheme.KillFeedVictim)} <color=#{ColorToHex(UiTheme.KillFeedWeapon)}>погиб от зоны</color>";
             }
 
             if (string.Equals(message.cause, "disconnect", System.StringComparison.OrdinalIgnoreCase))
             {
-                return $"<color=#{ColorToHex(UiTheme.KillFeedVictim)}>{victim}</color> <color=#{ColorToHex(UiTheme.KillFeedWeapon)}>отключился</color>";
+                return $"{FormatKillFeedParticipantName(victim, UiTheme.KillFeedVictim)} <color=#{ColorToHex(UiTheme.KillFeedWeapon)}>отключился</color>";
             }
 
             var killer = string.IsNullOrWhiteSpace(message.killerNickname) ? "Игрок" : message.killerNickname.Trim();
-            return $"<color=#{ColorToHex(UiTheme.KillFeedKiller)}>{killer}</color> <color=#{ColorToHex(UiTheme.KillFeedWeapon)}>убил</color> <color=#{ColorToHex(UiTheme.KillFeedVictim)}>{victim}</color>";
+            return
+                $"{FormatKillFeedParticipantName(killer, UiTheme.KillFeedKiller)} " +
+                $"<color=#{ColorToHex(UiTheme.KillFeedWeapon)}>убил</color> " +
+                $"{FormatKillFeedParticipantName(victim, UiTheme.KillFeedVictim)}";
+        }
+
+        private static string FormatKillFeedParticipantName(string formattedPlain, Color roleColor)
+        {
+            var value = string.IsNullOrWhiteSpace(formattedPlain) ? "Игрок" : formattedPlain.Trim();
+            if (NicknamePrefixUtility.TrySplitFormattedPlain(value, out var prefix, out var nick))
+            {
+                var displayNick = string.IsNullOrWhiteSpace(nick) ? "Игрок" : nick;
+                var richPrefix = NicknamePrefixUtility.FormatRichPrefixLabel(prefix);
+                if (string.IsNullOrEmpty(richPrefix))
+                {
+                    return $"<color=#{ColorToHex(roleColor)}>{displayNick}</color>";
+                }
+
+                return $"{richPrefix} <color=#{ColorToHex(roleColor)}>{displayNick}</color>";
+            }
+
+            return $"<color=#{ColorToHex(roleColor)}>{value}</color>";
         }
 
         private static string ColorToHex(Color color)
@@ -224,9 +246,9 @@ namespace ShooterPrototype.UI
             var killer = string.IsNullOrWhiteSpace(killerNickname) ? "Игрок" : killerNickname.Trim();
             var victim = string.IsNullOrWhiteSpace(victimNickname) ? "Игрок" : victimNickname.Trim();
             PushEntry(
-                $"<color=#{ColorToHex(UiTheme.KillFeedKiller)}>{killer}</color> " +
+                $"{FormatKillFeedParticipantName(killer, UiTheme.KillFeedKiller)} " +
                 $"<color=#{ColorToHex(UiTheme.KillFeedWeapon)}>убил</color> " +
-                $"<color=#{ColorToHex(UiTheme.KillFeedVictim)}>{victim}</color>");
+                $"{FormatKillFeedParticipantName(victim, UiTheme.KillFeedVictim)}");
         }
 
         private void PushEntry(string richText)

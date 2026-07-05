@@ -382,7 +382,7 @@ namespace ShooterPrototype.Player
             {
                 var delta = displayKillCount - lastReportedKillCount;
                 lastReportedKillCount = displayKillCount;
-                MatchAchievementReporter.ReportEvent(this, "kill_player", delta);
+                MatchAchievementReporter.ReportPlayerKills(this, delta);
             }
 
             if (string.Equals(message.phase, "playing", StringComparison.Ordinal) && matchPlayingStartRealtime < 0f)
@@ -1321,7 +1321,7 @@ namespace ShooterPrototype.Player
             if (!planeLandingAchievementReported)
             {
                 planeLandingAchievementReported = true;
-                MatchAchievementReporter.ReportEvent(this, "plane_landed", 1);
+                MatchAchievementReporter.ReportEvent(this, AchievementEventTypes.PlaneLanded, 1);
             }
             yield return null;
             presenceSync?.FlushLocalPose();

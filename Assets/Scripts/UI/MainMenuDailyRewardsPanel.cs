@@ -269,6 +269,7 @@ namespace ShooterPrototype.UI
             }
 
             uiSound?.PlayStart();
+            MatchAchievementReporter.ReportEvent(this, AchievementEventTypes.DailyRewardClaim, 1);
             Refresh();
         }
 

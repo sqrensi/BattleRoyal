@@ -532,6 +532,11 @@ namespace ShooterPrototype.Player
             }
 
             isDead = true;
+            if (IsLocalPlayerForAchievements())
+            {
+                MatchAchievementReporter.ResetKillStreak(this);
+            }
+
             if (fpsController != null)
             {
                 fpsController.SetServerReconciliationSuspended(true);
@@ -1029,6 +1034,21 @@ namespace ShooterPrototype.Player
             {
                 deathCapsule.enabled = false;
             }
+        }
+
+        private bool IsLocalPlayerForAchievements()
+        {
+            if (trainingBotMode)
+            {
+                return false;
+            }
+
+            if (identity != null && identity.IsLocalPlayer)
+            {
+                return true;
+            }
+
+            return GetComponent<LocalPlayerMarker>() != null;
         }
     }
 }

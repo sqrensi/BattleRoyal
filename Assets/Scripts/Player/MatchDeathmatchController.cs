@@ -36,6 +36,8 @@ namespace ShooterPrototype.Player
         private int lastRevivedDeathSeq = -1;
         private Vector3 lastServerHitDirection = Vector3.forward;
         private int localPlacementEstimate = 1;
+        private int lastReportedKillCount;
+        private long lastReportedKillFeedSeq = -1;
         private const int DmWeaponSpareAmmo = 999;
 
         public bool ShouldSuppressPoseReconcile =>
@@ -55,6 +57,8 @@ namespace ShooterPrototype.Player
             lastAppliedSpawnSlot = -1;
             localPlacementEstimate = 1;
             remotesRevealed = false;
+            lastReportedKillCount = 0;
+            lastReportedKillFeedSeq = -1;
             currentPhase = "lobby";
             lastState = null;
             DmSpawnUtility.ClearCachedRoots();
@@ -80,6 +84,7 @@ namespace ShooterPrototype.Player
                 transportClient.MatchStatsReceived += HandleMatchStats;
                 transportClient.RespawnReceived += HandleRespawn;
                 transportClient.DamageReceived += HandleDamageReceived;
+                transportClient.KillFeedReceived += HandleKillFeed;
                 if (transportClient.TryGetLatestMatchState(out var cachedState))
                 {
                     HandleMatchState(cachedState);
@@ -95,6 +100,7 @@ namespace ShooterPrototype.Player
                 transportClient.MatchStatsReceived -= HandleMatchStats;
                 transportClient.RespawnReceived -= HandleRespawn;
                 transportClient.DamageReceived -= HandleDamageReceived;
+                transportClient.KillFeedReceived -= HandleKillFeed;
             }
 
             fpsController?.SetWeaponPickUiMode(false);
@@ -194,6 +200,55 @@ namespace ShooterPrototype.Player
 
             LockDeadControls();
             KeepRemotesVisibleWhileDead();
+        }
+
+        private void HandleKillFeed(RealtimeTransportClient.KillFeedMessage message)
+        {
+            if (message == null ||
+                ActiveMatchContext.IsOfflineDeathmatchSession ||
+                lastState == null ||
+                !string.Equals(lastState.matchMode, "deathmatch", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (message.seq <= lastReportedKillFeedSeq)
+            {
+                return;
+            }
+
+            if (!string.Equals(message.cause, "player", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var localTicketId = ResolveLocalTicketId(lastState);
+            if (string.IsNullOrWhiteSpace(localTicketId) ||
+                !string.Equals(message.killerTicketId, localTicketId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            lastReportedKillFeedSeq = message.seq;
+            MatchAchievementReporter.ReportPlayerKill(this, message.victimTicketId);
+        }
+
+        private void TryReportKillProgress(RealtimeTransportClient.MatchStateMessage state)
+        {
+            if (state == null)
+            {
+                return;
+            }
+
+            var killCount = Mathf.Max(0, state.localKillCount);
+            if (killCount <= lastReportedKillCount)
+            {
+                return;
+            }
+
+            var delta = killCount - lastReportedKillCount;
+            lastReportedKillCount = killCount;
+            MatchAchievementReporter.ReportPlayerKills(this, delta);
         }
 
         private void HandleDamageReceived(RealtimeTransportClient.DamageMessage message)
@@ -427,6 +482,7 @@ namespace ShooterPrototype.Player
             var phaseEntered = !string.Equals(previousPhase, currentPhase, StringComparison.Ordinal);
 
             UpdateHud(state);
+            TryReportKillProgress(state);
 
             if (previousAlive && !serverSaysAlive)
             {

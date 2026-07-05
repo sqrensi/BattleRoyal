@@ -256,7 +256,7 @@ namespace ShooterPrototype.Player
             else if (string.Equals(killerTicket, "offline-local", System.StringComparison.Ordinal))
             {
                 combatHud?.ShowDuelKillBanner(victimNick);
-                MatchAchievementReporter.ReportEvent(this, "kill_player", 1);
+                MatchAchievementReporter.ReportPlayerKill(this, victimTicket);
             }
 
             SyncHudFromTracker();
@@ -660,20 +660,9 @@ namespace ShooterPrototype.Player
                 return;
             }
 
-            var killerName = FormatKillFeedName(killerTicket, killerNick);
-            var victimName = FormatKillFeedName(victimTicket, victimNick);
+            var killerName = MatchUiNicknameUtility.FormatKillFeedParticipant(killerTicket, killerNick);
+            var victimName = MatchUiNicknameUtility.FormatKillFeedParticipant(victimTicket, victimNick);
             killFeed.PushLocalPlayerKill(killerName, victimName);
-        }
-
-        private static string FormatKillFeedName(string ticketId, string nickname)
-        {
-            if (string.Equals(ticketId, "offline-local", System.StringComparison.Ordinal))
-            {
-                var prefix = PlayerProfileService.NicknamePrefix;
-                return string.IsNullOrEmpty(prefix) ? "Вы" : $"[{prefix}] Вы";
-            }
-
-            return string.IsNullOrWhiteSpace(nickname) ? "Игрок" : nickname.Trim();
         }
 
         private void BindLocalPlayer()

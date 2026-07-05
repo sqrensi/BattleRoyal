@@ -975,6 +975,7 @@ namespace ShooterPrototype.UI
             matchRewardGranted = true;
             matchStatsReported = false;
             ApplyGameOverInputLock(true);
+            MatchAchievementReporter.ReportMatchEnd(this, false);
 
             gameOverPanelVisible = true;
             gameOverPanel.SetActive(true);
@@ -1099,6 +1100,7 @@ namespace ShooterPrototype.UI
 
             matchRewardGranted = true;
             ApplyGameOverInputLock(true);
+            MatchAchievementReporter.ReportMatchEnd(this, false);
 
             gameOverPanelVisible = true;
             gameOverPanel.SetActive(true);
@@ -1361,6 +1363,7 @@ namespace ShooterPrototype.UI
             SetMatchStatusMessage(string.Empty);
             SetPauseMenuOpen(false);
             ApplyGameOverInputLock(true);
+            MatchAchievementReporter.ReportMatchEnd(this, won);
 
             gameOverPanelVisible = true;
             gameOverPanel.SetActive(true);

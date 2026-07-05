@@ -913,6 +913,11 @@ namespace ShooterPrototype.Player
             }
 
             TryPlayHeadshotAudio(hitZone);
+            if (hitZone == HitZone.Head)
+            {
+                RegisterAchievementHeadshot(hit.collider);
+            }
+
             if (notifyNetworkHit)
             {
                 TrySendPlayerHitToServer(hit.collider, shotDirection, hitZone, hit.point);
@@ -1118,6 +1123,7 @@ namespace ShooterPrototype.Player
             {
                 if (hitZone == HitZone.Head)
                 {
+                    RegisterAchievementHeadshot(targetCollider);
                     var botHealth = duelBot.GetComponent<PlayerHealth>();
                     if (botHealth != null && !botHealth.IsDead)
                     {
@@ -1137,6 +1143,7 @@ namespace ShooterPrototype.Player
             {
                 if (hitZone == HitZone.Head)
                 {
+                    RegisterAchievementHeadshot(targetCollider);
                     var botHealth = trainingBot.GetComponent<PlayerHealth>();
                     if (botHealth != null && !botHealth.IsDead)
                     {
@@ -1175,6 +1182,27 @@ namespace ShooterPrototype.Player
                 shotTick,
                 hitPoint,
                 hitZone.ToString().ToLowerInvariant());
+        }
+
+        private static void RegisterAchievementHeadshot(Collider targetCollider)
+        {
+            if (targetCollider == null)
+            {
+                return;
+            }
+
+            var identity = targetCollider.GetComponentInParent<PlayerNetworkIdentity>();
+            if (identity != null && !string.IsNullOrWhiteSpace(identity.TicketId))
+            {
+                MatchAchievementReporter.RegisterPendingHeadshot(identity.TicketId);
+                return;
+            }
+
+            var duelBot = targetCollider.GetComponentInParent<DuelNavBotController>();
+            if (duelBot != null && !string.IsNullOrWhiteSpace(duelBot.ScoreboardTicketId))
+            {
+                MatchAchievementReporter.RegisterPendingHeadshot(duelBot.ScoreboardTicketId);
+            }
         }
 
         private void SpawnVfx(GameObject prefab, Vector3 position, Quaternion rotation)

@@ -24,49 +24,363 @@
     "weapon_mp7": "weapon_mp7_000"
   },
   "shopItems": [
-    { "skinId": "tshirts_002", "price": 500 },
-    { "skinId": "tshirts_003", "price": 750 },
-    { "skinId": "tshirts_004", "price": 900 },
-    { "skinId": "pants_002", "price": 1000 },
-    { "skinId": "gloves_002", "price": 1500 },
-    { "skinId": "gloves_003", "price": 1750 },
-    { "skinId": "gloves_004", "price": 2000 },
-    { "skinId": "gloves_005", "price": 2250 },
-    { "skinId": "attachment_face_002", "price": 2500 },
-    { "skinId": "attachment_face_003", "price": 2750 },
-    { "skinId": "attachment_hair_001", "price": 3000 },
-    { "skinId": "attachment_hair_002", "price": 3250 },
-    { "skinId": "weapon_ak47_001", "price": 3500 },
-    { "skinId": "weapon_sniper_001", "price": 3750 },
-    { "skinId": "weapon_pistol_001", "price": 4000 },
-    { "skinId": "weapon_mp7_001", "price": 4250 }
+    {
+      "skinId": "tshirts_002",
+      "price": 500
+    },
+    {
+      "skinId": "tshirts_003",
+      "price": 750
+    },
+    {
+      "skinId": "tshirts_004",
+      "price": 900
+    },
+    {
+      "skinId": "pants_002",
+      "price": 1000
+    },
+    {
+      "skinId": "gloves_002",
+      "price": 1500
+    },
+    {
+      "skinId": "gloves_003",
+      "price": 1750
+    },
+    {
+      "skinId": "gloves_004",
+      "price": 2000
+    },
+    {
+      "skinId": "gloves_005",
+      "price": 2250
+    },
+    {
+      "skinId": "attachment_face_002",
+      "price": 2500
+    },
+    {
+      "skinId": "attachment_face_003",
+      "price": 2750
+    },
+    {
+      "skinId": "attachment_hair_001",
+      "price": 3000
+    },
+    {
+      "skinId": "attachment_hair_002",
+      "price": 3250
+    },
+    {
+      "skinId": "weapon_ak47_001",
+      "price": 3500
+    },
+    {
+      "skinId": "weapon_sniper_001",
+      "price": 3750
+    },
+    {
+      "skinId": "weapon_pistol_001",
+      "price": 4000
+    },
+    {
+      "skinId": "weapon_mp7_001",
+      "price": 4250
+    }
   ],
   "skinRarities": [
-    { "skinId": "tshirts_002", "rarity": "common" },
-    { "skinId": "tshirts_003", "rarity": "uncommon" },
-    { "skinId": "tshirts_004", "rarity": "rare" },
-    { "skinId": "pants_002", "rarity": "common" },
-    { "skinId": "gloves_002", "rarity": "common" },
-    { "skinId": "gloves_003", "rarity": "uncommon" },
-    { "skinId": "gloves_004", "rarity": "rare" },
-    { "skinId": "gloves_005", "rarity": "epic" },
-    { "skinId": "attachment_face_002", "rarity": "common" },
-    { "skinId": "attachment_face_003", "rarity": "uncommon" },
-    { "skinId": "attachment_hair_001", "rarity": "common" },
-    { "skinId": "attachment_hair_002", "rarity": "uncommon" },
-    { "skinId": "weapon_ak47_001", "rarity": "common" },
-    { "skinId": "weapon_ak47_002", "rarity": "uncommon" },
-    { "skinId": "weapon_ak47_003", "rarity": "rare" },
-    { "skinId": "weapon_ak47_004", "rarity": "legendary" },
-    { "skinId": "weapon_sniper_001", "rarity": "common" },
-    { "skinId": "weapon_sniper_002", "rarity": "uncommon" },
-    { "skinId": "weapon_sniper_003", "rarity": "rare" },
-    { "skinId": "weapon_sniper_004", "rarity": "legendary" },
-    { "skinId": "weapon_pistol_001", "rarity": "common" },
-    { "skinId": "weapon_pistol_002", "rarity": "uncommon" },
-    { "skinId": "weapon_pistol_003", "rarity": "epic" },
-    { "skinId": "weapon_mp7_001", "rarity": "common" },
-    { "skinId": "weapon_mp7_002", "rarity": "uncommon" },
-    { "skinId": "weapon_mp7_003", "rarity": "epic" }
+    {
+      "skinId": "tshirts_002",
+      "rarity": "common"
+    },
+    {
+      "skinId": "tshirts_003",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "tshirts_004",
+      "rarity": "rare"
+    },
+    {
+      "skinId": "pants_002",
+      "rarity": "common"
+    },
+    {
+      "skinId": "gloves_002",
+      "rarity": "common"
+    },
+    {
+      "skinId": "gloves_003",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "gloves_004",
+      "rarity": "rare"
+    },
+    {
+      "skinId": "gloves_005",
+      "rarity": "epic"
+    },
+    {
+      "skinId": "weapon_ak47_001",
+      "rarity": "common"
+    },
+    {
+      "skinId": "weapon_ak47_002",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "weapon_ak47_003",
+      "rarity": "rare"
+    },
+    {
+      "skinId": "weapon_ak47_004",
+      "rarity": "legendary"
+    },
+    {
+      "skinId": "weapon_sniper_001",
+      "rarity": "common"
+    },
+    {
+      "skinId": "weapon_sniper_002",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "weapon_sniper_003",
+      "rarity": "rare"
+    },
+    {
+      "skinId": "weapon_sniper_004",
+      "rarity": "legendary"
+    },
+    {
+      "skinId": "weapon_pistol_001",
+      "rarity": "common"
+    },
+    {
+      "skinId": "weapon_pistol_002",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "weapon_pistol_003",
+      "rarity": "epic"
+    },
+    {
+      "skinId": "weapon_mp7_001",
+      "rarity": "common"
+    },
+    {
+      "skinId": "weapon_mp7_002",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "weapon_mp7_003",
+      "rarity": "epic"
+    },
+    {
+      "skinId": "attachment_face_001",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_face_002",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_face_003",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_face_004",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_face_005",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_face_006",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_hair_001",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_002",
+      "rarity": "rare"
+    },
+    {
+      "skinId": "attachment_hair_003",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_hair_004",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_hair_005",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_hair_006",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_007",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_008",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_009",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_010",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_011",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_012",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_013",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_014",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_015",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_016",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_017",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_018",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_019",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_020",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_021",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_022",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_023",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_024",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_025",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_026",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_027",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_028",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_029",
+      "rarity": "legendary"
+    },
+    {
+      "skinId": "attachment_hair_030",
+      "rarity": "legendary"
+    },
+    {
+      "skinId": "attachment_hair_031",
+      "rarity": "epic"
+    },
+    {
+      "skinId": "attachment_hair_032",
+      "rarity": "epic"
+    },
+    {
+      "skinId": "attachment_hair_033",
+      "rarity": "epic"
+    },
+    {
+      "skinId": "attachment_hair_034",
+      "rarity": "uncommon"
+    },
+    {
+      "skinId": "attachment_hair_035",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_hair_036",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_hair_037",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_hair_038",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_hair_039",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_hair_040",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_hair_041",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_hair_042",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_hair_043",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_hair_044",
+      "rarity": "common"
+    },
+    {
+      "skinId": "attachment_hair_045",
+      "rarity": "common"
+    }
   ]
 }

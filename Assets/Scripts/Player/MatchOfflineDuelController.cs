@@ -31,6 +31,7 @@ namespace ShooterPrototype.Player
 
         private GameHudController gameHud;
         private CombatHudController combatHud;
+        private GameKillFeedController killFeed;
         private LocalPlayerMarker localPlayer;
         private FpsCharacterController fpsController;
         private CharacterController characterController;
@@ -361,6 +362,7 @@ namespace ShooterPrototype.Player
                     botRoundWins++;
                     lastRoundWinner = RoundWinner.Opponent;
                     combatHud?.ShowDuelDeathBanner(bot != null ? bot.Nickname : "Соперник");
+                    PushRoundKillFeed(localKilledOpponent: false);
                     yield break;
                 }
 
@@ -369,7 +371,8 @@ namespace ShooterPrototype.Player
                     localRoundWins++;
                     lastRoundWinner = RoundWinner.Local;
                     combatHud?.ShowDuelKillBanner(bot.Nickname);
-                    MatchAchievementReporter.ReportEvent(this, "kill_player", 1);
+                    MatchAchievementReporter.ReportPlayerKill(this, bot.ScoreboardTicketId);
+                    PushRoundKillFeed(localKilledOpponent: true);
                     yield break;
                 }
 
@@ -640,7 +643,32 @@ namespace ShooterPrototype.Player
         {
             gameHud = FindFirstObjectByType<GameHudController>();
             combatHud = FindFirstObjectByType<CombatHudController>();
+            killFeed = FindFirstObjectByType<GameKillFeedController>();
             localPlayer = FindFirstObjectByType<LocalPlayerMarker>();
+        }
+
+        private void PushRoundKillFeed(bool localKilledOpponent)
+        {
+            if (killFeed == null)
+            {
+                killFeed = FindFirstObjectByType<GameKillFeedController>();
+            }
+
+            if (killFeed == null)
+            {
+                return;
+            }
+
+            var botName = bot != null ? bot.Nickname : "Соперник";
+            var localName = MatchUiNicknameUtility.FormatLocalKillFeedPlain();
+            if (localKilledOpponent)
+            {
+                killFeed.PushLocalPlayerKill(localName, botName);
+            }
+            else
+            {
+                killFeed.PushLocalPlayerKill(botName, localName);
+            }
         }
 
         private IEnumerator WaitForLocalPlayerRoutine()
