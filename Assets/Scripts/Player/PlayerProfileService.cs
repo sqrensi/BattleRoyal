@@ -14,7 +14,9 @@ namespace ShooterPrototype.Player
         private const string CurrencyGrantKey = "player_currency_grant_100k_v1";
         private const string NicknamePrefKey = "player_nickname_v1";
         private const string VipPrefixExpiresPrefKey = "player_vip_prefix_expires_v1";
+        private const string NoAdsExpiresPrefKey = "player_no_ads_expires_v1";
         private const long VipDurationMs = 30L * 24L * 60L * 60L * 1000L;
+        private const long NoAdsDurationMs = 30L * 24L * 60L * 60L * 1000L;
 
         private static readonly HashSet<string> OwnedSkinCache = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly Dictionary<string, int> OwnedSkinQuantityCache =
@@ -31,6 +33,33 @@ namespace ShooterPrototype.Player
         public static int DuelRating => CurrentProfile?.duelRating ?? MatchRatingUtility.DefaultRating;
 
         public static bool HasVipPrefix => IsVipPrefixActive(VipPrefixExpiresAtMs);
+
+        public static bool HasNoAdsPass => IsNoAdsPassActive(NoAdsExpiresAtMs);
+
+        public static long NoAdsExpiresAtMs
+        {
+            get
+            {
+                if (CurrentProfile != null && CurrentProfile.noAdsExpiresAtMs > 0)
+                {
+                    return CurrentProfile.noAdsExpiresAtMs;
+                }
+
+                var stored = PlayerPrefs.GetString(NoAdsExpiresPrefKey, "0");
+                return long.TryParse(stored, out var expiresAtMs) ? expiresAtMs : 0L;
+            }
+        }
+
+        public static string FormatNoAdsExpiryShopLabel()
+        {
+            if (!HasNoAdsPass)
+            {
+                return string.Empty;
+            }
+
+            var expiresAt = DateTimeOffset.FromUnixTimeMilliseconds(NoAdsExpiresAtMs).ToLocalTime();
+            return $"до {expiresAt:dd.MM.yy}";
+        }
 
         public static long VipPrefixExpiresAtMs
         {
@@ -141,10 +170,20 @@ namespace ShooterPrototype.Player
         public static event Action ProfileSynced;
         public static event Action ProfileSyncFailed;
 
+        private static PlayerProfileApiClient registeredProfileApiClient;
+
+        public static PlayerProfileApiClient RegisteredProfileApiClient => registeredProfileApiClient;
+
+        public static void RegisterProfileApiClient(PlayerProfileApiClient apiClient)
+        {
+            registeredProfileApiClient = apiClient;
+        }
+
         public static void ApplyLocalFallback()
         {
             IsServerSynced = false;
             CurrentProfile = null;
+            PlayerProgressSyncService.Reset();
             OwnedSkinCache.Clear();
             OwnedSkinQuantityCache.Clear();
             OwnedCaseQuantityCache.Clear();
@@ -209,7 +248,34 @@ namespace ShooterPrototype.Player
             return true;
         }
 
+        public static bool GrantLocalNoAdsPass()
+        {
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var baseMs = Math.Max(nowMs, NoAdsExpiresAtMs);
+            var expiresAtMs = baseMs + NoAdsDurationMs;
+            PlayerPrefs.SetString(NoAdsExpiresPrefKey, expiresAtMs.ToString());
+            PlayerPrefs.Save();
+
+            if (CurrentProfile != null)
+            {
+                CurrentProfile.noAdsExpiresAtMs = expiresAtMs;
+            }
+
+            ProfileSynced?.Invoke();
+            return true;
+        }
+
         private static bool IsVipPrefixActive(long expiresAtMs)
+        {
+            if (expiresAtMs <= 0)
+            {
+                return false;
+            }
+
+            return expiresAtMs > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        }
+
+        private static bool IsNoAdsPassActive(long expiresAtMs)
         {
             if (expiresAtMs <= 0)
             {
@@ -289,6 +355,15 @@ namespace ShooterPrototype.Player
                 PlayerPrefs.DeleteKey(VipPrefixExpiresPrefKey);
             }
 
+            if (IsNoAdsPassActive(profile.noAdsExpiresAtMs))
+            {
+                PlayerPrefs.SetString(NoAdsExpiresPrefKey, profile.noAdsExpiresAtMs.ToString());
+            }
+            else if (markSynced)
+            {
+                PlayerPrefs.DeleteKey(NoAdsExpiresPrefKey);
+            }
+
             PlayerCurrencyService.ApplyFromServer(profile.currencyBalance);
 
             OwnedSkinCache.Clear();
@@ -320,6 +395,7 @@ namespace ShooterPrototype.Player
                 previousQuantities,
                 previousCaseQuantities,
                 profile);
+            PlayerProgressSyncService.ApplyFromProfile(profile);
             ProfileSynced?.Invoke();
         }
 

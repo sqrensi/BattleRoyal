@@ -1,4 +1,5 @@
 ﻿#if YandexGamesPlatform_yg
+using ShooterPrototype.Platform;
 using UnityEngine;
 using System.Runtime.InteropServices;
 
@@ -56,6 +57,7 @@ namespace YG
             public string playerId;
             public string playerPhoto;
             public string payingStatus;
+            public string playerSignature;
         }
     }
 }
@@ -74,6 +76,7 @@ namespace YG.Insides
                 YG2.player.name = "unauthorized";
                 YG2.player.id = null;
                 YG2.player.photo = null;
+                YandexPlayerAuthService.Clear();
                 Debug.LogError("Failed init player data");
 
                 return;
@@ -97,6 +100,8 @@ namespace YG.Insides
                 : jsonAuth.playerPhoto.ToString();
 
             YG2.player.id = jsonAuth.playerId.ToString();
+
+            YandexPlayerAuthService.UpdateSignature(jsonAuth.playerSignature);
 
             YG2.player.payingStatus = jsonAuth.payingStatus.ToString() switch
             {

@@ -42,6 +42,48 @@ function applySqliteMigrations(db) {
   applyModeStatsLeaderboardMigration(db, insertMigration);
   applyVipPrefixMigration(db, insertMigration);
   applyVipPrefixExpiryMigration(db, insertMigration);
+  applyNoAdsMigration(db, insertMigration);
+  applyClientStateMigration(db, insertMigration);
+}
+
+function applyClientStateMigration(db, insertMigration) {
+  const migrationName = "012_client_state";
+  const applied = db
+    .prepare("SELECT 1 AS ok FROM schema_migrations WHERE name = ?")
+    .get(migrationName);
+  if (applied) {
+    return;
+  }
+
+  const profileColumns = db.prepare("PRAGMA table_info(player_profiles)").all();
+  const hasClientState = profileColumns.some((column) => column.name === "client_state_json");
+  if (!hasClientState) {
+    db.exec(
+      "ALTER TABLE player_profiles ADD COLUMN client_state_json TEXT NOT NULL DEFAULT '{}';"
+    );
+  }
+
+  insertMigration.run(migrationName, nowMs());
+}
+
+function applyNoAdsMigration(db, insertMigration) {
+  const migrationName = "011_no_ads";
+  const applied = db
+    .prepare("SELECT 1 AS ok FROM schema_migrations WHERE name = ?")
+    .get(migrationName);
+  if (applied) {
+    return;
+  }
+
+  const profileColumns = db.prepare("PRAGMA table_info(player_profiles)").all();
+  const hasNoAdsExpiry = profileColumns.some((column) => column.name === "no_ads_expires_at");
+  if (!hasNoAdsExpiry) {
+    db.exec(
+      "ALTER TABLE player_profiles ADD COLUMN no_ads_expires_at INTEGER NOT NULL DEFAULT 0 CHECK (no_ads_expires_at >= 0);"
+    );
+  }
+
+  insertMigration.run(migrationName, nowMs());
 }
 
 function applyVipPrefixExpiryMigration(db, insertMigration) {

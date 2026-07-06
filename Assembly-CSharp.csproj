@@ -24,7 +24,7 @@
   </PropertyGroup>
   <PropertyGroup>
     <NoWarn>0169;USG0001</NoWarn>
-    <DefineConstants>UNITY_6000_3_10;UNITY_6000_3;UNITY_6000;UNITY_5_3_OR_NEWER;UNITY_5_4_OR_NEWER;UNITY_5_5_OR_NEWER;UNITY_5_6_OR_NEWER;UNITY_2017_1_OR_NEWER;UNITY_2017_2_OR_NEWER;UNITY_2017_3_OR_NEWER;UNITY_2017_4_OR_NEWER;UNITY_2018_1_OR_NEWER;UNITY_2018_2_OR_NEWER;UNITY_2018_3_OR_NEWER;UNITY_2018_4_OR_NEWER;UNITY_2019_1_OR_NEWER;UNITY_2019_2_OR_NEWER;UNITY_2019_3_OR_NEWER;UNITY_2019_4_OR_NEWER;UNITY_2020_1_OR_NEWER;UNITY_2020_2_OR_NEWER;UNITY_2020_3_OR_NEWER;UNITY_2021_1_OR_NEWER;UNITY_2021_2_OR_NEWER;UNITY_2021_3_OR_NEWER;UNITY_2022_1_OR_NEWER;UNITY_2022_2_OR_NEWER;UNITY_2022_3_OR_NEWER;UNITY_2023_1_OR_NEWER;UNITY_2023_2_OR_NEWER;UNITY_2023_3_OR_NEWER;UNITY_6000_0_OR_NEWER;UNITY_6000_1_OR_NEWER;UNITY_6000_2_OR_NEWER;UNITY_6000_3_OR_NEWER;UNITY_INCLUDE_TESTS;ENABLE_AUDIO;ENABLE_CLOTH;ENABLE_MULTIPLE_DISPLAYS;ENABLE_PHYSICS;ENABLE_TEXTURE_STREAMING;ENABLE_UNITYEVENTS;ENABLE_VR;ENABLE_WEBCAM;ENABLE_UNITYWEBREQUEST;ENABLE_WWW;ENABLE_CLOUD_SERVICES;ENABLE_CLOUD_SERVICES_ADS;ENABLE_CLOUD_SERVICES_USE_WEBREQUEST;ENABLE_UNITY_CONSENT;ENABLE_UNITY_CLOUD_IDENTIFIERS;ENABLE_CLOUD_SERVICES_CRASH_REPORTING;ENABLE_CLOUD_SERVICES_PURCHASING;ENABLE_CLOUD_SERVICES_ANALYTICS;ENABLE_CLOUD_SERVICES_BUILD;ENABLE_EDITOR_GAME_SERVICES;ENABLE_UNITY_GAME_SERVICES_ANALYTICS_SUPPORT;ENABLE_CLOUD_LICENSE;ENABLE_EDITOR_HUB_LICENSE;ENABLE_WEBSOCKET_CLIENT;ENABLE_GENERATE_NATIVE_PLUGINS_FOR_ASSEMBLIES_API;ENABLE_DIRECTOR_AUDIO;ENABLE_DIRECTOR_TEXTURE;ENABLE_MANAGED_JOBS;ENABLE_MANAGED_TRANSFORM_JOBS;ENABLE_MANAGED_ANIMATION_JOBS;ENABLE_MANAGED_AUDIO_JOBS;ENABLE_ENGINE_CODE_STRIPPING;ENABLE_ONSCREEN_KEYBOARD;ENABLE_MANAGED_UNITYTLS;RENDER_SOFTWARE_CURSOR;ENABLE_MARSHALLING_TESTS;ENABLE_VIDEO;ENABLE_NAVIGATION_OFFMESHLINK_TO_NAVMESHLINK;ENABLE_ACCELERATOR_CLIENT_DEBUGGING;TEXTCORE_1_0_OR_NEWER;EDITOR_ONLY_NAVMESH_BUILDER_DEPRECATED;PLATFORM_WEBGL;UNITY_WEBGL;UNITY_WEBGL_API;UNITY_DISABLE_WEB_VERIFICATION;UNITY_GFX_USE_PLATFORM_VSYNC;ENABLE_CRUNCH_TEXTURE_COMPRESSION;ENABLE_SPATIALTRACKING;ENABLE_MONO;NET_STANDARD_2_0;NET_STANDARD;NET_STANDARD_2_1;NETSTANDARD;NETSTANDARD2_1;ENABLE_PROFILER;DEBUG;TRACE;UNITY_ASSERTIONS;UNITY_EDITOR;UNITY_EDITOR_64;UNITY_EDITOR_WIN;ENABLE_UNITY_COLLECTIONS_CHECKS;ENABLE_BURST_AOT;UNITY_TEAM_LICENSE;ENABLE_CUSTOM_RENDER_TEXTURE;ENABLE_DIRECTOR;ENABLE_LOCALIZATION;ENABLE_SPRITES;ENABLE_TERRAIN;ENABLE_TILEMAP;ENABLE_TIMELINE;ENABLE_INPUT_SYSTEM;TEXTCORE_FONT_ENGINE_1_5_OR_NEWER;TEXTCORE_TEXT_ENGINE_1_5_OR_NEWER;TEXTCORE_FONT_ENGINE_1_6_OR_NEWER;UNITY_POST_PROCESSING_STACK_V2;YandexGamesPlatform_yg;PLUGIN_YG_2;TMP_YG2;RU_YG2;NJSON_YG2;Localization_yg;AutoTranslateLangs_yg;Authorization_yg;Payments_yg;CSHARP_7_OR_LATER;CSHARP_7_3_OR_NEWER</DefineConstants>
+    <DefineConstants>UNITY_6000_3_10;UNITY_6000_3;UNITY_6000;UNITY_5_3_OR_NEWER;UNITY_5_4_OR_NEWER;UNITY_5_5_OR_NEWER;UNITY_5_6_OR_NEWER;UNITY_2017_1_OR_NEWER;UNITY_2017_2_OR_NEWER;UNITY_2017_3_OR_NEWER;UNITY_2017_4_OR_NEWER;UNITY_2018_1_OR_NEWER;UNITY_2018_2_OR_NEWER;UNITY_2018_3_OR_NEWER;UNITY_2018_4_OR_NEWER;UNITY_2019_1_OR_NEWER;UNITY_2019_2_OR_NEWER;UNITY_2019_3_OR_NEWER;UNITY_2019_4_OR_NEWER;UNITY_2020_1_OR_NEWER;UNITY_2020_2_OR_NEWER;UNITY_2020_3_OR_NEWER;UNITY_2021_1_OR_NEWER;UNITY_2021_2_OR_NEWER;UNITY_2021_3_OR_NEWER;UNITY_2022_1_OR_NEWER;UNITY_2022_2_OR_NEWER;UNITY_2022_3_OR_NEWER;UNITY_2023_1_OR_NEWER;UNITY_2023_2_OR_NEWER;UNITY_2023_3_OR_NEWER;UNITY_6000_0_OR_NEWER;UNITY_6000_1_OR_NEWER;UNITY_6000_2_OR_NEWER;UNITY_6000_3_OR_NEWER;UNITY_INCLUDE_TESTS;ENABLE_AUDIO;ENABLE_CLOTH;ENABLE_MULTIPLE_DISPLAYS;ENABLE_PHYSICS;ENABLE_TEXTURE_STREAMING;ENABLE_UNITYEVENTS;ENABLE_VR;ENABLE_WEBCAM;ENABLE_UNITYWEBREQUEST;ENABLE_WWW;ENABLE_CLOUD_SERVICES;ENABLE_CLOUD_SERVICES_ADS;ENABLE_CLOUD_SERVICES_USE_WEBREQUEST;ENABLE_UNITY_CONSENT;ENABLE_UNITY_CLOUD_IDENTIFIERS;ENABLE_CLOUD_SERVICES_CRASH_REPORTING;ENABLE_CLOUD_SERVICES_PURCHASING;ENABLE_CLOUD_SERVICES_ANALYTICS;ENABLE_CLOUD_SERVICES_BUILD;ENABLE_EDITOR_GAME_SERVICES;ENABLE_UNITY_GAME_SERVICES_ANALYTICS_SUPPORT;ENABLE_CLOUD_LICENSE;ENABLE_EDITOR_HUB_LICENSE;ENABLE_WEBSOCKET_CLIENT;ENABLE_GENERATE_NATIVE_PLUGINS_FOR_ASSEMBLIES_API;ENABLE_DIRECTOR_AUDIO;ENABLE_DIRECTOR_TEXTURE;ENABLE_MANAGED_JOBS;ENABLE_MANAGED_TRANSFORM_JOBS;ENABLE_MANAGED_ANIMATION_JOBS;ENABLE_MANAGED_AUDIO_JOBS;ENABLE_ENGINE_CODE_STRIPPING;ENABLE_ONSCREEN_KEYBOARD;ENABLE_MANAGED_UNITYTLS;RENDER_SOFTWARE_CURSOR;ENABLE_MARSHALLING_TESTS;ENABLE_VIDEO;ENABLE_NAVIGATION_OFFMESHLINK_TO_NAVMESHLINK;ENABLE_ACCELERATOR_CLIENT_DEBUGGING;TEXTCORE_1_0_OR_NEWER;EDITOR_ONLY_NAVMESH_BUILDER_DEPRECATED;PLATFORM_WEBGL;UNITY_WEBGL;UNITY_WEBGL_API;UNITY_DISABLE_WEB_VERIFICATION;UNITY_GFX_USE_PLATFORM_VSYNC;ENABLE_CRUNCH_TEXTURE_COMPRESSION;ENABLE_SPATIALTRACKING;ENABLE_MONO;NET_STANDARD_2_0;NET_STANDARD;NET_STANDARD_2_1;NETSTANDARD;NETSTANDARD2_1;ENABLE_PROFILER;DEBUG;TRACE;UNITY_ASSERTIONS;UNITY_EDITOR;UNITY_EDITOR_64;UNITY_EDITOR_WIN;ENABLE_UNITY_COLLECTIONS_CHECKS;ENABLE_BURST_AOT;UNITY_TEAM_LICENSE;ENABLE_CUSTOM_RENDER_TEXTURE;ENABLE_DIRECTOR;ENABLE_LOCALIZATION;ENABLE_SPRITES;ENABLE_TERRAIN;ENABLE_TILEMAP;ENABLE_TIMELINE;ENABLE_INPUT_SYSTEM;TEXTCORE_FONT_ENGINE_1_5_OR_NEWER;TEXTCORE_TEXT_ENGINE_1_5_OR_NEWER;TEXTCORE_FONT_ENGINE_1_6_OR_NEWER;UNITY_POST_PROCESSING_STACK_V2;YandexGamesPlatform_yg;PLUGIN_YG_2;TMP_YG2;RU_YG2;NJSON_YG2;Localization_yg;AutoTranslateLangs_yg;Authorization_yg;Payments_yg;InterstitialAdv_yg;RewardedAdv_yg;CSHARP_7_OR_LATER;CSHARP_7_3_OR_NEWER</DefineConstants>
     <AllowUnsafeBlocks>False</AllowUnsafeBlocks>
   </PropertyGroup>
   <PropertyGroup>
@@ -55,6 +55,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextEventHandler.cs" />
     <Compile Include="Assets\Scripts\Network\RealtimePoseBinaryCodec.cs" />
     <Compile Include="Assets\FarlandSkies\Demo\Scripts\Player\SmoothMouseLook.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\InterstitialAdv\Scripts\InterAdv_interface.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Other\PauseGameYG.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo_RandomDir.cs" />
     <Compile Include="Assets\Scripts\Player\ShopIapCatalogService.cs" />
@@ -62,6 +63,7 @@
     <Compile Include="Assets\Scripts\Player\PlayerBoneHitbox.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\EditorScr\PluginPrefs.cs" />
     <Compile Include="Assets\Scripts\Network\NetworkConfig.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\RewardedAdv\Scripts\RewardedAdv_interface.cs" />
     <Compile Include="Assets\Scripts\Player\NetworkPerformanceMonitor.cs" />
     <Compile Include="Assets\Scripts\UI\UiDecor.cs" />
     <Compile Include="Assets\Scripts\Player\MatchRatingUtility.cs" />
@@ -79,11 +81,13 @@
     <Compile Include="Assets\Scripts\Player\WeaponAudioOverrides.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerMedkitController.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Basic\CallAction.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuShopRewardedCoinsHover.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\EditorScr\Attributes\LabelYGAttribute.cs" />
     <Compile Include="Assets\Scripts\Player\MatchOfflineDuelController.cs" />
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_WaterBob.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteThirdPersonPlayerBootstrap.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\CFX_Demo_RotateCamera.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\InterstitialAdv\Scripts\AdNotification\AdNotificationYG.cs" />
     <Compile Include="Assets\Scripts\Player\WorldPickup.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteLeftHandIkBinder.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\InfoYG\SimulationSettings.cs" />
@@ -106,12 +110,15 @@
     <Compile Include="Assets\Scripts\Player\WeaponKindUtility.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Basic\GameReadyAPI.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuNotificationState.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuShopNoAdsHover.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuReconnectButton.cs" />
     <Compile Include="Assets\Scripts\Player\TrainingPickupZoneMarker.cs" />
     <Compile Include="Assets\Scripts\Player\PickupSpawnZone.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerSettingsPrefs.cs" />
     <Compile Include="Assets\Scripts\Player\TrainingBotController.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerHeadMaskSelector.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\Payments\Scripts\ConsumePurchasesYG.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\InterstitialAdv\Scripts\InterAdv_yg.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponLoadout.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Basic\OptionalPlatform.cs" />
     <Compile Include="Assets\Scripts\Player\DuelNavBotController.cs" />
@@ -140,8 +147,11 @@
     <Compile Include="Assets\PluginYourGames\Scripts\EditorScr\Translates\Langs.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuUiSoundController.cs" />
     <Compile Include="Assets\Scripts\Platform\GameBranding.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\InterstitialAdv\Scripts\InterAdv_yandexPlatform.cs" />
     <Compile Include="Assets\Scripts\Player\MatchPickupSync.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\RewardedAdv\Scripts\RewardedAdv_yg.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\EditorScr\UnityPackagesManager.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\RewardedAdv\Example\Scripts\ExampleRewardedAd.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Server\ServerInfo.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\Authorization\Scripts\GetPlayerYG.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_ExampleScript_01.cs" />
@@ -150,13 +160,17 @@
     <Compile Include="Assets\Scripts\Player\PickupItemDefinition.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexShakeB.cs" />
     <Compile Include="Assets\Scripts\Player\AchievementEventTypes.cs" />
+    <Compile Include="Assets\Scripts\Player\PlayerProgressSyncService.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\CFX_LightIntensityFade.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteAnimatorHolsterPresentation.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Basic\YGInsides.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Basic\YGSendMessage.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\InterstitialAdv\Scripts\InterstitialAdv_callingSimulation.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\AutoTranslateLangs\Scripts\LanguageYG.cs" />
+    <Compile Include="Assets\Scripts\Platform\YandexPlayerAuthService.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyBoneAnchorSync.cs" />
     <Compile Include="Assets\Scripts\Player\GameplayAudioPrewarm.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\InterstitialAdv\Example\Scripts\DebugInterstitialAdv.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\Payments\Scripts\Payments_interface.cs" />
     <Compile Include="Assets\Scripts\UI\UiPrefabLibrary.cs" />
     <Compile Include="Assets\Scripts\Player\MovementNetworkDiagnostics.cs" />
@@ -171,7 +185,9 @@
     <Compile Include="Assets\Scripts\Network\NetworkLauncher.cs" />
     <Compile Include="Assets\Scripts\Player\CombatAudioOcclusion.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexJitter.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\InterstitialAdv\Scripts\InterstitialAdv_optionalPlatform.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerAttachmentApplier.cs" />
+    <Compile Include="Assets\Scripts\Platform\GameAdsService.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyFirstPersonArmsMeshBuilder.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\Payments\Scripts\Payments_info.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_UiFrameRateCounter.cs" />
@@ -191,7 +207,9 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\WarpTextExample.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo_Wall.cs" />
     <Compile Include="Assets\Scripts\Player\SkinRarity.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\RewardedAdv\Scripts\RewardedAdv_callingSimulation.cs" />
     <Compile Include="Assets\Scripts\Player\ShopCatalogService.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\InterstitialAdv\Scripts\InterstitialAdv_projectSettings.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerBoneHitboxRig.cs" />
     <Compile Include="Assets\Scripts\Player\CaseCatalogService.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\ShaderPropAnimator.cs" />
@@ -199,6 +217,7 @@
     <Compile Include="Assets\PluginYourGames\Modules\Payments\Scripts\Payments_yandexPlatform.cs" />
     <Compile Include="Assets\Scripts\Player\MatchChallengeController.cs" />
     <Compile Include="Assets\Scripts\Platform\YandexGamesShopPurchaseService.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\RewardedAdv\Scripts\RewardedAdv_optionalPlatform.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerInventory.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerSkinResourcePaths.cs" />
     <Compile Include="Assets\Scripts\Network\PlayerSkinNetworkCodec.cs" />
@@ -218,6 +237,7 @@
     <Compile Include="Assets\PluginYourGames\Scripts\Other\PlatformEventsYG2.cs" />
     <Compile Include="Assets\Scripts\UI\GameKillFeedController.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\CFX_AutoDestructShuriken.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\RewardedAdv\Scripts\RewardedAdv_info.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyCrouchPosture.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuController.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexShakeA.cs" />
@@ -250,6 +270,7 @@
     <Compile Include="Assets\Synty\PolygonGeneric\Scripts\Generic_SimpleRotate.cs" />
     <Compile Include="Assets\Scripts\Player\PickupWorldVisualBuilder.cs" />
     <Compile Include="Assets\Scripts\Player\MatchUiNicknameUtility.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\InterstitialAdv\Scripts\InterAdv_info.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerProfileApiClient.cs" />
     <Compile Include="Assets\Scripts\Player\MatchDuelController.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponScopeOverlay.cs" />
@@ -262,17 +283,19 @@
     <Compile Include="Assets\TutorialInfo\Scripts\Readme.cs" />
     <Compile Include="Assets\Scripts\Matchmaking\QueueApiClient.cs" />
     <Compile Include="Assets\Scripts\UI\UiTheme.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuInventoryItemHoverPreview.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\Benchmark01.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TextMeshSpawner.cs" />
-    <Compile Include="Assets\Scripts\UI\MainMenuInventoryItemHoverPreview.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteLookPitchPosture.cs" />
     <Compile Include="Assets\Scripts\Bootstrap\PerformancePresetController.cs" />
     <Compile Include="Assets\Scripts\Bootstrap\OfflineChallengeBootstrap.cs" />
+    <Compile Include="Assets\Scripts\UI\MenuCursorUtility.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\EditorScr\PrefsList.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\InfoYG\InfoYGReferences.cs" />
     <Compile Include="Assets\PluginYourGames\Example\Scripts\CanvasScaleForMobile.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerWeaponLoadoutController.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerSpawnManager.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\RewardedAdv\Scripts\RewardedAdv_yandexPlatform.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Platform\PlatformSettings_langs.cs" />
     <Compile Include="Assets\Scripts\Player\EnemyPresentationVisibilityUtility.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\Payments\Scripts\PaymentsCatalogYG.cs" />
@@ -315,6 +338,7 @@
     <Compile Include="Assets\Scripts\Player\PickupApplyResult.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\AutoTranslateLangs\Scripts\AutoLang_info.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\InfoYG\BasicSettings.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\RewardedAdv\Scripts\RewardedAdv_projectSettings.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\EditorScr\Attributes\ColorYGAttribute.cs" />
     <Compile Include="Assets\Scripts\Player\RemotePlayerLocomotionUtility.cs" />
     <Compile Include="Assets\Scripts\Player\PickupKind.cs" />
@@ -332,10 +356,12 @@
     <Compile Include="Assets\Scripts\Player\PlayerRenderingUtility.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponBlockUtility.cs" />
     <Compile Include="Assets\Scripts\Bootstrap\OfflineTrainingBootstrap.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\RewardedAdv\Scripts\RewardedAdvLockTimer.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo_DeleteAfterDelay.cs" />
     <Compile Include="Assets\Scripts\UI\UiMotion.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Platform\PlatformSettingsAttributes.cs" />
     <Compile Include="Assets\Scripts\Player\Day5RuntimeSetup.cs" />
+    <Compile Include="Assets\Scripts\Player\ClientSettingsPersistence.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\EditorScr\Attributes\NestedYGAttribute.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\ObjectSpin.cs" />
     <Compile Include="Assets\Scripts\Player\DmSpawnUtility.cs" />
@@ -382,6 +408,7 @@
     <Compile Include="Assets\PluginYourGames\Modules\Localization\Example\Scripts\LanguageExample.cs" />
     <Compile Include="Assets\Scripts\Player\WeaponLoadoutServerState.cs" />
     <Compile Include="Assets\Scripts\Player\GameplayPerformanceOptions.cs" />
+    <Compile Include="Assets\PluginYourGames\Modules\InterstitialAdv\Scripts\TimerBeforeAds\TimerBeforeAdsYG.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\EditorScr\Module.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\Localization\Scripts\Lang_interface.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Basic\YG2.cs" />
@@ -418,6 +445,7 @@
     <None Include="Assets\TextMesh Pro\Shaders\TMPro_Mobile.cginc" />
     <None Include="Assets\PluginYourGames\Modules\Localization\Version.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF SSD.shader" />
+    <None Include="Assets\PluginYourGames\Modules\InterstitialAdv\Version.txt" />
     <None Include="Assets\JMO Assets\WarFX\Shaders\WFX_S Add Scroll.shader" />
     <None Include="Assets\JMO Assets\Cartoon FX Easy Editor\CartoonFX Easy Editor Readme.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Surface-Mobile.shader" />
@@ -430,6 +458,7 @@
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Surface.shader" />
     <None Include="Assets\TextMesh Pro\Sprites\EmojiOne Attribution.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_Bitmap-Custom-Atlas.shader" />
+    <None Include="Assets\PluginYourGames\Modules\RewardedAdv\Version.txt" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF.shader" />
     <None Include="Assets\TextMesh Pro\Shaders\TMP_SDF-Mobile SSD.shader" />
     <None Include="Assets\PluginYourGames\Version.txt" />

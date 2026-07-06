@@ -706,7 +706,12 @@ namespace ShooterPrototype.UI
 
         private IEnumerator ShowDailyRewardPromptWhenReady()
         {
-            yield return null;
+            var controller = GetComponent<MainMenuController>();
+            while (controller != null && !controller.HasCompletedInitialProfileBootstrap)
+            {
+                yield return null;
+            }
+
             yield return null;
             TryShowDailyRewardLoginPrompt();
         }

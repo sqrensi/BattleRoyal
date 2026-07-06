@@ -51,6 +51,17 @@ function normalizeProduct(raw) {
     };
   }
 
+  if (rewardType === "no_ads") {
+    return {
+      productId: String(raw.productId).trim(),
+      displayName: String(raw.displayName || raw.productId).trim(),
+      priceRubles: Math.max(0, Number(raw.priceRubles) || 0),
+      rewardType: "no_ads",
+      amount: 1,
+      caseId: "",
+    };
+  }
+
   return null;
 }
 

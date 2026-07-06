@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using ShooterPrototype.Player;
+using ShooterPrototype.Platform;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -165,47 +166,56 @@ namespace ShooterPrototype.UI
 
         public void EnterShop()
         {
-            if (!TryOpenServerSyncedPanel(MainMenuPanelMode.Shop))
+            GameAdsService.RunUiInterstitialGate(this, () =>
             {
-                return;
-            }
+                if (!TryOpenServerSyncedPanel(MainMenuPanelMode.Shop))
+                {
+                    return;
+                }
 
-            OpenPanel(MainMenuPanelMode.Shop);
+                OpenPanel(MainMenuPanelMode.Shop);
+            });
         }
 
         public void EnterInventory()
         {
-            if (!TryOpenServerSyncedPanel(MainMenuPanelMode.Inventory))
+            GameAdsService.RunUiInterstitialGate(this, () =>
             {
-                return;
-            }
+                if (!TryOpenServerSyncedPanel(MainMenuPanelMode.Inventory))
+                {
+                    return;
+                }
 
-            OpenPanel(MainMenuPanelMode.Inventory);
+                OpenPanel(MainMenuPanelMode.Inventory);
+            });
         }
 
         public void EnterAchievements()
         {
-            OpenPanel(MainMenuPanelMode.Achievements);
+            GameAdsService.RunUiInterstitialGate(this, () => OpenPanel(MainMenuPanelMode.Achievements));
         }
 
         public void EnterDailyRewards()
         {
-            OpenPanel(MainMenuPanelMode.DailyRewards);
+            GameAdsService.RunUiInterstitialGate(this, () => OpenPanel(MainMenuPanelMode.DailyRewards));
         }
 
         public void EnterStats()
         {
-            if (!TryOpenServerSyncedPanel(MainMenuPanelMode.Stats))
+            GameAdsService.RunUiInterstitialGate(this, () =>
             {
-                return;
-            }
+                if (!TryOpenServerSyncedPanel(MainMenuPanelMode.Stats))
+                {
+                    return;
+                }
 
-            OpenPanel(MainMenuPanelMode.Stats);
+                OpenPanel(MainMenuPanelMode.Stats);
+            });
         }
 
         public void SetServerSyncRestrictions(bool serverSynced)
         {
-            // Кнопки остаются кликабельными — при отсутствии синка показывается запрос авторизации.
+            // Кнопки остаются кликабельными — при отсутствии синка показывается запрос подключения к серверу.
         }
 
         public void OpenPanelDirect(MainMenuPanelMode panelMode)
@@ -226,7 +236,7 @@ namespace ShooterPrototype.UI
 
         public void EnterSettings()
         {
-            OpenPanel(MainMenuPanelMode.Settings);
+            GameAdsService.RunUiInterstitialGate(this, () => OpenPanel(MainMenuPanelMode.Settings));
         }
 
         public void ExitInventory()
@@ -238,6 +248,16 @@ namespace ShooterPrototype.UI
         }
 
         public void ExitActivePanel()
+        {
+            if (activePanel == MainMenuPanelMode.None)
+            {
+                return;
+            }
+
+            GameAdsService.RunUiInterstitialGate(this, CloseActivePanelImmediate);
+        }
+
+        private void CloseActivePanelImmediate()
         {
             if (activePanel == MainMenuPanelMode.None)
             {

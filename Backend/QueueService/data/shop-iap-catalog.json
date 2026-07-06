@@ -32,6 +32,14 @@
       "priceRubles": 300,
       "rewardType": "vip_prefix",
       "amount": 1
+    },
+    {
+      "productId": "no_ads_30d",
+      "displayName": "Отключение рекламы",
+      "description": "Отключение рекламы на 30 дней",
+      "priceRubles": 250,
+      "rewardType": "no_ads",
+      "amount": 1
     }
   ]
 }

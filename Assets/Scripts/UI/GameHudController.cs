@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using ShooterPrototype.Bootstrap;
 using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
+using ShooterPrototype.Platform;
 using ShooterPrototype.Player;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -126,6 +127,7 @@ namespace ShooterPrototype.UI
         private bool lastCornerStatsDisplayedPaused;
 
         public static bool IsPauseMenuOpen { get; private set; }
+        public static bool IsMatchHudActive { get; private set; }
 
         public static void SetLegacyInventoryVisible(bool visible)
         {
@@ -284,15 +286,21 @@ namespace ShooterPrototype.UI
 
         private void ApplyPauseCursor(bool pauseOpen)
         {
+            if (returnToMenuRequested || !matchHudActive)
+            {
+                MenuCursorUtility.UnlockForMenu();
+                return;
+            }
+
             if (pauseOpen)
             {
-                ApplyMenuCursor();
+                MenuCursorUtility.UnlockForMenu();
                 return;
             }
 
             if (canvas == null || !canvas.gameObject.activeSelf)
             {
-                ApplyMenuCursor();
+                MenuCursorUtility.UnlockForMenu();
                 return;
             }
 
@@ -315,7 +323,7 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            ApplyMenuCursor();
+            MenuCursorUtility.UnlockForMenu();
         }
 
         private void HandlePauseSettingsPressed()
@@ -336,7 +344,7 @@ namespace ShooterPrototype.UI
         private void HandlePauseExitPressed()
         {
             SetPauseMenuOpen(false);
-            RequestReturnToMenu("pause_exit");
+            GameAdsService.RunUiInterstitialGate(this, () => RequestReturnToMenu("pause_exit"));
         }
 
         private void SetTopBarVisible(bool visible)
@@ -358,6 +366,7 @@ namespace ShooterPrototype.UI
         public void SetActiveForScene(bool isGameScene)
         {
             matchHudActive = isGameScene;
+            IsMatchHudActive = isGameScene;
             if (isGameScene)
             {
                 EnsureEventSystemExists();
@@ -402,19 +411,13 @@ namespace ShooterPrototype.UI
                 killFeed?.SetActiveForScene(false);
                 scoreboard?.SetActiveForScene(false);
                 RefreshMatchTabSuppression();
-                ApplyMenuCursor();
+                MenuCursorUtility.UnlockForMenu();
             }
         }
 
         private void RefreshMatchTabSuppression()
         {
             FpsCharacterController.SuppressTabCursorToggle = matchHudActive || pauseMenuOpen;
-        }
-
-        private static void ApplyMenuCursor()
-        {
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
         }
 
         private static void ApplyMatchCursor()
@@ -1655,6 +1658,7 @@ namespace ShooterPrototype.UI
             }
 
             fps?.SetGameOverMode(false);
+            MenuCursorUtility.UnlockForMenu();
         }
 
         private void HideGameOverPanel()
@@ -1684,7 +1688,7 @@ namespace ShooterPrototype.UI
                 gameOverExitButton.interactable = false;
             }
 
-            RequestReturnToMenu("game_over_exit");
+            GameAdsService.RunUiInterstitialGate(this, () => RequestReturnToMenu("game_over_exit"));
         }
 
         public void RequestReturnToMenu(string reason)
@@ -3425,8 +3429,9 @@ namespace ShooterPrototype.UI
             realtimeClient?.EndMatchSession();
             networkLauncher?.DisconnectClient("Client returned to MainMenu.");
             ResetMatchOverlay();
-            ApplyMenuCursor();
+            MenuCursorUtility.UnlockForMenu();
             SceneManager.LoadScene(mainMenuSceneName);
+            MenuCursorUtility.UnlockForMenu();
 
             if (backButton != null)
             {

@@ -2477,7 +2477,8 @@ namespace ShooterPrototype.Player
                 health = root.AddComponent<PlayerHealth>();
             }
             health.SetNetworkMode(true);
-            if (ActiveMatchContext.IsDeathmatch || ActiveMatchContext.IsOfflineDeathmatchSession)
+            if (ActiveMatchContext.IsDeathmatch || ActiveMatchContext.IsOfflineDeathmatchSession ||
+                ActiveMatchContext.IsDuel || ActiveMatchContext.IsOfflineDuelSession)
             {
                 health.SetDestroyDeathPhysicsOnCleanup(true);
             }

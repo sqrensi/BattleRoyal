@@ -24,6 +24,7 @@ namespace ShooterPrototype.UI
         private Button claimButton;
         private readonly List<SlotVisual> slots = new List<SlotVisual>(7);
         private bool isVisible;
+        private bool claimInProgress;
         private Coroutine transitionCoroutine;
 
         private sealed class SlotVisual
@@ -257,20 +258,57 @@ namespace ShooterPrototype.UI
 
         private void OnClaimClicked()
         {
-            if (!DailyRewardService.TryClaimToday(out var claimedReward, out var error))
+            StartCoroutine(ClaimDailyRewardRoutine());
+        }
+
+        private IEnumerator ClaimDailyRewardRoutine()
+        {
+            if (claimInProgress)
             {
-                if (!string.IsNullOrWhiteSpace(error))
+                yield break;
+            }
+
+            claimInProgress = true;
+            if (claimButton != null)
+            {
+                claimButton.interactable = false;
+            }
+
+            var playerId = PlayerIdentityService.GetOrCreatePlayerId();
+            var completed = false;
+            var success = false;
+            DailyRewardEntry claimedReward = null;
+            var error = string.Empty;
+
+            yield return PlayerProgressSyncService.ClaimDailyRewardRoutine(
+                this,
+                null,
+                playerId,
+                (ok, reward, message) =>
+                {
+                    completed = true;
+                    success = ok;
+                    claimedReward = reward;
+                    error = message;
+                });
+
+            claimInProgress = false;
+
+            if (!completed || !success)
+            {
+                if (statusLabel != null && !string.IsNullOrWhiteSpace(error))
                 {
                     statusLabel.text = error;
                 }
 
                 Refresh();
-                return;
+                yield break;
             }
 
             uiSound?.PlayStart();
             NotifyClaimedReward(claimedReward);
             MatchAchievementReporter.ReportEvent(this, AchievementEventTypes.DailyRewardClaim, 1);
+            FindFirstObjectByType<MainMenuController>()?.ScheduleProgressFlush();
             Refresh();
         }
 

@@ -11,14 +11,25 @@ namespace ShooterPrototype.Platform
     public sealed class YandexGamesShopPurchaseService : MonoBehaviour
     {
         public const string PurchaseAuthReason =
-            "Для покупок за реальные деньги нужна авторизация через Яндекс: сохранение покупок и синхронизация профиля.";
+            "Для покупок за реальные деньги нужен вход через Яндекс ID.\n\n" +
+            "Преимущества:\n" +
+            "• купленные предметы сохраняются в облаке;\n" +
+            "• покупки доступны в любом браузере.";
 
         private static YandexGamesShopPurchaseService instance;
         private static Action<bool> pendingPurchaseCallback;
         private static string pendingProductId = string.Empty;
+        private Coroutine pendingPurchaseTimeoutRoutine;
 
         public static bool IsPurchaseInProgress =>
             !string.IsNullOrWhiteSpace(pendingProductId);
+
+        public static void CancelPendingPurchase()
+        {
+#if Payments_yg
+            CompletePending(false);
+#endif
+        }
 
         public static void EnsureInitialized(MonoBehaviour host)
         {
@@ -112,6 +123,18 @@ namespace ShooterPrototype.Platform
                 yield break;
             }
 
+            yield return YandexGamesIntegrationService.WaitForPaymentsCatalog(host);
+
+#if Payments_yg
+            if (!YandexGamesIntegrationService.IsProductInPaymentsCatalog(productId))
+            {
+                Debug.LogWarning(
+                    $"[YandexGamesShopPurchase] Product '{productId}' is missing in Yandex Games payments catalog.");
+                onCompleted?.Invoke(false);
+                yield break;
+            }
+#endif
+
 #if Payments_yg
             if (pendingPurchaseCallback != null)
             {
@@ -122,6 +145,11 @@ namespace ShooterPrototype.Platform
 
             pendingProductId = productId.Trim();
             pendingPurchaseCallback = onCompleted;
+            if (instance != null)
+            {
+                instance.StartPendingPurchaseTimeout();
+            }
+
             YG2.BuyPayments(pendingProductId);
 #else
             onCompleted?.Invoke(false);
@@ -182,8 +210,54 @@ namespace ShooterPrototype.Platform
             CompletePending(success);
         }
 
+        private void StartPendingPurchaseTimeout()
+        {
+            if (pendingPurchaseTimeoutRoutine != null)
+            {
+                StopCoroutine(pendingPurchaseTimeoutRoutine);
+            }
+
+            pendingPurchaseTimeoutRoutine = StartCoroutine(WatchPendingPurchaseTimeoutRoutine());
+        }
+
+        private void StopPendingPurchaseTimeout()
+        {
+            if (pendingPurchaseTimeoutRoutine == null)
+            {
+                return;
+            }
+
+            StopCoroutine(pendingPurchaseTimeoutRoutine);
+            pendingPurchaseTimeoutRoutine = null;
+        }
+
+        private IEnumerator WatchPendingPurchaseTimeoutRoutine()
+        {
+            var productId = pendingProductId;
+            var deadline = Time.unscaledTime + 120f;
+            while (!string.IsNullOrWhiteSpace(pendingProductId) &&
+                   string.Equals(pendingProductId, productId, StringComparison.Ordinal) &&
+                   Time.unscaledTime < deadline)
+            {
+                yield return null;
+            }
+
+            if (!string.IsNullOrWhiteSpace(pendingProductId) &&
+                string.Equals(pendingProductId, productId, StringComparison.Ordinal))
+            {
+                Debug.LogWarning(
+                    $"[YandexGamesShopPurchase] Purchase callback timeout for '{productId}'.");
+                CompletePending(false);
+            }
+        }
+
         private static void CompletePending(bool success)
         {
+            if (instance != null)
+            {
+                instance.StopPendingPurchaseTimeout();
+            }
+
             pendingProductId = string.Empty;
             var callback = pendingPurchaseCallback;
             pendingPurchaseCallback = null;

@@ -39,6 +39,8 @@ namespace ShooterPrototype.Player
             string.Equals(RewardType, "case", StringComparison.OrdinalIgnoreCase);
         public bool IsVipPrefixReward =>
             string.Equals(RewardType, "vip_prefix", StringComparison.OrdinalIgnoreCase);
+        public bool IsNoAdsReward =>
+            string.Equals(RewardType, "no_ads", StringComparison.OrdinalIgnoreCase);
     }
 
     public static class ShopIapCatalogService
@@ -189,6 +191,11 @@ namespace ShooterPrototype.Player
             if (product.IsVipPrefixReward)
             {
                 return PlayerProfileService.GrantLocalVipPrefix();
+            }
+
+            if (product.IsNoAdsReward)
+            {
+                return PlayerProfileService.GrantLocalNoAdsPass();
             }
 
             return false;

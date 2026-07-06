@@ -28,7 +28,7 @@ namespace ShooterPrototype.Platform
             if (reasonText != null)
             {
                 reasonText.text = string.IsNullOrWhiteSpace(reason)
-                    ? "Для этой функции нужна авторизация через Яндекс."
+                    ? YandexGamesIntegrationService.DefaultAuthReason
                     : reason.Trim();
             }
         }
@@ -74,7 +74,7 @@ namespace ShooterPrototype.Platform
             panelRect.anchorMin = new Vector2(0.5f, 0.5f);
             panelRect.anchorMax = new Vector2(0.5f, 0.5f);
             panelRect.pivot = new Vector2(0.5f, 0.5f);
-            panelRect.sizeDelta = new Vector2(520f, 260f);
+            panelRect.sizeDelta = new Vector2(560f, 320f);
 
             var panelImage = panelObject.AddComponent<Image>();
             UiTheme.ApplyPanel(panelImage, UiPanelStyle.Heavy);
@@ -88,7 +88,7 @@ namespace ShooterPrototype.Platform
             titleRect.sizeDelta = new Vector2(-32f, 40f);
             titleRect.anchoredPosition = new Vector2(0f, -16f);
             var titleText = titleObject.AddComponent<TextMeshProUGUI>();
-            titleText.text = "Авторизация Яндекс";
+            titleText.text = "Вход через Яндекс ID";
             titleText.fontSize = 22f;
             titleText.alignment = TextAlignmentOptions.Center;
             UiTheme.ApplyTmp(titleText, UiTextRole.Title);
@@ -107,8 +107,8 @@ namespace ShooterPrototype.Platform
             reasonLabel.enableWordWrapping = true;
             UiTheme.ApplyTmp(reasonLabel, UiTextRole.Body);
 
-            CreateButton(panelObject.transform, "AcceptButton", "Войти", new Vector2(-110f, 28f), () => Hide(true));
-            CreateButton(panelObject.transform, "DeclineButton", "Не сейчас", new Vector2(110f, 28f), () => Hide(false));
+            CreateButton(panelObject.transform, "AcceptButton", "Войти через Яндекс", new Vector2(-130f, 28f), () => Hide(true));
+            CreateButton(panelObject.transform, "DeclineButton", "Продолжить без входа", new Vector2(130f, 28f), () => Hide(false));
 
             overlayRoot.SetActive(false);
         }
@@ -121,7 +121,7 @@ namespace ShooterPrototype.Platform
             buttonRect.anchorMin = new Vector2(0.5f, 0f);
             buttonRect.anchorMax = new Vector2(0.5f, 0f);
             buttonRect.pivot = new Vector2(0.5f, 0f);
-            buttonRect.sizeDelta = new Vector2(180f, 44f);
+            buttonRect.sizeDelta = new Vector2(210f, 44f);
             buttonRect.anchoredPosition = anchoredPosition;
 
             var button = buttonObject.AddComponent<Button>();

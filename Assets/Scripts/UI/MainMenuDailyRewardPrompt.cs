@@ -1,3 +1,4 @@
+using System.Collections;
 using ShooterPrototype.Player;
 using TMPro;
 using UnityEngine;
@@ -27,8 +28,8 @@ namespace ShooterPrototype.UI
             }
 
             EnsureBuilt(canvasRect);
-            DailyRewardService.MarkLoginPromptShown();
             RefreshRewardPreview();
+            DailyRewardService.MarkPromptShownThisSession();
             overlayGroup.alpha = 1f;
             overlayGroup.interactable = true;
             overlayGroup.blocksRaycasts = true;
@@ -147,15 +148,44 @@ namespace ShooterPrototype.UI
 
         private void OnClaimClicked()
         {
-            if (!DailyRewardService.TryClaimToday(out var claimedReward, out _))
+            StartCoroutine(ClaimDailyRewardRoutine());
+        }
+
+        private IEnumerator ClaimDailyRewardRoutine()
+        {
+            var playerId = PlayerIdentityService.GetOrCreatePlayerId();
+            var completed = false;
+            var success = false;
+            var error = string.Empty;
+            DailyRewardEntry claimedReward = null;
+
+            yield return PlayerProgressSyncService.ClaimDailyRewardRoutine(
+                this,
+                null,
+                playerId,
+                (ok, reward, message) =>
+                {
+                    completed = true;
+                    success = ok;
+                    claimedReward = reward;
+                    error = message;
+                });
+
+            if (!completed || !success)
             {
-                Hide();
-                return;
+                if (!string.IsNullOrWhiteSpace(error) && rewardTitle != null)
+                {
+                    rewardTitle.text = error;
+                }
+
+                yield break;
             }
 
             uiSound?.PlayStart();
             MainMenuDailyRewardsPanel.NotifyClaimedReward(claimedReward);
             MatchAchievementReporter.ReportEvent(this, AchievementEventTypes.DailyRewardClaim, 1);
+            DailyRewardService.MarkLoginPromptShown();
+            FindFirstObjectByType<MainMenuController>()?.ScheduleProgressFlush();
             Hide();
         }
 
@@ -166,6 +196,8 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            DailyRewardService.MarkLoginPromptShown();
+            FindFirstObjectByType<MainMenuController>()?.ScheduleProgressFlush();
             overlayGroup.alpha = 0f;
             overlayGroup.interactable = false;
             overlayGroup.blocksRaycasts = false;

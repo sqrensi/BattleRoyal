@@ -8,6 +8,12 @@ namespace ShooterPrototype.Player
         public static string BuildKey(string baseKey)
         {
             var playerId = NormalizePlayerId(PlayerIdentityService.GetOrCreatePlayerId());
+            if (PlayerProfileService.UsesLocalProgressOnly &&
+                !playerId.StartsWith("yg-", StringComparison.Ordinal))
+            {
+                return "offline_local." + baseKey;
+            }
+
             return "user." + playerId + "." + baseKey;
         }
 

@@ -1,8 +1,22 @@
 const playerRepository = require("./playerRepository");
+const yandexPlayerAuth = require("../lib/yandexPlayerAuth");
 
 function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
-  return async function handleProfileRoutes(req, res, path, method) {
-    if (method === "GET" && path === "/profile/nickname/available") {
+  function rejectIfUnauthorized(req, res, externalPlayerId, body) {
+    const auth = yandexPlayerAuth.verifyProfileAccess(externalPlayerId, req, body);
+    if (auth.ok) {
+      return false;
+    }
+
+    respondJson(res, 401, {
+      ok: false,
+      error: auth.error || "Unauthorized",
+      message: auth.message || "Yandex player verification failed.",
+    });
+    return true;
+  }
+
+  return async function handleProfileRoutes(req, res, path, method) {    if (method === "GET" && path === "/profile/nickname/available") {
       const requestUrl = getRequestUrl ? getRequestUrl(req) : null;
       const nickname = requestUrl ? requestUrl.searchParams.get("nickname") : "";
       const playerId = requestUrl ? requestUrl.searchParams.get("playerId") : "";
@@ -19,8 +33,11 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         return true;
       }
 
-      try {
-        const profile = await playerRepository.ensurePlayer(playerId);
+      if (rejectIfUnauthorized(req, res, playerId, body)) {
+        return true;
+      }
+
+      try {        const profile = await playerRepository.ensurePlayer(playerId);
         respondJson(res, 200, { ok: true, profile });
       } catch (error) {
         console.error("[profile][ensure] failed:", error && error.message ? error.message : error);
@@ -70,9 +87,11 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         path.slice(prefix.length, path.length - suffix.length)
       );
       const body = await readJsonBody(req);
+      if (rejectIfUnauthorized(req, res, externalPlayerId, body)) {
+        return true;
+      }
       const caseId = body && body.caseId;
-      const result = await playerRepository.openCase(externalPlayerId, caseId);
-      respondJson(res, result.ok ? 200 : 400, result);
+      const result = await playerRepository.openCase(externalPlayerId, caseId);      respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
 
@@ -87,8 +106,10 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         path.slice(prefix.length, path.length - suffix.length)
       );
       const body = await readJsonBody(req);
-      const eventType = body && body.eventType;
-      const amount = body && body.amount;
+      if (rejectIfUnauthorized(req, res, externalPlayerId, body)) {
+        return true;
+      }
+      const eventType = body && body.eventType;      const amount = body && body.amount;
       const result = await playerRepository.reportAchievementEvent(externalPlayerId, eventType, amount);
       respondJson(res, result.ok ? 200 : 400, result);
       return true;
@@ -105,8 +126,10 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         path.slice(prefix.length, path.length - suffix.length)
       );
       const body = await readJsonBody(req);
-      const achievementId = body && body.achievementId;
-      const result = await playerRepository.claimAchievement(externalPlayerId, achievementId);
+      if (rejectIfUnauthorized(req, res, externalPlayerId, body)) {
+        return true;
+      }
+      const achievementId = body && body.achievementId;      const result = await playerRepository.claimAchievement(externalPlayerId, achievementId);
       respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
@@ -122,9 +145,11 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         path.slice(prefix.length, path.length - suffix.length)
       );
       const body = await readJsonBody(req);
+      if (rejectIfUnauthorized(req, res, externalPlayerId, body)) {
+        return true;
+      }
       const caseId = body && body.caseId;
-      const result = await playerRepository.purchaseCase(externalPlayerId, caseId);
-      respondJson(res, result.ok ? 200 : 400, result);
+      const result = await playerRepository.purchaseCase(externalPlayerId, caseId);      respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
 
@@ -139,8 +164,10 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         path.slice(prefix.length, path.length - suffix.length)
       );
       const body = await readJsonBody(req);
-      const productId = body && body.productId;
-      const result = await playerRepository.grantIapProduct(externalPlayerId, productId);
+      if (rejectIfUnauthorized(req, res, externalPlayerId, body)) {
+        return true;
+      }
+      const productId = body && body.productId;      const result = await playerRepository.grantIapProduct(externalPlayerId, productId);
       respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
@@ -156,9 +183,11 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         path.slice(prefix.length, path.length - suffix.length)
       );
       const body = await readJsonBody(req);
+      if (rejectIfUnauthorized(req, res, externalPlayerId, body)) {
+        return true;
+      }
       const skinId = body && body.skinId;
-      const result = await playerRepository.purchaseSkin(externalPlayerId, skinId);
-      respondJson(res, result.ok ? 200 : 400, result);
+      const result = await playerRepository.purchaseSkin(externalPlayerId, skinId);      respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
 
@@ -173,8 +202,10 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         path.slice(prefix.length, path.length - suffix.length)
       );
       const body = await readJsonBody(req);
-      const slot = body && body.slot;
-      const skinId = body && body.skinId;
+      if (rejectIfUnauthorized(req, res, externalPlayerId, body)) {
+        return true;
+      }
+      const slot = body && body.slot;      const skinId = body && body.skinId;
       const result = await playerRepository.setEquippedSlot(externalPlayerId, slot, skinId);
       respondJson(res, result.ok ? 200 : 400, result);
       return true;
@@ -191,8 +222,10 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         path.slice(prefix.length, path.length - suffix.length)
       );
       const body = await readJsonBody(req);
-      const result = await playerRepository.setNickname(externalPlayerId, body && body.nickname);
-      respondJson(res, result.ok ? 200 : 400, result);
+      if (rejectIfUnauthorized(req, res, externalPlayerId, body)) {
+        return true;
+      }
+      const result = await playerRepository.setNickname(externalPlayerId, body && body.nickname);      respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
 
@@ -207,8 +240,10 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         path.slice(prefix.length, path.length - suffix.length)
       );
       const body = await readJsonBody(req);
-      const result = await playerRepository.setSelectedCharacterModel(
-        externalPlayerId,
+      if (rejectIfUnauthorized(req, res, externalPlayerId, body)) {
+        return true;
+      }
+      const result = await playerRepository.setSelectedCharacterModel(        externalPlayerId,
         body && body.selectedCharacterModel
       );
       respondJson(res, result.ok ? 200 : 400, result);
@@ -226,8 +261,10 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         path.slice(prefix.length, path.length - suffix.length)
       );
       const body = await readJsonBody(req);
-      const result = await playerRepository.recordMatchStats(externalPlayerId, body);
-      respondJson(res, result.ok ? 200 : 400, result);
+      if (rejectIfUnauthorized(req, res, externalPlayerId, body)) {
+        return true;
+      }
+      const result = await playerRepository.recordMatchStats(externalPlayerId, body);      respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
 
@@ -242,10 +279,71 @@ function registerProfileRoutes({ readJsonBody, respondJson, getRequestUrl }) {
         path.slice(prefix.length, path.length - suffix.length)
       );
       const body = await readJsonBody(req);
-      const amount = body && body.amount;
-      const sourceId = body && body.sourceId;
-      const result = await playerRepository.grantMatchCurrency(externalPlayerId, amount, sourceId);
+      if (rejectIfUnauthorized(req, res, externalPlayerId, body)) {
+        return true;
+      }
+      const amount = body && body.amount;      const sourceId = body && body.sourceId;
+      const grantType = body && body.grantType;
+      const result = grantType
+        ? await playerRepository.grantCurrency(externalPlayerId, amount, grantType, sourceId)
+        : await playerRepository.grantMatchCurrency(externalPlayerId, amount, sourceId);
       respondJson(res, result.ok ? 200 : 400, result);
+      return true;
+    }
+
+    if (method === "POST" && path.endsWith("/claim-daily-reward")) {
+      const prefix = "/profile/";
+      const suffix = "/claim-daily-reward";
+      if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
+        return false;
+      }
+
+      const externalPlayerId = decodeURIComponent(
+        path.slice(prefix.length, path.length - suffix.length)
+      );
+      if (rejectIfUnauthorized(req, res, externalPlayerId, null)) {
+        return true;
+      }
+      const result = await playerRepository.claimDailyReward(externalPlayerId);      respondJson(res, result.ok ? 200 : 400, result);
+      return true;
+    }
+
+    if (method === "PUT" && path.endsWith("/client-settings")) {
+      const prefix = "/profile/";
+      const suffix = "/client-settings";
+      if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
+        return false;
+      }
+
+      const externalPlayerId = decodeURIComponent(
+        path.slice(prefix.length, path.length - suffix.length)
+      );
+      const body = await readJsonBody(req);
+      if (rejectIfUnauthorized(req, res, externalPlayerId, body)) {
+        return true;
+      }
+      const result = await playerRepository.saveClientSettings(        externalPlayerId,
+        body && (body.settingsJson || body.settings)
+      );
+      respondJson(res, result.ok ? 200 : 400, result);
+      return true;
+    }
+
+    if (method === "PUT" && path.endsWith("/daily-reward-state")) {
+      const prefix = "/profile/";
+      const suffix = "/daily-reward-state";
+      if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
+        return false;
+      }
+
+      const externalPlayerId = decodeURIComponent(
+        path.slice(prefix.length, path.length - suffix.length)
+      );
+      const body = await readJsonBody(req);
+      if (rejectIfUnauthorized(req, res, externalPlayerId, body)) {
+        return true;
+      }
+      const result = await playerRepository.patchDailyRewardClientState(externalPlayerId, body);      respondJson(res, result.ok ? 200 : 400, result);
       return true;
     }
 

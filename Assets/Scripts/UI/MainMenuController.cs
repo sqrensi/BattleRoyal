@@ -109,13 +109,22 @@ namespace ShooterPrototype.UI
             BeginProfileSync(isManualRetry: false);
         }
 
+        private Coroutine menuCursorGuardCoroutine;
+        private Coroutine settingsFlushCoroutine;
+
         private void OnEnable()
         {
             EnsureDependencies();
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
+            MenuCursorUtility.UnlockForMenu();
+            if (menuCursorGuardCoroutine != null)
+            {
+                StopCoroutine(menuCursorGuardCoroutine);
+            }
+
+            menuCursorGuardCoroutine = StartCoroutine(MenuCursorGuardRoutine());
 
             PlayerProfileService.ProfileSynced += HandleProfileSynced;
+            ClientSettingsService.SettingsChanged += HandleClientSettingsChanged;
 
             if (networkLauncher == null)
             {
@@ -134,7 +143,14 @@ namespace ShooterPrototype.UI
 
         private void OnDisable()
         {
+            if (menuCursorGuardCoroutine != null)
+            {
+                StopCoroutine(menuCursorGuardCoroutine);
+                menuCursorGuardCoroutine = null;
+            }
+
             PlayerProfileService.ProfileSynced -= HandleProfileSynced;
+            ClientSettingsService.SettingsChanged -= HandleClientSettingsChanged;
 
             if (profileSyncCoroutine != null)
             {
@@ -160,10 +176,22 @@ namespace ShooterPrototype.UI
             networkLauncher.StatusChanged -= HandleStatusChanged;
         }
 
+        private IEnumerator MenuCursorGuardRoutine()
+        {
+            for (var i = 0; i < 8; i++)
+            {
+                MenuCursorUtility.UnlockForMenu();
+                yield return null;
+            }
+
+            menuCursorGuardCoroutine = null;
+        }
+
         private void HandleProfileSynced()
         {
             RefreshServerSyncUiState();
-            GetComponent<MainMenuUiLayout>()?.TryShowDailyRewardLoginPrompt();
+            ClientSettingsService.ReloadForCurrentPlayer();
+            ScheduleSettingsFlush();
 
             if (!PlayerProfileService.IsServerSynced)
             {
@@ -175,6 +203,46 @@ namespace ShooterPrototype.UI
             RefreshPlayerPreview(true);
             RefreshNicknameEditor();
             SetStatus(idleStatusText);
+        }
+
+        private void HandleClientSettingsChanged()
+        {
+            ScheduleSettingsFlush();
+        }
+
+        private void ScheduleSettingsFlush()
+        {
+            ScheduleProgressFlush();
+        }
+
+        public void ScheduleProgressFlush()
+        {
+            if (!isActiveAndEnabled || profileApiClient == null)
+            {
+                return;
+            }
+
+            if (settingsFlushCoroutine != null)
+            {
+                StopCoroutine(settingsFlushCoroutine);
+            }
+
+            settingsFlushCoroutine = StartCoroutine(SettingsFlushRoutine());
+        }
+
+        private IEnumerator SettingsFlushRoutine()
+        {
+            yield return new WaitForSecondsRealtime(0.35f);
+            var playerId = PlayerIdentityService.GetOrCreatePlayerId();
+            yield return PlayerProgressSyncService.FlushSettingsIfNeeded(
+                this,
+                profileApiClient,
+                playerId);
+            yield return PlayerProgressSyncService.FlushDailyRewardStateIfNeeded(
+                this,
+                profileApiClient,
+                playerId);
+            settingsFlushCoroutine = null;
         }
 
         public void OnChangeCharacterPressed()
@@ -236,12 +304,6 @@ namespace ShooterPrototype.UI
                     StartOfflineTraining();
                 }
 
-                return;
-            }
-
-            if (!PlayerProfileService.IsServerSynced)
-            {
-                SetStatus("Онлайн режимы доступны после подключения к серверу.");
                 return;
             }
 
@@ -363,20 +425,6 @@ namespace ShooterPrototype.UI
             isQueueing = true;
             SetStartButtonState(isQueueing: true, interactable: true);
             SetStatus(searchingStatusText);
-
-            var authGranted = false;
-            yield return YandexGamesIntegrationService.RequestAuthorizationIfNeeded(
-                this,
-                YandexGamesIntegrationService.OnlinePlayAuthReason,
-                granted => authGranted = granted);
-            if (!authGranted)
-            {
-                isQueueing = false;
-                currentTicketId = string.Empty;
-                SetStatus("Онлайн-матч доступен после авторизации через Яндекс.");
-                SetStartButtonState(isQueueing: false, interactable: true);
-                yield break;
-            }
 
             yield return YandexGamesIntegrationService.PrepareAccountAndBindProfile(
                 this,
@@ -625,6 +673,59 @@ namespace ShooterPrototype.UI
             BeginProfileSync(isManualRetry: true);
         }
 
+        public void BeginYandexProfileLink()
+        {
+            if (profileSyncCoroutine != null)
+            {
+                StopCoroutine(profileSyncCoroutine);
+                profileSyncCoroutine = null;
+            }
+
+            EnsureDependencies();
+            localPlayerId = PlayerIdentityService.GetOrCreatePlayerId();
+            ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Синхронизация профиля...");
+            profileSyncCoroutine = StartCoroutine(YandexProfileLinkRoutine());
+        }
+
+        private IEnumerator YandexProfileLinkRoutine()
+        {
+            try
+            {
+                EnsureDependencies();
+
+                if (profileApiClient == null)
+                {
+                    HandleServerUnavailable("Сервер недоступен");
+                    yield break;
+                }
+
+                yield return YandexGamesIntegrationService.PrepareAccountAndBindProfile(
+                    this,
+                    playerId => localPlayerId = playerId);
+                localPlayerId = PlayerIdentityService.GetOrCreatePlayerId();
+                ClientSettingsService.ReloadForCurrentPlayer();
+
+                yield return SyncProfileWithRetry(4, 2f);
+
+                if (PlayerProfileService.IsServerSynced)
+                {
+                    SetStatus(idleStatusText);
+                    ApplyServerConnectionState(MainMenuServerConnectionState.Connected);
+                    RefreshPlayerPreview(true);
+                    RefreshNicknameEditor();
+                }
+                else
+                {
+                    HandleServerUnavailable(ResolveServerUnavailableMessage());
+                }
+            }
+            finally
+            {
+                profileSyncCoroutine = null;
+                RefreshServerSyncUiState();
+            }
+        }
+
         public void NotifyServerConnectionRequired()
         {
             SetStatus(
@@ -651,18 +752,6 @@ namespace ShooterPrototype.UI
         private IEnumerator RequestServerSyncedPanelRoutine(MainMenuPanelMode panelMode)
         {
             EnsureDependencies();
-
-            var authGranted = false;
-            yield return YandexGamesIntegrationService.RequestAuthorizationIfNeeded(
-                this,
-                YandexGamesIntegrationService.ProfileSyncAuthReason,
-                granted => authGranted = granted);
-
-            if (!authGranted)
-            {
-                serverSyncedPanelCoroutine = null;
-                yield break;
-            }
 
             localPlayerId = PlayerIdentityService.GetOrCreatePlayerId();
             ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Загрузка профиля...");
@@ -736,21 +825,7 @@ namespace ShooterPrototype.UI
                     this,
                     playerId => localPlayerId = playerId);
 
-                if (isManualRetry)
-                {
-                    var authGranted = false;
-                    yield return YandexGamesIntegrationService.RequestAuthorizationIfNeeded(
-                        this,
-                        YandexGamesIntegrationService.ProfileSyncAuthReason,
-                        granted => authGranted = granted);
-                    if (!authGranted)
-                    {
-                        HandleServerUnavailable("Синхронизация профиля отменена.");
-                        yield break;
-                    }
-
-                    localPlayerId = PlayerIdentityService.GetOrCreatePlayerId();
-                }
+                ClientSettingsService.ReloadForCurrentPlayer();
 
                 ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Загрузка профиля...");
                 yield return SyncProfileWithRetry(isManualRetry ? 4 : 2, isManualRetry ? 2f : 1f);
@@ -857,11 +932,6 @@ namespace ShooterPrototype.UI
             achievementsPanel?.RefreshFromProfile();
 
             GetComponent<MainMenuSettingsPanel>()?.RefreshFromSettings();
-
-            if (!synced)
-            {
-                GetComponent<MainMenuUiLayout>()?.TryShowDailyRewardLoginPrompt();
-            }
         }
 
         private void StartOfflineTraining()
@@ -1110,6 +1180,7 @@ namespace ShooterPrototype.UI
             var timeout = networkConfig != null ? networkConfig.QueueRequestTimeoutSeconds : 5f;
             queueApiClient?.Configure(baseUrl, timeout);
             profileApiClient?.Configure(baseUrl, timeout);
+            PlayerProfileService.RegisterProfileApiClient(profileApiClient);
         }
 
         private float GetQueuePollInterval()

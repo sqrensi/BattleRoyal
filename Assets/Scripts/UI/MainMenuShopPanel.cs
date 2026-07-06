@@ -31,6 +31,8 @@ namespace ShooterPrototype.UI
         private readonly List<CaseSlotVisual> caseSlots = new List<CaseSlotVisual>(8);
         private readonly List<IapSlotVisual> iapSlots = new List<IapSlotVisual>(4);
 
+        private RewardedCoinsSlotVisual rewardedCoinsSlot;
+
         private CanvasGroup panelGroup;
         private RectTransform panelRect;
         private RectTransform contentRect;
@@ -45,6 +47,7 @@ namespace ShooterPrototype.UI
         private bool isVisible;
         private bool casePurchaseInProgress;
         private bool iapPurchaseInProgress;
+        private bool rewardedAdInProgress;
         private Coroutine transitionCoroutine;
 
         private sealed class ShopSlotVisual
@@ -68,6 +71,14 @@ namespace ShooterPrototype.UI
         private sealed class IapSlotVisual
         {
             public ShopIapProductDefinition Definition;
+            public Image Background;
+            public Button Button;
+            public TMP_Text PriceLabel;
+            public Image PriceBadge;
+        }
+
+        private sealed class RewardedCoinsSlotVisual
+        {
             public Image Background;
             public Button Button;
             public TMP_Text PriceLabel;
@@ -295,9 +306,12 @@ namespace ShooterPrototype.UI
             itemSlots.Clear();
             caseSlots.Clear();
             iapSlots.Clear();
+            rewardedCoinsSlot = null;
 
             ShopIapCatalogService.EnsureLoaded();
             CaseCatalogService.EnsureLoaded();
+
+            rewardedCoinsSlot = CreateRewardedCoinsSlot(contentRect);
 
             var currencyProducts = ShopIapCatalogService.GetCurrencyProducts();
             for (var i = 0; i < currencyProducts.Count; i++)
@@ -308,12 +322,15 @@ namespace ShooterPrototype.UI
             var premiumProducts = ShopIapCatalogService.GetPremiumProducts();
             for (var i = 0; i < premiumProducts.Count; i++)
             {
-                if (!premiumProducts[i].IsVipPrefixReward)
+                var product = premiumProducts[i];
+                if (product.IsVipPrefixReward)
                 {
-                    continue;
+                    iapSlots.Add(CreateIapVipSlot(contentRect, product));
                 }
-
-                iapSlots.Add(CreateIapVipSlot(contentRect, premiumProducts[i]));
+                else if (product.IsNoAdsReward)
+                {
+                    iapSlots.Add(CreateIapNoAdsSlot(contentRect, product));
+                }
             }
 
             var shopCases = CaseCatalogService.GetShopCases();
@@ -331,7 +348,7 @@ namespace ShooterPrototype.UI
             if (emptyShopState != null)
             {
                 emptyShopState.SetActive(
-                    shopItems.Count == 0 && caseSlots.Count == 0 && iapSlots.Count == 0);
+                    shopItems.Count == 0 && caseSlots.Count == 0 && iapSlots.Count == 0 && rewardedCoinsSlot == null);
             }
 
             RefreshSlotVisuals();
@@ -420,12 +437,15 @@ namespace ShooterPrototype.UI
 
         private void RefreshIapSlotVisuals()
         {
-            var canPurchase = !iapPurchaseInProgress && !casePurchaseInProgress;
+            var canPurchase = !iapPurchaseInProgress && !casePurchaseInProgress && !rewardedAdInProgress;
+            RefreshRewardedCoinsSlotVisual(canPurchase);
+
             for (var i = 0; i < iapSlots.Count; i++)
             {
                 var slot = iapSlots[i];
                 var ownedVip = slot.Definition.IsVipPrefixReward && PlayerProfileService.HasVipPrefix;
-                var slotCanPurchase = canPurchase && !ownedVip;
+                var activeNoAds = slot.Definition.IsNoAdsReward && PlayerProfileService.HasNoAdsPass;
+                var slotCanPurchase = canPurchase && !(ownedVip && slot.Definition.IsVipPrefixReward);
                 var normalColor = slotCanPurchase ? UiTheme.SlotFill : UiTheme.SlotEmpty;
 
                 if (slot.Background != null)
@@ -448,9 +468,13 @@ namespace ShooterPrototype.UI
 
                 if (slot.PriceLabel != null)
                 {
-                    var expiryLabel = ownedVip ? PlayerProfileService.FormatVipExpiryShopLabel() : string.Empty;
-                    slot.PriceLabel.text = ownedVip
-                        ? (string.IsNullOrEmpty(expiryLabel) ? "Куплено" : expiryLabel)
+                    var expiryLabel = ownedVip
+                        ? PlayerProfileService.FormatVipExpiryShopLabel()
+                        : activeNoAds
+                            ? PlayerProfileService.FormatNoAdsExpiryShopLabel()
+                            : string.Empty;
+                    slot.PriceLabel.text = ownedVip || activeNoAds
+                        ? (string.IsNullOrEmpty(expiryLabel) ? "Активно" : expiryLabel)
                         : ShopIapCatalogService.FormatRubles(slot.Definition.PriceRubles);
                     slot.PriceLabel.color = slotCanPurchase
                         ? new Color(0.92f, 0.78f, 0.34f, 0.98f)
@@ -472,10 +496,11 @@ namespace ShooterPrototype.UI
                 var slot = caseSlots[i];
                 var isRealMoney = slot.Definition.IsRealMoneyPurchase;
                 var canAfford = isRealMoney
-                    ? !casePurchaseInProgress && !iapPurchaseInProgress
+                    ? !casePurchaseInProgress && !iapPurchaseInProgress && !rewardedAdInProgress
                     : balance >= CaseCatalogService.GetPrice(slot.Definition) &&
                       !casePurchaseInProgress &&
-                      !iapPurchaseInProgress;
+                      !iapPurchaseInProgress &&
+                      !rewardedAdInProgress;
                 var normalColor = canAfford ? UiTheme.SlotFill : UiTheme.SlotEmpty;
 
                 if (slot.Background != null)
@@ -738,9 +763,230 @@ namespace ShooterPrototype.UI
             };
         }
 
+        private IapSlotVisual CreateIapNoAdsSlot(Transform parent, ShopIapProductDefinition product)
+        {
+            var slotObject = new GameObject("ShopIap_" + product.ProductId);
+            slotObject.transform.SetParent(parent, false);
+
+            var slotLayout = slotObject.AddComponent<LayoutElement>();
+            slotLayout.preferredWidth = itemCellWidth;
+            slotLayout.preferredHeight = itemCellHeight;
+            slotLayout.minWidth = itemCellWidth;
+            slotLayout.minHeight = itemCellHeight;
+
+            var background = slotObject.AddComponent<Image>();
+            UiTheme.ApplyFlatFill(background, UiTheme.SlotFill);
+            UiDecor.CreateRarityStripe(slotObject.transform, new Color(0.42f, 0.72f, 0.96f, 0.95f), 4f);
+
+            var button = slotObject.AddComponent<Button>();
+            button.targetGraphic = background;
+            button.onClick.AddListener(() => OnIapProductClicked(product));
+
+            var titleObject = new GameObject("Title", typeof(RectTransform));
+            titleObject.transform.SetParent(slotObject.transform, false);
+            var titleRect = titleObject.GetComponent<RectTransform>();
+            titleRect.anchorMin = Vector2.zero;
+            titleRect.anchorMax = Vector2.one;
+            titleRect.offsetMin = new Vector2(slotPadding, slotPadding + priceBadgeHeight + 6f);
+            titleRect.offsetMax = new Vector2(-slotPadding, -slotPadding);
+
+            var titleLabel = titleObject.AddComponent<TextMeshProUGUI>();
+            titleLabel.text = product.DisplayName;
+            titleLabel.fontSize = Mathf.Clamp(itemCellWidth * 0.12f, 16f, 22f);
+            titleLabel.fontStyle = FontStyles.Bold;
+            titleLabel.alignment = TextAlignmentOptions.Center;
+            titleLabel.verticalAlignment = VerticalAlignmentOptions.Middle;
+            titleLabel.enableWordWrapping = true;
+            titleLabel.color = new Color(0.62f, 0.86f, 1f, 0.98f);
+            UiTheme.ApplyTmp(titleLabel, UiTextRole.Accent);
+            titleLabel.raycastTarget = false;
+
+            var priceBadgeObject = new GameObject("PriceBadge", typeof(RectTransform));
+            priceBadgeObject.transform.SetParent(slotObject.transform, false);
+
+            var priceBadgeRect = priceBadgeObject.GetComponent<RectTransform>();
+            priceBadgeRect.anchorMin = new Vector2(0.5f, 0f);
+            priceBadgeRect.anchorMax = new Vector2(0.5f, 0f);
+            priceBadgeRect.pivot = new Vector2(0.5f, 0f);
+            priceBadgeRect.anchoredPosition = new Vector2(0f, slotPadding);
+            priceBadgeRect.sizeDelta = new Vector2(Mathf.Max(88f, itemCellWidth * 0.68f), priceBadgeHeight);
+
+            var priceBadge = priceBadgeObject.AddComponent<Image>();
+            UiTheme.ApplyPriceBadge(priceBadge, canAfford: true);
+
+            var priceLabelObject = new GameObject("PriceLabel", typeof(RectTransform));
+            priceLabelObject.transform.SetParent(priceBadgeObject.transform, false);
+            var priceLabelRect = priceLabelObject.GetComponent<RectTransform>();
+            StretchFull(priceLabelRect);
+
+            var priceLabel = priceLabelObject.AddComponent<TextMeshProUGUI>();
+            priceLabel.text = ShopIapCatalogService.FormatRubles(product.PriceRubles);
+            priceLabel.fontSize = priceFontSize;
+            priceLabel.alignment = TextAlignmentOptions.Center;
+            UiTheme.ApplyTmp(priceLabel, UiTextRole.Body);
+
+            var hover = slotObject.AddComponent<MainMenuShopNoAdsHover>();
+            hover.Configure(hostCanvas, product);
+
+            return new IapSlotVisual
+            {
+                Definition = product,
+                Background = background,
+                Button = button,
+                PriceLabel = priceLabel,
+                PriceBadge = priceBadge
+            };
+        }
+
+        private RewardedCoinsSlotVisual CreateRewardedCoinsSlot(Transform parent)
+        {
+            var slotObject = new GameObject("ShopRewardedCoins");
+            slotObject.transform.SetParent(parent, false);
+
+            var slotLayout = slotObject.AddComponent<LayoutElement>();
+            slotLayout.preferredWidth = itemCellWidth;
+            slotLayout.preferredHeight = itemCellHeight;
+            slotLayout.minWidth = itemCellWidth;
+            slotLayout.minHeight = itemCellHeight;
+
+            var background = slotObject.AddComponent<Image>();
+            UiTheme.ApplyFlatFill(background, UiTheme.SlotFill);
+
+            var button = slotObject.AddComponent<Button>();
+            button.targetGraphic = background;
+            button.onClick.AddListener(OnRewardedCoinsClicked);
+
+            var amountObject = new GameObject("Amount", typeof(RectTransform));
+            amountObject.transform.SetParent(slotObject.transform, false);
+            var amountRect = amountObject.GetComponent<RectTransform>();
+            amountRect.anchorMin = Vector2.zero;
+            amountRect.anchorMax = Vector2.one;
+            amountRect.offsetMin = new Vector2(slotPadding, slotPadding + priceBadgeHeight + 6f);
+            amountRect.offsetMax = new Vector2(-slotPadding, -slotPadding);
+
+            var amountLabel = amountObject.AddComponent<TextMeshProUGUI>();
+            amountLabel.text = GameAdsService.RewardedCoinsAmount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            amountLabel.fontSize = Mathf.Clamp(itemCellWidth * 0.18f, 24f, 34f);
+            amountLabel.fontStyle = FontStyles.Bold;
+            amountLabel.alignment = TextAlignmentOptions.Center;
+            amountLabel.verticalAlignment = VerticalAlignmentOptions.Middle;
+            amountLabel.color = new Color(0.92f, 0.76f, 0.28f, 0.98f);
+            UiTheme.ApplyTmp(amountLabel, UiTextRole.Accent);
+            amountLabel.raycastTarget = false;
+
+            var priceBadgeObject = new GameObject("PriceBadge", typeof(RectTransform));
+            priceBadgeObject.transform.SetParent(slotObject.transform, false);
+
+            var priceBadgeRect = priceBadgeObject.GetComponent<RectTransform>();
+            priceBadgeRect.anchorMin = new Vector2(0.5f, 0f);
+            priceBadgeRect.anchorMax = new Vector2(0.5f, 0f);
+            priceBadgeRect.pivot = new Vector2(0.5f, 0f);
+            priceBadgeRect.anchoredPosition = new Vector2(0f, slotPadding);
+            priceBadgeRect.sizeDelta = new Vector2(Mathf.Max(88f, itemCellWidth * 0.68f), priceBadgeHeight);
+
+            var priceBadge = priceBadgeObject.AddComponent<Image>();
+            UiTheme.ApplyPriceBadge(priceBadge, canAfford: true);
+
+            var priceLabelObject = new GameObject("PriceLabel", typeof(RectTransform));
+            priceLabelObject.transform.SetParent(priceBadgeObject.transform, false);
+            var priceLabelRect = priceLabelObject.GetComponent<RectTransform>();
+            StretchFull(priceLabelRect);
+
+            var priceLabel = priceLabelObject.AddComponent<TextMeshProUGUI>();
+            priceLabel.text = "Реклама";
+            priceLabel.fontSize = priceFontSize;
+            priceLabel.alignment = TextAlignmentOptions.Center;
+            UiTheme.ApplyTmp(priceLabel, UiTextRole.Body);
+
+            var hover = slotObject.AddComponent<MainMenuShopRewardedCoinsHover>();
+            hover.Configure(hostCanvas);
+
+            return new RewardedCoinsSlotVisual
+            {
+                Background = background,
+                Button = button,
+                PriceLabel = priceLabel,
+                PriceBadge = priceBadge
+            };
+        }
+
+        private void RefreshRewardedCoinsSlotVisual(bool canPurchase)
+        {
+            if (rewardedCoinsSlot == null)
+            {
+                return;
+            }
+
+            var canClaim = canPurchase;
+
+            if (rewardedCoinsSlot.Background != null)
+            {
+                rewardedCoinsSlot.Background.color = canClaim ? UiTheme.SlotFill : UiTheme.SlotEmpty;
+            }
+
+            if (rewardedCoinsSlot.Button != null)
+            {
+                rewardedCoinsSlot.Button.interactable = canClaim;
+                var colors = rewardedCoinsSlot.Button.colors;
+                colors.normalColor = canClaim ? UiTheme.SlotFill : UiTheme.SlotEmpty;
+                colors.highlightedColor = canClaim ? UiTheme.ButtonHighlight : UiTheme.SlotEmpty;
+                colors.pressedColor = canClaim ? UiTheme.ButtonPressed : UiTheme.SlotEmpty;
+                colors.selectedColor = colors.highlightedColor;
+                colors.disabledColor = canClaim ? UiTheme.SlotFill : UiTheme.SlotEmpty;
+                colors.fadeDuration = 0.1f;
+                rewardedCoinsSlot.Button.colors = colors;
+            }
+
+            if (rewardedCoinsSlot.PriceLabel != null)
+            {
+                rewardedCoinsSlot.PriceLabel.text = "Реклама";
+                rewardedCoinsSlot.PriceLabel.color = canClaim
+                    ? new Color(0.92f, 0.78f, 0.34f, 0.98f)
+                    : UiTheme.TextMuted;
+            }
+
+            if (rewardedCoinsSlot.PriceBadge != null)
+            {
+                UiTheme.ApplyPriceBadge(rewardedCoinsSlot.PriceBadge, canClaim);
+            }
+        }
+
+        private void OnRewardedCoinsClicked()
+        {
+            if (rewardedAdInProgress || iapPurchaseInProgress || casePurchaseInProgress)
+            {
+                return;
+            }
+
+            StartCoroutine(PurchaseRewardedCoinsRoutine());
+        }
+
+        private IEnumerator PurchaseRewardedCoinsRoutine()
+        {
+            rewardedAdInProgress = true;
+            RefreshSlotVisuals();
+
+            var completed = false;
+            var success = false;
+            GameAdsService.RunRewardedCoins(this, granted =>
+            {
+                success = granted;
+                completed = true;
+            });
+
+            while (!completed)
+            {
+                yield return null;
+            }
+
+            rewardedAdInProgress = false;
+            uiSound?.PlayButton();
+            RefreshSlotVisuals();
+        }
+
         private void OnIapProductClicked(ShopIapProductDefinition product)
         {
-            if (!product.IsValid || iapPurchaseInProgress)
+            if (!product.IsValid || iapPurchaseInProgress || rewardedAdInProgress)
             {
                 return;
             }
@@ -759,29 +1005,31 @@ namespace ShooterPrototype.UI
             RefreshSlotVisuals();
 
             var completed = false;
-            var success = false;
-            YandexGamesShopPurchaseService.TryPurchase(this, productId, granted =>
+            YandexGamesShopPurchaseService.TryPurchase(this, productId, _ =>
             {
-                success = granted;
                 completed = true;
             });
 
-            while (!completed)
+            var timeoutAt = Time.unscaledTime + 120f;
+            while (!completed && Time.unscaledTime < timeoutAt)
             {
                 yield return null;
             }
 
+            if (!completed)
+            {
+                Debug.LogWarning("[MainMenuShopPanel] IAP purchase timed out waiting for Yandex callback.");
+                YandexGamesShopPurchaseService.CancelPendingPurchase();
+            }
+
             iapPurchaseInProgress = false;
             uiSound?.PlayButton();
-            if (success)
-            {
-                RefreshSlotVisuals();
-            }
+            RefreshSlotVisuals();
         }
 
         private void OnCaseClicked(CaseDefinition caseDefinition)
         {
-            if (!caseDefinition.IsValid || casePurchaseInProgress || iapPurchaseInProgress)
+            if (!caseDefinition.IsValid || casePurchaseInProgress || iapPurchaseInProgress || rewardedAdInProgress)
             {
                 return;
             }
@@ -846,13 +1094,9 @@ namespace ShooterPrototype.UI
 
             casePurchaseInProgress = false;
             uiSound?.PlayButton();
-            if (success)
-            {
-                RefreshSlotVisuals();
-                yield break;
-            }
+            RefreshSlotVisuals();
 
-            if (!string.IsNullOrWhiteSpace(error))
+            if (!success && !string.IsNullOrWhiteSpace(error))
             {
                 Debug.LogWarning($"[MainMenuShopPanel] Case purchase failed: {error}");
             }

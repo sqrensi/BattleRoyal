@@ -36,7 +36,47 @@ class PostgresDriver {
     await this.applyModeStatsLeaderboardMigration();
     await this.applyVipPrefixMigration();
     await this.applyVipPrefixExpiryMigration();
+    await this.applyNoAdsMigration();
+    await this.applyClientStateMigration();
     await this.syncAchievementDefinitions();
+  }
+
+  async applyClientStateMigration() {
+    const migrationName = "012_client_state";
+    const applied = await this.get(
+      "SELECT 1 AS ok FROM schema_migrations WHERE name = ?",
+      [migrationName]
+    );
+    if (applied) {
+      return;
+    }
+
+    await this.pool.query(
+      "ALTER TABLE player_profiles ADD COLUMN IF NOT EXISTS client_state_json TEXT NOT NULL DEFAULT '{}'"
+    );
+    await this.run(
+      "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?) ON CONFLICT (name) DO NOTHING",
+      [migrationName, Date.now()]
+    );
+  }
+
+  async applyNoAdsMigration() {
+    const migrationName = "011_no_ads";
+    const applied = await this.get(
+      "SELECT 1 AS ok FROM schema_migrations WHERE name = ?",
+      [migrationName]
+    );
+    if (applied) {
+      return;
+    }
+
+    await this.pool.query(
+      "ALTER TABLE player_profiles ADD COLUMN IF NOT EXISTS no_ads_expires_at BIGINT NOT NULL DEFAULT 0"
+    );
+    await this.run(
+      "INSERT INTO schema_migrations (name, applied_at) VALUES (?, ?) ON CONFLICT (name) DO NOTHING",
+      [migrationName, Date.now()]
+    );
   }
 
   async applyVipPrefixExpiryMigration() {

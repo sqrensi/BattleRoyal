@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using ShooterPrototype.Platform;
 using ShooterPrototype.Player;
 using TMPro;
 using UnityEngine;
@@ -11,7 +12,7 @@ namespace ShooterPrototype.UI
     [DisallowMultipleComponent]
     public sealed class MainMenuSettingsPanel : MonoBehaviour
     {
-        private const int SettingsLayoutVersion = 3;
+        private const int SettingsLayoutVersion = 4;
 
         [SerializeField] private float edgeMargin = 28f;
         [SerializeField] private float leftReservedWidth = 228f;
@@ -41,6 +42,10 @@ namespace ShooterPrototype.UI
 
         private readonly List<SliderRowBinding> sliderRows = new List<SliderRowBinding>(16);
         private readonly List<ToggleRowBinding> toggleRows = new List<ToggleRowBinding>(4);
+
+        private Button yandexAccountButton;
+        private TMP_Text yandexAccountValueLabel;
+        private Coroutine yandexAccountLinkCoroutine;
 
         private sealed class SliderRowBinding
         {
@@ -333,6 +338,12 @@ namespace ShooterPrototype.UI
 
         private void BuildSettingsRows(Transform parent)
         {
+            if (YandexGamesIntegrationService.IsYandexGamesRuntime())
+            {
+                CreateSectionTitle(parent, "Аккаунт");
+                CreateYandexAccountRow(parent);
+            }
+
             CreateSectionTitle(parent, "Матчмейкинг");
             CreateToggleRow(
                 parent,
@@ -727,7 +738,125 @@ namespace ShooterPrototype.UI
                 UpdateToggleLabel(toggleRows[i]);
             }
 
+            RefreshYandexAccountRow();
+
             suppressRefresh = false;
+        }
+
+        private void CreateYandexAccountRow(Transform parent)
+        {
+            var rowObject = new GameObject("YandexAccountRow", typeof(RectTransform));
+            rowObject.transform.SetParent(parent, false);
+
+            var rowLayout = rowObject.AddComponent<LayoutElement>();
+            rowLayout.preferredHeight = rowHeight;
+            rowLayout.minHeight = rowHeight;
+
+            var background = rowObject.AddComponent<Image>();
+            UiTheme.ApplyFlatFill(background, UiTheme.SectionFill);
+            background.raycastTarget = false;
+
+            var labelObject = new GameObject("Label", typeof(RectTransform));
+            labelObject.transform.SetParent(rowObject.transform, false);
+            var labelRect = labelObject.GetComponent<RectTransform>();
+            labelRect.anchorMin = new Vector2(0f, 0.5f);
+            labelRect.anchorMax = new Vector2(0f, 0.5f);
+            labelRect.pivot = new Vector2(0f, 0.5f);
+            labelRect.anchoredPosition = new Vector2(16f, 0f);
+            labelRect.sizeDelta = new Vector2(260f, 32f);
+            var labelText = labelObject.AddComponent<TextMeshProUGUI>();
+            labelText.text = "Яндекс ID";
+            labelText.fontSize = 18f;
+            labelText.alignment = TextAlignmentOptions.MidlineLeft;
+            UiTheme.ApplyTmp(labelText, UiTextRole.Label);
+
+            var buttonObject = new GameObject("ActionButton", typeof(RectTransform));
+            buttonObject.transform.SetParent(rowObject.transform, false);
+            var buttonRect = buttonObject.GetComponent<RectTransform>();
+            buttonRect.anchorMin = new Vector2(1f, 0.5f);
+            buttonRect.anchorMax = new Vector2(1f, 0.5f);
+            buttonRect.pivot = new Vector2(1f, 0.5f);
+            buttonRect.anchoredPosition = new Vector2(-16f, 0f);
+            buttonRect.sizeDelta = new Vector2(220f, 44f);
+
+            var buttonImage = buttonObject.AddComponent<Image>();
+            UiTheme.ApplyFlatFill(buttonImage, UiTheme.ToggleOff);
+
+            yandexAccountButton = buttonObject.AddComponent<Button>();
+            yandexAccountButton.targetGraphic = buttonImage;
+            yandexAccountButton.onClick.AddListener(HandleYandexAccountPressed);
+            if (uiSound != null)
+            {
+                yandexAccountButton.onClick.AddListener(uiSound.PlayButton);
+            }
+
+            var valueLabelObject = new GameObject("Value", typeof(RectTransform));
+            valueLabelObject.transform.SetParent(buttonObject.transform, false);
+            var valueLabelRect = valueLabelObject.GetComponent<RectTransform>();
+            StretchFull(valueLabelRect);
+            yandexAccountValueLabel = valueLabelObject.AddComponent<TextMeshProUGUI>();
+            yandexAccountValueLabel.fontSize = 16f;
+            yandexAccountValueLabel.alignment = TextAlignmentOptions.Center;
+            UiTheme.ApplyTmp(yandexAccountValueLabel, UiTextRole.Body);
+
+            RefreshYandexAccountRow();
+        }
+
+        private void HandleYandexAccountPressed()
+        {
+            if (YandexGamesIntegrationService.IsYandexPlayerAuthorized() ||
+                yandexAccountLinkCoroutine != null)
+            {
+                return;
+            }
+
+            yandexAccountLinkCoroutine = StartCoroutine(YandexAccountLinkRoutine());
+        }
+
+        private IEnumerator YandexAccountLinkRoutine()
+        {
+            if (yandexAccountButton != null)
+            {
+                yandexAccountButton.interactable = false;
+            }
+
+            RefreshYandexAccountRow();
+
+            var granted = false;
+            yield return YandexGamesIntegrationService.RequestAuthorizationIfNeeded(
+                this,
+                YandexGamesIntegrationService.ProfileSyncAuthReason,
+                value => granted = value);
+
+            if (granted)
+            {
+                var menu = FindFirstObjectByType<MainMenuController>();
+                menu?.BeginYandexProfileLink();
+            }
+
+            RefreshYandexAccountRow();
+
+            if (yandexAccountButton != null)
+            {
+                yandexAccountButton.interactable = !YandexGamesIntegrationService.IsYandexPlayerAuthorized();
+            }
+
+            yandexAccountLinkCoroutine = null;
+        }
+
+        private void RefreshYandexAccountRow()
+        {
+            if (yandexAccountValueLabel == null || yandexAccountButton == null)
+            {
+                return;
+            }
+
+            var authorized = YandexGamesIntegrationService.IsYandexPlayerAuthorized();
+            yandexAccountValueLabel.text = authorized ? "Подключён" : "Войти";
+            UiTheme.ApplyFlatFill(
+                yandexAccountButton.targetGraphic as Image,
+                authorized ? UiTheme.ToggleOn : UiTheme.ToggleOff);
+            yandexAccountButton.interactable = !authorized && yandexAccountLinkCoroutine == null;
         }
 
         private static void UpdateToggleLabel(ToggleRowBinding binding)

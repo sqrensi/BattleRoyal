@@ -117,3 +117,12 @@ MonoBehaviour:
       priceCurrencyCode: RUB
       currencyImageURL: 
       consumed: 1
+    - id: no_ads_30d
+      title: Отключение рекламы
+      description: Отключение рекламы на 30 дней
+      imageURI: 
+      price: 250 ₽
+      priceValue: 250
+      priceCurrencyCode: RUB
+      currencyImageURL: 
+      consumed: 1

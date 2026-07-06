@@ -18,11 +18,11 @@ const {
 } = require("../nicknamePrefix");
 const { getCaseDefinition, rollCaseLoot, isCaseAllowedForSource } = require("../data/case-catalog");
 const { getIapProduct } = require("../data/shop-iap-catalog");
-const {
-  getAchievementDefinition,
+const { getAchievementDefinition,
   getAchievementsByEventType,
   getAllAchievements,
 } = require("../data/achievement-catalog");
+const dailyRewardsCatalog = require("../data/daily-rewards-catalog");
 const crypto = require("crypto");
 const config = require("../config");
 const { get, all, run, transaction, nowMs, newId, getDriverName } = require("./database");
@@ -54,10 +54,104 @@ function sqlBoolLiteral(value) {
   return bool ? "1" : "0";
 }
 
+function getUtcDateKey(timestampMs = Date.now()) {
+  return new Date(timestampMs).toISOString().slice(0, 10);
+}
+
+function createDefaultClientState() {
+  return {
+    dailyReward: {
+      page: 0,
+      claimsOnPage: 0,
+      lastClaimDate: "",
+      loginPromptDate: "",
+    },
+    settings: {},
+  };
+}
+
+function parseClientState(rawValue) {
+  if (!rawValue || typeof rawValue !== "string") {
+    return createDefaultClientState();
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue);
+    const defaults = createDefaultClientState();
+    const dailyReward = parsed && typeof parsed.dailyReward === "object" ? parsed.dailyReward : {};
+    return {
+      dailyReward: {
+        page: Math.max(0, Math.floor(Number(dailyReward.page) || 0)),
+        claimsOnPage: Math.max(0, Math.floor(Number(dailyReward.claimsOnPage) || 0)),
+        lastClaimDate: typeof dailyReward.lastClaimDate === "string" ? dailyReward.lastClaimDate : "",
+        loginPromptDate: typeof dailyReward.loginPromptDate === "string" ? dailyReward.loginPromptDate : "",
+      },
+      settings: parsed && typeof parsed.settings === "object" && parsed.settings ? parsed.settings : {},
+    };
+  } catch (error) {
+    return createDefaultClientState();
+  }
+}
+
+function serializeClientState(state) {
+  return JSON.stringify(state || createDefaultClientState());
+}
+
+function getDailyRewardCatalogEntry(globalIndex) {
+  const rewards = Array.isArray(dailyRewardsCatalog.rewards) ? dailyRewardsCatalog.rewards : [];
+  if (globalIndex < 0 || globalIndex >= rewards.length) {
+    return null;
+  }
+
+  return rewards[globalIndex] || null;
+}
+
+function getDailyRewardTotalCount() {
+  const rewards = Array.isArray(dailyRewardsCatalog.rewards) ? dailyRewardsCatalog.rewards : [];
+  return rewards.length;
+}
+
+async function writeClientState(playerId, state, tx = null) {
+  const db = useDb(tx);
+  await db.run(
+    `UPDATE player_profiles
+     SET client_state_json = ?,
+         updated_at = ?
+     WHERE player_id = ?`,
+    [serializeClientState(state), nowMs(), playerId]
+  );
+}
+
+async function readClientStateForPlayer(playerRow) {
+  if (!playerRow) {
+    return createDefaultClientState();
+  }
+
+  return parseClientState(playerRow.client_state_json);
+}
+
+function mapClientStateForProfile(state) {
+  const normalized = state || createDefaultClientState();
+  const settings = normalized.settings || {};
+  const entries = Object.keys(settings).map((key) => ({
+    key,
+    value: String(settings[key]),
+  }));
+  return {
+    dailyRewardPage: normalized.dailyReward.page,
+    dailyRewardClaimsOnPage: normalized.dailyReward.claimsOnPage,
+    dailyRewardLastClaimDate: normalized.dailyReward.lastClaimDate || "",
+    dailyRewardLoginPromptDate: normalized.dailyReward.loginPromptDate || "",
+    settingsJson: JSON.stringify({ entries }),
+  };
+}
+
 const STARTER_CURRENCY = 0;
 const ITEM_TYPE_SKIN = "skin";
 const ITEM_TYPE_CASE = "case";
 const UNEQUIPPED_ATTACHMENT = "__none__";
+const DAILY_REWARDS_PER_PAGE = 7;
+const DAILY_REWARD_GRANT_SOURCE = "daily_reward";
 
 function normalizeExternalPlayerId(value) {
   const trimmed = typeof value === "string" ? value.trim() : "";
@@ -159,12 +253,28 @@ async function isNicknameAvailable(nickname, externalPlayerId) {
   };
 }
 
+const NO_ADS_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+
+function computeNoAdsExpiresAt(currentExpiresAtMs, nowMs = Date.now()) {
+  const current = Number.isFinite(currentExpiresAtMs) ? Math.max(0, currentExpiresAtMs) : 0;
+  const base = Math.max(nowMs, current);
+  return base + NO_ADS_DURATION_MS;
+}
+
+function hasActiveNoAds(playerRow, nowMs = Date.now()) {
+  const expiresAtMs = Number.isFinite(playerRow.no_ads_expires_at)
+    ? Math.max(0, playerRow.no_ads_expires_at)
+    : 0;
+  return expiresAtMs > nowMs;
+}
+
 async function getPlayerByExternalId(externalPlayerId) {
   return get(
     `SELECT p.id, p.external_player_id, p.created_at, p.updated_at,
             pp.nickname, pp.selected_character_model, pp.currency_balance,
             pp.starter_pack_granted, pp.rating, pp.duel_rating, pp.challenge_best_time_ms,
-            pp.has_vip_prefix, pp.vip_prefix_expires_at,
+            pp.has_vip_prefix, pp.vip_prefix_expires_at, pp.no_ads_expires_at,
+            pp.client_state_json,
             pp.updated_at AS profile_updated_at
      FROM players p
      LEFT JOIN player_profiles pp ON pp.player_id = p.id
@@ -547,6 +657,11 @@ async function buildProfileResponse(playerRow) {
   const vipPrefixExpiresAtMs = Number.isFinite(playerRow.vip_prefix_expires_at)
     ? Math.max(0, playerRow.vip_prefix_expires_at)
     : 0;
+  const noAdsExpiresAtMs = Number.isFinite(playerRow.no_ads_expires_at)
+    ? Math.max(0, playerRow.no_ads_expires_at)
+    : 0;
+
+  const clientState = mapClientStateForProfile(await readClientStateForPlayer(playerRow));
 
   return {
     playerId: playerRow.external_player_id,
@@ -555,6 +670,7 @@ async function buildProfileResponse(playerRow) {
     nicknamePrefix,
     hasVipPrefix: hasActiveVipPrefix(playerRow),
     vipPrefixExpiresAtMs,
+    noAdsExpiresAtMs,
     selectedCharacterModel: playerRow.selected_character_model || "",
     currencyBalance: Number.isFinite(playerRow.currency_balance)
       ? playerRow.currency_balance
@@ -572,6 +688,11 @@ async function buildProfileResponse(playerRow) {
     achievements: await listPlayerAchievements(playerRow.id),
     claimedRewards: await listPlayerRewardClaims(playerRow.id),
     stats: await getPlayerMatchStats(playerRow.id),
+    clientState,
+    dailyRewardPage: clientState.dailyRewardPage,
+    dailyRewardClaimsOnPage: clientState.dailyRewardClaimsOnPage,
+    dailyRewardLastClaimDate: clientState.dailyRewardLastClaimDate,
+    dailyRewardLoginPromptDate: clientState.dailyRewardLoginPromptDate,
   };
 }
 
@@ -1416,6 +1537,27 @@ async function grantIapProduct(externalPlayerId, productId) {
         return;
       }
 
+      if (product.rewardType === "no_ads") {
+        const profileRow = await tx.get(
+          `SELECT no_ads_expires_at
+           FROM player_profiles
+           WHERE player_id = ?`,
+          [playerRow.id]
+        );
+        const currentExpiresAt = profileRow && Number.isFinite(profileRow.no_ads_expires_at)
+          ? profileRow.no_ads_expires_at
+          : 0;
+        const newExpiresAt = computeNoAdsExpiresAt(currentExpiresAt, timestamp);
+        await tx.run(
+          `UPDATE player_profiles
+           SET no_ads_expires_at = ?,
+               updated_at = ?
+           WHERE player_id = ?`,
+          [newExpiresAt, timestamp, playerRow.id]
+        );
+        return;
+      }
+
       throw new Error("UNKNOWN_REWARD");
     });
   } catch (error) {
@@ -1902,7 +2044,7 @@ async function playerOwnsSkin(externalPlayerId, skinId) {
   return owned.includes(normalizedSkinId);
 }
 
-async function grantMatchCurrency(externalPlayerId, amount, sourceId) {
+async function grantCurrency(externalPlayerId, amount, grantType, sourceId) {
   const normalizedAmount = Math.floor(Number(amount));
   if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
     return { ok: false, error: "InvalidAmount", message: "Reward amount must be positive." };
@@ -1910,8 +2052,10 @@ async function grantMatchCurrency(externalPlayerId, amount, sourceId) {
 
   const normalizedSourceId = String(sourceId || "").trim();
   if (!normalizedSourceId) {
-    return { ok: false, error: "MissingSourceId", message: "Match source id is required." };
+    return { ok: false, error: "MissingSourceId", message: "Reward source id is required." };
   }
+
+  const normalizedGrantType = String(grantType || "match_reward").trim() || "match_reward";
 
   const playerRow = await getPlayerByExternalId(externalPlayerId);
   if (!playerRow) {
@@ -1919,7 +2063,6 @@ async function grantMatchCurrency(externalPlayerId, amount, sourceId) {
   }
 
   const timestamp = nowMs();
-  const grantType = "match_reward";
 
   try {
     const alreadyGranted = await transaction(async (tx) => {
@@ -1927,7 +2070,7 @@ async function grantMatchCurrency(externalPlayerId, amount, sourceId) {
         `SELECT id
          FROM player_currency_grants
          WHERE player_id = ? AND grant_type = ? AND source_id = ?`,
-        [playerRow.id, grantType, normalizedSourceId]
+        [playerRow.id, normalizedGrantType, normalizedSourceId]
       );
 
       if (existing) {
@@ -1946,7 +2089,7 @@ async function grantMatchCurrency(externalPlayerId, amount, sourceId) {
         `INSERT INTO player_currency_grants
          (player_id, grant_type, source_id, amount, granted_at)
          VALUES (?, ?, ?, ?, ?)`,
-        [playerRow.id, grantType, normalizedSourceId, normalizedAmount, timestamp]
+        [playerRow.id, normalizedGrantType, normalizedSourceId, normalizedAmount, timestamp]
       );
 
       return false;
@@ -1961,9 +2104,195 @@ async function grantMatchCurrency(externalPlayerId, amount, sourceId) {
     return {
       ok: false,
       error: "GrantFailed",
-      message: error && error.message ? error.message : "Failed to grant match reward.",
+      message: error && error.message ? error.message : "Failed to grant currency reward.",
     };
   }
+}
+
+async function grantMatchCurrency(externalPlayerId, amount, sourceId) {
+  return grantCurrency(externalPlayerId, amount, "match_reward", sourceId);
+}
+
+async function claimDailyReward(externalPlayerId) {
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
+  if (!playerRow) {
+    return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
+  }
+
+  const state = await readClientStateForPlayer(playerRow);
+  const today = getUtcDateKey();
+  if (state.dailyReward.lastClaimDate === today) {
+    return { ok: false, error: "AlreadyClaimed", message: "Daily reward already claimed today." };
+  }
+
+  const totalRewards = getDailyRewardTotalCount();
+  const globalIndex = state.dailyReward.page * DAILY_REWARDS_PER_PAGE + state.dailyReward.claimsOnPage;
+  if (globalIndex >= totalRewards) {
+    return { ok: false, error: "AllClaimed", message: "All daily rewards already claimed." };
+  }
+
+  const reward = getDailyRewardCatalogEntry(globalIndex);
+  if (!reward) {
+    return { ok: false, error: "RewardUnavailable", message: "Daily reward is unavailable." };
+  }
+
+  const timestamp = nowMs();
+  const sourceId = `${reward.rewardId || "daily"}_${today}`;
+
+  try {
+    await transaction(async (tx) => {
+      const rewardType = String(reward.type || "").trim().toLowerCase();
+      if (rewardType === "currency") {
+        const amount = Math.max(0, Math.floor(Number(reward.amount) || 0));
+        if (amount <= 0) {
+          throw new Error("INVALID_REWARD");
+        }
+
+        const existing = await tx.get(
+          `SELECT id
+           FROM player_currency_grants
+           WHERE player_id = ? AND grant_type = ? AND source_id = ?`,
+          [playerRow.id, DAILY_REWARD_GRANT_SOURCE, sourceId]
+        );
+        if (!existing) {
+          await tx.run(
+            `UPDATE player_profiles
+             SET currency_balance = currency_balance + ?,
+                 updated_at = ?
+             WHERE player_id = ?`,
+            [amount, timestamp, playerRow.id]
+          );
+          await tx.run(
+            `INSERT INTO player_currency_grants
+             (player_id, grant_type, source_id, amount, granted_at)
+             VALUES (?, ?, ?, ?, ?)`,
+            [playerRow.id, DAILY_REWARD_GRANT_SOURCE, sourceId, amount, timestamp]
+          );
+        }
+      } else if (rewardType === "skin") {
+        const skinId = String(reward.skinId || "").trim();
+        if (!skinId || !(await grantOwnedSkin(playerRow.id, skinId, DAILY_REWARD_GRANT_SOURCE, true, tx))) {
+          throw new Error("GRANT_FAILED");
+        }
+      } else if (rewardType === "case") {
+        const caseId = String(reward.caseId || "").trim();
+        const caseAmount = Math.max(1, Math.floor(Number(reward.amount) || 1));
+        if (!caseId) {
+          throw new Error("INVALID_REWARD");
+        }
+
+        for (let i = 0; i < caseAmount; i++) {
+          if (!(await grantOwnedCase(playerRow.id, caseId, DAILY_REWARD_GRANT_SOURCE, true, tx))) {
+            throw new Error("GRANT_FAILED");
+          }
+        }
+      } else {
+        throw new Error("INVALID_REWARD");
+      }
+
+      const nextClaims = state.dailyReward.claimsOnPage + 1;
+      if (nextClaims >= DAILY_REWARDS_PER_PAGE) {
+        state.dailyReward.page = Math.min(
+          state.dailyReward.page + 1,
+          Math.max(0, Math.ceil(totalRewards / DAILY_REWARDS_PER_PAGE) - 1)
+        );
+        state.dailyReward.claimsOnPage = 0;
+      } else {
+        state.dailyReward.claimsOnPage = nextClaims;
+      }
+
+      state.dailyReward.lastClaimDate = today;
+      state.dailyReward.loginPromptDate = today;
+      await writeClientState(playerRow.id, state, tx);
+    });
+  } catch (error) {
+    const message = String(error && error.message ? error.message : error);
+    if (message === "GRANT_FAILED" || message === "INVALID_REWARD") {
+      return { ok: false, error: "GrantFailed", message: "Failed to grant daily reward." };
+    }
+
+    return {
+      ok: false,
+      error: "ClaimFailed",
+      message: error && error.message ? error.message : "Failed to claim daily reward.",
+    };
+  }
+
+  return {
+    ok: true,
+    reward,
+    profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)),
+  };
+}
+
+async function patchDailyRewardClientState(externalPlayerId, patch) {
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
+  if (!playerRow) {
+    return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
+  }
+
+  const state = await readClientStateForPlayer(playerRow);
+  const normalizedPatch = patch && typeof patch === "object" ? patch : {};
+
+  if (normalizedPatch.loginPromptDate !== undefined) {
+    state.dailyReward.loginPromptDate = String(normalizedPatch.loginPromptDate || "");
+  }
+
+  if (normalizedPatch.lastClaimDate !== undefined) {
+    state.dailyReward.lastClaimDate = String(normalizedPatch.lastClaimDate || "");
+  }
+
+  if (normalizedPatch.page !== undefined && Number(normalizedPatch.page) >= 0) {
+    state.dailyReward.page = Math.max(0, Math.floor(Number(normalizedPatch.page) || 0));
+  }
+
+  if (normalizedPatch.claimsOnPage !== undefined && Number(normalizedPatch.claimsOnPage) >= 0) {
+    state.dailyReward.claimsOnPage = Math.max(0, Math.floor(Number(normalizedPatch.claimsOnPage) || 0));
+  }
+
+  await writeClientState(playerRow.id, state);
+
+  return {
+    ok: true,
+    profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)),
+  };
+}
+
+async function saveClientSettings(externalPlayerId, settingsJson) {
+  const playerRow = await getPlayerByExternalId(externalPlayerId);
+  if (!playerRow) {
+    return { ok: false, error: "PlayerNotFound", message: "Player profile not found." };
+  }
+
+  let settings = {};
+  if (typeof settingsJson === "string") {
+    try {
+      const parsed = JSON.parse(settingsJson || "{}");
+      if (parsed && Array.isArray(parsed.entries)) {
+        for (let i = 0; i < parsed.entries.length; i++) {
+          const entry = parsed.entries[i];
+          if (entry && entry.key) {
+            settings[entry.key] = entry.value == null ? "" : String(entry.value);
+          }
+        }
+      } else if (parsed && typeof parsed === "object") {
+        settings = parsed;
+      }
+    } catch (error) {
+      return { ok: false, error: "InvalidSettings", message: "Settings payload is invalid." };
+    }
+  } else if (settingsJson && typeof settingsJson === "object") {
+    settings = settingsJson;
+  }
+
+  const state = await readClientStateForPlayer(playerRow);
+  state.settings = settings;
+  await writeClientState(playerRow.id, state);
+
+  return {
+    ok: true,
+    profile: await buildProfileResponse(await getPlayerByExternalId(externalPlayerId)),
+  };
 }
 
 async function getLeaderboard(limit = 25, mode = "duel") {
@@ -2123,6 +2452,10 @@ module.exports = {
   setNickname,
   setSelectedCharacterModel,
   grantMatchCurrency,
+  grantCurrency,
+  claimDailyReward,
+  patchDailyRewardClientState,
+  saveClientSettings,
   recordMatchStats,
   getLeaderboard,
   playerOwnsSkin,

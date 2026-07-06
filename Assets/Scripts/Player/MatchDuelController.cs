@@ -216,6 +216,7 @@ namespace ShooterPrototype.Player
             if (playerHealth != null)
             {
                 playerHealth.SetEliminationMode(true);
+                playerHealth.SetDestroyDeathPhysicsOnCleanup(true);
             }
         }
 

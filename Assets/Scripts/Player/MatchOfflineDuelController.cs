@@ -584,6 +584,7 @@ namespace ShooterPrototype.Player
             fpsController?.SetServerReconciliationSuspended(true);
             fpsController?.SetGameOverMode(false);
             playerHealth?.SetEliminationMode(true);
+            playerHealth?.SetDestroyDeathPhysicsOnCleanup(true);
             playerHealth?.SetNetworkMode(false);
             if (pickupController != null)
             {

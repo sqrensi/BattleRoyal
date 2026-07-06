@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Text;
+using ShooterPrototype.Platform;
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -81,6 +82,7 @@ namespace ShooterPrototype.Player
         public string nicknamePrefix;
         public bool hasVipPrefix;
         public long vipPrefixExpiresAtMs;
+        public long noAdsExpiresAtMs;
         public string selectedCharacterModel;
         public int currencyBalance;
         public int rating;
@@ -93,12 +95,18 @@ namespace ShooterPrototype.Player
         public PlayerProfileEquippedDto equipped;
         public PlayerAchievementEntry[] achievements;
         public PlayerMatchStatsDto stats;
+        public PlayerClientStateDto clientState;
+        public int dailyRewardPage;
+        public int dailyRewardClaimsOnPage;
+        public string dailyRewardLastClaimDate;
+        public string dailyRewardLoginPromptDate;
     }
 
     [Serializable]
     public sealed class PlayerProfileEnsureRequest
     {
         public string playerId;
+        public string yandexSignature;
     }
 
     [Serializable]
@@ -173,6 +181,27 @@ namespace ShooterPrototype.Player
     {
         public int amount;
         public string sourceId;
+        public string grantType;
+    }
+
+    [Serializable]
+    public sealed class PlayerProfileEmptyRequest
+    {
+    }
+
+    [Serializable]
+    public sealed class PlayerProfileDailyRewardStateRequest
+    {
+        public string loginPromptDate;
+        public string lastClaimDate;
+        public int page = -1;
+        public int claimsOnPage = -1;
+    }
+
+    [Serializable]
+    public sealed class PlayerProfileClientSettingsRequest
+    {
+        public string settingsJson;
     }
 
     [Serializable]
@@ -262,7 +291,8 @@ namespace ShooterPrototype.Player
         {
             var requestBody = new PlayerProfileEnsureRequest
             {
-                playerId = playerId
+                playerId = playerId,
+                yandexSignature = YandexPlayerAuthService.CurrentSignature ?? string.Empty
             };
 
             yield return SendRequest(
@@ -515,10 +545,21 @@ namespace ShooterPrototype.Player
             string sourceId,
             Action<bool, PlayerProfileDto, string> onCompleted)
         {
+            yield return GrantCurrency(playerId, amount, "match_reward", sourceId, onCompleted);
+        }
+
+        public IEnumerator GrantCurrency(
+            string playerId,
+            int amount,
+            string grantType,
+            string sourceId,
+            Action<bool, PlayerProfileDto, string> onCompleted)
+        {
             var requestBody = new PlayerProfileMatchRewardRequest
             {
                 amount = amount,
-                sourceId = sourceId ?? string.Empty
+                sourceId = sourceId ?? string.Empty,
+                grantType = grantType ?? string.Empty
             };
 
             var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/match-reward";
@@ -526,6 +567,49 @@ namespace ShooterPrototype.Player
                 UnityWebRequest.kHttpVerbPOST,
                 path,
                 requestBody,
+                (ok, json, error) => ParseProfileResponse(ok, json, error, onCompleted));
+        }
+
+        public IEnumerator ClaimDailyReward(
+            string playerId,
+            Action<bool, PlayerProfileDto, string> onCompleted)
+        {
+            var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/claim-daily-reward";
+            yield return SendRequest(
+                UnityWebRequest.kHttpVerbPOST,
+                path,
+                new PlayerProfileEmptyRequest(),
+                (ok, json, error) => ParseProfileResponse(ok, json, error, onCompleted));
+        }
+
+        public IEnumerator SaveClientSettings(
+            string playerId,
+            string settingsJson,
+            Action<bool, PlayerProfileDto, string> onCompleted)
+        {
+            var requestBody = new PlayerProfileClientSettingsRequest
+            {
+                settingsJson = settingsJson ?? "{}"
+            };
+
+            var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/client-settings";
+            yield return SendRequest(
+                UnityWebRequest.kHttpVerbPUT,
+                path,
+                requestBody,
+                (ok, json, error) => ParseProfileResponse(ok, json, error, onCompleted));
+        }
+
+        public IEnumerator SaveDailyRewardState(
+            string playerId,
+            PlayerProfileDailyRewardStateRequest request,
+            Action<bool, PlayerProfileDto, string> onCompleted)
+        {
+            var path = $"/profile/{UnityWebRequest.EscapeURL(playerId)}/daily-reward-state";
+            yield return SendRequest(
+                UnityWebRequest.kHttpVerbPUT,
+                path,
+                request,
                 (ok, json, error) => ParseProfileResponse(ok, json, error, onCompleted));
         }
 
@@ -720,6 +804,11 @@ namespace ShooterPrototype.Player
                     var payloadBytes = Encoding.UTF8.GetBytes(payloadJson);
                     request.uploadHandler = new UploadHandlerRaw(payloadBytes);
                     request.SetRequestHeader("Content-Type", "application/json");
+                }
+
+                if (YandexPlayerAuthService.HasSignature)
+                {
+                    request.SetRequestHeader("X-Yandex-Player-Signature", YandexPlayerAuthService.CurrentSignature);
                 }
 
                 yield return request.SendWebRequest();

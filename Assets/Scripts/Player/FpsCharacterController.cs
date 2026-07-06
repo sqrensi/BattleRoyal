@@ -210,7 +210,7 @@ namespace ShooterPrototype.Player
         {
             if (!weaponPickUiMode)
             {
-                if (lockCursorOnEnable &&
+                if (ShouldManageGameplayCursor() &&
                     !gameOverMode &&
                     !PlayerInventoryPanelController.IsOpen &&
                     !GameHudController.IsPauseMenuOpen)
@@ -224,6 +224,11 @@ namespace ShooterPrototype.Player
 
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
+        }
+
+        private static bool ShouldManageGameplayCursor()
+        {
+            return GameHudController.IsMatchHudActive;
         }
 
         public void ApplyExternalLaunchVelocity(Vector3 worldVelocity)
@@ -490,7 +495,7 @@ namespace ShooterPrototype.Player
             ClientSettingsService.SettingsChanged += ApplySettingsFromService;
             ApplySettingsFromService();
 
-            if (!lockCursorOnEnable)
+            if (!ShouldManageGameplayCursor())
             {
                 return;
             }
@@ -511,6 +516,12 @@ namespace ShooterPrototype.Player
 
             if (!lockCursorOnEnable)
             {
+                return;
+            }
+
+            if (!GameHudController.IsMatchHudActive)
+            {
+                MenuCursorUtility.UnlockForMenu();
                 return;
             }
 
@@ -571,7 +582,7 @@ namespace ShooterPrototype.Player
 
         private void OnApplicationFocus(bool hasFocus)
         {
-            if (!lockCursorOnEnable)
+            if (!lockCursorOnEnable || !ShouldManageGameplayCursor())
             {
                 return;
             }

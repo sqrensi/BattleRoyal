@@ -274,6 +274,7 @@ namespace ShooterPrototype.Bootstrap
 
             if (scene.name == mainMenuSceneName && !Application.isBatchMode)
             {
+                MenuCursorUtility.UnlockForMenu();
                 ActiveMatchContext.ClearSelectedMapScene();
                 ActiveMatchContext.SetOfflineTrainingSession(false);
                 ActiveMatchContext.SetOfflineChallengeSession(false);

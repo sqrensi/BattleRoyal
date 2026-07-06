@@ -460,6 +460,7 @@ namespace ShooterPrototype.Player
             }
 
             health.SetDuelBotEliminationMode(true);
+            health.SetDestroyDeathPhysicsOnCleanup(true);
 
             EnsureCh36Appearance(root);
             SetupTrainingBotRemotePresentation(root);

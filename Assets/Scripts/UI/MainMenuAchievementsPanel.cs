@@ -496,10 +496,18 @@ namespace ShooterPrototype.UI
 
             if (string.Equals(entry.rewardType, "case", System.StringComparison.OrdinalIgnoreCase))
             {
-                var caseId = string.IsNullOrWhiteSpace(entry.rewardCaseId) ? "кейс" : entry.rewardCaseId;
+                CaseCatalogService.EnsureLoaded();
+                var caseLabel = "кейс";
+                if (!string.IsNullOrWhiteSpace(entry.rewardCaseId) &&
+                    CaseCatalogService.TryGetCase(entry.rewardCaseId, out var caseDefinition) &&
+                    !string.IsNullOrWhiteSpace(caseDefinition.DisplayName))
+                {
+                    caseLabel = caseDefinition.DisplayName;
+                }
+
                 return entry.rewardAmount > 1
-                    ? $"Награда: {entry.rewardAmount} x {caseId}"
-                    : $"Награда: кейс {caseId}";
+                    ? $"Награда: {entry.rewardAmount} x {caseLabel}"
+                    : $"Награда: {caseLabel}";
             }
 
             return "Награда";

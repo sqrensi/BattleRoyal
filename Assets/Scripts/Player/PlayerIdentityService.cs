@@ -7,6 +7,7 @@ namespace ShooterPrototype.Player
     {
         private const string PlayerIdPrefKey = "player_external_id_v1";
         private const string YandexUniqueIdPrefKey = "player_yandex_unique_id_v1";
+        private const string YandexAuthLinkedPrefKey = "player_yandex_auth_linked_v1";
         private const string YandexPlayerIdPrefix = "yg-";
 
         public static string GetOrCreatePlayerId()
@@ -35,7 +36,13 @@ namespace ShooterPrototype.Player
             return !string.IsNullOrWhiteSpace(uniqueId);
         }
 
-        public static bool TryApplyYandexUniqueId(string uniqueId)
+        public static bool HasAuthorizedYandexLink()
+        {
+            return PlayerPrefs.GetInt(YandexAuthLinkedPrefKey, 0) == 1 &&
+                   TryGetSavedYandexUniqueId(out _);
+        }
+
+        public static bool TryApplyYandexUniqueId(string uniqueId, bool requireAuthorizedLink = false)
         {
             var normalizedUniqueId = NormalizePlayerId(uniqueId);
             if (string.IsNullOrWhiteSpace(normalizedUniqueId))
@@ -48,11 +55,30 @@ namespace ShooterPrototype.Player
                 return false;
             }
 
+            var previousPlayerId = PlayerPrefs.GetString(PlayerIdPrefKey, string.Empty).Trim();
             var externalPlayerId = BuildExternalPlayerIdFromYandexUniqueId(normalizedUniqueId);
             PlayerPrefs.SetString(YandexUniqueIdPrefKey, normalizedUniqueId);
             PlayerPrefs.SetString(PlayerIdPrefKey, externalPlayerId);
+            if (requireAuthorizedLink)
+            {
+                PlayerPrefs.SetInt(YandexAuthLinkedPrefKey, 1);
+            }
+
             PlayerPrefs.Save();
+
+            if (!string.IsNullOrWhiteSpace(previousPlayerId) &&
+                !string.Equals(previousPlayerId, externalPlayerId, StringComparison.Ordinal))
+            {
+                PlayerSettingsPrefs.MigrateFromPlayerId(previousPlayerId, externalPlayerId);
+                ClientSettingsService.ReloadForCurrentPlayer();
+            }
+
             return true;
+        }
+
+        public static bool TryApplyAuthorizedYandexUniqueId(string uniqueId)
+        {
+            return TryApplyYandexUniqueId(uniqueId, requireAuthorizedLink: true);
         }
 
         public static string BuildExternalPlayerIdFromYandexUniqueId(string uniqueId)
@@ -73,6 +99,7 @@ namespace ShooterPrototype.Player
         {
             PlayerPrefs.DeleteKey(PlayerIdPrefKey);
             PlayerPrefs.DeleteKey(YandexUniqueIdPrefKey);
+            PlayerPrefs.DeleteKey(YandexAuthLinkedPrefKey);
             PlayerPrefs.Save();
         }
 
