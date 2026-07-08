@@ -111,6 +111,12 @@ namespace ShooterPrototype.Platform
             }
 
             var host = instance != null ? instance : FindFirstObjectByType<MonoBehaviour>();
+            if (host == null)
+            {
+                onCompleted?.Invoke(false);
+                yield break;
+            }
+
             var authorized = false;
             yield return YandexGamesIntegrationService.RequestAuthorizationIfNeeded(
                 host,

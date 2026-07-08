@@ -15,6 +15,7 @@ namespace ShooterPrototype.Player
         private static int serverClaimsOnPage;
         private static string serverLastClaimDate = string.Empty;
         private static string serverLoginPromptDate = string.Empty;
+        private static string serverCurrentVisitDate = string.Empty;
         private static bool loginPromptHandledThisSession;
 
         public static event Action StateChanged;
@@ -44,6 +45,7 @@ namespace ShooterPrototype.Player
 
             serverLastClaimDate = PickLatestDateKey(state.dailyRewardLastClaimDate, localLastClaim);
             serverLoginPromptDate = PickLatestDateKey(state.dailyRewardLoginPromptDate, localLoginPrompt);
+            serverCurrentVisitDate = state.dailyRewardCurrentVisitDate ?? string.Empty;
 
             var today = GetTodayDateKey();
             if (string.Equals(serverLastClaimDate, today, StringComparison.Ordinal) ||

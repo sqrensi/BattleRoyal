@@ -61,6 +61,16 @@ namespace ShooterPrototype.Matchmaking
     }
 
     [Serializable]
+    public sealed class QueueOnlineStatsResponse
+    {
+        public bool ok;
+        public int playersOnline;
+        public int playersInQueue;
+        public int playersInMatches;
+        public int activeMatches;
+    }
+
+    [Serializable]
     public sealed class MatchPresencePositionDto
     {
         public float x;
@@ -253,6 +263,31 @@ namespace ShooterPrototype.Matchmaking
                     if (response == null)
                     {
                         onCompleted?.Invoke(false, null, "Invalid leave match response.");
+                        return;
+                    }
+
+                    onCompleted?.Invoke(true, response, string.Empty);
+                });
+        }
+
+        public IEnumerator GetOnlineStats(Action<bool, QueueOnlineStatsResponse, string> onCompleted)
+        {
+            yield return SendRequest(
+                method: UnityWebRequest.kHttpVerbGET,
+                path: "/online-stats",
+                requestBody: null,
+                onCompleted: (ok, responseJson, error) =>
+                {
+                    if (!ok)
+                    {
+                        onCompleted?.Invoke(false, null, error);
+                        return;
+                    }
+
+                    var response = ParseJson<QueueOnlineStatsResponse>(responseJson);
+                    if (response == null)
+                    {
+                        onCompleted?.Invoke(false, null, "Invalid online stats response.");
                         return;
                     }
 

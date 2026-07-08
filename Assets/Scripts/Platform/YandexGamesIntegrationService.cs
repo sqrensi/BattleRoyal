@@ -38,11 +38,11 @@ namespace ShooterPrototype.Platform
             if (ShouldUseYandexIntegration())
             {
                 yield return runner.StartCoroutine(EnsureSdkReadyRoutine());
-                if (IsYandexPlayerAuthorized())
+                if (PlayerIdentityService.HasAuthorizedYandexLink() && IsYandexPlayerAuthorized())
                 {
                     TryApplyCurrentYandexPlayerId();
                 }
-                else
+                else if (PlayerIdentityService.HasAuthorizedYandexLink())
                 {
                     TryApplySavedYandexPlayerId();
                 }
@@ -70,7 +70,7 @@ namespace ShooterPrototype.Platform
 
             yield return runner.StartCoroutine(EnsureSdkReadyRoutine());
 
-            if (IsYandexPlayerAuthorized())
+            if (PlayerIdentityService.HasAuthorizedYandexLink() && IsYandexPlayerAuthorized())
             {
                 TryApplyCurrentYandexPlayerId();
                 onComplete?.Invoke(true);
@@ -109,6 +109,26 @@ namespace ShooterPrototype.Platform
                 yield break;
             }
 
+            yield return runner.StartCoroutine(AuthorizeAfterConsent(runner, onComplete));
+        }
+
+        public static IEnumerator AuthorizeAfterConsent(
+            MonoBehaviour runner,
+            Action<bool> onComplete)
+        {
+            if (runner == null)
+            {
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
+            if (!ShouldUseYandexIntegration())
+            {
+                onComplete?.Invoke(true);
+                yield break;
+            }
+
+            yield return runner.StartCoroutine(EnsureSdkReadyRoutine());
             yield return runner.StartCoroutine(AuthorizeAndBindPlayerIdRoutine());
             onComplete?.Invoke(IsYandexPlayerAuthorized());
         }
@@ -288,9 +308,37 @@ namespace ShooterPrototype.Platform
         public static bool IsYandexGamesRuntime()
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
+            if (YG2.isSDKEnabled)
+            {
+                return true;
+            }
+
             var pageUrl = Application.absoluteURL;
-            return !string.IsNullOrWhiteSpace(pageUrl) &&
-                   pageUrl.IndexOf("yandex", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (string.IsNullOrWhiteSpace(pageUrl))
+            {
+                return false;
+            }
+
+            if (pageUrl.IndexOf("yandex", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (Uri.TryCreate(pageUrl, UriKind.Absolute, out var uri))
+            {
+                var host = uri.Host ?? string.Empty;
+                if (host.IndexOf("localhost", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    host.StartsWith("127.", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                // Yandex builds can be served from CDN/preview hosts that do not contain "yandex"
+                // in Application.absoluteURL, but still have the SDK available.
+                return uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
 #else
             return false;
 #endif

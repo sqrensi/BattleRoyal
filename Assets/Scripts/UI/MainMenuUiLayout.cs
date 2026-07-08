@@ -43,6 +43,8 @@ namespace ShooterPrototype.UI
         private MainMenuNavNotificationBadges navNotificationBadges;
         private MainMenuServerConnectionGate connectionGate;
         private MainMenuReconnectButton reconnectButton;
+        private MainMenuAuthorizationButton authorizationButton;
+        private MainMenuOnlinePlayersIndicator onlinePlayersIndicator;
         private MainMenuDailyRewardPrompt dailyRewardPrompt;
         private RectTransform menuCanvasRect;
 
@@ -85,6 +87,7 @@ namespace ShooterPrototype.UI
             {
                 SetupStartButton(controller.StartButton, canvasRect);
                 controller.BindStartButtonText(ResolveButtonLabel(controller.StartButton));
+                BuildOnlinePlayersIndicator(controller, canvasRect, controller.StartButton.GetComponent<RectTransform>());
                 BuildGameModeSelector(controller, canvasRect, uiSound);
             }
 
@@ -181,6 +184,10 @@ namespace ShooterPrototype.UI
                 reconnectButton.Configure(controller, EnsureUiSound(controller));
                 reconnectButton.Build(canvasRect);
 
+                authorizationButton = EnsureAuthorizationButton(controller);
+                authorizationButton.Configure(controller, EnsureUiSound(controller));
+                authorizationButton.Build(canvasRect, bottomRightStackRect);
+
                 connectionGate.RegisterMenuGroup(currencyDisplay != null ? currencyDisplay.CanvasGroup : null);
                 controller.BindConnectionGate(connectionGate);
             }
@@ -241,7 +248,8 @@ namespace ShooterPrototype.UI
                 dailyRewardsPanel,
                 bottomRightStackGroup != null
                     ? bottomRightStackGroup
-                    : nicknameEditor != null ? nicknameEditor.CanvasGroup : null);
+                    : nicknameEditor != null ? nicknameEditor.CanvasGroup : null,
+                onlinePlayersIndicator != null ? onlinePlayersIndicator.CanvasGroup : null);
         }
 
         private void BuildBottomRightProfileArea(
@@ -302,12 +310,17 @@ namespace ShooterPrototype.UI
             leaderboardPanel.Build(bottomRightStackRect);
             if (nicknameEditor.RootRect != null)
             {
-                nicknameEditor.RootRect.SetSiblingIndex(0);
+                nicknameEditor.RootRect.SetSiblingIndex(1);
             }
 
             if (leaderboardPanel.RootRect != null)
             {
-                leaderboardPanel.RootRect.SetSiblingIndex(1);
+                leaderboardPanel.RootRect.SetSiblingIndex(2);
+            }
+
+            if (authorizationButton != null && authorizationButton.RootRect != null)
+            {
+                authorizationButton.RootRect.SetSiblingIndex(0);
             }
         }
 
@@ -348,7 +361,25 @@ namespace ShooterPrototype.UI
             return reconnect;
         }
 
+        private static MainMenuAuthorizationButton EnsureAuthorizationButton(MainMenuController controller)
+        {
+            if (controller == null)
+            {
+                return null;
+            }
+
+            var button = controller.GetComponent<MainMenuAuthorizationButton>();
+            if (button == null)
+            {
+                button = controller.gameObject.AddComponent<MainMenuAuthorizationButton>();
+            }
+
+            return button;
+        }
+
         public MainMenuReconnectButton ReconnectButton => reconnectButton;
+        public MainMenuAuthorizationButton AuthorizationButton => authorizationButton;
+        public MainMenuOnlinePlayersIndicator OnlinePlayersIndicator => onlinePlayersIndicator;
 
         private void BuildCurrencyDisplay(MainMenuController controller, RectTransform canvasRect)
         {
@@ -362,6 +393,25 @@ namespace ShooterPrototype.UI
             {
                 currencyDisplay = controller.gameObject.AddComponent<MainMenuCurrencyDisplay>();
             }
+        }
+
+        private void BuildOnlinePlayersIndicator(
+            MainMenuController controller,
+            RectTransform canvasRect,
+            RectTransform startButtonRect)
+        {
+            if (controller == null || canvasRect == null || startButtonRect == null)
+            {
+                return;
+            }
+
+            onlinePlayersIndicator = controller.GetComponent<MainMenuOnlinePlayersIndicator>();
+            if (onlinePlayersIndicator == null)
+            {
+                onlinePlayersIndicator = controller.gameObject.AddComponent<MainMenuOnlinePlayersIndicator>();
+            }
+
+            onlinePlayersIndicator.Build(canvasRect, startButtonRect);
         }
 
         private void BuildTopNavBar(RectTransform canvasRect, MainMenuUiSoundController uiSound)

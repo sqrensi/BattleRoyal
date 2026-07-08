@@ -158,6 +158,12 @@ namespace ShooterPrototype.Player
 
         private static string BuildStablePlayerId()
         {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // In WebGL guest ids should be scoped to browser storage.
+            // deviceUniqueIdentifier can collapse multiple incognito/browser sessions
+            // into the same guest profile, so use a random id and persist it via PlayerPrefs.
+            return $"player-{Guid.NewGuid():N}";
+#else
             var deviceId = SystemInfo.deviceUniqueIdentifier;
             if (!string.IsNullOrWhiteSpace(deviceId))
             {
@@ -165,6 +171,7 @@ namespace ShooterPrototype.Player
             }
 
             return $"player-{Guid.NewGuid():N}";
+#endif
         }
     }
 }

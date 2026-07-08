@@ -100,6 +100,7 @@ namespace ShooterPrototype.Player
         public int dailyRewardClaimsOnPage;
         public string dailyRewardLastClaimDate;
         public string dailyRewardLoginPromptDate;
+        public string dailyRewardCurrentVisitDate;
     }
 
     [Serializable]
@@ -194,6 +195,7 @@ namespace ShooterPrototype.Player
     {
         public string loginPromptDate;
         public string lastClaimDate;
+        public string currentVisitDate;
         public int page = -1;
         public int claimsOnPage = -1;
     }

@@ -217,6 +217,7 @@
     <Compile Include="Assets\PluginYourGames\Modules\Payments\Scripts\Payments_yandexPlatform.cs" />
     <Compile Include="Assets\Scripts\Player\MatchChallengeController.cs" />
     <Compile Include="Assets\Scripts\Platform\YandexGamesShopPurchaseService.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuOnlinePlayersIndicator.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\RewardedAdv\Scripts\RewardedAdv_optionalPlatform.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerInventory.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerSkinResourcePaths.cs" />
@@ -367,6 +368,7 @@
     <Compile Include="Assets\Scripts\Player\DmSpawnUtility.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_PhoneNumberValidator.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Other\AdvCallingSimulation.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuAuthRequiredButtonState.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuUiLayout.cs" />
     <Compile Include="Assets\JMO Assets\WarFX\Demo\Assets\WFX_Demo_New.cs" />
     <Compile Include="Assets\Scripts\Player\PlayerIdentityService.cs" />
@@ -382,6 +384,7 @@
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TextConsoleSimulator.cs" />
     <Compile Include="Assets\Scripts\Matchmaking\ActiveMatchContext.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TeleType.cs" />
+    <Compile Include="Assets\Scripts\UI\MainMenuAuthorizationButton.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\TMP_TextEventCheck.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\Platform\PlatformToggles.cs" />
     <Compile Include="Assets\Scripts\Platform\YandexGamesAuthPrompt.cs" />

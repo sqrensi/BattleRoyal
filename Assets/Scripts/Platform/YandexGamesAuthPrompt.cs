@@ -3,6 +3,7 @@ using ShooterPrototype.UI;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 
 namespace ShooterPrototype.Platform
 {
@@ -10,6 +11,8 @@ namespace ShooterPrototype.Platform
     {
         private static GameObject overlayRoot;
         private static Action<bool> pendingCallback;
+        private static Button acceptButton;
+        private static Button declineButton;
 
         public static void Show(string reason, Action<bool> onComplete)
         {
@@ -22,7 +25,16 @@ namespace ShooterPrototype.Platform
 
             pendingCallback = onComplete;
             EnsureOverlay();
+            if (overlayRoot == null)
+            {
+                onComplete?.Invoke(false);
+                pendingCallback = null;
+                return;
+            }
+
+            overlayRoot.transform.SetAsLastSibling();
             overlayRoot.SetActive(true);
+            UpdateButtons(interactable: true);
 
             var reasonText = overlayRoot.transform.Find("Panel/ReasonText")?.GetComponent<TextMeshProUGUI>();
             if (reasonText != null)
@@ -49,17 +61,45 @@ namespace ShooterPrototype.Platform
         {
             if (overlayRoot != null)
             {
-                return;
+                if (overlayRoot.GetComponent<Canvas>() == null)
+                {
+                    UnityEngine.Object.Destroy(overlayRoot);
+                    overlayRoot = null;
+                    acceptButton = null;
+                    declineButton = null;
+                }
+                else
+                {
+                    return;
+                }
             }
 
-            var canvas = UnityEngine.Object.FindFirstObjectByType<Canvas>();
-            if (canvas == null)
+            if (overlayRoot != null)
             {
                 return;
             }
 
             overlayRoot = new GameObject("YandexAuthPromptOverlay");
-            overlayRoot.transform.SetParent(canvas.transform, false);
+            var canvas = overlayRoot.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.overrideSorting = true;
+            canvas.sortingOrder = short.MaxValue;
+            overlayRoot.AddComponent<GraphicRaycaster>();
+
+            var scaler = overlayRoot.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            scaler.matchWidthOrHeight = 0.5f;
+
+            if (UnityEngine.Object.FindFirstObjectByType<EventSystem>() == null)
+            {
+                var eventSystemObject = new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+                UnityEngine.Object.DontDestroyOnLoad(eventSystemObject);
+            }
+
+            UnityEngine.Object.DontDestroyOnLoad(overlayRoot);
+            overlayRoot.hideFlags = HideFlags.DontSave;
 
             var rootRect = overlayRoot.AddComponent<RectTransform>();
             StretchFull(rootRect);
@@ -107,13 +147,34 @@ namespace ShooterPrototype.Platform
             reasonLabel.enableWordWrapping = true;
             UiTheme.ApplyTmp(reasonLabel, UiTextRole.Body);
 
-            CreateButton(panelObject.transform, "AcceptButton", "Войти через Яндекс", new Vector2(-130f, 28f), () => Hide(true));
-            CreateButton(panelObject.transform, "DeclineButton", "Продолжить без входа", new Vector2(130f, 28f), () => Hide(false));
+            acceptButton = CreateButton(
+                panelObject.transform,
+                "AcceptButton",
+                "Войти через Яндекс",
+                new Vector2(-130f, 28f),
+                UiButtonStyle.Primary,
+                UiTextRole.PrimaryButton,
+                () => Hide(true));
+            declineButton = CreateButton(
+                panelObject.transform,
+                "DeclineButton",
+                "Продолжить без входа",
+                new Vector2(130f, 28f),
+                UiButtonStyle.Standard,
+                UiTextRole.Body,
+                () => Hide(false));
 
             overlayRoot.SetActive(false);
         }
 
-        private static void CreateButton(Transform parent, string name, string label, Vector2 anchoredPosition, Action onClick)
+        private static Button CreateButton(
+            Transform parent,
+            string name,
+            string label,
+            Vector2 anchoredPosition,
+            UiButtonStyle buttonStyle,
+            UiTextRole textRole,
+            Action onClick)
         {
             var buttonObject = new GameObject(name);
             buttonObject.transform.SetParent(parent, false);
@@ -124,8 +185,10 @@ namespace ShooterPrototype.Platform
             buttonRect.sizeDelta = new Vector2(210f, 44f);
             buttonRect.anchoredPosition = anchoredPosition;
 
+            var image = buttonObject.AddComponent<Image>();
             var button = buttonObject.AddComponent<Button>();
-            UiTheme.StyleButton(button, UiButtonStyle.Primary);
+            button.targetGraphic = image;
+            UiTheme.StyleButton(button, buttonStyle);
 
             var labelObject = new GameObject("Label");
             labelObject.transform.SetParent(buttonObject.transform, false);
@@ -135,9 +198,23 @@ namespace ShooterPrototype.Platform
             labelText.text = label;
             labelText.fontSize = 16f;
             labelText.alignment = TextAlignmentOptions.Center;
-            UiTheme.ApplyTmp(labelText, UiTextRole.PrimaryButton);
+            UiTheme.ApplyTmp(labelText, textRole);
 
             button.onClick.AddListener(() => onClick?.Invoke());
+            return button;
+        }
+
+        private static void UpdateButtons(bool interactable)
+        {
+            if (acceptButton != null)
+            {
+                acceptButton.interactable = interactable;
+            }
+
+            if (declineButton != null)
+            {
+                declineButton.interactable = interactable;
+            }
         }
 
         private static void StretchFull(RectTransform rect)

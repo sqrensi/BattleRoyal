@@ -65,6 +65,7 @@ function createDefaultClientState() {
       claimsOnPage: 0,
       lastClaimDate: "",
       loginPromptDate: "",
+      currentVisitDate: "",
     },
     settings: {},
   };
@@ -85,6 +86,7 @@ function parseClientState(rawValue) {
         claimsOnPage: Math.max(0, Math.floor(Number(dailyReward.claimsOnPage) || 0)),
         lastClaimDate: typeof dailyReward.lastClaimDate === "string" ? dailyReward.lastClaimDate : "",
         loginPromptDate: typeof dailyReward.loginPromptDate === "string" ? dailyReward.loginPromptDate : "",
+        currentVisitDate: typeof dailyReward.currentVisitDate === "string" ? dailyReward.currentVisitDate : "",
       },
       settings: parsed && typeof parsed.settings === "object" && parsed.settings ? parsed.settings : {},
     };
@@ -142,6 +144,7 @@ function mapClientStateForProfile(state) {
     dailyRewardClaimsOnPage: normalized.dailyReward.claimsOnPage,
     dailyRewardLastClaimDate: normalized.dailyReward.lastClaimDate || "",
     dailyRewardLoginPromptDate: normalized.dailyReward.loginPromptDate || "",
+    dailyRewardCurrentVisitDate: normalized.dailyReward.currentVisitDate || "",
     settingsJson: JSON.stringify({ entries }),
   };
 }
@@ -1258,6 +1261,7 @@ async function ensurePlayerForQueue(externalPlayerId) {
 
 async function ensurePlayer(externalPlayerId) {
   const normalizedExternalId = normalizeExternalPlayerId(externalPlayerId);
+  const today = getUtcDateKey();
   let playerRow = await getPlayerByExternalId(normalizedExternalId);
   if (playerRow) {
     if (!playerRow.nickname) {
@@ -1266,6 +1270,12 @@ async function ensurePlayer(externalPlayerId) {
     }
     if (!playerRow.starter_pack_granted) {
       await grantStarterPack(playerRow.id);
+      playerRow = await getPlayerByExternalId(normalizedExternalId);
+    }
+    const state = await readClientStateForPlayer(playerRow);
+    if (state.dailyReward.currentVisitDate !== today) {
+      state.dailyReward.currentVisitDate = today;
+      await writeClientState(playerRow.id, state);
       playerRow = await getPlayerByExternalId(normalizedExternalId);
     }
     await syncAchievementDefinitionRows();
@@ -1295,6 +1305,10 @@ async function ensurePlayer(externalPlayerId) {
     await grantStarterPack(playerId, tx);
   });
 
+  playerRow = await getPlayerByExternalId(normalizedExternalId);
+  const state = await readClientStateForPlayer(playerRow);
+  state.dailyReward.currentVisitDate = today;
+  await writeClientState(playerRow.id, state);
   playerRow = await getPlayerByExternalId(normalizedExternalId);
   await syncAchievementDefinitionRows();
   await syncPlayerAchievements(playerRow.id);
@@ -2203,6 +2217,7 @@ async function claimDailyReward(externalPlayerId) {
 
       state.dailyReward.lastClaimDate = today;
       state.dailyReward.loginPromptDate = today;
+      state.dailyReward.currentVisitDate = today;
       await writeClientState(playerRow.id, state, tx);
     });
   } catch (error) {
@@ -2240,6 +2255,10 @@ async function patchDailyRewardClientState(externalPlayerId, patch) {
 
   if (normalizedPatch.lastClaimDate !== undefined) {
     state.dailyReward.lastClaimDate = String(normalizedPatch.lastClaimDate || "");
+  }
+
+  if (normalizedPatch.currentVisitDate !== undefined) {
+    state.dailyReward.currentVisitDate = String(normalizedPatch.currentVisitDate || "");
   }
 
   if (normalizedPatch.page !== undefined && Number(normalizedPatch.page) >= 0) {

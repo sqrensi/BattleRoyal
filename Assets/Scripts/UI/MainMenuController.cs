@@ -49,10 +49,13 @@ namespace ShooterPrototype.UI
         [SerializeField] private float enqueueRetryDelaySeconds = 0.4f;
         [Tooltip("1v1 online: if no human match within this many seconds, start local offline bot duel.")]
         [SerializeField] private float duelBotFallbackQueueSeconds = 5f;
+        [Header("Online Counter")]
+        [SerializeField] private float onlinePlayersRefreshSeconds = 10f;
 
         private Coroutine queuePollingCoroutine;
         private Coroutine profileSyncCoroutine;
         private Coroutine serverSyncedPanelCoroutine;
+        private Coroutine onlinePlayersPollingCoroutine;
         private bool isQueueing;
         private string currentTicketId = string.Empty;
         private float queueSearchStartedAtUnscaled;
@@ -139,6 +142,7 @@ namespace ShooterPrototype.UI
             RefreshSelectedCharacterLabel();
             RefreshServerSyncUiState();
             RefreshPlayerPreview(true);
+            StartOnlinePlayersPolling();
         }
 
         private void OnDisable()
@@ -163,6 +167,12 @@ namespace ShooterPrototype.UI
             {
                 StopCoroutine(queuePollingCoroutine);
                 queuePollingCoroutine = null;
+            }
+
+            if (onlinePlayersPollingCoroutine != null)
+            {
+                StopCoroutine(onlinePlayersPollingCoroutine);
+                onlinePlayersPollingCoroutine = null;
             }
 
             isQueueing = false;
@@ -658,6 +668,52 @@ namespace ShooterPrototype.UI
             startButtonText = label;
         }
 
+        private void StartOnlinePlayersPolling()
+        {
+            if (!isActiveAndEnabled || queueApiClient == null)
+            {
+                RefreshOnlinePlayersIndicator(-1, false);
+                return;
+            }
+
+            if (onlinePlayersPollingCoroutine != null)
+            {
+                StopCoroutine(onlinePlayersPollingCoroutine);
+            }
+
+            onlinePlayersPollingCoroutine = StartCoroutine(OnlinePlayersPollingRoutine());
+        }
+
+        private IEnumerator OnlinePlayersPollingRoutine()
+        {
+            while (isActiveAndEnabled)
+            {
+                var completed = false;
+                var ok = false;
+                QueueOnlineStatsResponse response = null;
+
+                yield return StartCoroutine(queueApiClient.GetOnlineStats((requestOk, stats, _) =>
+                {
+                    completed = true;
+                    ok = requestOk;
+                    response = stats;
+                }));
+
+                RefreshOnlinePlayersIndicator(
+                    completed && ok && response != null ? response.playersOnline : -1,
+                    completed && ok && response != null);
+
+                yield return new WaitForSecondsRealtime(Mathf.Max(2f, onlinePlayersRefreshSeconds));
+            }
+
+            onlinePlayersPollingCoroutine = null;
+        }
+
+        private void RefreshOnlinePlayersIndicator(int playersOnline, bool available)
+        {
+            GetComponent<MainMenuUiLayout>()?.OnlinePlayersIndicator?.SetOnlineCount(playersOnline, available);
+        }
+
         private void EnsureEconomy()
         {
             PlayerProfileService.ApplyLocalFallback();
@@ -914,6 +970,7 @@ namespace ShooterPrototype.UI
             var synced = PlayerProfileService.IsServerSynced;
             GetComponent<MainMenuGameModeSelector>()?.SetOnlineModesRestricted(!synced);
             GetComponent<MainMenuSectionController>()?.SetServerSyncRestrictions(synced);
+            GetComponent<MainMenuUiLayout>()?.AuthorizationButton?.Refresh();
 
             if (changeCharacterButton != null)
             {

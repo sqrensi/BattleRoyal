@@ -438,6 +438,7 @@ namespace ShooterPrototype.UI
         private void RefreshIapSlotVisuals()
         {
             var canPurchase = !iapPurchaseInProgress && !casePurchaseInProgress && !rewardedAdInProgress;
+            var authLinked = PlayerIdentityService.HasAuthorizedYandexLink();
             RefreshRewardedCoinsSlotVisual(canPurchase);
 
             for (var i = 0; i < iapSlots.Count; i++)
@@ -445,7 +446,7 @@ namespace ShooterPrototype.UI
                 var slot = iapSlots[i];
                 var ownedVip = slot.Definition.IsVipPrefixReward && PlayerProfileService.HasVipPrefix;
                 var activeNoAds = slot.Definition.IsNoAdsReward && PlayerProfileService.HasNoAdsPass;
-                var slotCanPurchase = canPurchase && !(ownedVip && slot.Definition.IsVipPrefixReward);
+                var slotCanPurchase = authLinked && canPurchase && !(ownedVip && slot.Definition.IsVipPrefixReward);
                 var normalColor = slotCanPurchase ? UiTheme.SlotFill : UiTheme.SlotEmpty;
 
                 if (slot.Background != null)
@@ -475,6 +476,8 @@ namespace ShooterPrototype.UI
                             : string.Empty;
                     slot.PriceLabel.text = ownedVip || activeNoAds
                         ? (string.IsNullOrEmpty(expiryLabel) ? "Активно" : expiryLabel)
+                        : !authLinked
+                            ? "Нужен вход"
                         : ShopIapCatalogService.FormatRubles(slot.Definition.PriceRubles);
                     slot.PriceLabel.color = slotCanPurchase
                         ? new Color(0.92f, 0.78f, 0.34f, 0.98f)
@@ -491,12 +494,13 @@ namespace ShooterPrototype.UI
         private void RefreshCaseSlotVisuals()
         {
             var balance = PlayerProfileService.GetSpendableBalance();
+            var authLinked = PlayerIdentityService.HasAuthorizedYandexLink();
             for (var i = 0; i < caseSlots.Count; i++)
             {
                 var slot = caseSlots[i];
                 var isRealMoney = slot.Definition.IsRealMoneyPurchase;
                 var canAfford = isRealMoney
-                    ? !casePurchaseInProgress && !iapPurchaseInProgress && !rewardedAdInProgress
+                    ? authLinked && !casePurchaseInProgress && !iapPurchaseInProgress && !rewardedAdInProgress
                     : balance >= CaseCatalogService.GetPrice(slot.Definition) &&
                       !casePurchaseInProgress &&
                       !iapPurchaseInProgress &&
@@ -524,7 +528,9 @@ namespace ShooterPrototype.UI
                 if (slot.PriceLabel != null)
                 {
                     slot.PriceLabel.text = isRealMoney
-                        ? ShopIapCatalogService.FormatRubles(slot.Definition.PriceRubles)
+                        ? (authLinked
+                            ? ShopIapCatalogService.FormatRubles(slot.Definition.PriceRubles)
+                            : "Нужен вход")
                         : FormatPrice(CaseCatalogService.GetPrice(slot.Definition));
                     slot.PriceLabel.color = canAfford
                         ? new Color(isRealMoney ? 0.92f : 0.78f, isRealMoney ? 0.78f : 0.64f, isRealMoney ? 0.34f : 0.26f, 0.96f)
@@ -991,6 +997,11 @@ namespace ShooterPrototype.UI
                 return;
             }
 
+            if (!PlayerIdentityService.HasAuthorizedYandexLink())
+            {
+                return;
+            }
+
             if (product.IsVipPrefixReward && PlayerProfileService.HasVipPrefix)
             {
                 return;
@@ -1036,6 +1047,11 @@ namespace ShooterPrototype.UI
 
             if (caseDefinition.IsRealMoneyPurchase)
             {
+                if (!PlayerIdentityService.HasAuthorizedYandexLink())
+                {
+                    return;
+                }
+
                 StartCoroutine(PurchaseIapProductRoutine(caseDefinition.RealMoneyProductId));
                 return;
             }

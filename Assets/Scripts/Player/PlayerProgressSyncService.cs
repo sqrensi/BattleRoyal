@@ -11,6 +11,7 @@ namespace ShooterPrototype.Player
         public int dailyRewardClaimsOnPage;
         public string dailyRewardLastClaimDate;
         public string dailyRewardLoginPromptDate;
+        public string dailyRewardCurrentVisitDate;
         public string settingsJson;
     }
 
@@ -378,6 +379,7 @@ namespace ShooterPrototype.Player
                 state.dailyRewardClaimsOnPage = profile.dailyRewardClaimsOnPage;
                 state.dailyRewardLastClaimDate = profile.dailyRewardLastClaimDate ?? string.Empty;
                 state.dailyRewardLoginPromptDate = profile.dailyRewardLoginPromptDate ?? string.Empty;
+                state.dailyRewardCurrentVisitDate = profile.dailyRewardCurrentVisitDate ?? string.Empty;
             }
 
             return state;
@@ -390,7 +392,8 @@ namespace ShooterPrototype.Player
             {
                 return new PlayerProfileDailyRewardStateRequest
                 {
-                    loginPromptDate = today
+                    loginPromptDate = today,
+                    currentVisitDate = today
                 };
             }
 
@@ -398,6 +401,7 @@ namespace ShooterPrototype.Player
             {
                 loginPromptDate = today,
                 lastClaimDate = DailyRewardService.GetLastClaimDateForSync(),
+                currentVisitDate = today,
                 page = DailyRewardService.CurrentPage,
                 claimsOnPage = DailyRewardService.ClaimsOnCurrentPage
             };

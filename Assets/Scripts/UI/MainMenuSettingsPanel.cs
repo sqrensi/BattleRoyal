@@ -804,7 +804,7 @@ namespace ShooterPrototype.UI
 
         private void HandleYandexAccountPressed()
         {
-            if (YandexGamesIntegrationService.IsYandexPlayerAuthorized() ||
+            if (PlayerIdentityService.HasAuthorizedYandexLink() ||
                 yandexAccountLinkCoroutine != null)
             {
                 return;
@@ -838,7 +838,7 @@ namespace ShooterPrototype.UI
 
             if (yandexAccountButton != null)
             {
-                yandexAccountButton.interactable = !YandexGamesIntegrationService.IsYandexPlayerAuthorized();
+                yandexAccountButton.interactable = !PlayerIdentityService.HasAuthorizedYandexLink();
             }
 
             yandexAccountLinkCoroutine = null;
@@ -851,12 +851,12 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            var authorized = YandexGamesIntegrationService.IsYandexPlayerAuthorized();
-            yandexAccountValueLabel.text = authorized ? "Подключён" : "Войти";
+            var linked = PlayerIdentityService.HasAuthorizedYandexLink();
+            yandexAccountValueLabel.text = linked ? "Подключён" : "Войти";
             UiTheme.ApplyFlatFill(
                 yandexAccountButton.targetGraphic as Image,
-                authorized ? UiTheme.ToggleOn : UiTheme.ToggleOff);
-            yandexAccountButton.interactable = !authorized && yandexAccountLinkCoroutine == null;
+                linked ? UiTheme.ToggleOn : UiTheme.ToggleOff);
+            yandexAccountButton.interactable = !linked && yandexAccountLinkCoroutine == null;
         }
 
         private static void UpdateToggleLabel(ToggleRowBinding binding)

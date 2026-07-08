@@ -74,7 +74,8 @@ namespace ShooterPrototype.UI
             MainMenuStatsPanel stats,
             MainMenuSettingsPanel settings,
             MainMenuDailyRewardsPanel dailyRewards,
-            CanvasGroup nicknameGroup = null)
+            CanvasGroup nicknameGroup = null,
+            CanvasGroup onlinePlayersGroup = null)
         {
             menuController = menu;
             cameraMotion = camera;
@@ -118,6 +119,11 @@ namespace ShooterPrototype.UI
             if (nicknameGroup != null)
             {
                 mainMenuGroups.Add(nicknameGroup);
+            }
+
+            if (onlinePlayersGroup != null)
+            {
+                mainMenuGroups.Add(onlinePlayersGroup);
             }
 
             if (inventoryButton != null)
@@ -215,7 +221,6 @@ namespace ShooterPrototype.UI
 
         public void SetServerSyncRestrictions(bool serverSynced)
         {
-            // Кнопки остаются кликабельными — при отсутствии синка показывается запрос подключения к серверу.
         }
 
         public void OpenPanelDirect(MainMenuPanelMode panelMode)

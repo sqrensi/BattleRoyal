@@ -5,7 +5,13 @@ const crypto = require("crypto");
 const { URL } = require("url");
 
 const config = require("./config");
-const { enableCors, respondJson, readJsonBody, normalizePlayerId } = require("./lib/http");
+const {
+  enableCors,
+  respondJson,
+  readJsonBody,
+  respondHttpRequestError,
+  normalizePlayerId,
+} = require("./lib/http");
 const log = require("./lib/logger");
 const Metrics = require("./lib/metrics");
 const WorkerManager = require("./workers/manager");
@@ -258,6 +264,44 @@ function countActiveMatchesByMode(mode) {
     }
   }
   return count;
+}
+
+function countOnlineHumanPlayers() {
+  let total = 0;
+  for (const ticket of ticketsById.values()) {
+    if (!ticket || isBotTicket(ticket)) {
+      continue;
+    }
+
+    if (ticket.status === "Queued" || ticket.status === "Matched") {
+      total += 1;
+    }
+  }
+  return total;
+}
+
+function countQueuedHumanPlayers() {
+  let total = 0;
+  for (const ticket of queue) {
+    if (!ticket || isBotTicket(ticket) || ticket.status !== "Queued") {
+      continue;
+    }
+
+    total += 1;
+  }
+  return total;
+}
+
+function countMatchedHumanPlayers() {
+  let total = 0;
+  for (const ticket of ticketsById.values()) {
+    if (!ticket || isBotTicket(ticket) || ticket.status !== "Matched") {
+      continue;
+    }
+
+    total += 1;
+  }
+  return total;
 }
 
 async function makeDeathmatch(players) {
@@ -1069,7 +1113,7 @@ workers.onMessage((workerId, msg) => {
   }
 });
 
-const server = http.createServer(async (req, res) => {
+async function handleHttpRequest(req, res) {
   enableCors(res);
   if (req.method === "OPTIONS") {
     res.writeHead(204);
@@ -1088,6 +1132,17 @@ const server = http.createServer(async (req, res) => {
       database: databaseDriver,
       ws: typeof wsApi.stats === "function" ? wsApi.stats() : null,
       bots: botManager ? botManager.stats() : null,
+    });
+    return;
+  }
+
+  if (req.method === "GET" && path === "/online-stats") {
+    respondJson(res, 200, {
+      ok: true,
+      playersOnline: countOnlineHumanPlayers(),
+      playersInQueue: countQueuedHumanPlayers(),
+      playersInMatches: countMatchedHumanPlayers(),
+      activeMatches: countActiveMatches(),
     });
     return;
   }
@@ -1180,6 +1235,23 @@ const server = http.createServer(async (req, res) => {
   }
 
   respondJson(res, 404, { error: "NotFound" });
+}
+
+const server = http.createServer((req, res) => {
+  void handleHttpRequest(req, res).catch((error) => {
+    if (res.headersSent) {
+      log.error("http", "unhandled request error after headers sent", error && error.message ? error.message : error);
+      return;
+    }
+
+    if (error && (error.code === "INVALID_JSON_BODY" || error.code === "BODY_TOO_LARGE")) {
+      respondHttpRequestError(res, error);
+      return;
+    }
+
+    log.error("http", "unhandled request error", error && error.message ? error.message : error);
+    respondHttpRequestError(res, error);
+  });
 });
 
 async function bootstrap() {
