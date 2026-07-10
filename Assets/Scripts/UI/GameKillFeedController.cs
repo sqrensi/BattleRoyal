@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
 using ShooterPrototype.Player;
 using TMPro;
@@ -221,7 +222,9 @@ namespace ShooterPrototype.UI
             if (NicknamePrefixUtility.TrySplitFormattedPlain(value, out var prefix, out var nick))
             {
                 var displayNick = string.IsNullOrWhiteSpace(nick) ? "Игрок" : nick;
-                var richPrefix = NicknamePrefixUtility.FormatRichPrefixLabel(prefix);
+                var allowRankPrefix = ActiveMatchContext.IsDuel || ActiveMatchContext.IsOfflineDuelSession;
+                var contextualPrefix = NicknamePrefixUtility.GetContextualPrefix(prefix, allowRankPrefix);
+                var richPrefix = NicknamePrefixUtility.FormatRichPrefixLabel(contextualPrefix);
                 if (string.IsNullOrEmpty(richPrefix))
                 {
                     return $"<color=#{ColorToHex(roleColor)}>{displayNick}</color>";

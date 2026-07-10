@@ -78,6 +78,11 @@ namespace YG
 #if UNITY_EDITOR
             if (!infoYG.Simulation.enableInterAdv) return;
 #endif
+            if (CustomInterstitialBlockCheck != null && CustomInterstitialBlockCheck())
+            {
+                return;
+            }
+
             if (skipIterAdv)
             {
                 skipIterAdv = false;

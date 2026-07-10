@@ -45,6 +45,13 @@ namespace ShooterPrototype.Player
 
         private void Update()
         {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (WasTogglePressed())
+            {
+                showOverlay = !showOverlay;
+            }
+#endif
+
             var unscaledDelta = Mathf.Max(0.0001f, Time.unscaledDeltaTime);
             fpsSmoothed = Mathf.Lerp(fpsSmoothed, 1f / unscaledDelta, 0.08f);
 
@@ -59,6 +66,9 @@ namespace ShooterPrototype.Player
 
         private void OnGUI()
         {
+#if !UNITY_EDITOR && !DEVELOPMENT_BUILD
+            return;
+#endif
             if (!showOverlay)
             {
                 return;

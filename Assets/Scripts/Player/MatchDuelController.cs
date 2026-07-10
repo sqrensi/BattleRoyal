@@ -216,7 +216,6 @@ namespace ShooterPrototype.Player
             if (playerHealth != null)
             {
                 playerHealth.SetEliminationMode(true);
-                playerHealth.SetDestroyDeathPhysicsOnCleanup(true);
             }
         }
 
@@ -669,7 +668,7 @@ namespace ShooterPrototype.Player
                 : networkLauncher != null && !string.IsNullOrWhiteSpace(networkLauncher.CurrentTicketId)
                     ? networkLauncher.CurrentTicketId.Trim()
                     : string.Empty;
-            var localNick = PlayerProfileService.LocalDisplayNickname;
+            var localNick = PlayerProfileService.LocalDuelDisplayNickname;
             var localRating = ResolveDuelPanelRating(
                 state.duelLocalDuelRating,
                 PlayerProfileService.DuelRating);

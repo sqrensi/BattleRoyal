@@ -358,7 +358,10 @@ namespace ShooterPrototype.UI
 
             if (!string.IsNullOrWhiteSpace(localTicketId))
             {
-                MatchScoreboardTracker.Upsert(localTicketId, PlayerProfileService.LocalDisplayNickname);
+                var localNickname = ActiveMatchContext.IsDuel || ActiveMatchContext.IsOfflineDuelSession
+                    ? PlayerProfileService.LocalDuelDisplayNickname
+                    : PlayerProfileService.LocalDisplayNickname;
+                MatchScoreboardTracker.Upsert(localTicketId, localNickname);
             }
 
             if (ActiveMatchContext.IsOfflineDuelSession && MatchOfflineDuelController.Active != null)
@@ -366,7 +369,7 @@ namespace ShooterPrototype.UI
                 var duel = MatchOfflineDuelController.Active;
                 MatchScoreboardTracker.SetOfflineRow(
                     localTicketId,
-                    PlayerProfileService.LocalDisplayNickname,
+                    PlayerProfileService.LocalDuelDisplayNickname,
                     duel.LocalRoundWins,
                     duel.BotRoundWins,
                     MatchStatsTracker.DamageDealtThisMatch,

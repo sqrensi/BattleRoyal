@@ -12,8 +12,8 @@ PlayerSettings:
   targetDevice: 2
   useOnDemandResources: 0
   accelerometerFrequency: 60
-  companyName: ShooterPrototype
-  productName: "\u041A\u043E\u043D\u0442\u0430\u043A\u0442"
+  companyName: "\u0428\u0443\u0442\u0435\u0440 \u0414\u0443\u044D\u043B\u044C \u041E\u043D\u043B\u0430\u0439\u043D"
+  productName: "\u0428\u0443\u0442\u0435\u0440 \u0414\u0443\u044D\u043B\u044C \u041E\u043D\u043B\u0430\u0439\u043D"
   defaultCursor: {fileID: 0}
   cursorHotspot: {x: 0, y: 0}
   m_SplashScreenBackgroundColor: {r: 0.050980393, g: 0.047058824, b: 0.039215688, a: 1}
@@ -810,7 +810,7 @@ PlayerSettings:
   blurSplashScreenBackground: 0
   spritePackerPolicy: 
   webGLMemorySize: 128
-  webGLExceptionSupport: 2
+  webGLExceptionSupport: 0
   webGLNameFilesAsHashes: 0
   webGLShowDiagnostics: 0
   webGLDataCaching: 1

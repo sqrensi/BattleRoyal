@@ -38,56 +38,77 @@ namespace ShooterPrototype.Platform
             if (ShouldUseYandexIntegration())
             {
                 yield return runner.StartCoroutine(EnsureSdkReadyRoutine());
-                if (PlayerIdentityService.HasAuthorizedYandexLink() && IsYandexPlayerAuthorized())
+                PlayerIdentityService.TryRestoreFromPersistentStorage();
+
+                YG2.GetAuth();
+                yield return WaitForYandexPlayerDataRoutine(5f);
+
+                if (IsYandexPlayerAuthorized())
                 {
                     TryApplyCurrentYandexPlayerId();
                 }
                 else if (PlayerIdentityService.HasAuthorizedYandexLink())
                 {
                     TryApplySavedYandexPlayerId();
+                    YG2.GetAuth();
+                    yield return WaitForYandexPlayerDataRoutine(3f);
+                    if (IsYandexPlayerAuthorized())
+                    {
+                        TryApplyCurrentYandexPlayerId();
+                    }
                 }
+            }
+            else
+            {
+                PlayerIdentityService.TryRestoreFromPersistentStorage();
             }
 
             onPlayerIdReady?.Invoke(PlayerIdentityService.GetOrCreatePlayerId());
         }
+
+        public static string LastAuthorizationMessage { get; private set; }
 
         public static IEnumerator RequestAuthorizationIfNeeded(
             MonoBehaviour runner,
             string reason,
             Action<bool> onComplete)
         {
+            LastAuthorizationMessage = null;
+
             if (runner == null)
             {
                 onComplete?.Invoke(false);
                 yield break;
             }
 
-            if (!ShouldUseYandexIntegration())
+            if (ShouldUseYandexIntegration())
             {
-                onComplete?.Invoke(true);
-                yield break;
-            }
+                yield return runner.StartCoroutine(EnsureSdkReadyRoutine());
 
-            yield return runner.StartCoroutine(EnsureSdkReadyRoutine());
-
-            if (PlayerIdentityService.HasAuthorizedYandexLink() && IsYandexPlayerAuthorized())
-            {
-                TryApplyCurrentYandexPlayerId();
-                onComplete?.Invoke(true);
-                yield break;
-            }
-
-            if (PlayerIdentityService.HasAuthorizedYandexLink())
-            {
-                TryApplySavedYandexPlayerId();
-                YG2.GetAuth();
-                yield return WaitForYandexPlayerDataRoutine(3f);
-                if (IsYandexPlayerAuthorized())
+                if (PlayerIdentityService.HasAuthorizedYandexLink() && IsYandexPlayerAuthorized())
                 {
                     TryApplyCurrentYandexPlayerId();
                     onComplete?.Invoke(true);
                     yield break;
                 }
+
+                if (PlayerIdentityService.HasAuthorizedYandexLink())
+                {
+                    TryApplySavedYandexPlayerId();
+                    YG2.GetAuth();
+                    yield return WaitForYandexPlayerDataRoutine(3f);
+                    if (IsYandexPlayerAuthorized())
+                    {
+                        TryApplyCurrentYandexPlayerId();
+                        onComplete?.Invoke(true);
+                        yield break;
+                    }
+                }
+            }
+            else if (PlayerIdentityService.HasAuthorizedYandexLink())
+            {
+                onComplete?.Invoke(true);
+                yield break;
             }
 
             var answered = false;
@@ -109,6 +130,14 @@ namespace ShooterPrototype.Platform
                 yield break;
             }
 
+            if (!ShouldUseYandexIntegration())
+            {
+                LastAuthorizationMessage =
+                    "Вход через Яндекс ID доступен только на платформе Яндекс Игр.";
+                onComplete?.Invoke(false);
+                yield break;
+            }
+
             yield return runner.StartCoroutine(AuthorizeAfterConsent(runner, onComplete));
         }
 
@@ -124,7 +153,7 @@ namespace ShooterPrototype.Platform
 
             if (!ShouldUseYandexIntegration())
             {
-                onComplete?.Invoke(true);
+                onComplete?.Invoke(false);
                 yield break;
             }
 
@@ -267,6 +296,18 @@ namespace ShooterPrototype.Platform
             YG2.onGetSDKData -= HandleSdkData;
         }
 
+        private static void PersistCurrentAuthState()
+        {
+            if (!IsYandexPlayerAuthorized())
+            {
+                return;
+            }
+
+            var yandexUniqueId = YG2.player.id.Trim();
+            var externalPlayerId = PlayerIdentityService.BuildExternalPlayerIdFromYandexUniqueId(yandexUniqueId);
+            BrowserPersistentStorage.SaveAuthState(yandexUniqueId, externalPlayerId, true);
+        }
+
         private static bool TryApplyCurrentYandexPlayerId()
         {
             if (!IsYandexPlayerAuthorized())
@@ -274,7 +315,13 @@ namespace ShooterPrototype.Platform
                 return false;
             }
 
-            return PlayerIdentityService.TryApplyAuthorizedYandexUniqueId(YG2.player.id);
+            var applied = PlayerIdentityService.TryApplyAuthorizedYandexUniqueId(YG2.player.id);
+            if (applied)
+            {
+                PersistCurrentAuthState();
+            }
+
+            return applied;
         }
 
         private static void TryApplySavedYandexPlayerId()
@@ -286,6 +333,10 @@ namespace ShooterPrototype.Platform
             }
 
             PlayerIdentityService.TryApplyAuthorizedYandexUniqueId(savedUniqueId);
+            if (PlayerIdentityService.HasAuthorizedYandexLink())
+            {
+                PersistCurrentAuthState();
+            }
         }
 
         private static bool HasResolvableYandexPlayerId()
@@ -303,6 +354,15 @@ namespace ShooterPrototype.Platform
         {
             YG2.onGetSDKData -= HandleSdkReadyForGameReady;
             YG2.GameReadyAPI();
+        }
+
+        public static bool ShouldShowAuthorizationUi()
+        {
+#if UNITY_EDITOR
+            return !PlayerIdentityService.HasAuthorizedYandexLink();
+#else
+            return IsYandexGamesRuntime() && !PlayerIdentityService.HasAuthorizedYandexLink();
+#endif
         }
 
         public static bool IsYandexGamesRuntime()
@@ -346,7 +406,11 @@ namespace ShooterPrototype.Platform
 
         private static bool ShouldUseYandexIntegration()
         {
+#if UNITY_EDITOR
+            return false;
+#else
             return IsYandexGamesRuntime();
+#endif
         }
     }
 }

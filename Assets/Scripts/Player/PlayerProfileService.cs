@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using ShooterPrototype.Matchmaking;
 using ShooterPrototype.Network;
+using ShooterPrototype.Platform;
 using ShooterPrototype.UI;
 using UnityEngine;
 
@@ -15,6 +16,8 @@ namespace ShooterPrototype.Player
         private const string NicknamePrefKey = "player_nickname_v1";
         private const string VipPrefixExpiresPrefKey = "player_vip_prefix_expires_v1";
         private const string NoAdsExpiresPrefKey = "player_no_ads_expires_v1";
+        private const string NoAdsPassStorageType = "no_ads_expires_ms";
+        private const string VipPassStorageType = "vip_prefix_expires_ms";
         private const long VipDurationMs = 30L * 24L * 60L * 60L * 1000L;
         private const long NoAdsDurationMs = 30L * 24L * 60L * 60L * 1000L;
 
@@ -40,50 +43,44 @@ namespace ShooterPrototype.Player
         {
             get
             {
+                var serverMs = 0L;
                 if (CurrentProfile != null && CurrentProfile.noAdsExpiresAtMs > 0)
                 {
-                    return CurrentProfile.noAdsExpiresAtMs;
+                    serverMs = CurrentProfile.noAdsExpiresAtMs;
                 }
 
                 var stored = PlayerPrefs.GetString(NoAdsExpiresPrefKey, "0");
-                return long.TryParse(stored, out var expiresAtMs) ? expiresAtMs : 0L;
+                var localMs = long.TryParse(stored, out var expiresAtMs) ? expiresAtMs : 0L;
+                var persistentMs = ReadPersistedPassExpiry(NoAdsPassStorageType);
+                return Math.Max(serverMs, Math.Max(localMs, persistentMs));
             }
         }
 
         public static string FormatNoAdsExpiryShopLabel()
         {
-            if (!HasNoAdsPass)
-            {
-                return string.Empty;
-            }
-
-            var expiresAt = DateTimeOffset.FromUnixTimeMilliseconds(NoAdsExpiresAtMs).ToLocalTime();
-            return $"до {expiresAt:dd.MM.yy}";
+            return FormatPassRemainingShopLabel(NoAdsExpiresAtMs);
         }
 
         public static long VipPrefixExpiresAtMs
         {
             get
             {
+                var serverMs = 0L;
                 if (CurrentProfile != null && CurrentProfile.vipPrefixExpiresAtMs > 0)
                 {
-                    return CurrentProfile.vipPrefixExpiresAtMs;
+                    serverMs = CurrentProfile.vipPrefixExpiresAtMs;
                 }
 
                 var stored = PlayerPrefs.GetString(VipPrefixExpiresPrefKey, "0");
-                return long.TryParse(stored, out var expiresAtMs) ? expiresAtMs : 0L;
+                var localMs = long.TryParse(stored, out var expiresAtMs) ? expiresAtMs : 0L;
+                var persistentMs = ReadPersistedPassExpiry(VipPassStorageType);
+                return Math.Max(serverMs, Math.Max(localMs, persistentMs));
             }
         }
 
         public static string FormatVipExpiryShopLabel()
         {
-            if (!HasVipPrefix)
-            {
-                return string.Empty;
-            }
-
-            var expiresAt = DateTimeOffset.FromUnixTimeMilliseconds(VipPrefixExpiresAtMs).ToLocalTime();
-            return $"до {expiresAt:dd.MM.yy}";
+            return FormatPassRemainingShopLabel(VipPrefixExpiresAtMs);
         }
 
         public static string NicknamePrefix
@@ -104,6 +101,11 @@ namespace ShooterPrototype.Player
         }
 
         public static string LocalDisplayNickname =>
+            NicknamePrefixUtility.FormatPlain(
+                NicknamePrefixUtility.GetContextualPrefix(NicknamePrefix, false),
+                Nickname);
+
+        public static string LocalDuelDisplayNickname =>
             NicknamePrefixUtility.FormatPlain(NicknamePrefix, Nickname);
 
         public static int ChallengeBestTimeMs => ResolveChallengeBestTimeMs();
@@ -234,7 +236,7 @@ namespace ShooterPrototype.Player
 
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var expiresAtMs = nowMs + VipDurationMs;
-            PlayerPrefs.SetString(VipPrefixExpiresPrefKey, expiresAtMs.ToString());
+            PersistPassExpiry(VipPassStorageType, VipPrefixExpiresPrefKey, expiresAtMs);
             PlayerPrefs.Save();
 
             if (CurrentProfile != null)
@@ -253,7 +255,7 @@ namespace ShooterPrototype.Player
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var baseMs = Math.Max(nowMs, NoAdsExpiresAtMs);
             var expiresAtMs = baseMs + NoAdsDurationMs;
-            PlayerPrefs.SetString(NoAdsExpiresPrefKey, expiresAtMs.ToString());
+            PersistPassExpiry(NoAdsPassStorageType, NoAdsExpiresPrefKey, expiresAtMs);
             PlayerPrefs.Save();
 
             if (CurrentProfile != null)
@@ -283,6 +285,63 @@ namespace ShooterPrototype.Player
             }
 
             return expiresAtMs > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        }
+
+        private static string FormatPassRemainingShopLabel(long expiresAtMs)
+        {
+            if (!IsNoAdsPassActive(expiresAtMs))
+            {
+                return string.Empty;
+            }
+
+            var remainingMs = expiresAtMs - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            if (remainingMs <= 0)
+            {
+                return string.Empty;
+            }
+
+            var days = Mathf.Max(1, Mathf.CeilToInt(remainingMs / 86400000f));
+            return $"Куплено · {days} дн.";
+        }
+
+        private static string ResolvePassStorageScopeId()
+        {
+            PlayerIdentityService.TryRestoreFromPersistentStorage();
+            if (PlayerIdentityService.TryGetSavedYandexUniqueId(out var yandexUniqueId))
+            {
+                return yandexUniqueId;
+            }
+
+            var playerId = PlayerIdentityService.GetOrCreatePlayerId();
+            return string.IsNullOrWhiteSpace(playerId) ? string.Empty : playerId.Trim();
+        }
+
+        private static long ReadPersistedPassExpiry(string passType)
+        {
+            var scopeId = ResolvePassStorageScopeId();
+            return string.IsNullOrWhiteSpace(scopeId)
+                ? 0L
+                : BrowserPersistentStorage.GetPassExpiry(passType, scopeId);
+        }
+
+        private static void PersistPassExpiry(string passType, string playerPrefsKey, long expiresAtMs)
+        {
+            PlayerPrefs.SetString(playerPrefsKey, expiresAtMs.ToString());
+
+            var scopeId = ResolvePassStorageScopeId();
+            if (!string.IsNullOrWhiteSpace(scopeId))
+            {
+                BrowserPersistentStorage.SavePassExpiry(passType, scopeId, expiresAtMs);
+            }
+        }
+
+        private static void ClearPersistedPassExpiry(string passType)
+        {
+            var scopeId = ResolvePassStorageScopeId();
+            if (!string.IsNullOrWhiteSpace(scopeId))
+            {
+                BrowserPersistentStorage.SavePassExpiry(passType, scopeId, 0L);
+            }
         }
 
         public static void EnterOfflineMode()
@@ -348,20 +407,34 @@ namespace ShooterPrototype.Player
 
             if (IsVipPrefixActive(profile.vipPrefixExpiresAtMs))
             {
-                PlayerPrefs.SetString(VipPrefixExpiresPrefKey, profile.vipPrefixExpiresAtMs.ToString());
+                PersistPassExpiry(VipPassStorageType, VipPrefixExpiresPrefKey, profile.vipPrefixExpiresAtMs);
             }
-            else if (markSynced)
+            else
             {
-                PlayerPrefs.DeleteKey(VipPrefixExpiresPrefKey);
+                var localStored = PlayerPrefs.GetString(VipPrefixExpiresPrefKey, "0");
+                var localMs = long.TryParse(localStored, out var localExpiresAtMs) ? localExpiresAtMs : 0L;
+                var persistentMs = ReadPersistedPassExpiry(VipPassStorageType);
+                if (!IsVipPrefixActive(localMs) && !IsVipPrefixActive(persistentMs))
+                {
+                    PlayerPrefs.DeleteKey(VipPrefixExpiresPrefKey);
+                    ClearPersistedPassExpiry(VipPassStorageType);
+                }
             }
 
             if (IsNoAdsPassActive(profile.noAdsExpiresAtMs))
             {
-                PlayerPrefs.SetString(NoAdsExpiresPrefKey, profile.noAdsExpiresAtMs.ToString());
+                PersistPassExpiry(NoAdsPassStorageType, NoAdsExpiresPrefKey, profile.noAdsExpiresAtMs);
             }
-            else if (markSynced)
+            else
             {
-                PlayerPrefs.DeleteKey(NoAdsExpiresPrefKey);
+                var localStored = PlayerPrefs.GetString(NoAdsExpiresPrefKey, "0");
+                var localMs = long.TryParse(localStored, out var localExpiresAtMs) ? localExpiresAtMs : 0L;
+                var persistentMs = ReadPersistedPassExpiry(NoAdsPassStorageType);
+                if (!IsNoAdsPassActive(localMs) && !IsNoAdsPassActive(persistentMs))
+                {
+                    PlayerPrefs.DeleteKey(NoAdsExpiresPrefKey);
+                    ClearPersistedPassExpiry(NoAdsPassStorageType);
+                }
             }
 
             PlayerCurrencyService.ApplyFromServer(profile.currencyBalance);
@@ -1009,6 +1082,20 @@ namespace ShooterPrototype.Player
             if (success && profile != null)
             {
                 ApplyProfile(profile);
+
+                if (ShopIapCatalogService.TryGetProduct(productId, out var product))
+                {
+                    if (product.IsNoAdsReward && !HasNoAdsPass)
+                    {
+                        GrantLocalNoAdsPass();
+                    }
+
+                    if (product.IsVipPrefixReward && !HasVipPrefix)
+                    {
+                        GrantLocalVipPrefix();
+                    }
+                }
+
                 onCompleted?.Invoke(true, string.Empty);
                 yield break;
             }

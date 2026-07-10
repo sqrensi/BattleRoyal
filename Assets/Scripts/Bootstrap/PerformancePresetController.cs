@@ -206,9 +206,6 @@ namespace ShooterPrototype.Bootstrap
                 return;
             }
 
-            hasCachedVolumeWeights = false;
-            CacheVolumeWeightsIfNeeded();
-
             ClientSettingsService.EnsureLoaded();
             ApplyClientGraphicsSettings(
                 ClientSettingsService.RenderScale,

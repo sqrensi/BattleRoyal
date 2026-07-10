@@ -91,6 +91,7 @@
     <Compile Include="Assets\Scripts\Player\WorldPickup.cs" />
     <Compile Include="Assets\Scripts\Player\RemoteLeftHandIkBinder.cs" />
     <Compile Include="Assets\PluginYourGames\Scripts\InfoYG\SimulationSettings.cs" />
+    <Compile Include="Assets\Scripts\Platform\YandexNoAdsInterstitialGate.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuShopCoinsHover.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\Localization\Scripts\Lang_yg.cs" />
     <Compile Include="Assets\Scripts\UI\CombatHudController.cs" />
@@ -240,6 +241,7 @@
     <Compile Include="Assets\JMO Assets\WarFX\Scripts\CFX_AutoDestructShuriken.cs" />
     <Compile Include="Assets\PluginYourGames\Modules\RewardedAdv\Scripts\RewardedAdv_info.cs" />
     <Compile Include="Assets\Scripts\Player\SyntyCrouchPosture.cs" />
+    <Compile Include="Assets\Scripts\Platform\BrowserPersistentStorage.cs" />
     <Compile Include="Assets\Scripts\UI\MainMenuController.cs" />
     <Compile Include="Assets\TextMesh Pro\Examples &amp; Extras\Scripts\VertexShakeA.cs" />
     <Compile Include="Assets\Scripts\UI\PlayerInventoryPanelController.cs" />

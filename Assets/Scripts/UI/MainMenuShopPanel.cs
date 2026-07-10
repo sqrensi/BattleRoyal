@@ -446,7 +446,8 @@ namespace ShooterPrototype.UI
                 var slot = iapSlots[i];
                 var ownedVip = slot.Definition.IsVipPrefixReward && PlayerProfileService.HasVipPrefix;
                 var activeNoAds = slot.Definition.IsNoAdsReward && PlayerProfileService.HasNoAdsPass;
-                var slotCanPurchase = authLinked && canPurchase && !(ownedVip && slot.Definition.IsVipPrefixReward);
+                var ownedPass = ownedVip || activeNoAds;
+                var slotCanPurchase = authLinked && canPurchase && !ownedPass;
                 var normalColor = slotCanPurchase ? UiTheme.SlotFill : UiTheme.SlotEmpty;
 
                 if (slot.Background != null)
@@ -474,8 +475,8 @@ namespace ShooterPrototype.UI
                         : activeNoAds
                             ? PlayerProfileService.FormatNoAdsExpiryShopLabel()
                             : string.Empty;
-                    slot.PriceLabel.text = ownedVip || activeNoAds
-                        ? (string.IsNullOrEmpty(expiryLabel) ? "Активно" : expiryLabel)
+                    slot.PriceLabel.text = ownedPass
+                        ? (string.IsNullOrEmpty(expiryLabel) ? "Куплено" : expiryLabel)
                         : !authLinked
                             ? "Нужен вход"
                         : ShopIapCatalogService.FormatRubles(slot.Definition.PriceRubles);
@@ -1003,6 +1004,11 @@ namespace ShooterPrototype.UI
             }
 
             if (product.IsVipPrefixReward && PlayerProfileService.HasVipPrefix)
+            {
+                return;
+            }
+
+            if (product.IsNoAdsReward && PlayerProfileService.HasNoAdsPass)
             {
                 return;
             }

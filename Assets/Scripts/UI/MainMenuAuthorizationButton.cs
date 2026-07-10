@@ -16,6 +16,7 @@ namespace ShooterPrototype.UI
         private MainMenuController menuController;
         private MainMenuUiSoundController uiSound;
         private CanvasGroup canvasGroup;
+        private LayoutElement layoutElement;
         private Button button;
         private bool built;
 
@@ -42,15 +43,15 @@ namespace ShooterPrototype.UI
             var rootRect = RootRect;
             if (stackParent != null)
             {
-                var layoutElement = rootObject.AddComponent<LayoutElement>();
+                layoutElement = rootObject.AddComponent<LayoutElement>();
                 layoutElement.preferredWidth = buttonWidth;
                 layoutElement.preferredHeight = buttonHeight;
                 layoutElement.minWidth = buttonWidth;
                 layoutElement.minHeight = buttonHeight;
-                rootRect.anchorMin = new Vector2(0f, 1f);
+                rootRect.anchorMin = new Vector2(1f, 1f);
                 rootRect.anchorMax = new Vector2(1f, 1f);
-                rootRect.pivot = new Vector2(0.5f, 1f);
-                rootRect.sizeDelta = Vector2.zero;
+                rootRect.pivot = new Vector2(1f, 1f);
+                rootRect.sizeDelta = new Vector2(buttonWidth, buttonHeight);
             }
             else
             {
@@ -91,14 +92,28 @@ namespace ShooterPrototype.UI
 
         public void Refresh()
         {
-            var visible = YandexGamesIntegrationService.IsYandexGamesRuntime() &&
-                          !PlayerIdentityService.HasAuthorizedYandexLink();
+            var visible = YandexGamesIntegrationService.ShouldShowAuthorizationUi();
             if (canvasGroup != null)
             {
                 canvasGroup.alpha = visible ? 1f : 0f;
                 canvasGroup.interactable = visible;
                 canvasGroup.blocksRaycasts = visible;
             }
+
+            if (layoutElement != null)
+            {
+                layoutElement.ignoreLayout = !visible;
+            }
+        }
+
+        public void PlaceAboveNicknamePanel()
+        {
+            if (!built || RootRect == null)
+            {
+                return;
+            }
+
+            RootRect.SetAsFirstSibling();
         }
 
         private void HandlePressed()

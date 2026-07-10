@@ -1,4 +1,5 @@
 using System;
+using ShooterPrototype.Platform;
 using UnityEngine;
 
 namespace ShooterPrototype.Player
@@ -12,6 +13,8 @@ namespace ShooterPrototype.Player
 
         public static string GetOrCreatePlayerId()
         {
+            TryRestoreFromPersistentStorage();
+
             var launchOverride = ResolveLaunchPlayerIdOverride();
             if (!string.IsNullOrWhiteSpace(launchOverride))
             {
@@ -38,8 +41,50 @@ namespace ShooterPrototype.Player
 
         public static bool HasAuthorizedYandexLink()
         {
+            TryRestoreFromPersistentStorage();
             return PlayerPrefs.GetInt(YandexAuthLinkedPrefKey, 0) == 1 &&
                    TryGetSavedYandexUniqueId(out _);
+        }
+
+        public static void TryRestoreFromPersistentStorage()
+        {
+            BrowserPersistentStorage.MigrateLegacyPlayerPrefs();
+
+            if (!BrowserPersistentStorage.TryGetSavedAuth(
+                    out var yandexUniqueId,
+                    out var externalPlayerId,
+                    out _))
+            {
+                return;
+            }
+
+            if (!PlayerPrefs.HasKey(YandexUniqueIdPrefKey))
+            {
+                PlayerPrefs.SetString(YandexUniqueIdPrefKey, yandexUniqueId);
+            }
+
+            if (PlayerPrefs.GetInt(YandexAuthLinkedPrefKey, 0) != 1)
+            {
+                PlayerPrefs.SetInt(YandexAuthLinkedPrefKey, 1);
+            }
+
+            if (!string.IsNullOrWhiteSpace(externalPlayerId) && !PlayerPrefs.HasKey(PlayerIdPrefKey))
+            {
+                PlayerPrefs.SetString(PlayerIdPrefKey, externalPlayerId);
+            }
+            else if (!PlayerPrefs.HasKey(PlayerIdPrefKey))
+            {
+                PlayerPrefs.SetString(
+                    PlayerIdPrefKey,
+                    BuildExternalPlayerIdFromYandexUniqueId(yandexUniqueId));
+            }
+
+            PlayerPrefs.Save();
+        }
+
+        private static void PersistAuthState(string yandexUniqueId, string externalPlayerId, bool linked)
+        {
+            BrowserPersistentStorage.SaveAuthState(yandexUniqueId, externalPlayerId, linked);
         }
 
         public static bool TryApplyYandexUniqueId(string uniqueId, bool requireAuthorizedLink = false)
@@ -64,6 +109,10 @@ namespace ShooterPrototype.Player
                 PlayerPrefs.SetInt(YandexAuthLinkedPrefKey, 1);
             }
 
+            PersistAuthState(
+                normalizedUniqueId,
+                externalPlayerId,
+                requireAuthorizedLink || PlayerPrefs.GetInt(YandexAuthLinkedPrefKey, 0) == 1);
             PlayerPrefs.Save();
 
             if (!string.IsNullOrWhiteSpace(previousPlayerId) &&
@@ -100,6 +149,9 @@ namespace ShooterPrototype.Player
             PlayerPrefs.DeleteKey(PlayerIdPrefKey);
             PlayerPrefs.DeleteKey(YandexUniqueIdPrefKey);
             PlayerPrefs.DeleteKey(YandexAuthLinkedPrefKey);
+            BrowserPersistentStorage.RemoveKey("auth/yandex_unique_id");
+            BrowserPersistentStorage.RemoveKey("auth/player_external_id");
+            BrowserPersistentStorage.RemoveKey("auth/yandex_linked");
             PlayerPrefs.Save();
         }
 

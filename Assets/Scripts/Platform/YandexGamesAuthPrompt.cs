@@ -101,10 +101,24 @@ namespace ShooterPrototype.Platform
             UnityEngine.Object.DontDestroyOnLoad(overlayRoot);
             overlayRoot.hideFlags = HideFlags.DontSave;
 
-            var rootRect = overlayRoot.AddComponent<RectTransform>();
+            var rootRect = overlayRoot.GetComponent<RectTransform>();
+            if (rootRect == null)
+            {
+                UnityEngine.Object.Destroy(overlayRoot);
+                overlayRoot = null;
+                acceptButton = null;
+                declineButton = null;
+                return;
+            }
+
             StretchFull(rootRect);
 
-            var dimmer = overlayRoot.AddComponent<Image>();
+            var dimmerObject = new GameObject("Dimmer");
+            dimmerObject.transform.SetParent(overlayRoot.transform, false);
+            var dimmerRect = dimmerObject.AddComponent<RectTransform>();
+            StretchFull(dimmerRect);
+
+            var dimmer = dimmerObject.AddComponent<Image>();
             dimmer.color = new Color(0f, 0f, 0f, 0.72f);
             dimmer.raycastTarget = true;
 
@@ -219,6 +233,11 @@ namespace ShooterPrototype.Platform
 
         private static void StretchFull(RectTransform rect)
         {
+            if (rect == null)
+            {
+                return;
+            }
+
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
             rect.offsetMin = Vector2.zero;

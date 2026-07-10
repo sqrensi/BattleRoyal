@@ -1,4 +1,5 @@
 using System;
+using ShooterPrototype.Matchmaking;
 
 namespace ShooterPrototype.Player
 {
@@ -18,12 +19,18 @@ namespace ShooterPrototype.Player
 
         public static string FormatLocalKillFeedPlain()
         {
-            return PlayerProfileService.LocalDisplayNickname;
+            var allowRankPrefix = ActiveMatchContext.IsDuel || ActiveMatchContext.IsOfflineDuelSession;
+            return allowRankPrefix
+                ? PlayerProfileService.LocalDuelDisplayNickname
+                : PlayerProfileService.LocalDisplayNickname;
         }
 
         public static string FormatLocalScoreboardRich(bool preferYouLabelWhenNoNick)
         {
-            var prefix = PlayerProfileService.NicknamePrefix;
+            var allowRankPrefix = ActiveMatchContext.IsDuel || ActiveMatchContext.IsOfflineDuelSession;
+            var prefix = NicknamePrefixUtility.GetContextualPrefix(
+                PlayerProfileService.NicknamePrefix,
+                allowRankPrefix);
             var nick = PlayerProfileService.Nickname?.Trim();
             if (!string.IsNullOrEmpty(prefix))
             {
@@ -49,6 +56,18 @@ namespace ShooterPrototype.Player
             {
                 var preferYou = string.Equals(localTicketId, OfflineLocalTicketId, StringComparison.Ordinal);
                 return FormatLocalScoreboardRich(preferYou);
+            }
+
+            var allowRankPrefix = ActiveMatchContext.IsDuel || ActiveMatchContext.IsOfflineDuelSession;
+            if (!allowRankPrefix && NicknamePrefixUtility.TrySplitFormattedPlain(nickname, out var prefix, out var nick))
+            {
+                var contextualPrefix = NicknamePrefixUtility.GetContextualPrefix(prefix, false);
+                if (!string.IsNullOrEmpty(contextualPrefix))
+                {
+                    return NicknamePrefixUtility.FormatRich(contextualPrefix, string.IsNullOrWhiteSpace(nick) ? "Игрок" : nick);
+                }
+
+                return string.IsNullOrWhiteSpace(nick) ? "Игрок" : nick.Trim();
             }
 
             return NicknamePrefixUtility.FormatRichFromFormattedPlain(nickname);

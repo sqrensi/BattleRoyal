@@ -187,6 +187,7 @@ namespace ShooterPrototype.UI
                 authorizationButton = EnsureAuthorizationButton(controller);
                 authorizationButton.Configure(controller, EnsureUiSound(controller));
                 authorizationButton.Build(canvasRect, bottomRightStackRect);
+                authorizationButton.PlaceAboveNicknamePanel();
 
                 connectionGate.RegisterMenuGroup(currencyDisplay != null ? currencyDisplay.CanvasGroup : null);
                 controller.BindConnectionGate(connectionGate);
@@ -316,11 +317,6 @@ namespace ShooterPrototype.UI
             if (leaderboardPanel.RootRect != null)
             {
                 leaderboardPanel.RootRect.SetSiblingIndex(2);
-            }
-
-            if (authorizationButton != null && authorizationButton.RootRect != null)
-            {
-                authorizationButton.RootRect.SetSiblingIndex(0);
             }
         }
 

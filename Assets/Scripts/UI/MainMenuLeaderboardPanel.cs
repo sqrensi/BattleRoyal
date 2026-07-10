@@ -306,6 +306,9 @@ namespace ShooterPrototype.UI
 
         private bool IsDeathmatchMode => leaderboardMode == MainMenuGameMode.Deathmatch;
 
+        private bool AllowsRankPrefixInLeaderboard() =>
+            leaderboardMode == MainMenuGameMode.Duel1v1;
+
         private void RenderEmptyLeaderboardPlaceholder()
         {
             ClearContent();
@@ -439,7 +442,9 @@ namespace ShooterPrototype.UI
                 nickname = string.IsNullOrWhiteSpace(PlayerProfileService.Nickname)
                     ? "Вы"
                     : PlayerProfileService.Nickname.Trim(),
-                nicknamePrefix = PlayerProfileService.NicknamePrefix,
+                nicknamePrefix = NicknamePrefixUtility.GetContextualPrefix(
+                    PlayerProfileService.NicknamePrefix,
+                    AllowsRankPrefixInLeaderboard()),
                 playerId = PlayerIdentityService.GetOrCreatePlayerId(),
                 rating = IsChallengeMode ? 0 : selfValue,
                 challengeTimeMs = IsChallengeMode ? selfValue : -1,
@@ -565,7 +570,9 @@ namespace ShooterPrototype.UI
             nicknameLayout.flexibleWidth = 1f;
             var nicknameText = nicknameObject.AddComponent<TextMeshProUGUI>();
             nicknameText.richText = true;
-            nicknameText.text = NicknamePrefixUtility.FormatRich(entry.nicknamePrefix, entry.nickname);
+            nicknameText.text = NicknamePrefixUtility.FormatRich(
+                NicknamePrefixUtility.GetContextualPrefix(entry.nicknamePrefix, AllowsRankPrefixInLeaderboard()),
+                entry.nickname);
             nicknameText.fontSize = rowFontSize;
             nicknameText.fontStyle = isSelf ? FontStyles.Bold : FontStyles.Normal;
             nicknameText.alignment = TextAlignmentOptions.MidlineLeft;

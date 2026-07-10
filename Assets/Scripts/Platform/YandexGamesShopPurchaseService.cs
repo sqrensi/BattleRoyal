@@ -203,7 +203,8 @@ namespace ShooterPrototype.Platform
                     Debug.LogWarning($"[YandexGamesShopPurchase] Server grant failed: {error}");
                 }
             }
-            else
+
+            if (!success)
             {
                 success = ApplyLocalReward(productId);
             }

@@ -82,7 +82,9 @@ namespace ShooterPrototype.Bootstrap
             if (!Application.isBatchMode)
             {
                 EnsurePerformancePreset();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
                 EnsureNetworkPerformanceMonitor();
+#endif
                 EnsureSceneOcclusionBootstrap();
             }
 

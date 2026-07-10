@@ -1,4 +1,4 @@
-# BattleRoyal (ShooterPrototype)
+# Шутер Дуэль Онлайн
 
 Multiplayer third-person / first-person shooter prototype (Unity + Node.js queue/realtime backend).
 

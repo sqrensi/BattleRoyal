@@ -109,7 +109,14 @@ namespace ShooterPrototype.UI
                 HandleServerUnavailable(recoveryMessage);
             }
 
+            StartCoroutine(NotifyGameReadyWhenMenuReadyRoutine());
             BeginProfileSync(isManualRetry: false);
+        }
+
+        private IEnumerator NotifyGameReadyWhenMenuReadyRoutine()
+        {
+            yield return null;
+            YandexGamesIntegrationService.NotifyMainMenuLoadingComplete();
         }
 
         private Coroutine menuCursorGuardCoroutine;
@@ -739,7 +746,6 @@ namespace ShooterPrototype.UI
 
             EnsureDependencies();
             localPlayerId = PlayerIdentityService.GetOrCreatePlayerId();
-            ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Синхронизация профиля...");
             profileSyncCoroutine = StartCoroutine(YandexProfileLinkRoutine());
         }
 
@@ -754,6 +760,35 @@ namespace ShooterPrototype.UI
                     HandleServerUnavailable("Сервер недоступен");
                     yield break;
                 }
+
+                if (!PlayerIdentityService.HasAuthorizedYandexLink())
+                {
+                    var granted = false;
+                    yield return YandexGamesIntegrationService.RequestAuthorizationIfNeeded(
+                        this,
+                        YandexGamesIntegrationService.ProfileSyncAuthReason,
+                        value => granted = value);
+
+                    if (!granted)
+                    {
+                        var authMessage = YandexGamesIntegrationService.LastAuthorizationMessage;
+                        SetStatus(string.IsNullOrWhiteSpace(authMessage)
+                            ? idleStatusText
+                            : authMessage);
+                        if (PlayerProfileService.IsServerSynced)
+                        {
+                            ApplyServerConnectionState(MainMenuServerConnectionState.Connected);
+                        }
+                        else
+                        {
+                            HandleServerUnavailable(ResolveServerUnavailableMessage());
+                        }
+
+                        yield break;
+                    }
+                }
+
+                ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Синхронизация профиля...");
 
                 yield return YandexGamesIntegrationService.PrepareAccountAndBindProfile(
                     this,
@@ -885,8 +920,6 @@ namespace ShooterPrototype.UI
 
                 ApplyServerConnectionState(MainMenuServerConnectionState.Loading, "Загрузка профиля...");
                 yield return SyncProfileWithRetry(isManualRetry ? 4 : 2, isManualRetry ? 2f : 1f);
-
-                YandexGamesIntegrationService.NotifyMainMenuLoadingComplete();
 
                 if (PlayerProfileService.IsServerSynced)
                 {

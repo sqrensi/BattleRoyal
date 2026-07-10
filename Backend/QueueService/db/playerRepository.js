@@ -11,6 +11,7 @@ const { calculateDuelRewards } = require("../duelRewards");
 const {
   PRO_TOP_COUNT,
   resolveNicknamePrefix,
+  resolveVipOnlyPrefix,
   resolveBestNicknamePrefix,
   formatNicknameWithPrefix,
   isVipPrefixActive,
@@ -384,17 +385,12 @@ async function resolvePlayerNicknamePrefix(playerRow, nowMs = Date.now()) {
     return "";
   }
 
-  const [duelRank, challengeRank, dmRank] = await Promise.all([
-    getDuelLeaderboardRank(playerRow.id),
-    getChallengeLeaderboardRank(playerRow.id),
-    getDeathmatchLeaderboardRank(playerRow.id),
-  ]);
-
-  return resolveBestNicknamePrefix(
-    [duelRank, challengeRank, dmRank],
-    playerRow.vip_prefix_expires_at,
-    nowMs
-  );
+  const duelRank = await getDuelLeaderboardRank(playerRow.id);
+  return resolveNicknamePrefix({
+    leaderboardRank: duelRank,
+    vipPrefixExpiresAtMs: playerRow.vip_prefix_expires_at,
+    nowMs,
+  });
 }
 
 function hasActiveVipPrefix(playerRow, nowMs = Date.now()) {
@@ -2335,10 +2331,7 @@ async function getLeaderboard(limit = 25, mode = "duel") {
     return rows.map((row, index) => ({
       rank: index + 1,
       nickname: row.nickname || "Игрок",
-      nicknamePrefix: resolveNicknamePrefix({
-        leaderboardRank: index + 1,
-        vipPrefixExpiresAtMs: row.vip_prefix_expires_at,
-      }),
+      nicknamePrefix: resolveVipOnlyPrefix(row.vip_prefix_expires_at),
       rating: 0,
       challengeTimeMs: Number.isFinite(row.challenge_time_ms) ? row.challenge_time_ms : -1,
       playerId: row.player_id || "",
@@ -2368,10 +2361,7 @@ async function getLeaderboard(limit = 25, mode = "duel") {
       return {
         rank: index + 1,
         nickname: row.nickname || "Игрок",
-        nicknamePrefix: resolveNicknamePrefix({
-          leaderboardRank: index + 1,
-          vipPrefixExpiresAtMs: row.vip_prefix_expires_at,
-        }),
+        nicknamePrefix: resolveVipOnlyPrefix(row.vip_prefix_expires_at),
         rating: kills,
         kills,
         deaths,
@@ -2405,10 +2395,7 @@ async function getLeaderboard(limit = 25, mode = "duel") {
       return {
         rank: index + 1,
         nickname: row.nickname || "Игрок",
-        nicknamePrefix: resolveNicknamePrefix({
-          leaderboardRank: 0,
-          vipPrefixExpiresAtMs: row.vip_prefix_expires_at,
-        }),
+        nicknamePrefix: resolveVipOnlyPrefix(row.vip_prefix_expires_at),
         rating: trainingTimeSeconds,
         kills: 0,
         deaths: 0,

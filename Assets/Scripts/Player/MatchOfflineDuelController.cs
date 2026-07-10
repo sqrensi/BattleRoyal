@@ -584,7 +584,6 @@ namespace ShooterPrototype.Player
             fpsController?.SetServerReconciliationSuspended(true);
             fpsController?.SetGameOverMode(false);
             playerHealth?.SetEliminationMode(true);
-            playerHealth?.SetDestroyDeathPhysicsOnCleanup(true);
             playerHealth?.SetNetworkMode(false);
             if (pickupController != null)
             {
@@ -720,7 +719,7 @@ namespace ShooterPrototype.Player
                 : MatchRatingUtility.DefaultRating;
 
             gameHud.SetDuelPlayersPanel(
-                PlayerProfileService.LocalDisplayNickname,
+                PlayerProfileService.LocalDuelDisplayNickname,
                 PlayerProfileService.DuelRating,
                 opponentNick,
                 opponentRating);

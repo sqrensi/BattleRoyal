@@ -1,3 +1,4 @@
+using System;
 using System.Text.RegularExpressions;
 using UnityEngine;
 
@@ -70,6 +71,32 @@ namespace ShooterPrototype.Player
             if (leaderboardRank >= 2 && leaderboardRank <= ProTopCount)
             {
                 return Pro;
+            }
+
+            return string.Empty;
+        }
+
+        public static string GetContextualPrefix(string prefix, bool allowRankPrefix)
+        {
+            var normalized = Normalize(prefix);
+            if (string.IsNullOrEmpty(normalized))
+            {
+                return string.Empty;
+            }
+
+            if (allowRankPrefix)
+            {
+                return normalized;
+            }
+
+            if (normalized == Vip)
+            {
+                return Vip;
+            }
+
+            if (normalized.StartsWith($"{Vip}-", StringComparison.Ordinal))
+            {
+                return Vip;
             }
 
             return string.Empty;
@@ -237,7 +264,7 @@ namespace ShooterPrototype.Player
                     : 1;
                 var rankLabel = FormatRankPrefixWithCount(rankBase, rankCount);
                 var rankColor = rankBase == Legend ? "#FF7A45" : "#E8C04A";
-                return $"<color=#B88CFF>[VIP</color><color={rankColor}>-{rankLabel}</color><color=#B88CFF>]</color>";
+                return $"<color=#B88CFF>[VIP</color><color={rankColor}>-{rankLabel}]</color>";
             }
 
             if (TryParseRankPrefix(normalized, out var basePrefix, out var count))

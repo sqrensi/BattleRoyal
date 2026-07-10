@@ -95,6 +95,10 @@ function resolveNicknamePrefix({ leaderboardRank, vipPrefixExpiresAtMs, nowMs = 
   return combinePrefixes(resolveRankPrefix(leaderboardRank), vipPrefixExpiresAtMs, nowMs);
 }
 
+function resolveVipOnlyPrefix(vipPrefixExpiresAtMs, nowMs = Date.now()) {
+  return combinePrefixes("", vipPrefixExpiresAtMs, nowMs);
+}
+
 function resolveBestNicknamePrefix(ranks, vipPrefixExpiresAtMs, nowMs = Date.now()) {
   const normalizedRanks = Array.isArray(ranks)
     ? ranks.map((rank) => Math.floor(Number(rank) || 0)).filter((rank) => rank > 0)
@@ -136,6 +140,7 @@ module.exports = {
   parseRankPrefix,
   combinePrefixes,
   resolveNicknamePrefix,
+  resolveVipOnlyPrefix,
   resolveBestNicknamePrefix,
   formatNicknameWithPrefix,
 };

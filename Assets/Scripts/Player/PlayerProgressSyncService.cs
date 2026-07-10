@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace ShooterPrototype.Player
 {
@@ -54,6 +55,11 @@ namespace ShooterPrototype.Player
             serverState = ResolveClientState(profile);
             hasServerState = true;
             DailyRewardService.ApplyServerState(serverState);
+
+            if (IsGameplaySceneActive())
+            {
+                return;
+            }
 
             var settingsJson = serverState.settingsJson;
             if (ClientSettingsService.IsServerSettingsPayloadEmpty(settingsJson))
@@ -435,6 +441,17 @@ namespace ShooterPrototype.Player
                    error.IndexOf("connection", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    error.IndexOf("timeout", StringComparison.OrdinalIgnoreCase) >= 0 ||
                    error.IndexOf("Cannot connect", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsGameplaySceneActive()
+        {
+            var scene = SceneManager.GetActiveScene();
+            if (!scene.IsValid() || !scene.isLoaded)
+            {
+                return false;
+            }
+
+            return !string.Equals(scene.name, "MainMenu", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

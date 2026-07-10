@@ -293,7 +293,7 @@ namespace ShooterPrototype.UI
                 return;
             }
 
-            var prefix = PlayerProfileService.NicknamePrefix;
+            var prefix = NicknamePrefixUtility.GetContextualPrefix(PlayerProfileService.NicknamePrefix, false);
             if (string.IsNullOrEmpty(prefix))
             {
                 prefixLabel.text = string.Empty;
